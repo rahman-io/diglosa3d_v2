@@ -10,13 +10,13 @@ export const OVERWORLD_ANCHORS = {
   desaSpawn: { x: -6.0, y: 2.6, z: 126.0, yaw: Math.PI * 0.85 },
   starterWeapon: { x: -12.5, y: 2.6, z: 123.0 },
   portal: { x: 2.0, y: 14.0, z: -185.0 },
-  istanaFloating: { x: 122, y: 38, z: -108 },
+  istanaFloating: { x: 215, y: 40, z: -185 },
   zones: {
     desa_sapaan: { x: -2.0, y: 2.6, z: 112.0 },
     pasar_rasa: { x: -102.0, y: 2.0, z: 52.0 },
     hutan_satwa: { x: 102, y: 3.4, z: 52 },
     gerbang_kota: { x: -119.0, y: 12.0, z: -86.0 },
-    menara_waktu: { x: 66, y: 6.2, z: -42 },
+    menara_waktu: { x: 118.0, y: 10.0, z: -72.0 },
     gua_portal: { x: 9.0, y: 14.0, z: -171.0 },
   } as Record<ZoneId, { x: number; y: number; z: number }>,
   npcs: {
@@ -24,7 +24,7 @@ export const OVERWORLD_ANCHORS = {
     npc_koki: { x: -89.5, z: 45.0, rotY: 0.75 },
     npc_rubah: { x: 87.5, z: 42.5, rotY: -1.1 },
     npc_penjaga: { x: -110.5, z: -92.5, rotY: 0.45 },
-    npc_penyihir: { x: 59.5, z: -34.2, rotY: -0.65 },
+    npc_penyihir: { x: 113.5, z: -73.5, rotY: 0.72 },
     npc_portal: { x: 5.0, z: -177.0, rotY: 0.52 },
   } as Record<string, { x: number; z: number; rotY: number }>,
   guardPosts: {
@@ -32,7 +32,7 @@ export const OVERWORLD_ANCHORS = {
     npc_koki: { x: -85.5, z: 41.0, rotY: -0.8, bedTint: 0xef4444 },
     npc_rubah: { x: 83.5, z: 36.5, rotY: 0.75, bedTint: 0x10b981 },
     npc_penjaga: { x: -102.0, z: -95.5, rotY: -0.95, bedTint: 0x3b82f6 },
-    npc_penyihir: { x: 56.2, z: -39.2, rotY: 1.1, bedTint: 0x8b5cf6 },
+    npc_penyihir: { x: 117.5, z: -80.5, rotY: 0.35, bedTint: 0x8b5cf6 },
     npc_portal: { x: -1.0, z: -172.0, rotY: 0.78, bedTint: 0xa855f7 },
   } as Record<string, { x: number; z: number; rotY: number; bedTint: number }>,
 } as const;
@@ -114,7 +114,8 @@ export const ISLAND_DISKS: IslandDisk[] = [
   { id: 'hutan_satwa', cx: 120, cz: 58, radius: 65.0, groundY: 3.4 },
   // 140m (radius 70m) Full-Scale Fortress City ("Gerbang Kota") matching level design overview!
   { id: 'gerbang_kota', cx: -118, cz: -98, radius: 70.0, groundY: 12.0 },
-  { id: 'menara_waktu', cx: 66, cz: -42, radius: 28.0, groundY: 3.6 },
+  // 130m (radius 65m) Full-Scale Clock Tower Hill ("Menara Waktu") matching level design overview!
+  { id: 'menara_waktu', cx: 148, cz: -92, radius: 65.0, groundY: 10.0 },
   // 135m (radius 67.5m) Full-Scale Crystal Canyon ("Gua Portal") matching level design overview!
   { id: 'gua_portal', cx: 20, cz: -174, radius: 67.5, groundY: 14.0 },
 ];
@@ -211,17 +212,18 @@ export const BRIDGE_SPANS: BridgeSpan[] = [
     gaps: [{ t0: 0.47, t1: 0.52 }],
   },
   {
+    // Exact 5m-wide (halfWidth 2.5) Wooden Gear Bridge ("Jembatan Roda Gigi: Lebar 5m") connecting Hub NE to Menara Waktu!
     id: 'bridge_menara',
     ax: 19.5,
     az: -11.5,
     ay: 2.8,
-    bx: 43.0,
-    bz: -27.5,
-    by: 3.6,
-    halfWidth: 2.9,
-    archHeight: 0.6,
-    style: 'stone',
-    gaps: [{ t0: 0.45, t1: 0.555 }],
+    bx: 94.0,
+    bz: -66.0,
+    by: 10.0,
+    halfWidth: 2.5,
+    archHeight: 0.7,
+    style: 'wood',
+    gaps: [{ t0: 0.45, t1: 0.54 }],
   },
   {
     id: 'bridge_portal',
@@ -269,11 +271,11 @@ export const PARKOUR_PLATFORMS: ParkourPad[] = [
   { id: 'west_hop_3', x: -125.5, y: 1.6, z: -18.5, halfW: 1.8, halfD: 1.8, style: 'stone' },
   { id: 'west_hop_4', x: -126.0, y: 1.8, z: -23.0, halfW: 1.8, halfD: 1.8, style: 'stone' },
 
-  // Outer East Sea Stepping Stones (Hutan Satwa NW coast <-> Menara Waktu South Dock)
-  { id: 'east_hop_1', x: 102.0, y: 0.9, z: -9.5, halfW: 1.8, halfD: 1.8, style: 'wood' },
-  { id: 'east_hop_2', x: 94.0, y: 1.3, z: -11.0, halfW: 1.7, halfD: 1.7, style: 'wood' },
-  { id: 'east_hop_3', x: 76.0, y: 1.6, z: -13.5, halfW: 1.7, halfD: 1.7, style: 'wood' },
-  { id: 'east_hop_4', x: 69.5, y: 1.9, z: -14.0, halfW: 1.8, halfD: 1.8, style: 'wood' },
+  // Outer East Sea Stepping Stones (Hutan Satwa North coast <-> Menara Waktu South Dock)
+  { id: 'east_hop_1', x: 144.5, y: 0.9, z: -4.5, halfW: 1.8, halfD: 1.8, style: 'wood' },
+  { id: 'east_hop_2', x: 145.5, y: 1.2, z: -9.5, halfW: 1.8, halfD: 1.8, style: 'wood' },
+  { id: 'east_hop_3', x: 146.5, y: 1.4, z: -14.5, halfW: 1.8, halfD: 1.8, style: 'wood' },
+  { id: 'east_hop_4', x: 147.5, y: 1.1, z: -19.5, halfW: 1.8, halfD: 1.8, style: 'wood' },
 
   // Low Swim Harbor Docks & Sea-Piers dipping down to y=0.28..0.38 for effortless swimming entry/exit!
   { id: 'dock_desa_south', x: 0, y: 0.28, z: 178.5, halfW: 3.2, halfD: 2.6, style: 'dock' },
@@ -287,7 +289,7 @@ export const PARKOUR_PLATFORMS: ParkourPad[] = [
   { id: 'dock_hub_west', x: -25.2, y: 0.32, z: 0, halfW: 2.4, halfD: 2.8, style: 'dock' },
   { id: 'dock_hub_east', x: 25.2, y: 0.32, z: 0, halfW: 2.4, halfD: 2.8, style: 'dock' },
   { id: 'dock_gerbang_south', x: -126.5, y: 0.32, z: -27.5, halfW: 3.0, halfD: 2.6, style: 'dock' },
-  { id: 'dock_menara_south', x: 66.0, y: 0.32, z: -14.2, halfW: 2.8, halfD: 2.5, style: 'dock' },
+  { id: 'dock_menara_south', x: 148.0, y: 0.32, z: -26.5, halfW: 3.0, halfD: 2.8, style: 'dock' },
   { id: 'dock_portal_west', x: -48.0, y: 0.3, z: -174.0, halfW: 2.8, halfD: 3.0, style: 'dock' },
   { id: 'dock_portal_east', x: 88.0, y: 0.3, z: -174.0, halfW: 2.8, halfD: 3.0, style: 'dock' },
   { id: 'dock_portal_south', x: 14.0, y: 0.3, z: -106.0, halfW: 3.0, halfD: 2.8, style: 'dock' },
@@ -735,42 +737,85 @@ function sampleIslandInterior(
   }
 
   if (isl.id === 'menara_waktu') {
-    // 1. South sea-stairs down to dock_menara_south
-    if (wx >= 62.5 && wx <= 69.5 && wz >= -25.0) {
-      const t = THREE.MathUtils.clamp((wz - -25.0) / 9.5, 0, 1);
-      return { y: Math.max(0.32, quantizeTier(3.6 - t * 3.25, 0.52)), surface: 'stairs' };
+    // Menara Waktu (cx=148, cz=-92, radius=65.0) — Full 130m Clock Tower Hill!
+    // Local coords lx = wx - 148, lz = wz + 92
+    const lx = wx - 148.0;
+    const lz = wz + 92.0;
+
+    // 1. South sea-dock cliff staircase climbing smoothly from dock_menara_south (148, -26.5) -> South Promenade (y=10.0m)
+    if (Math.abs(lx) <= 4.2 && lz >= 28.0) {
+      const t = THREE.MathUtils.clamp((lz - 28.0) / 34.0, 0, 1);
+      return { y: Math.max(0.32, quantizeTier(10.0 - t * 9.68, 0.46)), surface: 'stairs' };
     }
-    // 2. Winding Spiraling Cobblestone Stairway up to Clock Tower Summit (y=10.6)!
-    // Flight 1 (West ascent): x: 52..59, z: -38..-47 (3.6 -> 6.8)
-    if (wx >= 51.5 && wx <= 59.5 && wz <= -37.5 && wz >= -48.0) {
-      const prog = THREE.MathUtils.clamp((-37.5 - wz) / 10.0, 0, 1);
-      return { y: quantizeTier(3.6 + prog * 3.2, 0.55), surface: 'stairs' };
-    }
-    // Flight 2 (North-East ridge ascent): x: 53..66, z: -53..-48 (6.8 -> 10.6)
-    if (wx >= 53.0 && wx <= 66.5 && wz <= -47.5 && wz >= -54.5) {
-      const prog = THREE.MathUtils.clamp((wx - 53.0) / 13.0, 0, 1);
-      return { y: Math.min(10.6, quantizeTier(6.8 + prog * 3.8, 0.55)), surface: 'stairs' };
-    }
-    // Clock Tower Summit Plateau (y=10.6)
-    if (wx >= 64.0 && wx <= 77.5 && wz >= -56.5 && wz <= -44.0) {
-      return { y: 10.6, surface: 'land' };
+    // South promenade path linking top of South sea stairs to Main Golden Terrace Road
+    if (lx >= -20.0 && lx <= 4.2 && lz >= 23.0 && lz <= 29.0) {
+      return { y: 10.0, surface: 'road' };
     }
 
-    // 3. Rolling Autumn Highland Ridges & Foothills across Menara Waktu
-    let h = 3.8 + hillWave(wx * 0.9, wz * 0.9) * 1.35;
-    const towerMount = Math.exp(-((wx - 71.0) ** 2 + (wz + 49.0) ** 2) / 135) * 6.8;
-    const eastRidge = Math.exp(-((wx - 83.0) ** 2 + (wz + 38.0) ** 2) / 95) * 5.6;
-    h += towerMount + eastRidge;
-
-    h = padBlend(wx, wz, 59.5, -34.2, 3.0, 6.0, 3.6, h); // npc_penyihir
-    h = padBlend(wx, wz, 56.2, -39.2, 2.8, 5.4, 3.6, h); // guardPost
-    h = padBlend(wx, wz, 72.5, -34.5, 2.8, 5.4, 3.6, h); // timeCave apron
-
-    if (dist > effR - 4.6 && dz > -4.0) {
-      const beachY = 0.3 + rimSlope * 2.5;
-      return { y: Math.max(0.3, quantizeTier(Math.min(Math.max(0.55, h), beachY), 0.38)), surface: 'beach' };
+    // 2. Main Golden Lower Terrace Road (y=10.0m) from Jembatan Roda Gigi (lx=-54, lz=+26) -> Pavilion Plaza -> Stair Foot
+    if (lx >= -58.0 && lx <= -18.0 && lz >= 15.0 && lz <= 30.0) {
+      return { y: 10.0, surface: 'road' };
     }
-    return { y: Math.max(0.6, quantizeTier(h, 0.55)), surface: 'land' };
+    // Classical Time Pavilion Courtyard Shelf (y=10.0m)
+    if (lx >= -47.0 && lx <= -24.0 && lz >= -4.0 && lz <= 15.0) {
+      return { y: 10.0, surface: 'land' };
+    }
+
+    // 3. Winding Two-Flight Hilltop Stairway climbing from Lower Terrace (10.0m) -> Clock Tower Summit Courtyard (32.0m)!
+    // Flight 1 (Front-West ascent northward: lz=+16..-8 across lx=-24..-16, y=10.0->21.0m)
+    if (lx >= -24.5 && lx <= -15.5 && lz >= -8.0 && lz <= 16.0) {
+      const prog = THREE.MathUtils.clamp((16.0 - lz) / 24.0, 0, 1);
+      return { y: Math.min(21.0, quantizeTier(10.0 + prog * 11.0, 0.42)), surface: 'stairs' };
+    }
+    // Mid-Hill Terrace Landing (y=21.0m)
+    if (lx >= -25.0 && lx <= -14.0 && lz >= -16.5 && lz <= -8.0) {
+      return { y: 21.0, surface: 'road' };
+    }
+    // Flight 2 (Upper ridge ascent eastward: lx=-14..+6 across lz=-16..-7.5, y=21.0->32.0m)
+    if (lx >= -14.0 && lx <= 6.0 && lz >= -16.5 && lz <= -7.5) {
+      const prog = THREE.MathUtils.clamp((lx - -14.0) / 20.0, 0, 1);
+      return { y: Math.min(32.0, quantizeTier(21.0 + prog * 11.0, 0.42)), surface: 'stairs' };
+    }
+
+    // 4. Clock Tower Summit Courtyard Plateau (y=32.0m) — Menara Jam Utama (T:26m) rises from 32m -> 58m!
+    if (lx >= -2.0 && lx <= 19.0 && lz >= -26.0 && lz <= -2.0) {
+      const isPlazaFront = lz >= -10.5 && lx <= 14.0;
+      return { y: 32.0, surface: isPlazaFront ? 'road' : 'land' };
+    }
+
+    // 5. Terowongan Kronos (T:14m / L:16m!) Carved Bore Floor & SE Coastal Apron at (lx=+28, lz=+32 -> wx=176, wz=-60)
+    if (lx >= 19.0 && lx <= 37.0 && lz >= 20.0) {
+      if (lz <= 42.0) {
+        return { y: 2.0, surface: 'road' };
+      }
+      const beachT = THREE.MathUtils.clamp((lz - 42.0) / 12.0, 0, 1);
+      return { y: Math.max(0.32, quantizeTier(2.0 - beachT * 1.68, 0.36)), surface: 'beach' };
+    }
+
+    // 6. Sculpted Lush Emerald-Green Terraced Clockwork Hill rising up to 32.0m Summit Massif!
+    let h = 4.6 + hillWave(wx * 0.42, wz * 0.42) * 1.4;
+    // Broad Summit Dome supporting Menara Jam Utama (32m plateau)
+    const summitPeak = Math.exp(-((lx - 7.0) ** 2 / 780 + (lz + 14.0) ** 2 / 640)) * 28.5;
+    // West Terrace Shoulder flanking Pavilion & Jembatan Roda Gigi
+    const westTerrace = Math.exp(-((lx + 38.0) ** 2 / 460 + (lz - 10.0) ** 2 / 420)) * 7.2;
+    // East Clockwork Ridge overlooking Terowongan Kronos & Giant 14m Gears
+    const eastGearRidge = Math.exp(-((lx - 32.0) ** 2 / 520 + (lz - 4.0) ** 2 / 480)) * 18.5;
+    // North Rear Cliff Massif
+    const northBluff = Math.exp(-((lx - 4.0) ** 2 / 900 + (lz + 34.0) ** 2 / 360)) * 20.5;
+    h += summitPeak + westTerrace + eastGearRidge + northBluff;
+
+    // Keep Bridge Landing (94, -66), NPC, Guard Post & Zone Beacon flat at y=10.0m
+    h = padBlend(wx, wz, 94.0, -66.0, 4.5, 8.5, 10.0, h);
+    h = padBlend(wx, wz, 118.0, -72.0, 4.5, 8.5, 10.0, h);
+    h = padBlend(wx, wz, 113.5, -73.5, 3.5, 6.5, 10.0, h);
+    h = padBlend(wx, wz, 117.5, -80.5, 3.5, 6.5, 10.0, h);
+
+    // Sandy coastal rim strips along Front-South / SW / SE edge
+    if (dist > effR - 6.2 && lz > -6.0) {
+      const beachY = 0.32 + rimSlope * 2.2;
+      return { y: Math.max(0.32, quantizeTier(Math.min(Math.max(0.48, h), beachY), 0.36)), surface: 'beach' };
+    }
+    return { y: Math.max(0.75, Math.min(32.0, quantizeTier(h, 0.75))), surface: 'land' };
   }
 
   // gua_portal (cx=20, cz=-174, radius=67.5) — Full 135m Crystal Canyon!
@@ -1170,23 +1215,51 @@ function createToothedGear(
   teeth: number,
   goldMat: THREE.Material,
   darkMat: THREE.Material,
+  disposables?: Array<{ dispose: () => void }>,
 ): THREE.Group {
   const g = new THREE.Group();
-  const rim = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius, thickness, 16), goldMat);
-  rim.rotation.x = Math.PI / 2;
+  // 1. Open Beveled Outer Golden Rim Ring (matching giant spoked clockwork wheels in overview!)
+  const ringGeo = new THREE.TorusGeometry(radius * 0.86, radius * 0.125, 8, Math.max(16, teeth));
+  const rim = new THREE.Mesh(ringGeo, goldMat);
+  rim.scale.set(1, 1, Math.max(0.7, (thickness * 0.55) / (radius * 0.125)));
   rim.castShadow = true;
-  const hub = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.34, radius * 0.34, thickness * 1.4, 12), darkMat);
-  hub.rotation.x = Math.PI / 2;
-  g.add(rim, hub);
 
-  const toothGeo = new THREE.BoxGeometry(radius * 0.32, radius * 0.32, thickness * 0.92);
+  const innerRingGeo = new THREE.TorusGeometry(radius * 0.68, radius * 0.048, 6, 16);
+  const innerRim = new THREE.Mesh(innerRingGeo, darkMat);
+  innerRim.scale.set(1, 1, Math.max(0.65, (thickness * 0.42) / (radius * 0.048)));
+
+  // 2. Central Axle Hub & Bolt Boss
+  const hubGeo = new THREE.CylinderGeometry(radius * 0.24, radius * 0.24, thickness * 1.4, 12);
+  const hub = new THREE.Mesh(hubGeo, darkMat);
+  hub.rotation.x = Math.PI / 2;
+  hub.castShadow = true;
+  const bossGeo = new THREE.CylinderGeometry(radius * 0.14, radius * 0.14, thickness * 1.65, 8);
+  const boss = new THREE.Mesh(bossGeo, goldMat);
+  boss.rotation.x = Math.PI / 2;
+  g.add(rim, innerRim, hub, boss);
+
+  // 3. Radial Brass Spokes (6 spokes across the open wheel center)
+  const spokeCount = radius >= 4.5 ? 6 : 4;
+  const spokeGeo = new THREE.BoxGeometry(radius * 1.62, radius * 0.13, thickness * 0.68);
+  for (let s = 0; s < spokeCount / 2; s++) {
+    const spoke = new THREE.Mesh(spokeGeo, goldMat);
+    spoke.rotation.z = (s / (spokeCount / 2)) * Math.PI;
+    spoke.castShadow = true;
+    g.add(spoke);
+  }
+
+  // 4. Heavy Rectangular Perimeter Gear Teeth
+  const toothGeo = new THREE.BoxGeometry(radius * 0.22, radius * 0.24, thickness * 0.92);
   for (let i = 0; i < teeth; i++) {
     const a = (i / teeth) * Math.PI * 2;
     const t = new THREE.Mesh(toothGeo, goldMat);
-    t.position.set(Math.cos(a) * (radius + radius * 0.13), Math.sin(a) * (radius + radius * 0.13), 0);
+    t.position.set(Math.cos(a) * (radius * 1.01), Math.sin(a) * (radius * 1.01), 0);
     t.rotation.z = a;
     t.castShadow = true;
     g.add(t);
+  }
+  if (disposables) {
+    disposables.push(ringGeo, innerRingGeo, hubGeo, bossGeo, spokeGeo, toothGeo);
   }
   return g;
 }
@@ -1647,12 +1720,12 @@ export function createArchipelagoWorld(
       foamColors: [0x38bdf8, 0xbae6fd],
     },
     menara_waktu: {
-      lowColors: [0x84cc16, 0x65a30d, 0xa3e635],
-      highColors: [0xd97706, 0xb45309, 0x84cc16, 0x65a30d],
-      pathColors: [0xb88a4c, 0x94a3b8],
-      stairColors: [0xd97706, 0xb45309],
-      beachColors: [0xfde68a, 0x94a3b8],
-      cliffColors: [0x78543a, 0x57534e, 0x65a30d],
+      lowColors: [0x65a30d, 0x84cc16, 0x4d7c0f],
+      highColors: [0x65a30d, 0x84cc16, 0x4d7c0f, 0x71bd3d],
+      pathColors: [0xd4a373, 0xeab308],
+      stairColors: [0xd4a373, 0xb88a4c],
+      beachColors: [0xfde68a, 0xfcd34d],
+      cliffColors: [0x78543a, 0x5c3a1e, 0x64748b],
       foamColors: [0x38bdf8, 0xbae6fd],
     },
     gua_portal: {
@@ -2012,7 +2085,8 @@ export function createArchipelagoWorld(
           const perpX = Math.cos(yaw) * (br.halfWidth - 0.16);
           const perpZ = -Math.sin(yaw) * (br.halfWidth - 0.16);
           const railColor = br.style === 'stone' ? 0x64748b : 0x78350f;
-          const railH = br.style === 'rope' ? 1.1 : isRailBridge && s % 6 === 0 ? 3.2 : 0.78;
+          const isGearBridge = br.id === 'bridge_menara';
+          const railH = br.style === 'rope' || isGearBridge ? 1.15 : isRailBridge && s % 6 === 0 ? 3.2 : 0.78;
           [-1, 1].forEach((side) => {
             cliffBlocks.push({
               x: mx + perpX * side,
@@ -2023,6 +2097,17 @@ export function createArchipelagoWorld(
               sz: isRailBridge && s % 6 === 0 ? 0.52 : 0.28,
               color: railColor,
             });
+            if (isGearBridge) {
+              cliffBlocks.push({
+                x: mx + perpX * side,
+                y: my + railH + 0.08,
+                z: mz + perpZ * side,
+                sx: 0.24,
+                sy: 0.2,
+                sz: stepLen * 1.95,
+                color: 0xb88a4c,
+              });
+            }
           });
           if (isRailBridge && s % 6 === 0) {
             // Stone overhead cross-lintel frame matching the bottom-left bridge in Gua Portal overview
@@ -3288,76 +3373,275 @@ export function createArchipelagoWorld(
   }
 
   // ============================================================================
-  // 5. MENARA WAKTU ISLAND (+66, z=-42) — Spiraling Clock Peak + Gold Gears
+  // ============================================================================
+  // 5. MENARA WAKTU ISLAND (cx=148, cz=-92, Panjang 130m!)
+  //    - Tinggi Puncak Menara: 58m (32m Hill Summit + 26m Menara Jam Utama!)
+  //    - Menara Jam Utama: T: 26m / L: 12m (4 giant clock dials + golden spire)
+  //    - Roda Gigi Raksasa: Diameter 14m (interlocking open-spoked golden gears)
+  //    - Terowongan Kronos: T: 14m / L: 16m (vaulted stone cliff tunnel on SE flank)
+  //    - Jembatan Roda Gigi: Lebar 5m + Twin Bridgehead Gears + Time Pavilion
   // ============================================================================
   {
-    const towerY = getArchipelagoGroundY(70.5, -50.0);
+    const mCx = 148.0;
+    const mCz = -92.0;
+    const goldGearMat = palette.getMat(0xfacc15, 'metal');
+    const goldTrimMat = palette.getMat(0xeab308, 'metal');
+    const darkGearMat = palette.getMat(0x78350f, 'metal');
+    const towerStoneL = palette.getMat(0xcbd5e1, 'matte');
+    const towerStoneM = palette.getMat(0x94a3b8, 'matte');
+    const towerStoneD = palette.getMat(0x64748b, 'matte');
+
+    // 5a. Menara Jam Utama (L: 12m x 12m footprint, T: 26m height -> 32m + 26m = 58.0m Summit!)
+    const towerX = mCx + 8.0; // 156.0
+    const towerZ = mCz - 16.0; // -108.0
+    const towerY = 32.0; // Exact 32.0m Summit Courtyard
     const clockTower = new THREE.Group();
-    clockTower.position.set(70.5, towerY, -50.0);
-    const ctBase = new THREE.Mesh(new THREE.BoxGeometry(6.4, 8.8, 6.4), palette.getMat(0xd97706, 'matte'));
-    ctBase.position.y = 4.4;
-    ctBase.castShadow = true;
-    const ctBelfry = new THREE.Mesh(new THREE.BoxGeometry(7.2, 4.8, 7.2), palette.getMat(0xf59e0b, 'matte'));
-    ctBelfry.position.y = 11.1;
+    clockTower.position.set(towerX, towerY, towerZ);
+
+    // Base Ashlar Plinth & Vaulted Ground Portals (y = 0..7.5m, 12.0m x 12.0m)
+    const ctBaseStep = new THREE.Mesh(new THREE.BoxGeometry(12.0, 1.2, 12.0), towerStoneM);
+    ctBaseStep.position.y = 0.6;
+    ctBaseStep.castShadow = true;
+    const ctGroundCore = new THREE.Mesh(new THREE.BoxGeometry(10.8, 6.4, 10.8), towerStoneL);
+    ctGroundCore.position.y = 4.4;
+    ctGroundCore.castShadow = true;
+    clockTower.add(ctBaseStep, ctGroundCore);
+
+    // 4 Golden Corner Pilasters rising up the main tower shaft (y = 1.2..20.4m)
+    [[-5.2, -5.2], [5.2, -5.2], [-5.2, 5.2], [5.2, 5.2]].forEach(([px, pz]) => {
+      const pilaster = new THREE.Mesh(new THREE.BoxGeometry(1.4, 19.2, 1.4), goldTrimMat);
+      pilaster.position.set(px, 10.8, pz);
+      pilaster.castShadow = true;
+      clockTower.add(pilaster);
+    });
+
+    // Arched Ground-Floor Doorway Recesses on all 4 cardinal sides (gold frame + dark interior)
+    [
+      [0, 0, 5.45, 0],
+      [0, 0, -5.45, Math.PI],
+      [5.45, 0, 0, Math.PI / 2],
+      [-5.45, 0, 0, -Math.PI / 2],
+    ].forEach(([dx, , dz, ry]) => {
+      const doorGrp = new THREE.Group();
+      doorGrp.position.set(dx, 0, dz);
+      doorGrp.rotation.y = ry;
+      const archVoid = new THREE.Mesh(new THREE.BoxGeometry(3.2, 4.4, 0.55), palette.getMat(0x0f172a, 'matte'));
+      archVoid.position.set(0, 2.8, 0);
+      const archGoldL = new THREE.Mesh(new THREE.BoxGeometry(0.65, 4.8, 0.72), goldTrimMat);
+      archGoldL.position.set(-1.9, 3.0, 0);
+      const archGoldR = archGoldL.clone();
+      archGoldR.position.set(1.9, 3.0, 0);
+      const archGoldTop = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.8, 0.78), goldTrimMat);
+      archGoldTop.position.set(0, 5.3, 0);
+      doorGrp.add(archVoid, archGoldL, archGoldR, archGoldTop);
+      clockTower.add(doorGrp);
+    });
+
+    // Middle Shaft + Gold Belt Cornices (y = 7.6..13.8m)
+    const ctBelt1 = new THREE.Mesh(new THREE.BoxGeometry(11.8, 0.75, 11.8), goldTrimMat);
+    ctBelt1.position.y = 7.8;
+    const ctShaft = new THREE.Mesh(new THREE.BoxGeometry(10.0, 5.8, 10.0), towerStoneM);
+    ctShaft.position.y = 11.0;
+    ctShaft.castShadow = true;
+    // Recessed tall gothic window slits on each middle face
+    [
+      [0, 11.0, 5.08, 0],
+      [0, 11.0, -5.08, Math.PI],
+      [5.08, 11.0, 0, Math.PI / 2],
+      [-5.08, 11.0, 0, -Math.PI / 2],
+    ].forEach(([wx, wy, wz, ry]) => {
+      const slit = new THREE.Mesh(new THREE.BoxGeometry(1.8, 3.6, 0.28), palette.getMat(0x1e293b, 'matte'));
+      slit.position.set(wx, wy, wz);
+      slit.rotation.y = ry;
+      clockTower.add(slit);
+    });
+
+    // Clock Belfry Chamber (y = 13.9..20.5m, 10.8m x 10.8m) + Upper Golden Parapet Cornice
+    const ctBelt2 = new THREE.Mesh(new THREE.BoxGeometry(11.6, 0.75, 11.6), goldTrimMat);
+    ctBelt2.position.y = 14.0;
+    const ctBelfry = new THREE.Mesh(new THREE.BoxGeometry(10.8, 6.4, 10.8), towerStoneL);
+    ctBelfry.position.y = 17.3;
     ctBelfry.castShadow = true;
-    const ctSpire = new THREE.Mesh(new THREE.ConeGeometry(4.8, 6.0, 4), palette.getMat(0x78350f, 'matte'));
-    ctSpire.position.y = 16.5;
-    ctSpire.rotation.y = Math.PI / 4;
-    ctSpire.castShadow = true;
-    clockTower.add(ctBase, ctBelfry, ctSpire);
+    const ctRoofCornice = new THREE.Mesh(new THREE.BoxGeometry(11.9, 0.85, 11.9), goldTrimMat);
+    ctRoofCornice.position.y = 20.6;
+    clockTower.add(ctBelt1, ctShaft, ctBelt2, ctBelfry, ctRoofCornice);
+
+    // 4 Giant Circular Cream Clock Dials (diameter 5.4m) with Golden Bezels, Tick Marks & Animated Hands!
+    const dialMat = palette.createSurfaceMat({
+      color: 0xfef9c3,
+      emissive: 0xfde047,
+      emissiveIntensity: 0.34,
+      roughness: 0.28,
+    });
+    disposables.push(dialMat);
+    const dialGeo = new THREE.CylinderGeometry(2.55, 2.55, 0.28, 20);
+    const bezelGeo = new THREE.TorusGeometry(2.65, 0.32, 8, 20);
+    const tickGeo = new THREE.BoxGeometry(0.16, 0.38, 0.14);
+    const handLongGeo = new THREE.BoxGeometry(0.24, 1.85, 0.22);
+    const handShortGeo = new THREE.BoxGeometry(0.26, 1.15, 0.22);
+    disposables.push(dialGeo, bezelGeo, tickGeo, handLongGeo, handShortGeo);
 
     [
-      [0, 11.1, 3.65, 0],
-      [-3.65, 11.1, 0, -Math.PI / 2],
-      [3.65, 11.1, 0, Math.PI / 2],
-      [0, 11.1, -3.65, Math.PI],
+      [0, 17.3, 5.52, 0],
+      [-5.52, 17.3, 0, -Math.PI / 2],
+      [5.52, 17.3, 0, Math.PI / 2],
+      [0, 17.3, -5.52, Math.PI],
     ].forEach(([dx, dy, dz, ry]) => {
-      const face = new THREE.Mesh(
-        new THREE.BoxGeometry(3.6, 3.6, 0.26),
-        palette.createSurfaceMat({ color: 0xfef3c7, emissive: 0xfde047, emissiveIntensity: 0.35 }),
-      );
-      face.position.set(dx, dy, dz);
-      face.rotation.y = ry;
+      const faceGrp = new THREE.Group();
+      faceGrp.position.set(dx, dy, dz);
+      faceGrp.rotation.y = ry;
+      const dial = new THREE.Mesh(dialGeo, dialMat);
+      dial.rotation.x = Math.PI / 2;
+      const bezel = new THREE.Mesh(bezelGeo, goldGearMat);
+      bezel.position.z = 0.08;
+      faceGrp.add(dial, bezel);
+      for (let t = 0; t < 12; t++) {
+        const a = (t / 12) * Math.PI * 2;
+        const tick = new THREE.Mesh(tickGeo, darkGearMat);
+        tick.position.set(Math.sin(a) * 2.08, Math.cos(a) * 2.08, 0.16);
+        tick.rotation.z = -a;
+        faceGrp.add(tick);
+      }
       const handGroup = new THREE.Group();
-      handGroup.position.set(dx, dy, dz);
-      handGroup.rotation.y = ry;
-      const bigHand = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.4, 0.36), palette.getMat(0x1e293b, 'matte'));
-      bigHand.position.set(0, 0.5, 0.08);
-      handGroup.add(bigHand);
-      clockTower.add(face, handGroup);
+      handGroup.position.set(0, 0, 0.22);
+      const minuteHand = new THREE.Mesh(handLongGeo, palette.getMat(0x1e293b, 'matte'));
+      minuteHand.position.set(0, 0.72, 0);
+      const hourHand = new THREE.Mesh(handShortGeo, palette.getMat(0x0f172a, 'matte'));
+      hourHand.position.set(0.45, 0.22, 0.06);
+      hourHand.rotation.z = -Math.PI * 0.35;
+      handGroup.add(minuteHand, hourHand);
+      faceGrp.add(handGroup);
+      clockTower.add(faceGrp);
       clockHands.push(handGroup);
     });
-    group.add(clockTower);
-    obstacles.push({ x: 70.5, z: -50.0, halfW: 3.6, halfD: 3.6 });
 
-    const goldGearMat = palette.getMat(0xfacc15, 'metal');
-    const darkGearMat = palette.getMat(0x92400e, 'metal');
+    // Stepped Stone & Golden Spire reaching exact T = 26.0m above plateau (58.0m world peak!)
     [
-      { x: 63.0, y: 12.8, z: -45.5, ry: 0.45, r: 3.2, teeth: 10, spd: 0.65 },
-      { x: 68.5, y: 11.4, z: -43.5, ry: 0.15, r: 2.5, teeth: 8, spd: -0.82 },
-      { x: 75.5, y: 13.0, z: -44.2, ry: -0.35, r: 2.8, teeth: 9, spd: 0.72 },
-      { x: 60.5, y: 9.2, z: -48.5, ry: 0.9, r: 2.2, teeth: 8, spd: -0.95 },
-      { x: 77.5, y: 9.6, z: -46.8, ry: -0.5, r: 2.3, teeth: 8, spd: -0.9 },
-      { x: 66.8, y: 8.2, z: -41.5, ry: 0.1, r: 1.9, teeth: 8, spd: 1.0 },
+      [8.6, 1.35, 21.7, towerStoneD],
+      [6.4, 1.35, 23.0, goldTrimMat],
+      [4.2, 1.3, 24.25, towerStoneD],
+      [1.8, 0.9, 25.2, goldGearMat],
+    ].forEach(([w, h, y, mat]) => {
+      const tier = new THREE.Mesh(new THREE.BoxGeometry(w as number, h as number, w as number), mat as THREE.Material);
+      tier.position.y = y as number;
+      tier.castShadow = true;
+      clockTower.add(tier);
+    });
+    const spireNeedle = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.55, 1.6, 6), goldGearMat);
+    spireNeedle.position.y = 25.2; // tip reaches 26.0m local -> 58.0m exact!
+    clockTower.add(spireNeedle);
+
+    group.add(clockTower);
+    obstacles.push({ x: towerX, z: towerZ, halfW: 6.1, halfD: 6.1 });
+
+    // 5b. Roda Gigi Raksasa (Diameter 14m -> r=6.4..6.8!) + Counter-Rotating Clockwork Wheels
+    [
+      // Giant 14m East Hillside Gear towering beside Menara Jam Utama
+      { x: mCx + 24.0, y: 24.5, z: mCz - 10.0, ry: -0.32, r: 6.4, teeth: 14, spd: 0.42 },
+      // Giant 14m Terowongan Kronos Crown Arch Gear framing tunnel roof
+      { x: mCx + 28.0, y: 12.8, z: mCz + 28.0, ry: 0.28, r: 6.4, teeth: 14, spd: -0.38 },
+      // Giant 14m SE Cliff Gear flanking Terowongan Kronos left shoulder
+      { x: mCx + 15.5, y: 11.8, z: mCz + 23.0, ry: 0.45, r: 6.3, teeth: 14, spd: 0.44 },
+      // Giant 14m NW Rear Cliff Gear visible behind left ridge
+      { x: mCx - 20.0, y: 23.5, z: mCz - 18.0, ry: 0.52, r: 6.2, teeth: 14, spd: -0.4 },
+      // Interlocking Secondary Gears (Diameter 8m - 10m)
+      { x: mCx + 27.0, y: 16.5, z: mCz + 6.0, ry: -0.15, r: 4.2, teeth: 10, spd: -0.62 },
+      { x: mCx + 18.0, y: 17.8, z: mCz + 12.0, ry: 0.22, r: 3.6, teeth: 10, spd: 0.72 },
+      { x: mCx - 12.0, y: 26.5, z: mCz - 24.0, ry: 0.12, r: 4.5, teeth: 10, spd: 0.56 },
+      // Twin Bridgehead Gears (Diameter 7.6m) flanking Jembatan Roda Gigi: Lebar 5m at (94, -66)!
+      { x: 91.5, y: 11.4, z: -61.5, ry: 0.94, r: 3.6, teeth: 10, spd: 0.65 },
+      { x: 96.5, y: 11.4, z: -70.5, ry: 0.94, r: 3.6, teeth: 10, spd: -0.65 },
     ].forEach((g) => {
-      const mesh = createToothedGear(g.r, 0.62, g.teeth, goldGearMat, darkGearMat);
+      const mesh = createToothedGear(g.r, 0.95, g.teeth, goldGearMat, darkGearMat, disposables);
       mesh.position.set(g.x, g.y, g.z);
       mesh.rotation.y = g.ry;
       group.add(mesh);
       gears.push({ mesh, speed: g.spd });
     });
 
-    const archY = getArchipelagoGroundY(72.5, -34.5);
-    const timeArchL = new THREE.Mesh(new THREE.BoxGeometry(1.4, 3.8, 1.5), cobbleMat);
-    timeArchL.position.set(70.4, archY + 1.9, -34.5);
-    const timeArchR = timeArchL.clone();
-    timeArchR.position.set(74.6, archY + 1.9, -34.5);
-    const timeArchTop = new THREE.Mesh(new THREE.BoxGeometry(6.2, 1.5, 1.8), cobbleMat);
-    timeArchTop.position.set(72.5, archY + 4.4, -34.5);
-    const timeCaveDark = new THREE.Mesh(new THREE.BoxGeometry(3.4, 3.5, 2.4), palette.getMat(0x090d16, 'matte'));
-    timeCaveDark.position.set(72.5, archY + 1.75, -36.0);
-    group.add(timeArchL, timeArchR, timeArchTop, timeCaveDark);
-    obstacles.push({ x: 72.5, z: -36.2, halfW: 2.8, halfD: 2.0 });
+    // Twin Heavy Timber Gate Columns framing Jembatan Roda Gigi Entrance at (94, -66)
+    [
+      [91.8, -62.5],
+      [96.2, -69.5],
+    ].forEach(([gx, gz]) => {
+      cliffBlocks.push({ x: gx, y: 9.8, z: gz, sx: 1.4, sy: 6.8, sz: 1.4, color: 0x5c3a1e });
+      obstacles.push({ x: gx, z: gz, halfW: 0.85, halfD: 0.85 });
+    });
+
+    // 5c. Classical Stone & Gold Time Pavilion ("Bangunan Penjaga Waktu") on West Terrace (108, 10.0, -90)
+    const pavX = mCx - 40.0; // 108.0
+    const pavZ = mCz + 2.0; // -90.0
+    const pavY = 10.0;
+    cliffBlocks.push({ x: pavX, y: pavY + 0.45, z: pavZ, sx: 9.2, sy: 0.9, sz: 9.2, color: 0x94a3b8 });
+    cliffBlocks.push({ x: pavX, y: pavY + 3.2, z: pavZ, sx: 7.6, sy: 4.8, sz: 7.6, color: 0xcbd5e1 });
+    cliffBlocks.push({ x: pavX, y: pavY + 5.8, z: pavZ, sx: 8.8, sy: 0.8, sz: 8.8, color: 0xeab308 });
+    cliffBlocks.push({ x: pavX, y: pavY + 6.9, z: pavZ, sx: 5.6, sy: 1.4, sz: 5.6, color: 0x64748b });
+    cliffBlocks.push({ x: pavX, y: pavY + 7.9, z: pavZ, sx: 3.2, sy: 0.9, sz: 3.2, color: 0xfacc15 });
+    const pavDoor = new THREE.Mesh(new THREE.BoxGeometry(2.4, 3.2, 0.45), palette.getMat(0x1e293b, 'matte'));
+    pavDoor.position.set(pavX + 3.9, pavY + 2.5, pavZ + 1.5);
+    pavDoor.rotation.y = Math.PI / 2;
+    group.add(pavDoor);
+    obstacles.push({ x: pavX, z: pavZ, halfW: 4.7, halfD: 4.7 });
+
+    // Human-proportional wooden mining/clockwork crates near Pavilion & Bridge Plaza
+    [
+      [mCx - 36.0, mCz + 11.0, 1.15],
+      [mCx - 34.4, mCz + 12.2, 0.95],
+      [mCx - 26.0, mCz + 25.0, 1.2],
+    ].forEach(([bx, bz, bs]) => {
+      const by = getArchipelagoGroundY(bx, bz);
+      cliffBlocks.push({ x: bx, y: by + bs * 0.5, z: bz, sx: bs, sy: bs, sz: bs, color: 0xb45309 });
+      obstacles.push({ x: bx, z: bz, halfW: bs * 0.55, halfD: bs * 0.55 });
+    });
+
+    // 5d. Terowongan Kronos (T: 14m / L: 16m!) on South-East Cliff Face (wx=176, wz=-60 -> lx=+28, lz=+32)
+    //     Clear 16m wide x 14m tall vaulted stone tunnel opening with grassy cliff overburden above!
+    const tkX = mCx + 28.0; // 176.0
+    const tkZ = mCz + 32.0; // -60.0
+    const tkFloorY = 2.0;
+    const tkYaw = 0.28;
+    const cosK = Math.cos(tkYaw);
+    const sinK = Math.sin(tkYaw);
+    const pushTunnelBox = (lx: number, ly: number, lz: number, sx: number, sy: number, sz: number, color: number) => {
+      const wx = tkX + lx * cosK + lz * sinK;
+      const wz = tkZ - lx * sinK + lz * cosK;
+      cliffBlocks.push({ x: wx, y: tkFloorY + ly, z: wz, sx, sy, sz, color });
+    };
+    const tkStoneD = 0x475569;
+    const tkStoneM = 0x64748b;
+    const tkStoneL = 0x94a3b8;
+    // Twin massive stone vault side piers flanking clear 16m bore (lx = ±9.6 -> 16.0m inside clearance!)
+    [-9.6, 9.6].forEach((px) => {
+      pushTunnelBox(px, 5.5, 0, 3.2, 11.0, 11.5, tkStoneM);
+      pushTunnelBox(px + (px < 0 ? 1.0 : -1.0), 10.6, 0.5, 2.2, 2.4, 11.0, tkStoneL);
+    });
+    // Stepped Vaulted Stone Arch Crown rising to T = 14.0m inside clearance!
+    pushTunnelBox(-6.6, 12.6, 0.4, 4.6, 2.4, 11.5, tkStoneL);
+    pushTunnelBox(6.6, 12.6, 0.4, 4.6, 2.4, 11.5, tkStoneL);
+    pushTunnelBox(-3.2, 14.2, 0.4, 4.4, 2.2, 11.5, tkStoneM);
+    pushTunnelBox(3.2, 14.2, 0.4, 4.4, 2.2, 11.5, tkStoneM);
+    pushTunnelBox(0, 15.2, 0.4, 6.8, 2.2, 12.0, tkStoneD);
+    // Natural emerald grass & cliff overburden resting atop Terowongan Kronos (y = 18m..23m)
+    cliffBlocks.push({ x: tkX - 1.5 * sinK, y: tkFloorY + 17.5, z: tkZ - 1.5 * cosK, sx: 20.0, sy: 3.4, sz: 12.5, color: 0x78543a });
+    walkableTopBlocks.push({ x: tkX - 1.5 * sinK, y: tkFloorY + 19.6, z: tkZ - 1.5 * cosK, sx: 20.0, sy: 1.0, sz: 12.5, color: 0x65a30d });
+
+    // Deep Dark Interior & Glowing Golden Time-Cave Floor inside Terowongan Kronos
+    const tkCavernDark = new THREE.Mesh(
+      new THREE.BoxGeometry(15.2, 12.4, 10.5),
+      palette.getMat(0x090d16, 'matte'),
+    );
+    tkCavernDark.position.set(tkX - 4.8 * sinK, tkFloorY + 6.2, tkZ - 4.8 * cosK);
+    tkCavernDark.rotation.y = tkYaw;
+    const tkGoldGlow = new THREE.Mesh(new THREE.BoxGeometry(10.5, 0.35, 6.2), crystalMat);
+    tkGoldGlow.position.set(tkX - 3.2 * sinK, tkFloorY + 0.14, tkZ - 3.2 * cosK);
+    tkGoldGlow.rotation.y = tkYaw;
+    group.add(tkCavernDark, tkGoldGlow);
+    // Colliders on Left/Right Vault Piers & Deep Back Wall (16m entrance remains completely open!)
+    obstacles.push(
+      { x: tkX - 9.6 * cosK, z: tkZ + 9.6 * sinK, halfW: 2.2, halfD: 4.5 },
+      { x: tkX + 9.6 * cosK, z: tkZ - 9.6 * sinK, halfW: 2.2, halfD: 4.5 },
+      { x: tkX - 6.5 * sinK, z: tkZ - 6.5 * cosK, halfW: 7.0, halfD: 2.5 },
+    );
   }
 
   // ============================================================================
@@ -3784,7 +4068,7 @@ export function createArchipelagoWorld(
     depthWrite: false,
   });
   const skyBridge = new THREE.Mesh(skyBridgeGeo, skyBridgeMat);
-  skyBridge.position.set(90, 18.5, -72);
+  skyBridge.position.set(192, 26.0, -158);
   skyBridge.rotation.order = 'YXZ';
   skyBridge.rotation.y = -0.68;
   skyBridge.rotation.x = 0.42;
@@ -3800,7 +4084,7 @@ export function createArchipelagoWorld(
     [-226, 4.5, -182],
     [-58, 4.0, -248],
     [98, 4.2, -242],
-    [158, 4.0, -16],
+    [226, 4.2, -32],
   ];
   outerCloudSpots.forEach(([ox, oy, oz]) => {
     cliffBlocks.push(
