@@ -8,6 +8,7 @@ import {
   sampleArchipelagoTerrain,
 } from './archipelagoWorld';
 import { MaterialPalette } from './materials';
+import { buildDiverseNpcRig, NPC_ARCHETYPES, NpcArchetypeId } from './diverseNpcs';
 
 export interface VillageObstacle {
   x: number;
@@ -42,7 +43,6 @@ function computeVillageBlink(elapsed: number, phase = 0): number {
 interface VillagerActor {
   root: THREE.Group;
   bodyPivot: THREE.Group;
-  body: THREE.Group;
   headGroup: THREE.Group;
   leftEye: THREE.Mesh;
   rightEye: THREE.Mesh;
@@ -50,7 +50,14 @@ interface VillagerActor {
   rightLeg: THREE.Group;
   leftArm: THREE.Group;
   rightArm: THREE.Group;
-  style: 'farmer' | 'librarian' | 'cleric' | 'fletcher' | 'shepherd' | 'trader';
+  propSpin?: THREE.Object3D;
+  archetype: NpcArchetypeId;
+  baseRightArmX: number;
+  baseLeftArmX: number;
+  baseRightArmZ: number;
+  baseLeftArmZ: number;
+  baseScaleXZ: number;
+  baseScaleY: number;
   waypoints: Array<[number, number]>;
   homeDoor: [number, number];
   isInsideHouse: boolean;
@@ -569,153 +576,34 @@ function createLanternPost(palette: MaterialPalette, x: number, z: number): THRE
 
 function createVillagerMesh(
   palette: MaterialPalette,
-  style: 'farmer' | 'librarian' | 'cleric' | 'fletcher' | 'shepherd' | 'trader',
+  archetype: NpcArchetypeId,
 ): VillagerActor {
-  const root = new THREE.Group();
-  const bodyPivot = new THREE.Group();
-  const body = new THREE.Group();
-  bodyPivot.add(body);
-  root.add(bodyPivot);
-
-  const shadow = new THREE.Mesh(new THREE.PlaneGeometry(1.7, 1.7), palette.contactShadowMat);
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = 0.03;
-  root.add(shadow);
-
-  const robeHex =
-    style === 'trader'
-      ? 0x1d4ed8
-      : style === 'librarian'
-      ? 0xe2e8f0
-      : style === 'cleric'
-      ? 0x881337
-      : style === 'shepherd'
-      ? 0x15803d
-      : style === 'fletcher'
-      ? 0x78350f
-      : 0x92400e;
-  const robeMat = palette.getMat(robeHex, 'matte');
-  const skinMat = palette.getMat(0xe7b48b, 'matte');
-  const darkMat = palette.getMat(0x1e293b, 'matte');
-  const eyeMat = palette.getMat(0x16a34a, 'gloss');
-
-  const makeLeg = (lx: number): THREE.Group => {
-    const leg = new THREE.Group();
-    leg.position.set(lx, 0.9, 0);
-    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.56, 0.34), darkMat);
-    upper.position.y = -0.28;
-    upper.castShadow = true;
-    const shoe = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.32, 0.42), palette.getMat(0x451a03, 'matte'));
-    shoe.position.set(0, -0.74, 0.04);
-    shoe.castShadow = true;
-    leg.add(upper, shoe);
-    return leg;
-  };
-  const leftLeg = makeLeg(-0.21);
-  const rightLeg = makeLeg(0.21);
-  body.add(leftLeg, rightLeg);
-
-  const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.62, 0.56), robeMat);
-  skirt.position.y = 0.78;
-  skirt.castShadow = true;
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.94, 0.58), robeMat);
-  torso.position.y = 1.56;
-  torso.castShadow = true;
-  body.add(skirt, torso);
-
-  if (style === 'trader') {
-    const trim = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.18, 0.6), palette.getMat(0xfacc15, 'metal'));
-    trim.position.y = 1.45;
-    body.add(trim);
-  } else if (style === 'farmer') {
-    const apron = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.96, 0.1), palette.getMat(0xb45309, 'matte'));
-    apron.position.set(0, 1.24, 0.31);
-    body.add(apron);
-  }
-
-  // Full Jointed Arms + Forearms + Visible Hands (no cut-off stubby bar!)
-  const makeArm = (ax: number): THREE.Group => {
-    const arm = new THREE.Group();
-    arm.position.set(ax, 1.94, 0);
-    const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.42, 0.32), robeMat);
-    sleeve.position.y = -0.18;
-    sleeve.castShadow = true;
-    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.3, 0.28), robeMat);
-    forearm.position.y = -0.46;
-    forearm.castShadow = true;
-    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.24, 0.26), skinMat);
-    hand.position.y = -0.68;
-    hand.castShadow = true;
-    arm.add(sleeve, forearm, hand);
-    return arm;
-  };
-  const leftArm = makeArm(-0.59);
-  const rightArm = makeArm(0.59);
-  if (style === 'farmer') {
-    const basket = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.38, 0.46), palette.getPixelMat('hay'));
-    basket.position.set(0, 1.42, 0.56);
-    basket.castShadow = true;
-    body.add(basket);
-    leftArm.rotation.set(-0.82, 0, -0.2);
-    rightArm.rotation.set(-0.82, 0, 0.2);
-  } else if (style === 'trader') {
-    const satchel = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.34, 0.36), palette.getMat(0x92400e, 'matte'));
-    satchel.position.set(0, -0.64, 0.14);
-    rightArm.add(satchel);
-  }
-  body.add(leftArm, rightArm);
-
-  // Classic Villager Head Group pivoted cleanly at neck + Unibrow + Nose
-  const headGroup = new THREE.Group();
-  headGroup.position.set(0, 2.08, 0);
-  body.add(headGroup);
-
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.88, 0.74), skinMat);
-  head.position.y = 0.46;
-  head.castShadow = true;
-  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.32, 0.24), palette.getMat(0xd69a6c, 'matte'));
-  nose.position.set(0, 0.28, 0.44);
-  const brow = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.09, 0.06), darkMat);
-  brow.position.set(0, 0.56, 0.38);
-  const eL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.06), eyeMat);
-  eL.position.set(-0.18, 0.46, 0.38);
-  const eR = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.06), eyeMat);
-  eR.position.set(0.18, 0.46, 0.38);
-  headGroup.add(head, nose, brow, eL, eR);
-
-  if (style === 'farmer') {
-    const brim = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.1, 1.18), palette.getPixelMat('hay'));
-    brim.position.y = 0.84;
-    const crown = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.28, 0.76), palette.getPixelMat('hay'));
-    crown.position.y = 1.0;
-    headGroup.add(brim, crown);
-  } else if (style === 'trader') {
-    const hood = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.42, 0.84), palette.getMat(0x1e40af, 'matte'));
-    hood.position.y = 0.84;
-    const goldBand = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.12, 0.86), palette.getMat(0xfacc15, 'metal'));
-    goldBand.position.y = 0.7;
-    headGroup.add(hood, goldBand);
-  }
-
+  const rig = buildDiverseNpcRig(archetype, palette, true);
   return {
-    root,
-    bodyPivot,
-    body,
-    headGroup,
-    leftEye: eL,
-    rightEye: eR,
-    leftLeg,
-    rightLeg,
-    leftArm,
-    rightArm,
-    style,
+    root: rig.root,
+    bodyPivot: rig.bodyPivot,
+    headGroup: rig.headGroup,
+    leftEye: rig.leftEye,
+    rightEye: rig.rightEye,
+    leftLeg: rig.leftLeg,
+    rightLeg: rig.rightLeg,
+    leftArm: rig.leftArm,
+    rightArm: rig.rightArm,
+    propSpin: rig.propSpin,
+    archetype,
+    baseRightArmX: rig.baseRightArmX,
+    baseLeftArmX: rig.baseLeftArmX,
+    baseRightArmZ: rig.baseRightArmZ,
+    baseLeftArmZ: rig.baseLeftArmZ,
+    baseScaleXZ: rig.baseScaleXZ,
+    baseScaleY: rig.baseScaleY,
     waypoints: [],
     wpIdx: 0,
     x: 0,
     z: 0,
     yaw: 0,
     pauseTimer: 0,
-    speed: 2.1,
+    speed: 1.9,
     walkPhase: Math.random() * Math.PI * 2,
     stuckTimer: 0,
     avoidSign: Math.random() < 0.5 ? 1 : -1,
@@ -1151,76 +1039,97 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     obstacles.push({ x: lx, z: lz, halfW: 0.45, halfD: 0.45 });
   });
 
-  // 4. Living Village Society across Islands: 5 Desa Sapaan Villagers + Pasar Rasa Trader & Llamas + 2 Iron Golems
-  const villagerPlans: Array<{
-    style: 'farmer' | 'librarian' | 'cleric' | 'fletcher' | 'shepherd';
+  // 4. All 14 Remaining Diverse World Citizens (completing all 20 NPCs across every biome!)
+  // Outdoor Blacksmith Iron Anvil in Central Hub (-18.5, -7.5)
+  const anvilGroup = new THREE.Group();
+  const anvilY = getArchipelagoGroundY(-18.5, -7.5);
+  const ironAnvilMat = palette.getMat(0x334155, 'metal');
+  const anvilBase = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.32, 0.8), ironAnvilMat);
+  anvilBase.position.y = 0.16;
+  const anvilWaist = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.38, 0.46), ironAnvilMat);
+  anvilWaist.position.y = 0.5;
+  const anvilTop = new THREE.Mesh(new THREE.BoxGeometry(1.42, 0.34, 0.72), ironAnvilMat);
+  anvilTop.position.y = 0.84;
+  anvilTop.castShadow = true;
+  anvilGroup.add(anvilBase, anvilWaist, anvilTop);
+  anvilGroup.position.set(-18.5, anvilY, -7.5);
+  group.add(anvilGroup);
+  obstacles.push({ x: -18.5, z: -7.5, halfW: 0.85, halfD: 0.65 });
+
+  // Outdoor Satay Grill Cart in Pasar Rasa (-85.2, 51.0)
+  const grillGroup = new THREE.Group();
+  const grillY = getArchipelagoGroundY(-85.2, 51.0);
+  const grillLegMat = palette.getMat(0x475569, 'metal');
+  const grillTable = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.88, 1.55), palette.getMat(0x78350f, 'matte'));
+  grillTable.position.y = 0.44;
+  const grillTray = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.18, 1.42), grillLegMat);
+  grillTray.position.y = 0.96;
+  const embers = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.08, 1.25), palette.getMat(0xf97316, 'emissive'));
+  embers.position.y = 1.06;
+  grillGroup.add(grillTable, grillTray, embers);
+  grillGroup.position.set(-85.2, grillY, 51.0);
+  group.add(grillGroup);
+  obstacles.push({ x: -85.2, z: 51.0, halfW: 0.7, halfD: 0.95 });
+
+  const citizenPlans: Array<{
+    archetype: NpcArchetypeId;
     waypoints: Array<[number, number]>;
     homeDoor: [number, number];
     speed: number;
   }> = [
-    { style: 'farmer', waypoints: [[0.5, 122], [-3.8, 118], [-3.5, 108], [4.0, 114]], homeDoor: [-13.5, 90.0], speed: 1.9 },
-    { style: 'librarian', waypoints: [[-9.5, 116], [-3.5, 115], [-2.5, 124], [-9.2, 124]], homeDoor: [-14.0, 118.0], speed: 2.0 },
-    { style: 'shepherd', waypoints: [[6.5, 120], [1.2, 128], [-4.5, 130], [1.5, 118]], homeDoor: [-14.0, 118.0], speed: 1.85 },
-    { style: 'cleric', waypoints: [[-12.5, -2.5], [-4.5, -2.5], [-4.5, -9.5], [-12.5, -9.5]], homeDoor: [-12.5, -2.5], speed: 1.9 },
-    { style: 'fletcher', waypoints: [[-91.0, 48.0], [-94.0, 58.0], [-110.0, 56.0], [-108.0, 43.0]], homeDoor: [-89.5, 45.0], speed: 1.95 },
+    // #1 Village Kid (Desa Sapaan Well Plaza)
+    { archetype: 'village_kid', waypoints: [[-2.5, 118.0], [-5.0, 115.0], [-8.0, 118.0], [-5.0, 121.0]], homeDoor: [-14.0, 118.0], speed: 2.35 },
+    // #2 Schoolgirl (Hijab, Desa Sapaan South Lane)
+    { archetype: 'schoolgirl', waypoints: [[-8.5, 123.0], [-3.5, 124.5], [-2.0, 129.0], [-7.5, 129.0]], homeDoor: [-14.0, 118.0], speed: 2.15 },
+    // #3 Farmer Boy (Desa Sapaan Wheat Farm Perimeter)
+    { archetype: 'farmer_boy', waypoints: [[0.2, 130.5], [0.2, 137.8], [8.8, 137.8], [8.8, 130.5]], homeDoor: [-13.5, 90.0], speed: 1.9 },
+    // #4 Florist Girl (Non-Hijab, Desa Sapaan East Flower Meadow)
+    { archetype: 'florist_girl', waypoints: [[9.0, 114.5], [14.5, 116.5], [14.5, 121.5], [9.0, 121.5]], homeDoor: [11.5, 109.0], speed: 1.85 },
+    // #5 Street Vendor (Pasar Rasa Food Street next to Satay Grill)
+    { archetype: 'street_vendor', waypoints: [[-87.0, 48.0], [-92.5, 48.0], [-92.5, 55.0], [-87.0, 54.0]], homeDoor: [-89.5, 45.0], speed: 1.85 },
+    // #12 Spice Merchant (Hijab, Pasar Rasa West Sand Market)
+    { archetype: 'spice_merchant', waypoints: [[-113.0, 44.0], [-117.5, 50.0], [-114.0, 58.5], [-111.0, 51.0]], homeDoor: [-110.0, 46.0], speed: 1.75 },
+    // #7 Zoo Keeper (Non-Hijab, Hutan Satwa Safari Trail)
+    { archetype: 'zoo_keeper', waypoints: [[94.0, 49.0], [104.0, 49.0], [104.0, 52.5], [94.0, 52.5]], homeDoor: [83.5, 36.5], speed: 1.9 },
+    // #16 Grandma Herbalist (Hijab, Hutan Satwa East Herb Garden)
+    { archetype: 'grandma_herbalist', waypoints: [[114.0, 46.5], [123.0, 46.5], [123.0, 51.5], [114.0, 51.5]], homeDoor: [83.5, 36.5], speed: 1.45 },
+    // #9 School Teacher (Hijab, Gerbang Kota Sekolah Bata Merah Courtyard)
+    { archetype: 'school_teacher', waypoints: [[-125.0, -113.5], [-114.0, -113.5], [-114.0, -108.5], [-125.0, -108.5]], homeDoor: [-121.0, -115.0], speed: 1.7 },
+    // #11 Bus Driver (Gerbang Kota Highway Route)
+    { archetype: 'bus_driver', waypoints: [[-100.0, -83.0], [-108.0, -83.0], [-108.0, -88.0], [-100.0, -88.0]], homeDoor: [-102.0, -95.5], speed: 1.95 },
+    // #13 Blacksmith (Central Hub West Anvil)
+    { archetype: 'blacksmith', waypoints: [[-20.2, -10.5], [-16.6, -10.5], [-16.6, -4.8], [-20.2, -4.8]], homeDoor: [-12.5, -2.5], speed: 1.75 },
+    // #19 Temple Guardian (Central Hub East Citadel)
+    { archetype: 'temple_guardian', waypoints: [[-2.0, -11.0], [4.0, -11.0], [4.0, -5.0], [-2.0, -5.0]], homeDoor: [2.0, -12.0], speed: 1.65 },
+    // #20 IELTS Dean (Hijab, Central Hub Front Plaza)
+    { archetype: 'ielts_dean', waypoints: [[-11.0, 1.0], [-4.5, 1.0], [-4.5, 3.5], [-11.0, 3.5]], homeDoor: [-6.0, 2.0], speed: 1.5 },
+    // #18 Mine Engineer (Gua Portal Quarry Shelf)
+    { archetype: 'mine_engineer', waypoints: [[-16.0, -178.0], [-11.0, -178.0], [-11.0, -171.0], [-16.0, -171.0]], homeDoor: [-1.0, -172.0], speed: 1.8 },
   ];
 
-  villagerPlans.forEach((vp, idx) => {
-    const v = createVillagerMesh(palette, vp.style);
-    v.waypoints = vp.waypoints;
-    v.homeDoor = vp.homeDoor;
+  citizenPlans.forEach((cp, idx) => {
+    const spec = NPC_ARCHETYPES[cp.archetype];
+    const v = createVillagerMesh(palette, cp.archetype);
+    v.waypoints = cp.waypoints;
+    v.homeDoor = cp.homeDoor;
     v.isInsideHouse = false;
-    v.x = vp.waypoints[0][0];
-    v.z = vp.waypoints[0][1];
+    v.x = cp.waypoints[0][0];
+    v.z = cp.waypoints[0][1];
     v.wpIdx = 1;
-    v.speed = vp.speed;
+    v.speed = cp.speed;
     v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z), v.z);
-    v.root.userData.villageId = `villager_${idx}`;
+    v.root.userData.villageId = `villager_${cp.archetype}_${idx}`;
     group.add(v.root);
     clickables.push(v.root);
     villagers.push(v);
     interactables.push({
-      id: `villager_${idx}`,
+      id: `villager_${cp.archetype}_${idx}`,
       x: v.x,
       z: v.z,
-      radius: 2.6,
-      message:
-        vp.style === 'farmer'
-          ? 'Petani Desa Sapaan: "Panen gandum melimpah hari ini! Semangat belajar kata baru, Hoot!"'
-          : vp.style === 'librarian'
-          ? 'Pustakawan Desa: "Setiap kata yang kamu hafal menerangi jembatan pulau kerajaan!"'
-          : 'Warga Kerajaan: "Terima kasih sudah menjaga pulau kami bersama Iron Golem!"',
+      radius: 2.8,
+      message: `${spec.socialMessageId} [${spec.professionId} · HP ${spec.stats.hp} / ATK ${spec.stats.atk} / NRG ${spec.stats.nrg}]`,
       mesh: v.root,
     });
-  });
-
-  // Wandering Trader & 2 Llamas at Pasar Rasa Alun-Alun (-93..-113, z=43..60)
-  const trader = createVillagerMesh(palette, 'trader');
-  trader.waypoints = [
-    [-93.5, 52.0],
-    [-97.5, 61.5],
-    [-112.5, 54.0],
-    [-106.0, 42.5],
-  ];
-  trader.homeDoor = [-89.5, 45.0];
-  trader.isInsideHouse = false;
-  trader.x = trader.waypoints[0][0];
-  trader.z = trader.waypoints[0][1];
-  trader.wpIdx = 1;
-  trader.speed = 1.5;
-  trader.root.position.set(trader.x, getArchipelagoGroundY(trader.x, trader.z), trader.z);
-  trader.root.userData.villageId = 'wandering_trader';
-  group.add(trader.root);
-  clickables.push(trader.root);
-  villagers.push(trader);
-  interactables.push({
-    id: 'wandering_trader',
-    x: trader.x,
-    z: trader.z,
-    radius: 3.0,
-    message:
-      'Pedagang Keliling & 2 Llama: "Selamat datang di Pasar Rasa! Kumpulkan Berlian & taklukkan Bos Gua!"',
-    mesh: trader.root,
   });
 
   const llama1 = createLlamaMesh(palette, -92.5, 56.5, -0.7, 0x1d4ed8);
@@ -1820,7 +1729,7 @@ export function updateMinecraftVillage(
       v.pauseTimer -= dt;
       v.leftLeg.rotation.x = THREE.MathUtils.damp(v.leftLeg.rotation.x, 0, 14, dt);
       v.rightLeg.rotation.x = THREE.MathUtils.damp(v.rightLeg.rotation.x, 0, 14, dt);
-      v.body.position.y = THREE.MathUtils.damp(v.body.position.y, 0, 14, dt);
+      v.bodyPivot.position.y = THREE.MathUtils.damp(v.bodyPivot.position.y, 0, 14, dt);
       v.headGroup.rotation.y = THREE.MathUtils.damp(
         v.headGroup.rotation.y,
         Math.sin(elapsed * 1.6 + i) * 0.34,
@@ -1829,18 +1738,95 @@ export function updateMinecraftVillage(
       );
       v.headGroup.rotation.x = Math.sin(elapsed * 2.2 + i) * 0.05;
 
-      // Living idle breathing squash-and-stretch + natural arm sway
-      const sy = 1 + breath * 0.042;
+      // Living idle breathing squash-and-stretch preserving authentic age/build proportions
+      const sy = 1 + breath * 0.036;
       const sxz = 1 / Math.sqrt(sy);
-      v.bodyPivot.scale.set(sxz, sy, sxz);
+      v.bodyPivot.scale.set(v.baseScaleXZ * sxz, v.baseScaleY * sy, v.baseScaleXZ * sxz);
 
-      if (v.style === 'farmer') {
-        v.leftArm.rotation.x = THREE.MathUtils.damp(v.leftArm.rotation.x, -0.82 + breath * 0.04, 12, dt);
-        v.rightArm.rotation.x = THREE.MathUtils.damp(v.rightArm.rotation.x, -0.82 + breath * 0.04, 12, dt);
-      } else {
-        v.leftArm.rotation.x = THREE.MathUtils.damp(v.leftArm.rotation.x, -0.15 + Math.sin(elapsed * 2.2 + i) * 0.14, 12, dt);
-        v.rightArm.rotation.x = THREE.MathUtils.damp(v.rightArm.rotation.x, -0.2 - Math.sin(elapsed * 2.2 + i) * 0.14, 12, dt);
+      let targetR = v.baseRightArmX + breath * 0.06;
+      let targetL = v.baseLeftArmX - breath * 0.06;
+      let targetRZ = v.baseRightArmZ;
+      let targetLZ = v.baseLeftArmZ;
+
+      // Distinct daily work & habit animations for each NPC profession
+      switch (v.archetype) {
+        case 'blacksmith': {
+          // Rhythmic iron hammering strike
+          const strike = Math.pow(Math.abs(Math.sin(elapsed * 4.6 + i)), 1.6);
+          targetR = -1.65 + strike * 1.15;
+          v.headGroup.rotation.x = 0.14 + strike * 0.1;
+          break;
+        }
+        case 'grandma_herbalist': {
+          // Circular mortar & pestle grinding motion
+          targetR = v.baseRightArmX + Math.sin(elapsed * 4.2 + i) * 0.18;
+          targetRZ = v.baseRightArmZ + Math.cos(elapsed * 4.2 + i) * 0.14;
+          targetL = v.baseLeftArmX + Math.sin(elapsed * 2.1 + i) * 0.05;
+          v.headGroup.rotation.x = 0.18;
+          break;
+        }
+        case 'street_vendor': {
+          // Flipping grilled satay skewer over embers
+          targetR = v.baseRightArmX - 0.18 + Math.sin(elapsed * 4.8 + i) * 0.28;
+          targetL = v.baseLeftArmX + Math.sin(elapsed * 2.4 + i) * 0.1;
+          break;
+        }
+        case 'farmer_boy': {
+          // Rhythmic hoeing chop into soil
+          const chop = Math.sin(elapsed * 3.2 + i);
+          targetR = v.baseRightArmX - 0.25 + chop * 0.34;
+          targetL = v.baseLeftArmX - 0.2 + chop * 0.18;
+          v.headGroup.rotation.x = 0.14 + Math.max(0, chop) * 0.12;
+          break;
+        }
+        case 'zoo_keeper': {
+          // Jotting animal checklist notes with pen on clipboard
+          targetR = v.baseRightArmX - 0.18 + Math.sin(elapsed * 6.5 + i) * 0.12;
+          targetRZ = -0.22 + Math.cos(elapsed * 5.0 + i) * 0.08;
+          v.headGroup.rotation.x = 0.16;
+          break;
+        }
+        case 'bus_driver': {
+          // Steering wheel turn check
+          const steer = Math.sin(elapsed * 2.4 + i) * 0.16;
+          targetR = v.baseRightArmX + steer;
+          targetL = v.baseLeftArmX - steer;
+          break;
+        }
+        case 'florist_girl': {
+          // Gentle floral basket sway & smelling blooms
+          targetR = v.baseRightArmX + Math.sin(elapsed * 1.9 + i) * 0.05;
+          targetL = v.baseLeftArmX + Math.sin(elapsed * 1.9 + i) * 0.05;
+          v.headGroup.rotation.x = 0.12;
+          break;
+        }
+        case 'village_kid': {
+          // Energetic playground bounce
+          const hop = Math.abs(Math.sin(elapsed * 4.5 + i)) * 0.06;
+          v.bodyPivot.position.y = THREE.MathUtils.damp(v.bodyPivot.position.y, hop, 16, dt);
+          targetR = v.baseRightArmX - Math.sin(elapsed * 3.2 + i) * 0.22;
+          targetL = v.baseLeftArmX + Math.sin(elapsed * 3.2 + i) * 0.22;
+          break;
+        }
+        case 'mine_engineer': {
+          // Checking pickaxe poise & helmet beam scan
+          targetR = v.baseRightArmX + Math.sin(elapsed * 1.8 + i) * 0.08;
+          v.headGroup.rotation.y = Math.sin(elapsed * 2.1 + i) * 0.45;
+          break;
+        }
+        case 'temple_guardian': {
+          // Raising lantern softly to inspect the perimeter
+          targetR = v.baseRightArmX - 0.12 + Math.sin(elapsed * 1.6 + i) * 0.08;
+          break;
+        }
+        default:
+          break;
       }
+
+      v.rightArm.rotation.x = THREE.MathUtils.damp(v.rightArm.rotation.x, targetR, 12, dt);
+      v.leftArm.rotation.x = THREE.MathUtils.damp(v.leftArm.rotation.x, targetL, 12, dt);
+      v.rightArm.rotation.z = THREE.MathUtils.damp(v.rightArm.rotation.z, targetRZ, 12, dt);
+      v.leftArm.rotation.z = THREE.MathUtils.damp(v.leftArm.rotation.z, targetLZ, 12, dt);
       continue;
     }
 
@@ -1860,7 +1846,7 @@ export function updateMinecraftVillage(
     }
     if (!shouldGoHome && dist < 0.45) {
       v.wpIdx = (v.wpIdx + 1) % v.waypoints.length;
-      v.pauseTimer = 1.15 + (i % 3) * 0.65;
+      v.pauseTimer = 1.25 + (i % 3) * 0.7;
       v.stuckTimer = 0;
       continue;
     }
@@ -1950,21 +1936,28 @@ export function updateMinecraftVillage(
     const stepBounce = Math.abs(Math.sin(v.walkPhase));
     v.leftLeg.rotation.x = swing;
     v.rightLeg.rotation.x = -swing;
-    v.body.position.y = stepBounce * 0.07;
+    v.bodyPivot.position.y = stepBounce * 0.07;
     v.headGroup.rotation.y = THREE.MathUtils.damp(v.headGroup.rotation.y, 0, 8, dt);
     v.headGroup.rotation.x = Math.sin(v.walkPhase * 2) * 0.03;
 
-    // Squash-and-stretch stride life
-    const walkSy = 1 + breath * 0.03 + stepBounce * 0.055;
+    // Squash-and-stretch stride preserving authentic child/youth/adult/elderly scale
+    const walkSy = 1 + breath * 0.025 + stepBounce * 0.045;
     const walkSxz = 1 / Math.sqrt(walkSy);
-    v.bodyPivot.scale.set(walkSxz, walkSy, walkSxz);
+    v.bodyPivot.scale.set(v.baseScaleXZ * walkSxz, v.baseScaleY * walkSy, v.baseScaleXZ * walkSxz);
 
-    if (v.style === 'farmer') {
-      v.leftArm.rotation.x = -0.82 + stepBounce * 0.06;
-      v.rightArm.rotation.x = -0.82 + stepBounce * 0.06;
-    } else {
-      v.leftArm.rotation.x = -swing * 0.65;
-      v.rightArm.rotation.x = swing * 0.65;
+    const keepsHandsSteady =
+      v.archetype === 'florist_girl' ||
+      v.archetype === 'bus_driver' ||
+      v.archetype === 'grandma_herbalist' ||
+      v.archetype === 'pastry_chef';
+    const armWalkAmp = keepsHandsSteady ? 0.08 : 0.45;
+    v.leftArm.rotation.x = v.baseLeftArmX - swing * armWalkAmp;
+    v.rightArm.rotation.x = v.baseRightArmX + swing * armWalkAmp;
+    v.leftArm.rotation.z = v.baseLeftArmZ;
+    v.rightArm.rotation.z = v.baseRightArmZ;
+
+    if (v.propSpin) {
+      v.propSpin.rotation.y += dt * 1.8;
     }
 
     if (inter) {

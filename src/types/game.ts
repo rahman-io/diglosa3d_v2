@@ -169,6 +169,11 @@ export interface NpcDefinition {
   rewardDiamonds: number;
   accentColor: string;
   academySkill?: 'listening' | 'reading' | 'writing' | 'speaking' | 'full' | 'exit';
+  archetypeId?: string;
+  demographicLabel?: string;
+  habitSummary?: string;
+  skillSummary?: string;
+  stats?: { hp: number; atk: number; nrg: number };
 }
 
 export interface MonsterSpawnDef {

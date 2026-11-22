@@ -2,6 +2,11 @@ import * as THREE from 'three';
 import { ZoneId } from '../types/game';
 import { MaterialPalette } from './materials';
 import { VillageObstacle } from './minecraftVillage';
+import {
+  buildIstanaFloatingIsland,
+  IstanaFloatingRig,
+  updateIstanaFloatingIsland,
+} from './istanaFloatingIsland';
 
 export const IELTS_TEMPORARILY_LOCKED = true;
 
@@ -10,7 +15,7 @@ export const OVERWORLD_ANCHORS = {
   desaSpawn: { x: -6.0, y: 2.6, z: 126.0, yaw: Math.PI * 0.85 },
   starterWeapon: { x: -12.5, y: 2.6, z: 123.0 },
   portal: { x: 2.0, y: 14.0, z: -185.0 },
-  istanaFloating: { x: 215, y: 40, z: -185 },
+  istanaFloating: { x: 254, y: 38, z: -188 },
   zones: {
     desa_sapaan: { x: -2.0, y: 2.6, z: 112.0 },
     pasar_rasa: { x: -102.0, y: 2.0, z: 52.0 },
@@ -870,6 +875,19 @@ function sampleIslandInterior(
       return { y: 32.0, surface: isPlazaFront ? 'road' : 'land' };
     }
 
+    // 4b. NE Cliff Stairway & Grassy Bridgehead Overlook (172, 22.0, -124 -> lx=+24, lz=-32) to Severed Light Bridge!
+    if (Math.hypot(wx - 172.0, wz + 124.0) <= 5.0) {
+      return { y: 22.0, surface: 'land' };
+    }
+    if (lx >= 15.0 && lx <= 20.5 && lz >= -34.5 && lz <= -25.5) {
+      const prog = THREE.MathUtils.clamp((-25.5 - lz) / 9.0, 0, 1);
+      return { y: Math.max(25.0, quantizeTier(32.0 - prog * 7.0, 0.45)), surface: 'stairs' };
+    }
+    if (lx >= 19.5 && lx <= 24.5 && lz >= -35.5 && lz <= -29.0) {
+      const prog = THREE.MathUtils.clamp((lx - 19.5) / 5.0, 0, 1);
+      return { y: Math.max(22.0, quantizeTier(25.0 - prog * 3.0, 0.45)), surface: 'stairs' };
+    }
+
     // 5. Terowongan Kronos (T:14m / L:16m!) Carved Bore Floor & SE Coastal Apron at (lx=+28, lz=+32 -> wx=176, wz=-60)
     if (lx >= 19.0 && lx <= 37.0 && lz >= 20.0) {
       if (lz <= 42.0) {
@@ -891,8 +909,9 @@ function sampleIslandInterior(
     const northBluff = Math.exp(-((lx - 4.0) ** 2 / 900 + (lz + 34.0) ** 2 / 360)) * 20.5;
     h += summitPeak + westTerrace + eastGearRidge + northBluff;
 
-    // Keep Bridge Landing (94, -66), NPC, Guard Post & Zone Beacon flat at y=10.0m
+    // Keep Bridge Landing (94, -66), NE Light Bridge Headland (172, -124), NPC, Guard Post & Zone Beacon flat
     h = padBlend(wx, wz, 94.0, -66.0, 4.5, 8.5, 10.0, h);
+    h = padBlend(wx, wz, 172.0, -124.0, 5.2, 10.5, 22.0, h);
     h = padBlend(wx, wz, 118.0, -72.0, 4.5, 8.5, 10.0, h);
     h = padBlend(wx, wz, 113.5, -73.5, 3.5, 6.5, 10.0, h);
     h = padBlend(wx, wz, 117.5, -80.5, 3.5, 6.5, 10.0, h);
@@ -1289,6 +1308,7 @@ export interface ArchipelagoRig {
   lavaMeshes: THREE.Mesh[];
   istanaGroup: THREE.Group;
   istanaDome: THREE.Mesh;
+  istanaRig: IstanaFloatingRig;
   zooCritters: Array<{ root: THREE.Group; head: THREE.Group; phase: number }>;
   disposables: Array<{ dispose: () => void }>;
 }
@@ -4319,84 +4339,24 @@ export function createArchipelagoWorld(
   }
 
   // ============================================================================
-  // 7. FLOATING ISTANA IELTS SKY ISLAND (+112, y=28, z=-98)
+  // 7. FLOATING ISTANA IELTS SKY ISLAND (115m Island, 120m Hex Shield, 65x55x48m Palace, 6m Severed Bridge)
   // ============================================================================
-  const istanaGroup = new THREE.Group();
-  istanaGroup.position.set(
-    OVERWORLD_ANCHORS.istanaFloating.x,
-    OVERWORLD_ANCHORS.istanaFloating.y,
-    OVERWORLD_ANCHORS.istanaFloating.z,
+  const lightBridgeStart = { x: 172.0, y: 22.0, z: -124.0 };
+  const istanaRig = buildIstanaFloatingIsland(
+    palette,
+    OVERWORLD_ANCHORS.istanaFloating,
+    lightBridgeStart,
+    lowDetail,
   );
-  const marbleMat = palette.getMat(0xf8fafc, 'matte');
-  const goldTrimMat = palette.getMat(0xfacc15, 'metal');
-  const skyIslandBase = new THREE.Mesh(
-    new THREE.CylinderGeometry(12.4, 5.5, 4.6, 14),
-    palette.getMat(0x4d7c0f, 'matte'),
-  );
-  skyIslandBase.position.y = -2.5;
-  const skyIslandTop = new THREE.Mesh(
-    new THREE.CylinderGeometry(13.0, 12.4, 0.8, 16),
-    palette.getMat(0x84cc16, 'matte'),
-  );
-  skyIslandTop.position.y = 0.0;
-  istanaGroup.add(skyIslandBase, skyIslandTop);
-
-  const pBase = new THREE.Mesh(new THREE.BoxGeometry(12.4, 4.2, 9.0), marbleMat);
-  pBase.position.y = 2.5;
-  const pWingL = new THREE.Mesh(new THREE.BoxGeometry(3.6, 5.8, 4.6), marbleMat);
-  pWingL.position.set(-5.6, 3.3, 0);
-  const pWingR = pWingL.clone();
-  pWingR.position.set(5.6, 3.3, 0);
-  const pDome = new THREE.Mesh(new THREE.SphereGeometry(3.4, 14, 10), goldTrimMat);
-  pDome.position.set(0, 6.0, 0);
-  const pDomeL = new THREE.Mesh(new THREE.SphereGeometry(1.7, 10, 8), goldTrimMat);
-  pDomeL.position.set(-5.6, 6.8, 0);
-  const pDomeR = pDomeL.clone();
-  pDomeR.position.set(5.6, 6.8, 0);
-  istanaGroup.add(pBase, pWingL, pWingR, pDome, pDomeL, pDomeR);
-
-  const cloudMat = palette.getMat(0xf8fafc, 'matte');
-  [
-    [-8, -3.5, 4, 6.0, 2.4, 5.0],
-    [6, -3.8, -3, 6.4, 2.6, 5.2],
-    [0, -4.8, 0, 8.6, 2.8, 6.6],
-  ].forEach(([cx, cy, cz, sx, sy, sz]) => {
-    const cl = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), cloudMat);
-    cl.position.set(cx, cy, cz);
-    istanaGroup.add(cl);
+  group.add(istanaRig.istanaGroup, istanaRig.skyBridgeGroup);
+  disposables.push(...istanaRig.disposables);
+  // Rope barrier collider across the severed Light Bridgehead on Menara Waktu cliff
+  obstacles.push({
+    x: lightBridgeStart.x,
+    z: lightBridgeStart.z,
+    halfW: 3.4,
+    halfD: 1.1,
   });
-
-  const istanaDomeMat = new THREE.MeshStandardMaterial({
-    color: 0x7dd3fc,
-    emissive: 0x0ea5e9,
-    emissiveIntensity: 0.42,
-    transparent: true,
-    opacity: 0.28,
-    roughness: 0.1,
-    metalness: 0.2,
-    depthWrite: false,
-  });
-  const istanaDome = new THREE.Mesh(new THREE.SphereGeometry(15.5, 24, 18), istanaDomeMat);
-  istanaDome.position.y = 3.6;
-  istanaGroup.add(istanaDome);
-  disposables.push(istanaDomeMat);
-
-  const skyBridgeGeo = new THREE.BoxGeometry(4.0, 0.35, 36);
-  const skyBridgeMat = new THREE.MeshStandardMaterial({
-    color: 0x7dd3fc,
-    emissive: 0x0ea5e9,
-    emissiveIntensity: 0.45,
-    transparent: true,
-    opacity: 0.46,
-    depthWrite: false,
-  });
-  const skyBridge = new THREE.Mesh(skyBridgeGeo, skyBridgeMat);
-  skyBridge.position.set(192, 26.0, -158);
-  skyBridge.rotation.order = 'YXZ';
-  skyBridge.rotation.y = -0.68;
-  skyBridge.rotation.x = 0.42;
-  group.add(istanaGroup, skyBridge);
-  disposables.push(skyBridgeGeo, skyBridgeMat);
 
   // Outer perimeter diorama sky-clouds well outside playable islands & below horizon
   const outerCloudSpots: Array<[number, number, number]> = [
@@ -4439,8 +4399,9 @@ export function createArchipelagoWorld(
     minecartCurve,
     crystalMeshes,
     lavaMeshes,
-    istanaGroup,
-    istanaDome,
+    istanaGroup: istanaRig.istanaGroup,
+    istanaDome: istanaRig.istanaDome,
+    istanaRig,
     zooCritters,
     disposables,
   };
@@ -4477,9 +4438,7 @@ export function updateArchipelagoWorld(
   const tanHoriz = Math.hypot(_cartTanScratch.x, _cartTanScratch.z) || 1;
   rig.minecart.rotation.x = -Math.atan2(_cartTanScratch.y, tanHoriz);
 
-  rig.istanaGroup.position.y = OVERWORLD_ANCHORS.istanaFloating.y + Math.sin(elapsed * 0.85) * 0.65;
-  const domeMat = rig.istanaDome.material as THREE.MeshStandardMaterial;
-  domeMat.opacity = 0.24 + Math.sin(elapsed * 2.2) * 0.06;
+  updateIstanaFloatingIsland(rig.istanaRig, OVERWORLD_ANCHORS.istanaFloating.y, elapsed);
 
   for (let i = 0; i < rig.zooCritters.length; i++) {
     const c = rig.zooCritters[i];

@@ -882,7 +882,7 @@ export class RpgWorldEngine {
       50,
       width / height,
       0.16,
-      this.isMobileDevice ? 380 : 480,
+      this.isMobileDevice ? 460 : 560,
     );
     this.camera.position.set(16, 48, 86);
     this.scene.add(this.camera);
@@ -4766,6 +4766,23 @@ export class RpgWorldEngine {
       const m = pool.find((item) => item.id === this.nearbyMonsterId && item.alive);
       if (m) {
         this.engageMonster(m);
+        return;
+      }
+    }
+
+    if (this.worldMode === 'overworld' && this.villageRig?.interactables) {
+      let nearestItem: (typeof this.villageRig.interactables)[number] | null = null;
+      let nearestDist = Infinity;
+      for (const vItem of this.villageRig.interactables) {
+        const d = Math.hypot(vItem.x - this.heroPos.x, vItem.z - this.heroPos.z);
+        if (d <= vItem.radius + 1.0 && d < nearestDist) {
+          nearestDist = d;
+          nearestItem = vItem;
+        }
+      }
+      if (nearestItem) {
+        soundEngine.playPick();
+        this.showBanner(nearestItem.message, 5.2);
         return;
       }
     }
@@ -10301,9 +10318,9 @@ export class RpgWorldEngine {
     this.mapCamera.top = bounds.halfH;
     this.mapCamera.bottom = -bounds.halfH;
     this.mapCamera.near = 0.5;
-    this.mapCamera.far = 300;
+    this.mapCamera.far = 320;
     this.mapCamera.updateProjectionMatrix();
-    this.mapCamera.position.set(bounds.centerX, 115, bounds.centerZ);
+    this.mapCamera.position.set(bounds.centerX, 125, bounds.centerZ);
     this.mapCamera.up.set(0, 0, -1);
     this.mapCamera.lookAt(bounds.centerX, 0, bounds.centerZ);
 

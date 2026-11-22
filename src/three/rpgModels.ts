@@ -8,6 +8,7 @@ import {
 } from './archipelagoWorld';
 import { createMinecraftHouse } from './minecraftVillage';
 import { createEnemyBlasterMesh, createWeaponMesh } from './weaponModels';
+import { buildDiverseNpcRig, NpcArchetypeId, resolveNpcArchetype } from './diverseNpcs';
 
 export interface HeroAvatarRig {
   root: THREE.Group;
@@ -975,6 +976,11 @@ export interface ZoneNpcRig {
   propSpin?: THREE.Object3D;
   baseRightArmX: number;
   baseLeftArmX: number;
+  baseRightArmZ?: number;
+  baseLeftArmZ?: number;
+  baseScaleXZ?: number;
+  baseScaleY?: number;
+  archetype?: NpcArchetypeId;
 }
 
 export interface MonsterAnimRig {
@@ -1015,304 +1021,33 @@ export interface CaptiveAnimRig {
   halo?: THREE.Object3D;
 }
 
-// 4. All Distinct Zone, Story, and Academy Examiner 3D NPCs (Jointed Arms, Hands & Living Rig)
+// 4. All Distinct Zone, Story, and Academy Examiner 3D NPCs (20 Diverse World NPCs Sheet)
 export function createZoneNpc(npcId: string, palette: MaterialPalette): THREE.Group {
-  const root = new THREE.Group();
-  addShadow(root, palette, 1.0);
-
-  const bodyPivot = new THREE.Group();
-  root.add(bodyPivot);
-
-  const skin = palette.getMat(0xfed7aa, 'matte');
-  const foxFur = palette.getMat(0xf97316, 'matte');
-  const handMat = npcId === 'npc_rubah' ? foxFur : npcId === 'npc_penjaga' ? palette.getMat(0x94a3b8, 'metal') : skin;
-  const eyeMat = palette.getMat(0x0f172a, 'gloss');
-  const darkPants = palette.getMat(0x1e293b, 'matte');
-  const bootMat = palette.getMat(0x451a03, 'matte');
-
-  let robeColor = 0xb45309;
-  if (npcId === 'npc_koki') robeColor = 0xf8fafc;
-  else if (npcId === 'npc_penjaga') robeColor = 0x1d4ed8;
-  else if (npcId === 'npc_penyihir') robeColor = 0x312e81;
-  else if (npcId === 'npc_rubah') robeColor = 0xea580c;
-  else if (npcId === 'npc_portal') robeColor = 0x6d28d9;
-  else if (npcId === 'npc_sera') robeColor = 0x0284c7;
-  else if (npcId === 'npc_bima') robeColor = 0x059669;
-  else if (npcId === 'npc_ayu') robeColor = 0xd97706;
-  else if (npcId === 'npc_rangga') robeColor = 0xdb2777;
-  else if (npcId === 'npc_raja_penguji' || npcId === 'npc_raja') robeColor = 0x6d28d9;
-  else if (npcId === 'npc_exit_academy') robeColor = 0x0891b2;
-
-  const robeMat = palette.getMat(robeColor, npcId === 'npc_penjaga' ? 'metal' : 'matte');
-
-  // Grounded Legs + Boots
-  const makeLeg = (lx: number): THREE.Group => {
-    const leg = new THREE.Group();
-    leg.position.set(lx, 0.9, 0);
-    const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.56, 0.34), darkPants);
-    thigh.position.y = -0.28;
-    thigh.castShadow = true;
-    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.34, 0.44), bootMat);
-    boot.position.set(0, -0.73, 0.04);
-    boot.castShadow = true;
-    leg.add(thigh, boot);
-    return leg;
-  };
-  const leftLeg = makeLeg(-0.22);
-  const rightLeg = makeLeg(0.22);
-  bodyPivot.add(leftLeg, rightLeg);
-
-  // Tunic / Robe Skirt hem overlapping upper legs cleanly
-  const lowerRobe = new THREE.Mesh(
-    new THREE.BoxGeometry(0.92, 0.62, 0.64),
-    robeMat,
-  );
-  lowerRobe.position.y = 0.72;
-  lowerRobe.castShadow = true;
-  bodyPivot.add(lowerRobe);
-
-  const upperBody = new THREE.Group();
-  upperBody.position.set(0, 0.96, 0);
-  bodyPivot.add(upperBody);
-
-  const torso = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.98, 0.62), robeMat);
-  torso.position.y = 0.52;
-  torso.castShadow = true;
-  const sash = new THREE.Mesh(
-    new THREE.BoxGeometry(1.0, 0.16, 0.66),
-    palette.getMat(npcId === 'npc_raja' || npcId === 'npc_raja_penguji' ? 0xfbbf24 : 0x78350f, 'metal'),
-  );
-  sash.position.y = 0.14;
-  upperBody.add(torso, sash);
-
-  // Neck + Head Group
-  const headGroup = new THREE.Group();
-  headGroup.position.set(0, 1.06, 0);
-  upperBody.add(headGroup);
-
-  const neck = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.16, 0.42), npcId === 'npc_rubah' ? foxFur : skin);
-  neck.position.y = 0.04;
-  const head = new THREE.Mesh(
-    new THREE.BoxGeometry(0.84, 0.82, 0.8),
-    npcId === 'npc_rubah' ? foxFur : skin,
-  );
-  head.position.y = 0.46;
-  head.castShadow = true;
-  const lEye = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.15, 0.06), eyeMat);
-  lEye.position.set(-0.2, 0.48, 0.41);
-  const rEye = new THREE.Mesh(new THREE.BoxGeometry(0.13, 0.15, 0.06), eyeMat);
-  rEye.position.set(0.2, 0.48, 0.41);
-  const browMat = palette.getMat(npcId === 'npc_tetua' ? 0xf8fafc : 0x334155, 'matte');
-  const lBrow = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.06, 0.05), browMat);
-  lBrow.position.set(-0.2, 0.6, 0.41);
-  const rBrow = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.06, 0.05), browMat);
-  rBrow.position.set(0.2, 0.6, 0.41);
-  headGroup.add(neck, head, lEye, rEye, lBrow, rBrow);
-
-  // Full Proportionate Articulated Arms + Visible Hands (no tiny/cut-off arms!)
-  const makeNpcArm = (ax: number): THREE.Group => {
-    const arm = new THREE.Group();
-    arm.position.set(ax, 0.9, 0);
-    const shoulder = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.42, 0.36), robeMat);
-    shoulder.position.y = -0.18;
-    shoulder.castShadow = true;
-    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.32, 0.3), robeMat);
-    forearm.position.y = -0.48;
-    forearm.castShadow = true;
-    const hand = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.24, 0.26), handMat);
-    hand.position.y = -0.7;
-    hand.castShadow = true;
-    arm.add(shoulder, forearm, hand);
-    return arm;
-  };
-  const leftArm = makeNpcArm(-0.64);
-  const rightArm = makeNpcArm(0.64);
-  upperBody.add(leftArm, rightArm);
-
-  let tailPivot: THREE.Group | undefined;
-  let propSpin: THREE.Object3D | undefined;
-  let baseRightArmX = -0.22;
-  let baseLeftArmX = 0.06;
-
-  if (npcId === 'npc_tetua') {
-    const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.78, 0.12, 12), palette.getMat(0x92400e, 'matte'));
-    brim.position.y = 0.88;
-    const crown = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.34, 0.68), palette.getMat(0xb45309, 'matte'));
-    crown.position.y = 1.1;
-    const beard = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.46, 0.22), palette.getMat(0xf8fafc, 'matte'));
-    beard.position.set(0, 0.18, 0.38);
-    headGroup.add(brim, crown, beard);
-
-    // Carved Wooden Staff held directly inside Right Hand!
-    const staffGroup = new THREE.Group();
-    staffGroup.position.set(0, -0.7, 0.12);
-    staffGroup.rotation.x = 0.36;
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.075, 2.35, 8), palette.getMat(0x78350f, 'matte'));
-    shaft.position.y = 0.45;
-    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), palette.getMat(0xfacc15, 'emissive'));
-    gem.position.y = 1.72;
-    staffGroup.add(shaft, gem);
-    rightArm.add(staffGroup);
-    propSpin = gem;
-    baseRightArmX = -0.45;
-  } else if (npcId === 'npc_koki') {
-    const chefHatBase = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.4, 0.34, 12), palette.getMat(0xffffff, 'matte'));
-    chefHatBase.position.y = 1.02;
-    const chefPuff = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.42, 0.74), palette.getMat(0xffffff, 'matte'));
-    chefPuff.position.y = 1.32;
-    headGroup.add(chefHatBase, chefPuff);
-
-    const apron = new THREE.Mesh(new THREE.BoxGeometry(0.78, 1.02, 0.1), palette.getMat(0xffffff, 'matte'));
-    apron.position.set(0, 0.25, 0.34);
-    upperBody.add(apron);
-
-    // Soup Ladle in Right Hand + Serving Pan in Left Hand
-    const ladle = new THREE.Group();
-    ladle.position.set(0, -0.7, 0.14);
-    ladle.rotation.x = 0.65;
-    const handle = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 1.15, 6), palette.getMat(0x92400e, 'matte'));
-    handle.position.y = 0.35;
-    const scoop = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.12, 0.16, 8), palette.getMat(0x94a3b8, 'metal'));
-    scoop.position.y = 0.95;
-    ladle.add(handle, scoop);
-    rightArm.add(ladle);
-
-    const tray = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.28, 0.08, 10), palette.getMat(0xd97706, 'metal'));
-    tray.position.set(0, -0.74, 0.2);
-    leftArm.add(tray);
-    baseRightArmX = -0.68;
-    baseLeftArmX = -0.48;
-  } else if (npcId === 'npc_penjaga') {
-    const helmet = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.42, 0.88), palette.getMat(0x94a3b8, 'metal'));
-    helmet.position.y = 0.92;
-    const plume = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.4, 0.56), palette.getMat(0xef4444, 'gloss'));
-    plume.position.set(0, 1.26, -0.04);
-    headGroup.add(helmet, plume);
-
-    // Royal Halberd held in Right Hand + Shield mounted on Left Forearm
-    const spearGroup = new THREE.Group();
-    spearGroup.position.set(0, -0.68, 0.1);
-    spearGroup.rotation.x = 0.22;
-    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 2.9, 6), palette.getMat(0x78350f, 'matte'));
-    pole.position.y = 0.65;
-    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.5, 4), palette.getMat(0xfbbf24, 'metal'));
-    tip.position.y = 2.25;
-    spearGroup.add(pole, tip);
-    rightArm.add(spearGroup);
-
-    const shield = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.82, 0.62), palette.getMat(0x1e40af, 'metal'));
-    shield.position.set(-0.2, -0.45, 0.08);
-    const shieldRim = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.36, 0.36), palette.getMat(0xfbbf24, 'metal'));
-    shieldRim.position.set(-0.2, -0.45, 0.08);
-    leftArm.add(shield, shieldRim);
-    baseRightArmX = -0.35;
-    baseLeftArmX = -0.38;
-  } else if (npcId === 'npc_penyihir') {
-    const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.84, 0.86, 0.12, 12), palette.getMat(0x1e1b4b, 'gloss'));
-    hatBrim.position.y = 0.9;
-    const hatCone = new THREE.Mesh(new THREE.ConeGeometry(0.54, 1.1, 8), palette.getMat(0x312e81, 'gloss'));
-    hatCone.position.y = 1.48;
-    headGroup.add(hatBrim, hatCone);
-
-    // Luminous Time Hourglass crystal held above Right Hand
-    const hg = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), palette.getMat(0xfacc15, 'emissive'));
-    hg.position.set(0, -0.72, 0.26);
-    rightArm.add(hg);
-    propSpin = hg;
-    baseRightArmX = -0.82;
-  } else if (npcId === 'npc_rubah') {
-    const earL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.38, 0.18), palette.getMat(0xea580c, 'matte'));
-    earL.position.set(-0.26, 0.98, 0);
-    const earR = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.38, 0.18), palette.getMat(0xea580c, 'matte'));
-    earR.position.set(0.26, 0.98, 0);
-    const snout = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.24, 0.28), palette.getMat(0xfef3c7, 'matte'));
-    snout.position.set(0, 0.34, 0.44);
-    const nose = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.12, 0.1), eyeMat);
-    nose.position.set(0, 0.4, 0.58);
-    headGroup.add(earL, earR, snout, nose);
-
-    const scarf = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.22, 0.72), palette.getMat(0x16a34a, 'matte'));
-    scarf.position.y = 0.95;
-    upperBody.add(scarf);
-
-    tailPivot = new THREE.Group();
-    tailPivot.position.set(0, 0.08, -0.32);
-    const tailMesh = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.44, 0.85), foxFur);
-    tailMesh.position.set(0, 0.12, -0.4);
-    const tailTip = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.36, 0.26), palette.getMat(0xf8fafc, 'matte'));
-    tailTip.position.set(0, 0.14, -0.86);
-    tailPivot.add(tailMesh, tailTip);
-    upperBody.add(tailPivot);
-    baseRightArmX = -0.3;
-    baseLeftArmX = -0.2;
-  } else if (npcId === 'npc_portal') {
-    const hood = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.52, 0.92), palette.getMat(0x7c3aed, 'gloss'));
-    hood.position.y = 0.82;
-    headGroup.add(hood);
-
-    const staffGroup = new THREE.Group();
-    staffGroup.position.set(0, -0.7, 0.12);
-    staffGroup.rotation.x = 0.32;
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 2.25, 6), palette.getMat(0x4c1d95, 'metal'));
-    shaft.position.y = 0.45;
-    const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), palette.getMat(0xe879f9, 'emissive'));
-    orb.position.y = 1.68;
-    staffGroup.add(shaft, orb);
-    leftArm.add(staffGroup);
-    propSpin = orb;
-    baseLeftArmX = -0.45;
-  } else if (npcId === 'npc_raja_penguji' || npcId === 'npc_raja') {
-    const crown = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.42, 0.38, 6), palette.getMat(0xfbbf24, 'metal'));
-    crown.position.y = 1.04;
-    headGroup.add(crown);
-
-    const cape = new THREE.Mesh(new THREE.BoxGeometry(1.06, 1.55, 0.14), palette.getMat(0x991b1b, 'matte'));
-    cape.position.set(0, 0.24, -0.38);
-    upperBody.add(cape);
-
-    const scepterGroup = new THREE.Group();
-    scepterGroup.position.set(0, -0.7, 0.14);
-    scepterGroup.rotation.x = 0.42;
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 2.0, 6), palette.getMat(0xfbbf24, 'metal'));
-    shaft.position.y = 0.4;
-    const ruby = new THREE.Mesh(new THREE.OctahedronGeometry(0.2, 0), palette.getMat(0xef4444, 'emissive'));
-    ruby.position.y = 1.48;
-    scepterGroup.add(shaft, ruby);
-    rightArm.add(scepterGroup);
-    propSpin = ruby;
-    baseRightArmX = -0.48;
-  } else {
-    // Examiners (Sera, Bima, Ayu, Rangga) & Penjaga Portal
-    const cap = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.14, 1.02), palette.getMat(0x1e293b, 'gloss'));
-    cap.position.y = 0.92;
-    const tassel = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.3, 0.08), palette.getMat(0xfacc15, 'metal'));
-    tassel.position.set(0.46, 0.78, 0.25);
-    headGroup.add(cap, tassel);
-
-    const book = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.54, 0.16), palette.getMat(0xfbbf24, 'gloss'));
-    book.position.set(-0.08, -0.7, 0.2);
-    book.rotation.set(0.4, 0.3, 0);
-    rightArm.add(book);
-    baseRightArmX = -0.62;
-  }
+  const archetype = resolveNpcArchetype(npcId);
+  const rig = buildDiverseNpcRig(archetype, palette, false);
+  addShadow(rig.root, palette, rig.baseScaleXZ);
 
   const npcRig: ZoneNpcRig = {
-    bodyPivot,
-    upperBody,
-    headGroup,
-    leftEye: lEye,
-    rightEye: rEye,
-    leftArm,
-    rightArm,
-    leftLeg,
-    rightLeg,
-    tailPivot,
-    propSpin,
-    baseRightArmX,
-    baseLeftArmX,
+    bodyPivot: rig.bodyPivot,
+    upperBody: rig.upperBody,
+    headGroup: rig.headGroup,
+    leftEye: rig.leftEye,
+    rightEye: rig.rightEye,
+    leftArm: rig.leftArm,
+    rightArm: rig.rightArm,
+    leftLeg: rig.leftLeg,
+    rightLeg: rig.rightLeg,
+    propSpin: rig.propSpin,
+    baseRightArmX: rig.baseRightArmX,
+    baseLeftArmX: rig.baseLeftArmX,
+    baseRightArmZ: rig.baseRightArmZ,
+    baseLeftArmZ: rig.baseLeftArmZ,
+    baseScaleXZ: rig.baseScaleXZ,
+    baseScaleY: rig.baseScaleY,
+    archetype: rig.archetype,
   };
-  root.userData.npcRig = npcRig;
-  return root;
+  rig.root.userData.npcRig = npcRig;
+  return rig.root;
 }
 
 export function animateZoneNpc(
@@ -1326,11 +1061,16 @@ export function animateZoneNpc(
   const rig = mesh.userData.npcRig as ZoneNpcRig | undefined;
   if (!rig) return;
 
+  const baseXZ = rig.baseScaleXZ ?? 1;
+  const baseY = rig.baseScaleY ?? 1;
+  const restRightZ = rig.baseRightArmZ ?? 0;
+  const restLeftZ = rig.baseLeftArmZ ?? 0;
+
   if (poseMode === 'sleep') {
     const sleepBreath = Math.sin(elapsed * 1.45 + phase);
     const sy = 1 + sleepBreath * 0.025;
     const sxz = 1 / Math.sqrt(sy);
-    rig.bodyPivot.scale.set(sxz, sy, sxz);
+    rig.bodyPivot.scale.set(baseXZ * sxz, baseY * sy, baseXZ * sxz);
     rig.bodyPivot.rotation.x = THREE.MathUtils.damp(rig.bodyPivot.rotation.x, -Math.PI / 2, 10, dt);
     rig.bodyPivot.position.y = THREE.MathUtils.damp(rig.bodyPivot.position.y, 0.92, 10, dt);
     rig.bodyPivot.position.z = THREE.MathUtils.damp(rig.bodyPivot.position.z, -0.78, 10, dt);
@@ -1350,6 +1090,7 @@ export function animateZoneNpc(
     rig.leftLeg.rotation.x = THREE.MathUtils.damp(rig.leftLeg.rotation.x, 0.04, 10, dt);
     rig.rightLeg.rotation.x = THREE.MathUtils.damp(rig.rightLeg.rotation.x, 0.04, 10, dt);
     rig.rightArm.rotation.x = THREE.MathUtils.damp(rig.rightArm.rotation.x, 0.14, 10, dt);
+    rig.rightArm.rotation.z = THREE.MathUtils.damp(rig.rightArm.rotation.z, restRightZ, 10, dt);
     rig.leftArm.rotation.x = THREE.MathUtils.damp(rig.leftArm.rotation.x, 0.14, 10, dt);
     rig.leftArm.rotation.z = THREE.MathUtils.damp(rig.leftArm.rotation.z, 0.08, 10, dt);
     if (rig.tailPivot) {
@@ -1366,7 +1107,7 @@ export function animateZoneNpc(
   const breath = Math.sin(elapsed * 2.4 + phase);
   const sy = 1 + breath * 0.036;
   const sxz = 1 / Math.sqrt(sy);
-  rig.bodyPivot.scale.set(sxz, sy, sxz);
+  rig.bodyPivot.scale.set(baseXZ * sxz, baseY * sy, baseXZ * sxz);
 
   const blinkY = computeBlinkScale(elapsed, phase + 0.8);
   rig.leftEye.scale.y = blinkY;
@@ -1383,19 +1124,25 @@ export function animateZoneNpc(
     rig.upperBody.rotation.x = THREE.MathUtils.damp(rig.upperBody.rotation.x, 0.08, 10, dt);
     rig.headGroup.rotation.y = THREE.MathUtils.damp(rig.headGroup.rotation.y, 0, 8, dt);
     rig.headGroup.rotation.x = THREE.MathUtils.damp(rig.headGroup.rotation.x, 0, 8, dt);
+    const keepHeldArm =
+      rig.archetype === 'pastry_chef' ||
+      rig.archetype === 'ranger_guide' ||
+      rig.archetype === 'crystal_scholar';
+    const armAmp = keepHeldArm ? 0.1 : 0.45;
     rig.rightArm.rotation.x = THREE.MathUtils.damp(
       rig.rightArm.rotation.x,
-      rig.baseRightArmX + swing * 0.5,
+      rig.baseRightArmX + swing * armAmp,
       12,
       dt,
     );
     rig.leftArm.rotation.x = THREE.MathUtils.damp(
       rig.leftArm.rotation.x,
-      rig.baseLeftArmX - swing * 0.5,
+      rig.baseLeftArmX - swing * armAmp,
       12,
       dt,
     );
-    rig.leftArm.rotation.z = THREE.MathUtils.damp(rig.leftArm.rotation.z, 0.05, 10, dt);
+    rig.rightArm.rotation.z = THREE.MathUtils.damp(rig.rightArm.rotation.z, restRightZ, 10, dt);
+    rig.leftArm.rotation.z = THREE.MathUtils.damp(rig.leftArm.rotation.z, restLeftZ + 0.04, 10, dt);
   } else {
     const idle = computeIdleBehavior(elapsed, phase + 1.1);
     const sway = Math.sin(elapsed * 1.4 + phase) * 0.035;
@@ -1413,32 +1160,57 @@ export function animateZoneNpc(
       ? rig.baseRightArmX - 0.35 + Math.sin(elapsed * 5.2) * 0.18
       : rig.baseRightArmX + Math.sin(elapsed * 2.1 + phase) * 0.08;
     let targetLeftX = isNearHero
-      ? -0.95 + Math.sin(elapsed * 6.5) * 0.25
-      : rig.baseLeftArmX - Math.sin(elapsed * 2.1 + phase) * 0.08;
-    let targetLeftZ = isNearHero ? 0.24 : 0.05;
-    let targetRightZ = 0;
+      ? rig.baseLeftArmX - 0.3 + Math.sin(elapsed * 5.2) * 0.14
+      : rig.baseLeftArmX - Math.sin(elapsed * 2.1 + phase) * 0.06;
+    let targetLeftZ = isNearHero ? restLeftZ + 0.18 : restLeftZ + 0.04;
+    let targetRightZ = restRightZ;
     let targetLeftLegX = 0;
     let targetRightLegX = 0;
 
+    // Distinct profession habits during standing duty
+    if (!isNearHero) {
+      if (rig.archetype === 'clockmaker') {
+        const inspect = Math.max(0, Math.sin(elapsed * 1.15 + phase));
+        targetRightX = rig.baseRightArmX - 0.32 * inspect;
+        targetHeadX += 0.16 * inspect;
+      } else if (rig.archetype === 'pastry_chef') {
+        targetRightX = rig.baseRightArmX + Math.sin(elapsed * 1.8) * 0.04;
+        targetLeftX = rig.baseLeftArmX + Math.sin(elapsed * 1.8) * 0.04;
+      } else if (rig.archetype === 'ranger_guide') {
+        const scan = Math.max(0, Math.sin(elapsed * 0.85 + phase));
+        targetRightX = rig.baseRightArmX - 0.34 * scan;
+        targetLeftX = rig.baseLeftArmX - 0.34 * scan;
+        targetHeadY = Math.sin(elapsed * 1.4 + phase) * (0.28 + 0.2 * scan);
+      } else if (rig.archetype === 'city_policeman') {
+        const signal = Math.max(0, Math.sin(elapsed * 1.5 + phase));
+        targetRightX = rig.baseRightArmX - 0.28 * signal;
+        targetLeftX = rig.baseLeftArmX - 0.18 * Math.sin(elapsed * 2.2);
+      } else if (rig.archetype === 'crystal_scholar' || rig.archetype === 'school_teacher') {
+        targetHeadX += 0.12 + Math.sin(elapsed * 1.9 + phase) * 0.06;
+        targetRightX = rig.baseRightArmX + Math.sin(elapsed * 1.6) * 0.05;
+        targetLeftX = rig.baseLeftArmX + Math.sin(elapsed * 1.6) * 0.05;
+      } else if (rig.archetype === 'village_elder' || rig.archetype === 'ielts_dean') {
+        targetHeadX += Math.sin(elapsed * 1.5 + phase) * 0.06;
+      }
+    }
+
     if (!isNearHero && idle.env > 0.01) {
       const e = idle.env;
-      targetLeftZ += idle.twitch * 0.7;
+      targetLeftZ += idle.twitch * 0.5;
       if (idle.action === 'scan') {
         targetHeadY += Math.sin(idle.t * Math.PI * 2) * 0.42 * idle.side * e;
         targetUpperZ += Math.sin(idle.t * Math.PI * 2) * 0.03 * idle.side * e;
       } else if (idle.action === 'scratch') {
         const rub = Math.sin(idle.t * Math.PI * 7) * 0.14;
-        targetLeftX = THREE.MathUtils.lerp(targetLeftX, -1.95 + rub, e);
-        targetLeftZ = THREE.MathUtils.lerp(targetLeftZ, -0.32, e);
+        if (Math.abs(rig.baseLeftArmX) < 0.35) {
+          targetLeftX = THREE.MathUtils.lerp(targetLeftX, -1.95 + rub, e);
+          targetLeftZ = THREE.MathUtils.lerp(targetLeftZ, -0.32, e);
+        }
         targetHeadZ += -0.14 * e;
         targetHeadY += 0.15 * e;
       } else if (idle.action === 'yawn_stretch') {
-        targetHeadX += -0.24 * e;
-        targetUpperX += -0.08 * e;
-        targetLeftX = THREE.MathUtils.lerp(targetLeftX, -0.95, e);
-        targetLeftZ = THREE.MathUtils.lerp(targetLeftZ, 0.34, e);
-        targetRightX = THREE.MathUtils.lerp(targetRightX, -0.95, e);
-        targetRightZ = THREE.MathUtils.lerp(targetRightZ, -0.34, e);
+        targetHeadX += -0.22 * e;
+        targetUpperX += -0.07 * e;
       } else if (idle.action === 'posture_shift') {
         targetUpperZ += 0.065 * idle.side * e;
         targetHeadZ += -0.05 * idle.side * e;
@@ -1451,8 +1223,6 @@ export function animateZoneNpc(
       } else if (idle.action === 'chin_daydream') {
         targetHeadX += -0.18 * e;
         targetHeadZ += 0.09 * idle.side * e;
-        targetLeftX = THREE.MathUtils.lerp(targetLeftX, -1.65, e);
-        targetLeftZ = THREE.MathUtils.lerp(targetLeftZ, -0.36, e);
       }
     }
 

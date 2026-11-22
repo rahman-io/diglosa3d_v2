@@ -108,6 +108,32 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
           </div>
 
           <div className="space-y-2.5 sm:space-y-3">
+            {(npc.demographicLabel || npc.stats) && (
+              <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300/25 bg-slate-950/60 px-3 py-1.5 text-[11px] font-bold text-amber-100">
+                <div className="min-w-0 truncate">
+                  {npc.demographicLabel && (
+                    <span className="text-amber-200">{npc.demographicLabel}</span>
+                  )}
+                  {npc.habitSummary && (
+                    <span className="ml-2 text-slate-300">· {npc.habitSummary}</span>
+                  )}
+                </div>
+                {npc.stats && (
+                  <div className="flex shrink-0 items-center gap-2 font-mono-nums text-[10px] font-black">
+                    <span className="rounded bg-emerald-500/20 px-1.5 py-0.5 text-emerald-300">
+                      HP {npc.stats.hp}
+                    </span>
+                    <span className="rounded bg-rose-500/20 px-1.5 py-0.5 text-rose-300">
+                      ATK {npc.stats.atk}
+                    </span>
+                    <span className="rounded bg-sky-500/20 px-1.5 py-0.5 text-sky-300">
+                      NRG {npc.stats.nrg}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Two RPG Story Dialogue Boxes — Indonesian First + On-Demand English Toggle */}
             <div className="space-y-2">
               <div className="rounded-2xl border border-amber-300/25 bg-slate-950/50 px-3.5 py-2.5 shadow-inner">
