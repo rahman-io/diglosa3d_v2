@@ -77,6 +77,7 @@ import {
   constrainHeroToWorldBounds,
   constrainToWalkableArchipelago,
   createArchipelagoWorld,
+  freezeStaticSubtree,
   getArchipelagoGroundY,
   IELTS_TEMPORARILY_LOCKED,
   isWalkableArchipelago,
@@ -140,9 +141,11 @@ interface CollectibleItem {
   active: boolean;
   kind: 'diamond' | 'heart';
   x: number;
+  y: number;
   z: number;
   phase: number;
   respawnTimer: number;
+  matrixInit?: boolean;
 }
 
 interface RoamingMonster {
@@ -513,6 +516,12 @@ export class RpgWorldEngine {
   private forceRenderNextFrame = true;
   private elapsed = 0;
   private disposed = false;
+  private lastHudHeroX = 9999;
+  private lastHudHeroZ = 9999;
+  private lastHudCamYaw = 9999;
+  private mapHiddenOverworld: THREE.Object3D[] = [];
+  private mapHiddenDungeon: THREE.Object3D[] = [];
+  private mapHiddenAcademy: THREE.Object3D[] = [];
 
   // Input & Raycasting
   private heldKeys = new Set<string>();
@@ -587,6 +596,7 @@ export class RpgWorldEngine {
       x: number;
       z: number;
       standX: number;
+      standY: number;
       standZ: number;
       standRotY: number;
       yaw: number;
@@ -622,6 +632,7 @@ export class RpgWorldEngine {
   private monsters: RoamingMonster[] = [];
   private seaMonsters: RoamingMonster[] = [];
   private skyMonsters: RoamingMonster[] = [];
+  private overworldAllMonsters: RoamingMonster[] = [];
   private dungeonMonsters: RoamingMonster[] = [];
   private dungeonTotalSpawned = 0;
   private academyMonsters: RoamingMonster[] = [];
@@ -1066,6 +1077,8 @@ export class RpgWorldEngine {
     this.checkHasSave();
     this.initDefaultQuests();
     this.spawnCollectibles();
+    this.freezeOverworldStaticMatrices();
+    this.mapHiddenOverworld = this.collectMapHidden(this.overworldGroup);
     this.updateOverworldDayNightAtmosphere(0, false);
     this.applyGraphicsQuality();
     this.bindEvents();
@@ -1073,6 +1086,56 @@ export class RpgWorldEngine {
 
     this.lastTimeMs = performance.now();
     this.scheduleNextTick();
+  }
+
+  private collectMapHidden(root: THREE.Object3D): THREE.Object3D[] {
+    const out: THREE.Object3D[] = [];
+    root.traverse((obj) => {
+      if (obj.userData?.isMapHidden) out.push(obj);
+    });
+    return out;
+  }
+
+  private freezeOverworldStaticMatrices(): void {
+    const dyn = new Set<THREE.Object3D>();
+    dyn.add(this.archipelagoRig.windmillHub);
+    dyn.add(this.archipelagoRig.minecart);
+    dyn.add(this.archipelagoRig.istanaRig.istanaGroup);
+    for (const g of this.archipelagoRig.gears) dyn.add(g.mesh);
+    for (const ch of this.archipelagoRig.clockHands) dyn.add(ch);
+    for (const c of this.archipelagoRig.cars) dyn.add(c.mesh);
+    for (const zc of this.archipelagoRig.zooCritters) dyn.add(zc.root);
+
+    for (const v of this.villageRig.villagers) dyn.add(v.root);
+    for (const gm of this.villageRig.golems) dyn.add(gm.root);
+    for (const ll of this.villageRig.llamas) dyn.add(ll.root);
+    for (const b of this.villageRig.bees) dyn.add(b.root);
+    for (const p of this.villageRig.pillagers) dyn.add(p.root);
+    for (const c of this.villageRig.critters) dyn.add(c.root);
+    for (const s of this.villageRig.smokePuffs) dyn.add(s.mesh);
+    for (const fl of this.villageRig.torchesFlame) dyn.add(fl);
+    if (this.villageRig.sunGroup) dyn.add(this.villageRig.sunGroup);
+    if (this.villageRig.moonGroup) dyn.add(this.villageRig.moonGroup);
+    if (this.villageRig.outpostBanner) dyn.add(this.villageRig.outpostBanner);
+    if (this.villageRig.breezeMotes?.mesh) dyn.add(this.villageRig.breezeMotes.mesh);
+
+    // worldObstaclesRig already freezes its own static parts & manages dynamic pivots internally
+    dyn.add(this.worldObstaclesRig.group);
+    dyn.add(this.portalRig.ringOuter);
+    dyn.add(this.portalRig.ringInner);
+    dyn.add(this.starterPickupMesh);
+    dyn.add(this.cloudsMesh);
+    dyn.add(this.diamondInstanced);
+    dyn.add(this.heartInstanced);
+    this.areaMists.forEach((m) => dyn.add(m));
+    this.npcs.forEach((n) => {
+      dyn.add(n.mesh);
+      dyn.add(n.alertMesh);
+      dyn.add(n.guardPost.torchFlame);
+    });
+    for (const m of this.overworldAllMonsters) dyn.add(m.mesh);
+
+    freezeStaticSubtree(this.overworldGroup, dyn);
   }
 
   private getBaseTargetDpr(): number {
@@ -1473,6 +1536,7 @@ export class RpgWorldEngine {
         x: def.x,
         z: def.z,
         standX: def.x,
+        standY: ny,
         standZ: def.z,
         standRotY: def.rotationY,
         yaw: def.rotationY,
@@ -1482,6 +1546,13 @@ export class RpgWorldEngine {
         lastWakeBannerMs: 0,
       });
     }
+  }
+
+  private rebuildOverworldMonsterPool(): void {
+    this.overworldAllMonsters.length = 0;
+    for (let i = 0; i < this.monsters.length; i++) this.overworldAllMonsters.push(this.monsters[i]);
+    for (let i = 0; i < this.seaMonsters.length; i++) this.overworldAllMonsters.push(this.seaMonsters[i]);
+    for (let i = 0; i < this.skyMonsters.length; i++) this.overworldAllMonsters.push(this.skyMonsters[i]);
   }
 
   private isOpenSeaPoint(x: number, z: number, clearance = 3.0): boolean {
@@ -1607,6 +1678,7 @@ export class RpgWorldEngine {
         angryTimer: 0,
       });
     }
+    this.rebuildOverworldMonsterPool();
   }
 
   private initSkyMonsters(): void {
@@ -1681,12 +1753,14 @@ export class RpgWorldEngine {
         angryTimer: 0,
       });
     }
+    this.rebuildOverworldMonsterPool();
   }
 
   private initOverworldMonsters(): void {
     this.monsters = [];
     this.initSeaMonsters();
     this.initSkyMonsters();
+    this.rebuildOverworldMonsterPool();
   }
 
   private pickRandomWorldTimeTick(): number {
@@ -1733,10 +1807,20 @@ export class RpgWorldEngine {
         : phase === 'malam'
         ? 23000 - t
         : 24000 - t;
-    const activeSurfaceCount = this.monsters.filter((m) => m.alive).length;
-    const activeNightCount =
-      this.monsters.filter((m) => m.alive && m.isNightMonster).length +
-      this.shooters.filter((s) => s.alive && s.isNightShooter).length;
+    let activeSurfaceCount = 0;
+    let activeNightMobs = 0;
+    for (let i = 0; i < this.monsters.length; i++) {
+      const m = this.monsters[i];
+      if (!m.alive) continue;
+      activeSurfaceCount++;
+      if (m.isNightMonster) activeNightMobs++;
+    }
+    let activeNightShooters = 0;
+    for (let i = 0; i < this.shooters.length; i++) {
+      const s = this.shooters[i];
+      if (s.alive && s.isNightShooter) activeNightShooters++;
+    }
+    const activeNightCount = activeNightMobs + activeNightShooters;
     const expectedTotal = phase === 'malam' ? 50 : 30;
     const waveTotal = Math.max(this.nightWaveTotal || expectedTotal, activeSurfaceCount);
     const waveDefeated = Math.max(0, waveTotal - activeSurfaceCount);
@@ -1765,6 +1849,7 @@ export class RpgWorldEngine {
     this.nightWaveTotal = 0;
     this.nightZoneTotals = {};
     this.nightShooterSaved = [];
+    this.rebuildOverworldMonsterPool();
   }
 
   private pickZoneChallengeWords(zoneId: ZoneId, count = 4): string[] {
@@ -1897,6 +1982,7 @@ export class RpgWorldEngine {
         angryTimer: 0,
       });
     }
+    this.rebuildOverworldMonsterPool();
   }
 
   private spawnNightSurfaceWave(): void {
@@ -1999,6 +2085,7 @@ export class RpgWorldEngine {
     }
     this.nightZoneTotals = zoneTotals;
     this.nightWaveTotal = this.monsters.filter((m) => m.alive).length;
+    this.rebuildOverworldMonsterPool();
     if (this.worldMode === 'overworld') {
       if (mode === 'night') {
         soundEngine.playBoss();
@@ -2240,22 +2327,28 @@ export class RpgWorldEngine {
 
     for (let i = 0; i < MAX_COLLECTIBLES; i++) {
       if (i < spots.length) {
+        const cx = spots[i][0];
+        const cz = spots[i][1];
         this.collectibles.push({
           active: true,
           kind: spots[i][2],
-          x: spots[i][0],
-          z: spots[i][1],
+          x: cx,
+          y: getArchipelagoGroundY(cx, cz),
+          z: cz,
           phase: i * 0.8,
           respawnTimer: 0,
+          matrixInit: false,
         });
       } else {
         this.collectibles.push({
           active: false,
           kind: 'diamond',
           x: 0,
+          y: 0,
           z: 0,
           phase: i,
           respawnTimer: 0,
+          matrixInit: false,
         });
       }
     }
@@ -2552,6 +2645,7 @@ export class RpgWorldEngine {
       for (let i = 0; i < this.collectibles.length; i++) {
         this.collectibles[i].active = this.restoredCollectibles[i].active;
         this.collectibles[i].respawnTimer = this.restoredCollectibles[i].respawnTimer;
+        this.collectibles[i].matrixInit = false;
       }
     }
     this.refreshAreaMists();
@@ -3383,6 +3477,7 @@ export class RpgWorldEngine {
         if (obj instanceof THREE.Mesh) obj.geometry.dispose();
       });
       this.dungeonRig = null;
+      this.mapHiddenDungeon = [];
     }
     if (this.academyRig) {
       this.scene.remove(this.academyRig.group);
@@ -3390,6 +3485,7 @@ export class RpgWorldEngine {
         if (obj instanceof THREE.Mesh) obj.geometry.dispose();
       });
       this.academyRig = null;
+      this.mapHiddenAcademy = [];
     }
     this.clearCaveBoulders();
     this.activeTnts.forEach((t) => {
@@ -3545,6 +3641,7 @@ export class RpgWorldEngine {
     rig.doors.forEach((d) => this.dungeonClickables.push(d.group));
     rig.caveBlocks.forEach((b) => this.dungeonClickables.push(b.mesh));
     this.scene.add(rig.group);
+    this.mapHiddenDungeon = this.collectMapHidden(rig.group);
 
     const liberated = this.liberatedZones.has(zoneId);
     const bossBeaten = liberated || this.defeatedBossZones.has(zoneId);
@@ -3943,6 +4040,7 @@ export class RpgWorldEngine {
     this.dungeonExitPos.copy(rig.exitPadPos);
     this.academyClickables.push(rig.exitClickable);
     this.scene.add(rig.group);
+    this.mapHiddenAcademy = this.collectMapHidden(rig.group);
     this.applyAtmosphere('academy');
 
     for (const def of ACADEMY_NPCS) {
@@ -6586,7 +6684,7 @@ export class RpgWorldEngine {
   private getActiveMonsters(): RoamingMonster[] {
     if (this.worldMode === 'dungeon') return this.dungeonMonsters;
     if (this.worldMode === 'academy') return this.academyMonsters;
-    return [...this.monsters, ...this.seaMonsters, ...this.skyMonsters];
+    return this.overworldAllMonsters;
   }
 
   private engageMonster(m: RoamingMonster): void {
@@ -7272,13 +7370,13 @@ export class RpgWorldEngine {
           : 2;
       if (this.shadowFrameCounter % shadowMod === 0) {
         const heroMoved =
-          Math.abs(this.heroPos.x - this.lastShadowHeroX) > 0.18 ||
-          Math.abs(this.heroPos.z - this.lastShadowHeroZ) > 0.18;
+          Math.abs(this.heroPos.x - this.lastShadowHeroX) > 0.42 ||
+          Math.abs(this.heroPos.z - this.lastShadowHeroZ) > 0.42;
         const sunMoved =
-          Math.abs(this.sunLight.position.x - this.lastShadowSunX) > 0.7 ||
-          Math.abs(this.sunLight.position.y - this.lastShadowSunY) > 0.7;
+          Math.abs(this.sunLight.position.x - this.lastShadowSunX) > 0.95 ||
+          Math.abs(this.sunLight.position.y - this.lastShadowSunY) > 0.95;
         const modeChanged = this.worldMode !== this.lastShadowMode;
-        const timeRefresh = now - this.lastShadowUpdateMs > (this.isLowEndMobile ? 950 : 650);
+        const timeRefresh = now - this.lastShadowUpdateMs > (this.isLowEndMobile ? 1250 : 900);
         if (heroMoved || sunMoved || modeChanged || timeRefresh) {
           this.renderer.shadowMap.needsUpdate = true;
           this.lastShadowHeroX = this.heroPos.x;
@@ -7547,6 +7645,10 @@ export class RpgWorldEngine {
 
     // Animate active monster pool (torches inside caves calm nearby monsters!)
     const baseSpeedMult = this.settings.difficulty === 'pendekar' ? 1.3 : 1.0;
+    const canVisCull = this.worldMode === 'overworld' && this.phase === 'playing';
+    const camX = this.camera.position.x;
+    const camZ = this.camera.position.z;
+    let sunburnRemoved = false;
     for (const m of this.getActiveMonsters()) {
       const spec = MONSTER_SPECS[m.type];
       if (!m.alive) {
@@ -7555,6 +7657,7 @@ export class RpgWorldEngine {
           if (m.respawnTimer <= 0) {
             m.alive = true;
             m.mesh.visible = true;
+            m.mesh.matrixAutoUpdate = true;
             m.x = m.homeX;
             m.z = m.homeZ;
             if (m.isCaveMob) {
@@ -7586,6 +7689,35 @@ export class RpgWorldEngine {
         }
         continue;
       }
+      if (this.worldMode === 'overworld') {
+        const dxH = this.heroPos.x - m.x;
+        const dzH = this.heroPos.z - m.z;
+        const distSqH = dxH * dxH + dzH * dzH;
+        const dxC = camX - m.x;
+        const dzC = camZ - m.z;
+        const minDistSq = Math.min(distSqH, dxC * dxC + dzC * dzC);
+        const visLim = m.isSeaMonster || m.isSkyMonster ? 160 * 160 : 130 * 130;
+        const keepVis =
+          !canVisCull ||
+          minDistSq <= visLim ||
+          Boolean(m.aggroActive) ||
+          m.sunburnTimer !== undefined ||
+          m.angryTimer > 0;
+        if (m.mesh.visible !== keepVis) {
+          m.mesh.visible = keepVis;
+          if (keepVis) {
+            m.mesh.matrixAutoUpdate = true;
+            m.mesh.updateMatrix();
+          }
+        }
+        const aiLim = m.isSeaMonster ? 82 * 82 : m.isSkyMonster ? 86 * 86 : 52 * 52;
+        const isAwake =
+          distSqH <= aiLim ||
+          Boolean(m.aggroActive) ||
+          m.sunburnTimer !== undefined ||
+          m.angryTimer > 0;
+        m.mesh.matrixAutoUpdate = isAwake;
+      }
       if (m.isSeaMonster && this.worldMode === 'overworld') {
         this.updateSeaMonster(m, dt, baseSpeedMult);
         continue;
@@ -7606,6 +7738,7 @@ export class RpgWorldEngine {
           if (m.mesh.parent) m.mesh.parent.remove(m.mesh);
           const clickIdx = this.overworldClickables.indexOf(m.mesh);
           if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
+          sunburnRemoved = true;
           soundEngine.playBoom();
           this.spawnBurst(m.x, (m.y ?? 0) + 1.6, m.z, 0xff7a00, 30);
           this.spawnBurst(m.x, (m.y ?? 0) + 2.2, m.z, 0xfacc15, 16);
@@ -8195,12 +8328,35 @@ export class RpgWorldEngine {
         });
       }
     }
+    if (sunburnRemoved) {
+      this.rebuildOverworldMonsterPool();
+    }
 
     if (this.sunburnFxTimer > 0.14) this.sunburnFxTimer = 0;
 
     if (this.worldMode !== 'overworld') return;
 
-    updateArchipelagoWorld(this.archipelagoRig, dt, this.elapsed);
+    this.areaMists.forEach((mist, zId) => {
+      if (this.liberatedZones.has(zId)) {
+        mist.visible = false;
+      } else if (!canVisCull) {
+        mist.visible = true;
+      } else {
+        const dxH = this.heroPos.x - mist.position.x;
+        const dzH = this.heroPos.z - mist.position.z;
+        const dxC = camX - mist.position.x;
+        const dzC = camZ - mist.position.z;
+        mist.visible = Math.min(dxH * dxH + dzH * dzH, dxC * dxC + dzC * dzC) <= 145 * 145;
+      }
+    });
+
+    updateArchipelagoWorld(
+      this.archipelagoRig,
+      dt,
+      this.elapsed,
+      this.heroPos,
+      this.camera.position,
+    );
 
     const currentDayPhase = this.getCurrentDayPhase();
 
@@ -8228,6 +8384,9 @@ export class RpgWorldEngine {
       this.heroPos.x,
       this.heroPos.z,
       this.isLowEndMobile || this.settings.fxLevel !== 'full',
+      this.camera.position.x,
+      this.camera.position.z,
+      canVisCull,
     );
 
     // Gentle blocky Minecraft-style voxel clouds drift across the sky
@@ -8289,7 +8448,7 @@ export class RpgWorldEngine {
           npc.z = npc.standZ;
           npc.yaw = npc.standRotY;
           npc.poseMode = 'stand';
-          npc.mesh.position.set(npc.standX, getArchipelagoGroundY(npc.standX, npc.standZ), npc.standZ);
+          npc.mesh.position.set(npc.standX, npc.standY, npc.standZ);
         }
       } else {
         // Sore / Malam: pindah ke pos penjaga & tidur; terbangun saat player mendekat!
@@ -8353,10 +8512,15 @@ export class RpgWorldEngine {
         }
       }
 
-      const npcGroundY = getArchipelagoGroundY(npc.x, npc.z);
+      const npcGroundY =
+        npc.poseMode === 'stand' && npc.x === npc.standX && npc.z === npc.standZ
+          ? npc.standY
+          : npc.poseMode === 'sleep'
+          ? npc.guardPost.bedY
+          : getArchipelagoGroundY(npc.x, npc.z);
       npc.mesh.rotation.y = npc.yaw;
       npc.alertMesh.visible = showAlert;
-      if (showAlert) {
+      if (showAlert && (distHero < 85 || this.phase === 'title')) {
         const alertY = npc.poseMode === 'sleep' ? npc.guardPost.bedY + 1.4 : npcGroundY + 4.2;
         npc.alertMesh.position.set(
           npc.x,
@@ -8419,45 +8583,63 @@ export class RpgWorldEngine {
     }
 
     const updateCollectibleMatrices = !throttleUpload || (this.animFrameCounter & 1) === 0;
+    let anyCollectibleUpdated = false;
     for (let i = 0; i < this.collectibles.length; i++) {
       const c = this.collectibles[i];
       if (!c.active) {
-        if (updateCollectibleMatrices) {
+        if (!c.matrixInit) {
           _dummy.position.set(0, -80, 0);
           _dummy.scale.setScalar(0.001);
           _dummy.updateMatrix();
           this.diamondInstanced.setMatrixAt(i, _dummy.matrix);
           this.heartInstanced.setMatrixAt(i, _dummy.matrix);
+          c.matrixInit = true;
+          anyCollectibleUpdated = true;
         }
         if (this.phase === 'playing') {
           c.respawnTimer -= dt;
-          if (c.respawnTimer <= 0) c.active = true;
+          if (c.respawnTimer <= 0) {
+            c.active = true;
+            c.matrixInit = false;
+          }
         }
         continue;
       }
-      if (!updateCollectibleMatrices) continue;
+      const dxH = this.heroPos.x - c.x;
+      const dzH = this.heroPos.z - c.z;
+      const dxC = camX - c.x;
+      const dzC = camZ - c.z;
+      const nearViewer = Math.min(dxH * dxH + dzH * dzH, dxC * dxC + dzC * dzC) <= 95 * 95;
+      if (c.matrixInit && (!nearViewer || !updateCollectibleMatrices)) {
+        continue;
+      }
 
-      const cy = getArchipelagoGroundY(c.x, c.z);
-      _dummy.position.set(c.x, cy + 1.3 + Math.sin(this.elapsed * 3.2 + c.phase) * 0.26, c.z);
+      _dummy.position.set(c.x, c.y + 1.3 + Math.sin(this.elapsed * 3.2 + c.phase) * 0.26, c.z);
       _dummy.rotation.set(0, this.elapsed * 2.2 + c.phase, 0);
       _dummy.scale.setScalar(1);
       _dummy.updateMatrix();
 
       if (c.kind === 'diamond') {
         this.diamondInstanced.setMatrixAt(i, _dummy.matrix);
-        _dummy.position.set(0, -80, 0);
-        _dummy.scale.setScalar(0.001);
-        _dummy.updateMatrix();
-        this.heartInstanced.setMatrixAt(i, _dummy.matrix);
+        if (!c.matrixInit) {
+          _dummy.position.set(0, -80, 0);
+          _dummy.scale.setScalar(0.001);
+          _dummy.updateMatrix();
+          this.heartInstanced.setMatrixAt(i, _dummy.matrix);
+        }
       } else {
         this.heartInstanced.setMatrixAt(i, _dummy.matrix);
-        _dummy.position.set(0, -80, 0);
-        _dummy.scale.setScalar(0.001);
-        _dummy.updateMatrix();
-        this.diamondInstanced.setMatrixAt(i, _dummy.matrix);
+        if (!c.matrixInit) {
+          _dummy.position.set(0, -80, 0);
+          _dummy.scale.setScalar(0.001);
+          _dummy.updateMatrix();
+          this.diamondInstanced.setMatrixAt(i, _dummy.matrix);
+        }
       }
+      c.matrixInit = true;
+      anyCollectibleUpdated = true;
     }
-    if (updateCollectibleMatrices) {
+    if (anyCollectibleUpdated) {
       this.diamondInstanced.instanceMatrix.needsUpdate = true;
       this.heartInstanced.instanceMatrix.needsUpdate = true;
     }
@@ -8835,6 +9017,8 @@ export class RpgWorldEngine {
           this.heroVel,
           this.heroOnGround,
           this.phase === 'playing' && this.encounterGraceTimer <= 0,
+          this.camera.position,
+          this.phase === 'playing',
         );
         this.heroOnIce = obsEval.onIce;
         if (obsEval.pushX !== 0 || obsEval.pushZ !== 0) {
@@ -9220,12 +9404,13 @@ export class RpgWorldEngine {
 
       for (const c of this.collectibles) {
         if (!c.active) continue;
-        const cy = getArchipelagoGroundY(c.x, c.z);
+        const cy = c.y;
         if (
           Math.hypot(this.heroPos.x - c.x, this.heroPos.z - c.z) < 2.2 &&
           Math.abs(this.heroPos.y - cy) < 3.2
         ) {
           c.active = false;
+          c.matrixInit = false;
           c.respawnTimer = TUNE.itemBackSec;
           if (c.kind === 'diamond') {
             this.diamonds += 1;
@@ -11403,7 +11588,7 @@ export class RpgWorldEngine {
         isMini &&
         Math.hypot(this.heroPos.x - this.lastMiniHeroX, this.heroPos.z - this.lastMiniHeroZ) <
           miniDistThresh &&
-        now - lastMs < 2800
+        now - lastMs < 3800
       ) {
         return {
           canvas,
@@ -11435,19 +11620,20 @@ export class RpgWorldEngine {
     this.mapCamera.up.set(0, 0, -1);
     this.mapCamera.lookAt(bounds.centerX, 0, bounds.centerZ);
 
-    const hiddenTemp: THREE.Object3D[] = [];
-    const activeGroup =
+    const mapHiddenList =
       this.worldMode === 'dungeon' && this.dungeonRig
-        ? this.dungeonRig.group
+        ? this.mapHiddenDungeon
         : this.worldMode === 'academy' && this.academyRig
-        ? this.academyRig.group
-        : this.overworldGroup;
-    activeGroup.traverse((obj) => {
-      if (obj.visible && obj.userData?.isMapHidden) {
+        ? this.mapHiddenAcademy
+        : this.mapHiddenOverworld;
+    const hiddenTemp: THREE.Object3D[] = [];
+    for (let i = 0; i < mapHiddenList.length; i++) {
+      const obj = mapHiddenList[i];
+      if (obj.visible) {
         obj.visible = false;
         hiddenTemp.push(obj);
       }
-    });
+    }
     const prevFpVisible = this.fpViewRig.root.visible;
     this.fpViewRig.root.visible = false;
 
@@ -11518,9 +11704,36 @@ export class RpgWorldEngine {
 
   private pushHud(force: boolean): void {
     const now = performance.now();
-    const hudMinMs = this.isLowEndMobile ? 250 : this.isMobileDevice ? 200 : 140;
-    if (!force && now - this.lastHudPushMs < hudMinMs) return;
+    const baseHudMinMs = this.isLowEndMobile ? 250 : this.isMobileDevice ? 200 : 140;
+    if (!force) {
+      const moved =
+        Math.abs(this.heroPos.x - this.lastHudHeroX) +
+        Math.abs(this.heroPos.z - this.lastHudHeroZ);
+      const camDelta = Math.abs(this.cameraYaw - this.lastHudCamYaw);
+      const heroSpd = Math.abs(this.heroVel.x) + Math.abs(this.heroVel.z);
+      const isIdleHud =
+        moved < 0.05 &&
+        camDelta < 0.015 &&
+        heroSpd < 0.05 &&
+        !this.leftFireHeld &&
+        !this.hudFireHeld &&
+        this.fireCooldown <= 0 &&
+        this.bannerTimer <= 0 &&
+        !this.nearbyNpcId &&
+        !this.nearbyMonsterId;
+      const hudMinMs = isIdleHud
+        ? this.isLowEndMobile
+          ? 480
+          : this.isMobileDevice
+          ? 420
+          : 340
+        : baseHudMinMs;
+      if (now - this.lastHudPushMs < hudMinMs) return;
+    }
     this.lastHudPushMs = now;
+    this.lastHudHeroX = this.heroPos.x;
+    this.lastHudHeroZ = this.heroPos.z;
+    this.lastHudCamYaw = this.cameraYaw;
 
     const lv = getLevelInfo(this.xp);
     const zoneId =

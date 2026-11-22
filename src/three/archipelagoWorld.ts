@@ -4407,41 +4407,128 @@ export function createArchipelagoWorld(
   };
 }
 
+const _archWorldScratch = new THREE.Vector3();
+
+function isPointNearViewer(
+  wx: number,
+  wz: number,
+  maxDistSq: number,
+  heroPos?: { x: number; z: number },
+  camPos?: { x: number; z: number },
+): boolean {
+  if (!heroPos && !camPos) return true;
+  if (heroPos) {
+    const dx = heroPos.x - wx;
+    const dz = heroPos.z - wz;
+    if (dx * dx + dz * dz <= maxDistSq) return true;
+  }
+  if (camPos) {
+    const dx = camPos.x - wx;
+    const dz = camPos.z - wz;
+    if (dx * dx + dz * dz <= maxDistSq) return true;
+  }
+  return false;
+}
+
+function getCachedObjXZ(obj: THREE.Object3D): { wx: number; wz: number } {
+  let wx = obj.userData._archWx as number | undefined;
+  let wz = obj.userData._archWz as number | undefined;
+  if (wx === undefined || wz === undefined) {
+    obj.getWorldPosition(_archWorldScratch);
+    wx = _archWorldScratch.x;
+    wz = _archWorldScratch.z;
+    obj.userData._archWx = wx;
+    obj.userData._archWz = wz;
+  }
+  return { wx, wz };
+}
+
+export function freezeStaticSubtree(
+  root: THREE.Object3D,
+  dynamicNodes: Set<THREE.Object3D>,
+): void {
+  root.updateMatrixWorld(true);
+  const walk = (node: THREE.Object3D): boolean => {
+    if (dynamicNodes.has(node)) {
+      return true;
+    }
+    let hasDyn = false;
+    for (let i = 0; i < node.children.length; i++) {
+      if (walk(node.children[i])) hasDyn = true;
+    }
+    node.matrixAutoUpdate = false;
+    node.updateMatrix();
+    if (!hasDyn) {
+      node.matrixWorldAutoUpdate = false;
+    }
+    return hasDyn;
+  };
+  walk(root);
+}
+
 export function updateArchipelagoWorld(
   rig: ArchipelagoRig,
-  dt: number,
+  _dt: number,
   elapsed: number,
+  heroPos?: { x: number; z: number },
+  camPos?: { x: number; z: number },
 ): void {
   rig.waterUniforms.uTime.value = elapsed;
 
-  rig.windmillHub.rotation.z -= dt * 0.72;
+  if (isPointNearViewer(0, 118, 128 * 128, heroPos, camPos)) {
+    rig.windmillHub.rotation.z = -elapsed * 0.72;
+  }
 
   for (let i = 0; i < rig.gears.length; i++) {
-    rig.gears[i].mesh.rotation.z += dt * rig.gears[i].speed;
+    const g = rig.gears[i];
+    const { wx, wz } = getCachedObjXZ(g.mesh);
+    if (isPointNearViewer(wx, wz, 130 * 130, heroPos, camPos)) {
+      g.mesh.rotation.z = elapsed * g.speed;
+    }
   }
   for (let i = 0; i < rig.clockHands.length; i++) {
-    rig.clockHands[i].rotation.z = -elapsed * 0.45;
+    const ch = rig.clockHands[i];
+    const { wx, wz } = getCachedObjXZ(ch);
+    if (isPointNearViewer(wx, wz, 130 * 130, heroPos, camPos)) {
+      ch.rotation.z = -elapsed * 0.45;
+    }
   }
   for (let i = 0; i < rig.cars.length; i++) {
     const c = rig.cars[i];
+    const { wz } = getCachedObjXZ(c.mesh);
+    if (!isPointNearViewer(c.baseX, wz, 118 * 118, heroPos, camPos)) continue;
     const s = Math.sin(elapsed * c.speed + c.phase);
     c.mesh.position.x = c.baseX + s * c.rangeX;
     c.mesh.rotation.y = Math.cos(elapsed * c.speed + c.phase) >= 0 ? 0 : Math.PI;
   }
 
-  const cartT = 0.08 + ((Math.sin(elapsed * 0.42) + 1) * 0.5) * 0.84;
-  rig.minecartCurve.getPointAt(cartT, _cartPosScratch);
-  rig.minecartCurve.getTangentAt(cartT, _cartTanScratch);
-  rig.minecart.position.set(_cartPosScratch.x, _cartPosScratch.y + 0.14, _cartPosScratch.z);
-  rig.minecart.rotation.order = 'YXZ';
-  rig.minecart.rotation.y = Math.atan2(_cartTanScratch.x, _cartTanScratch.z);
-  const tanHoriz = Math.hypot(_cartTanScratch.x, _cartTanScratch.z) || 1;
-  rig.minecart.rotation.x = -Math.atan2(_cartTanScratch.y, tanHoriz);
+  if (isPointNearViewer(20, -174, 122 * 122, heroPos, camPos)) {
+    const cartT = 0.08 + ((Math.sin(elapsed * 0.42) + 1) * 0.5) * 0.84;
+    rig.minecartCurve.getPointAt(cartT, _cartPosScratch);
+    rig.minecartCurve.getTangentAt(cartT, _cartTanScratch);
+    rig.minecart.position.set(_cartPosScratch.x, _cartPosScratch.y + 0.14, _cartPosScratch.z);
+    rig.minecart.rotation.order = 'YXZ';
+    rig.minecart.rotation.y = Math.atan2(_cartTanScratch.x, _cartTanScratch.z);
+    const tanHoriz = Math.hypot(_cartTanScratch.x, _cartTanScratch.z) || 1;
+    rig.minecart.rotation.x = -Math.atan2(_cartTanScratch.y, tanHoriz);
+  }
 
-  updateIstanaFloatingIsland(rig.istanaRig, OVERWORLD_ANCHORS.istanaFloating.y, elapsed);
+  if (
+    isPointNearViewer(
+      OVERWORLD_ANCHORS.istanaFloating.x,
+      OVERWORLD_ANCHORS.istanaFloating.z,
+      180 * 180,
+      heroPos,
+      camPos,
+    )
+  ) {
+    updateIstanaFloatingIsland(rig.istanaRig, OVERWORLD_ANCHORS.istanaFloating.y, elapsed);
+  }
 
   for (let i = 0; i < rig.zooCritters.length; i++) {
     const c = rig.zooCritters[i];
+    const { wx, wz } = getCachedObjXZ(c.root);
+    if (!isPointNearViewer(wx, wz, 82 * 82, heroPos, camPos)) continue;
     const t = elapsed * 1.4 + c.phase;
     c.head.rotation.y = Math.sin(t * 0.9) * 0.25;
     c.head.rotation.x = Math.max(0, Math.sin(t * 1.3)) * 0.16;

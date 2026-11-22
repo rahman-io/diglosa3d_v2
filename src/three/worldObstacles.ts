@@ -1595,8 +1595,48 @@ export function createWorldObstacles(palette: MaterialPalette): WorldObstaclesRi
       }
     }
 
+    root.updateMatrixWorld(true);
+    const dynNodes = new Set<THREE.Object3D>();
+    for (const s of inst.spinners) dynNodes.add(s.obj);
+    for (const sw of inst.swings) dynNodes.add(sw.obj);
+    for (const pt of inst.pistons) dynNodes.add(pt.obj);
+    for (const ls of inst.lasers) dynNodes.add(ls);
+    for (const wg of inst.warnGlows) dynNodes.add(wg);
+    for (const hp of inst.hazardParts) dynNodes.add(hp);
+    for (const fb of inst.fireballs) dynNodes.add(fb.mesh);
+    for (const bt of inst.breakTiles) dynNodes.add(bt.mesh);
+    for (const mp of inst.movingPlatforms) dynNodes.add(mp.mesh);
+    if (inst.springTop) dynNodes.add(inst.springTop);
+
+    const hasDynDescendant = (node: THREE.Object3D): boolean => {
+      if (dynNodes.has(node)) {
+        // Freeze static children inside moving group if any (children keep matrixWorldAutoUpdate = true)
+        node.traverse((ch) => {
+          if (ch !== node && !dynNodes.has(ch)) {
+            ch.matrixAutoUpdate = false;
+            ch.updateMatrix();
+          }
+        });
+        return true;
+      }
+      let anyDyn = false;
+      for (let c = 0; c < node.children.length; c++) {
+        if (hasDynDescendant(node.children[c])) anyDyn = true;
+      }
+      node.matrixAutoUpdate = false;
+      node.updateMatrix();
+      if (!anyDyn) {
+        node.matrixWorldAutoUpdate = false;
+      }
+      return anyDyn;
+    };
+    hasDynDescendant(root);
+
     instances.push(inst);
   });
+
+  group.matrixAutoUpdate = false;
+  group.updateMatrixWorld(true);
 
   // Track every procedural BufferGeometry inside the obstacle rig for clean disposal
   const seenGeo = new Set<THREE.BufferGeometry>();
@@ -1669,6 +1709,8 @@ export function updateAndEvaluateObstacles(
   heroVel: THREE.Vector3,
   heroOnGround: boolean,
   canTakeDamage: boolean,
+  camPos?: THREE.Vector3,
+  allowVisibilityCull = false,
 ): ObstacleEvaluationResult {
   let onIce = false;
   let pushX = 0;
@@ -1680,13 +1722,47 @@ export function updateAndEvaluateObstacles(
   for (let i = 0; i < rig.instances.length; i++) {
     const inst = rig.instances[i];
     const kind = inst.def.kind;
-    const t = elapsed + inst.phase;
     if (inst.bounceCooldown > 0) inst.bounceCooldown = Math.max(0, inst.bounceCooldown - dt);
 
-    // 1. Update continuous spinners
+    const dx = heroPos.x - inst.def.x;
+    const dz = heroPos.z - inst.def.z;
+    const distSqHero = dx * dx + dz * dz;
+    let minDistSq = distSqHero;
+    if (camPos) {
+      const cdx = camPos.x - inst.def.x;
+      const cdz = camPos.z - inst.def.z;
+      const distSqCam = cdx * cdx + cdz * cdz;
+      if (distSqCam < minDistSq) minDistSq = distSqCam;
+    }
+
+    if (allowVisibilityCull) {
+      const vis = minDistSq <= 148 * 148;
+      if (inst.group.visible !== vis) inst.group.visible = vis;
+      if (!vis) continue;
+    } else if (!inst.group.visible) {
+      inst.group.visible = true;
+    }
+
+    let hasActiveBreak = false;
+    for (let b = 0; b < inst.breakTiles.length; b++) {
+      if (inst.breakTiles[b].state !== 'intact') {
+        hasActiveBreak = true;
+        break;
+      }
+    }
+    const hasTransientState =
+      inst.bounceCooldown > 0 || inst.springCompression > 0 || hasActiveBreak;
+
+    if (minDistSq > 76 * 76 && !hasTransientState) {
+      continue;
+    }
+
+    const t = elapsed + inst.phase;
+
+    // 1. Update continuous spinners (deterministic phase so distant streaming resumes seamlessly)
     for (let s = 0; s < inst.spinners.length; s++) {
       const sp = inst.spinners[s];
-      sp.obj.rotation[sp.axis] += sp.speed * dt;
+      sp.obj.rotation[sp.axis] = t * sp.speed;
     }
 
     // 2. Update pendulums & chomping jaws
@@ -1773,7 +1849,7 @@ export function updateAndEvaluateObstacles(
       } else {
         const prog = ((t * 0.34 + fb.offset / (Math.PI * 2)) % 1 + 1) % 1;
         fb.mesh.position.set(0, kind === 'boulder_chute' ? 1.45 : 1.25, -5.0 + prog * 10.0);
-        fb.mesh.rotation.x += dt * 4.5;
+        fb.mesh.rotation.x = t * 4.5;
       }
     }
 
@@ -1815,9 +1891,7 @@ export function updateAndEvaluateObstacles(
     }
 
     // === HERO INTERACTION CHECK (fast bounding cull first) ===
-    const dx = heroPos.x - inst.def.x;
-    const dz = heroPos.z - inst.def.z;
-    if (dx * dx + dz * dz > 169.0) continue; // >13m away
+    if (distSqHero > 169.0) continue; // >13m away
 
     const dy = heroPos.y - inst.baseY;
     const { lx, lz } = toLocalXZ(heroPos.x, heroPos.z, inst.def.x, inst.def.z, inst.cosY, inst.sinY);

@@ -98,6 +98,7 @@ interface GolemActor {
   holdsFlower: boolean;
   stuckTimer: number;
   avoidSign: number;
+  interactable?: VillageInteractable;
 }
 
 interface LlamaActor {
@@ -1766,14 +1767,16 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
   group.add(golem1.root);
   clickables.push(golem1.root);
   golems.push(golem1);
-  interactables.push({
+  const golem1Inter: VillageInteractable = {
     id: 'iron_golem_plaza',
     x: golem1.x,
     z: golem1.z,
     radius: 3.4,
     message: 'Iron Golem Desa Sapaan: Penjaga setia desa yang ramah kepada lebah dan warga!',
     mesh: golem1.root,
-  });
+  };
+  golem1.interactable = golem1Inter;
+  interactables.push(golem1Inter);
 
   const golem2 = createIronGolemMesh(palette, false);
   golem2.waypoints = [
@@ -2172,7 +2175,25 @@ function hasAheadObstacle(
 
 const _moveScratch = { x: 0, z: 0 };
 const _moteDummy = new THREE.Object3D();
+const _torchWorldScratch = new THREE.Vector3();
 let _villageAnimCounter = 0;
+
+function getMinViewerDistSq(
+  wx: number,
+  wz: number,
+  heroX?: number,
+  heroZ?: number,
+  camX?: number,
+  camZ?: number,
+): number {
+  if (heroX === undefined || heroZ === undefined) return 0;
+  let minSq = (wx - heroX) * (wx - heroX) + (wz - heroZ) * (wz - heroZ);
+  if (camX !== undefined && camZ !== undefined) {
+    const cSq = (wx - camX) * (wx - camX) + (wz - camZ) * (wz - camZ);
+    if (cSq < minSq) minSq = cSq;
+  }
+  return minSq;
+}
 
 export function updateMinecraftVillage(
   rig: MinecraftVillageRig,
@@ -2183,6 +2204,9 @@ export function updateMinecraftVillage(
   heroX?: number,
   heroZ?: number,
   lowDetail = false,
+  camX?: number,
+  camZ?: number,
+  allowVisibilityCull = false,
 ): void {
   _villageAnimCounter = (_villageAnimCounter + 1) & 0xffff;
   const hasHeroDist = heroX !== undefined && heroZ !== undefined;
@@ -2191,19 +2215,42 @@ export function updateMinecraftVillage(
   rig.windUniforms.uTime.value = elapsed;
 
   if (rig.outpostBanner) {
-    rig.outpostBanner.rotation.x = 0.08 + Math.sin(elapsed * 3.1) * 0.18 + Math.sin(elapsed * 5.7) * 0.06;
-    rig.outpostBanner.rotation.z = Math.cos(elapsed * 2.4) * 0.09;
+    if (!hasHeroDist || getMinViewerDistSq(148, -92, heroX, heroZ, camX, camZ) <= 95 * 95) {
+      rig.outpostBanner.rotation.x = 0.08 + Math.sin(elapsed * 3.1) * 0.18 + Math.sin(elapsed * 5.7) * 0.06;
+      rig.outpostBanner.rotation.z = Math.cos(elapsed * 2.4) * 0.09;
+    }
   }
 
+  const torchDistSqLimit = lowDetail ? 78 * 78 : 98 * 98;
+  const torchNearSqLimit = 36 * 36;
+  const torchBaseScale = dayPhase === 'malam' || dayPhase === 'sore' ? 1.28 : 1.0;
   for (let i = 0; i < rig.torchesFlame.length; i++) {
     const fl = rig.torchesFlame[i];
-    const baseScale = dayPhase === 'malam' || dayPhase === 'sore' ? 1.28 : 1.0;
-    const flick = (0.9 + Math.sin(elapsed * 14 + i * 2.1) * 0.18 + Math.cos(elapsed * 21 + i) * 0.07) * baseScale;
-    fl.scale.set(baseScale, flick, baseScale);
+    if (hasHeroDist) {
+      let wx = fl.userData._twx as number | undefined;
+      let wz = fl.userData._twz as number | undefined;
+      if (wx === undefined || wz === undefined) {
+        fl.getWorldPosition(_torchWorldScratch);
+        wx = _torchWorldScratch.x;
+        wz = _torchWorldScratch.z;
+        fl.userData._twx = wx;
+        fl.userData._twz = wz;
+      }
+      const dSq = getMinViewerDistSq(wx, wz, heroX, heroZ, camX, camZ);
+      if (dSq > torchDistSqLimit) continue;
+      if (lowDetail && dSq > torchNearSqLimit && ((i + _villageAnimCounter) & 1) !== 0) continue;
+    }
+    const flick = (0.9 + Math.sin(elapsed * 14 + i * 2.1) * 0.18 + Math.cos(elapsed * 21 + i) * 0.07) * torchBaseScale;
+    fl.scale.set(torchBaseScale, flick, torchBaseScale);
     fl.rotation.z = Math.sin(elapsed * 7.5 + i * 1.3) * 0.14;
   }
 
-  if (rig.breezeMotes && rig.breezeMotes.mesh.visible && (!lowDetail || (_villageAnimCounter & 1) === 0)) {
+  if (
+    rig.breezeMotes &&
+    rig.breezeMotes.mesh.visible &&
+    (!hasHeroDist || getMinViewerDistSq(0, 0, heroX, heroZ, camX, camZ) <= 96 * 96) &&
+    (!lowDetail || (_villageAnimCounter & 1) === 0)
+  ) {
     const { mesh, seeds, count } = rig.breezeMotes;
     for (let i = 0; i < count; i++) {
       const bx = seeds[i * 4 + 0];
@@ -2252,25 +2299,43 @@ export function updateMinecraftVillage(
     const distSq = hasHeroDist
       ? (v.x - heroX!) * (v.x - heroX!) + (v.z - heroZ!) * (v.z - heroZ!)
       : 0;
+    const minViewerSq = getMinViewerDistSq(v.x, v.z, heroX, heroZ, camX, camZ);
+    if (allowVisibilityCull) {
+      const wantVis = minViewerSq <= 135 * 135;
+      if (v.root.visible !== wantVis) v.root.visible = wantVis;
+    } else if (!v.root.visible) {
+      v.root.visible = true;
+    }
     const isNearAnim = !hasHeroDist || distSq <= animDistSqLimit;
 
-    if (!isNearAnim && !shouldGoHome) {
-      // Distant island citizens: step position cheaply every 8th frame, skip bone math
+    if (!isNearAnim && (!shouldGoHome || distSq > 75 * 75)) {
+      // Distant island citizens: step position cheaply every 8th frame, skip bone math & O(N^2) checks
       if (((i + _villageAnimCounter) & 7) !== 0) continue;
       const stepDt = Math.min(0.24, dt * 8);
-      if (v.pauseTimer > 0) {
+      if (!shouldGoHome && v.pauseTimer > 0) {
         v.pauseTimer -= stepDt;
         continue;
       }
-      const [tx, tz] = v.waypoints[v.wpIdx];
+      const [tx, tz] = shouldGoHome ? v.homeDoor : v.waypoints[v.wpIdx];
       const dx = tx - v.x;
       const dz = tz - v.z;
       const dist = Math.hypot(dx, dz);
-      if (dist < 0.55) {
+      if (shouldGoHome && dist < 1.35) {
+        v.isInsideHouse = true;
+        v.root.visible = false;
+        v.stuckTimer = 0;
+        if (inter) {
+          inter.x = 9999;
+          inter.z = 9999;
+        }
+        continue;
+      }
+      if (!shouldGoHome && dist < 0.55) {
         v.wpIdx = (v.wpIdx + 1) % v.waypoints.length;
         v.pauseTimer = 1.25 + (i % 3) * 0.7;
-      } else {
-        const step = Math.min(dist, v.speed * stepDt);
+      } else if (dist > 0.001) {
+        const spd = shouldGoHome ? v.speed * (dayPhase === 'malam' ? 2.4 : 1.65) : v.speed;
+        const step = Math.min(dist, spd * stepDt);
         v.x += (dx / dist) * step;
         v.z += (dz / dist) * step;
         v.yaw = Math.atan2(dx, dz);
@@ -2534,9 +2599,50 @@ export function updateMinecraftVillage(
     }
   }
 
-  // 2. Iron Golems heavy steady patrol with obstacle avoidance + heavy breathing stretch + blink
+  // 2. Iron Golems heavy steady patrol with distance throttling + cached interactable
   for (let i = 0; i < rig.golems.length; i++) {
     const g = rig.golems[i];
+    const minGolemSq = getMinViewerDistSq(g.x, g.z, heroX, heroZ, camX, camZ);
+    if (allowVisibilityCull) {
+      const wantVis = minGolemSq <= 145 * 145;
+      if (g.root.visible !== wantVis) g.root.visible = wantVis;
+    } else if (!g.root.visible) {
+      g.root.visible = true;
+    }
+    const gDistSqHero = hasHeroDist
+      ? (g.x - heroX!) * (g.x - heroX!) + (g.z - heroZ!) * (g.z - heroZ!)
+      : 0;
+    const isNearGolem = !hasHeroDist || gDistSqHero <= animDistSqLimit;
+
+    if (!isNearGolem) {
+      if (((i + _villageAnimCounter) & 7) !== 0) continue;
+      const stepDt = Math.min(0.24, dt * 8);
+      if (g.pauseTimer > 0) {
+        g.pauseTimer -= stepDt;
+        continue;
+      }
+      const [tx, tz] = g.waypoints[g.wpIdx];
+      const dx = tx - g.x;
+      const dz = tz - g.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 0.65) {
+        g.wpIdx = (g.wpIdx + 1) % g.waypoints.length;
+        g.pauseTimer = 1.6;
+      } else {
+        const step = Math.min(dist, 1.45 * stepDt);
+        g.x += (dx / dist) * step;
+        g.z += (dz / dist) * step;
+        g.yaw = Math.atan2(dx, dz);
+        g.root.position.set(g.x, getArchipelagoGroundY(g.x, g.z), g.z);
+        g.root.rotation.y = g.yaw;
+        if (g.interactable) {
+          g.interactable.x = g.x;
+          g.interactable.z = g.z;
+        }
+      }
+      continue;
+    }
+
     const breath = Math.sin(elapsed * 1.9 + i * 1.4);
     const gBlink = computeVillageBlink(elapsed, 2.2 + i * 1.9);
     g.leftEye.scale.y = gBlink;
@@ -2629,20 +2735,22 @@ export function updateMinecraftVillage(
     const golemSxz = 1 / Math.sqrt(golemSy);
     g.bodyPivot.scale.set(golemSxz, golemSy, golemSxz);
 
-    const inter = rig.interactables.find((it) => it.id === g.root.userData.villageId);
-    if (inter) {
-      inter.x = g.x;
-      inter.z = g.z;
+    if (g.interactable) {
+      g.interactable.x = g.x;
+      g.interactable.z = g.z;
     }
   }
 
   // 3. Llamas & Hutan Satwa Critters gentle idle breathing squash-and-stretch, blinking & grazing
   for (const l of rig.llamas) {
-    if (hasHeroDist) {
-      const ldx = l.baseX - heroX!;
-      const ldz = l.baseZ - heroZ!;
-      if (ldx * ldx + ldz * ldz > animDistSqLimit) continue;
+    const minSq = getMinViewerDistSq(l.baseX, l.baseZ, heroX, heroZ, camX, camZ);
+    if (allowVisibilityCull) {
+      const wantVis = minSq <= 135 * 135;
+      if (l.root.visible !== wantVis) l.root.visible = wantVis;
+    } else if (!l.root.visible) {
+      l.root.visible = true;
     }
+    if (hasHeroDist && minSq > animDistSqLimit) continue;
     l.headPivot.rotation.y = Math.sin(elapsed * 1.1 + l.phase) * 0.25;
     l.headPivot.rotation.x = Math.sin(elapsed * 1.8 + l.phase) * 0.08;
     const lBlink = computeVillageBlink(elapsed, l.phase + 0.9);
@@ -2653,11 +2761,14 @@ export function updateMinecraftVillage(
     l.root.scale.set(sxz, sy, sxz);
   }
   for (const c of rig.critters) {
-    if (hasHeroDist) {
-      const cdx = c.baseX - heroX!;
-      const cdz = c.baseZ - heroZ!;
-      if (cdx * cdx + cdz * cdz > animDistSqLimit) continue;
+    const minSq = getMinViewerDistSq(c.baseX, c.baseZ, heroX, heroZ, camX, camZ);
+    if (allowVisibilityCull) {
+      const wantVis = minSq <= 98 * 98;
+      if (c.root.visible !== wantVis) c.root.visible = wantVis;
+    } else if (!c.root.visible) {
+      c.root.visible = true;
     }
+    if (hasHeroDist && minSq > animDistSqLimit) continue;
     const t = elapsed * 1.3 + c.phase;
     const nx = c.baseX + Math.sin(t * 0.6) * 0.65;
     const nz = c.baseZ + Math.cos(t * 0.5) * 0.55;
@@ -2676,13 +2787,11 @@ export function updateMinecraftVillage(
   // 4. Voxel Bees buzzing in figure-8 over flowers & farm (rest in hives at night)
   const beesAwake = dayPhase !== 'malam';
   for (const b of rig.bees) {
-    b.root.visible = beesAwake;
-    if (!beesAwake) continue;
-    if (hasHeroDist) {
-      const bdx = b.centerX - heroX!;
-      const bdz = b.centerZ - heroZ!;
-      if (bdx * bdx + bdz * bdz > animDistSqLimit) continue;
-    }
+    const minSq = getMinViewerDistSq(b.centerX, b.centerZ, heroX, heroZ, camX, camZ);
+    const wantVis = beesAwake && (!allowVisibilityCull || minSq <= 92 * 92);
+    if (b.root.visible !== wantVis) b.root.visible = wantVis;
+    if (!wantVis) continue;
+    if (hasHeroDist && minSq > animDistSqLimit) continue;
     const t = elapsed * b.speed + b.phase;
     const nx = b.centerX + Math.sin(t) * b.radiusX;
     const nz = b.centerZ + Math.sin(t * 2) * b.radiusZ * 0.6;
@@ -2698,11 +2807,14 @@ export function updateMinecraftVillage(
 
   // 5. Pillager Outpost ridge patrol + crossbow aiming, blinking & breathing stretch
   for (const p of rig.pillagers) {
-    if (hasHeroDist) {
-      const pdx = p.centerX - heroX!;
-      const pdz = p.centerZ - heroZ!;
-      if (pdx * pdx + pdz * pdz > animDistSqLimit) continue;
+    const minSq = getMinViewerDistSq(p.centerX, p.centerZ, heroX, heroZ, camX, camZ);
+    if (allowVisibilityCull) {
+      const wantVis = minSq <= 135 * 135;
+      if (p.root.visible !== wantVis) p.root.visible = wantVis;
+    } else if (!p.root.visible) {
+      p.root.visible = true;
     }
+    if (hasHeroDist && minSq > animDistSqLimit) continue;
     const a = elapsed * 0.55 + p.phase;
     const px = p.centerX + Math.cos(a) * p.patrolR;
     const pz = p.centerZ + Math.sin(a) * p.patrolR;
@@ -2723,6 +2835,14 @@ export function updateMinecraftVillage(
   }
 
   for (const s of rig.smokePuffs) {
+    const minSq = getMinViewerDistSq(s.baseX, s.baseZ, heroX, heroZ, camX, camZ);
+    if (allowVisibilityCull) {
+      const wantVis = minSq <= 125 * 125;
+      if (s.mesh.visible !== wantVis) s.mesh.visible = wantVis;
+    } else if (!s.mesh.visible) {
+      s.mesh.visible = true;
+    }
+    if (hasHeroDist && minSq > 105 * 105) continue;
     const rise = ((elapsed * 1.6 + s.phase) % 12) / 12;
     s.mesh.position.set(
       s.baseX + Math.sin(elapsed * 0.9 + s.phase) * 0.65,
