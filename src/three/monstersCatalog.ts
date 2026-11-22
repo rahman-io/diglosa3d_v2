@@ -28,6 +28,7 @@ export interface MonsterSheetSpec {
   hitCenterY: number;
   hitHalfH: number;
   isSeaMonster?: boolean;
+  isSkyMonster?: boolean;
   effectiveWeapons?: WeaponId[];
 }
 
@@ -772,11 +773,268 @@ export const MONSTER_SPECS: Record<MonsterType, MonsterSheetSpec> = {
     isSeaMonster: true,
     effectiveWeapons: ['biji', 'kertas', 'jarum', 'kristal'],
   },
+  giga_wyvern: {
+    id: 'giga_wyvern',
+    sheetNumber: 31,
+    name: 'Giga-Wyvern (Naga Pembom)',
+    tier: 'giant',
+    tierLabel: 'Monster Angkasa · Naga Pembom',
+    stats: { hp: 1680, atk: 245, nrg: 260 },
+    baseScale: 1.38,
+    arenaScale: 0.78,
+    hitHp: 11,
+    quizHp: 4,
+    stanceHp: 3,
+    atkDamageHearts: 2,
+    rewardXp: 88,
+    rewardDiamonds: 5,
+    rewardScore: 880,
+    speedMult: 1.04,
+    aggroRange: 30.0,
+    hoverY: 12.2,
+    ranged: true,
+    hitRadius: 3.1,
+    hitCenterY: 0.9,
+    hitHalfH: 2.1,
+    isSkyMonster: true,
+  },
+  crimson_phoenix: {
+    id: 'crimson_phoenix',
+    sheetNumber: 32,
+    name: 'Crimson Phoenix (Burung Api)',
+    tier: 'large',
+    tierLabel: 'Monster Angkasa · Burung Api',
+    stats: { hp: 1320, atk: 210, nrg: 240 },
+    baseScale: 1.24,
+    arenaScale: 0.84,
+    hitHp: 8,
+    quizHp: 3,
+    stanceHp: 2,
+    atkDamageHearts: 1,
+    rewardXp: 68,
+    rewardDiamonds: 4,
+    rewardScore: 680,
+    speedMult: 1.18,
+    aggroRange: 29.0,
+    hoverY: 11.4,
+    ranged: true,
+    hitRadius: 2.6,
+    hitCenterY: 0.9,
+    hitHalfH: 1.95,
+    isSkyMonster: true,
+  },
+  shadow_harpy: {
+    id: 'shadow_harpy',
+    sheetNumber: 33,
+    name: 'Shadow Harpy (Harpi Kegelapan)',
+    tier: 'medium',
+    tierLabel: 'Monster Angkasa · Harpi Kegelapan',
+    stats: { hp: 920, atk: 175, nrg: 205 },
+    baseScale: 1.12,
+    arenaScale: 0.92,
+    hitHp: 6,
+    quizHp: 3,
+    stanceHp: 2,
+    atkDamageHearts: 1,
+    rewardXp: 52,
+    rewardDiamonds: 3,
+    rewardScore: 520,
+    speedMult: 1.32,
+    aggroRange: 27.5,
+    hoverY: 9.8,
+    ranged: false,
+    hitRadius: 2.2,
+    hitCenterY: 1.0,
+    hitHalfH: 1.85,
+    isSkyMonster: true,
+  },
+  giant_phantom: {
+    id: 'giant_phantom',
+    sheetNumber: 34,
+    name: 'Giant Phantom (Pari Udara Raksasa)',
+    tier: 'large',
+    tierLabel: 'Monster Angkasa · Pari Udara',
+    stats: { hp: 1240, atk: 190, nrg: 220 },
+    baseScale: 1.28,
+    arenaScale: 0.82,
+    hitHp: 8,
+    quizHp: 3,
+    stanceHp: 2,
+    atkDamageHearts: 1,
+    rewardXp: 64,
+    rewardDiamonds: 3,
+    rewardScore: 640,
+    speedMult: 1.14,
+    aggroRange: 29.0,
+    hoverY: 13.4,
+    ranged: true,
+    hitRadius: 2.75,
+    hitCenterY: 0.65,
+    hitHalfH: 1.75,
+    isSkyMonster: true,
+  },
+  toxic_chimera: {
+    id: 'toxic_chimera',
+    sheetNumber: 35,
+    name: 'Toxic Chimera (Beast Berbisa Sungging)',
+    tier: 'large',
+    tierLabel: 'Monster Angkasa · Chimera',
+    stats: { hp: 1450, atk: 225, nrg: 230 },
+    baseScale: 1.26,
+    arenaScale: 0.84,
+    hitHp: 9,
+    quizHp: 3,
+    stanceHp: 3,
+    atkDamageHearts: 2,
+    rewardXp: 76,
+    rewardDiamonds: 4,
+    rewardScore: 760,
+    speedMult: 1.08,
+    aggroRange: 28.0,
+    hoverY: 10.6,
+    ranged: true,
+    hitRadius: 2.65,
+    hitCenterY: 0.95,
+    hitHalfH: 1.95,
+    isSkyMonster: true,
+  },
+  guardian_sentinel: {
+    id: 'guardian_sentinel',
+    sheetNumber: 36,
+    name: 'Guardian Sentinel (Drone Penjaga)',
+    tier: 'medium',
+    tierLabel: 'Monster Angkasa · Drone Penjaga',
+    stats: { hp: 1120, atk: 205, nrg: 250 },
+    baseScale: 1.16,
+    arenaScale: 0.88,
+    hitHp: 7,
+    quizHp: 3,
+    stanceHp: 2,
+    atkDamageHearts: 1,
+    rewardXp: 60,
+    rewardDiamonds: 3,
+    rewardScore: 600,
+    speedMult: 1.0,
+    aggroRange: 30.5,
+    hoverY: 11.8,
+    ranged: true,
+    hitRadius: 2.2,
+    hitCenterY: 0.95,
+    hitHalfH: 1.85,
+    isSkyMonster: true,
+  },
+  ice_shard_griffin: {
+    id: 'ice_shard_griffin',
+    sheetNumber: 37,
+    name: 'Ice Shard Griffin (Griffin Badai Es)',
+    tier: 'large',
+    tierLabel: 'Monster Angkasa · Griffin Es',
+    stats: { hp: 1480, atk: 220, nrg: 245 },
+    baseScale: 1.3,
+    arenaScale: 0.82,
+    hitHp: 9,
+    quizHp: 3,
+    stanceHp: 3,
+    atkDamageHearts: 2,
+    rewardXp: 78,
+    rewardDiamonds: 4,
+    rewardScore: 780,
+    speedMult: 1.16,
+    aggroRange: 29.0,
+    hoverY: 12.6,
+    ranged: true,
+    hitRadius: 2.75,
+    hitCenterY: 1.0,
+    hitHalfH: 2.0,
+    isSkyMonster: true,
+  },
+  blight_hornet: {
+    id: 'blight_hornet',
+    sheetNumber: 38,
+    name: 'Blight Hornet (Tawon Raksasa Beracun)',
+    tier: 'medium',
+    tierLabel: 'Monster Angkasa · Tawon Beracun',
+    stats: { hp: 860, atk: 165, nrg: 215 },
+    baseScale: 1.1,
+    arenaScale: 0.95,
+    hitHp: 6,
+    quizHp: 2,
+    stanceHp: 2,
+    atkDamageHearts: 1,
+    rewardXp: 48,
+    rewardDiamonds: 3,
+    rewardScore: 480,
+    speedMult: 1.38,
+    aggroRange: 27.0,
+    hoverY: 9.6,
+    ranged: false,
+    hitRadius: 2.05,
+    hitCenterY: 0.78,
+    hitHalfH: 1.75,
+    isSkyMonster: true,
+  },
+  acidic_sky_wyrm: {
+    id: 'acidic_sky_wyrm',
+    sheetNumber: 39,
+    name: 'Acidic Sky-Wyrm (Naga Asam Udara)',
+    tier: 'giant',
+    tierLabel: 'Monster Angkasa · Naga Asam',
+    stats: { hp: 1620, atk: 240, nrg: 265 },
+    baseScale: 1.32,
+    arenaScale: 0.78,
+    hitHp: 10,
+    quizHp: 4,
+    stanceHp: 3,
+    atkDamageHearts: 2,
+    rewardXp: 86,
+    rewardDiamonds: 5,
+    rewardScore: 860,
+    speedMult: 1.12,
+    aggroRange: 30.0,
+    hoverY: 14.0,
+    ranged: true,
+    hitRadius: 2.85,
+    hitCenterY: 0.88,
+    hitHalfH: 2.0,
+    isSkyMonster: true,
+  },
+  volcanic_giant_bat: {
+    id: 'volcanic_giant_bat',
+    sheetNumber: 40,
+    name: 'Volcanic Giant Bat (Kelelawar Lava)',
+    tier: 'medium',
+    tierLabel: 'Monster Angkasa · Kelelawar Lava',
+    stats: { hp: 980, atk: 185, nrg: 220 },
+    baseScale: 1.16,
+    arenaScale: 0.9,
+    hitHp: 7,
+    quizHp: 3,
+    stanceHp: 2,
+    atkDamageHearts: 1,
+    rewardXp: 58,
+    rewardDiamonds: 3,
+    rewardScore: 580,
+    speedMult: 1.28,
+    aggroRange: 28.0,
+    hoverY: 10.4,
+    ranged: false,
+    hitRadius: 2.25,
+    hitCenterY: 0.85,
+    hitHalfH: 1.85,
+    isSkyMonster: true,
+  },
 };
 
 export const ALL_MONSTER_TYPES: MonsterType[] = Object.keys(MONSTER_SPECS) as MonsterType[];
 
-export const FLYING_MONSTER_TYPES = new Set<MonsterType>(['lava_imp', 'stone_gargoyle']);
+export const SKY_MONSTER_TYPES = new Set<MonsterType>(
+  ALL_MONSTER_TYPES.filter((t) => MONSTER_SPECS[t].isSkyMonster),
+);
+export const FLYING_MONSTER_TYPES = new Set<MonsterType>([
+  'lava_imp',
+  'stone_gargoyle',
+  ...SKY_MONSTER_TYPES,
+]);
 export const SEA_MONSTER_TYPES = new Set<MonsterType>(
   ALL_MONSTER_TYPES.filter((t) => MONSTER_SPECS[t].isSeaMonster),
 );
@@ -865,7 +1123,7 @@ export function buildMonsterRig(
 
   const shadowRadius =
     spec.tier === 'giant' ? 1.55 : spec.tier === 'large' ? 1.3 : spec.tier === 'medium' ? 1.05 : 0.85;
-  if (!spec.isSeaMonster) {
+  if (!spec.isSeaMonster && !spec.isSkyMonster) {
     const shadow = new THREE.Mesh(
       new THREE.PlaneGeometry(shadowRadius * 2.1, shadowRadius * 2.1),
       palette.contactShadowMat,
@@ -2255,6 +2513,581 @@ export function buildMonsterRig(
 
     rig.vortexRing = vortex;
     rig.extraSpin = vortex;
+  } else if (type === 'giga_wyvern') {
+    // Sky #1: Giga-Wyvern (Naga Pembom) — obsidian charcoal dragon, blazing crimson belly/wings, glowing ember throat, wide bat wings & whip tail
+    const wyvCharcoal = palette.getMat(0x1f2430, 'matte');
+    const wyvDark = palette.getMat(0x0f172a, 'matte');
+    const wyvRedScale = palette.getMat(0xdc2626, 'gloss');
+    const wyvWingGlow = palette.getMat(0xef4444, 'emissive');
+    const wyvFire = palette.getMat(0xf97316, 'emissive');
+
+    // Armored serpentine chest & crimson underbelly
+    addBox(bodyPivot, 1.02, 0.92, 1.56, 0, 0.72, 0, wyvCharcoal);
+    addBox(bodyPivot, 0.78, 0.36, 1.44, 0, 0.32, 0.04, wyvRedScale);
+    for (const sz of [0.42, 0.0, -0.42]) {
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.42, 4), wyvRedScale);
+      sp.position.set(0, 1.28, sz);
+      sp.rotation.x = -0.25;
+      bodyPivot.add(sp);
+    }
+
+    // Neck & fierce dragon skull with glowing ember throat
+    const head = new THREE.Group();
+    head.position.set(0, 1.05, 0.78);
+    addBox(head, 0.64, 0.66, 0.74, 0, 0.08, 0.12, wyvCharcoal);
+    addBox(head, 0.76, 0.48, 0.96, 0, 0.24, 0.72, wyvCharcoal);
+    addBox(head, 0.56, 0.34, 0.54, 0, 0.22, 1.28, wyvCharcoal);
+    addBox(head, 0.46, 0.22, 0.36, 0, 0.06, 1.08, wyvFire, false); // glowing mouth flame
+    const eL = addBox(head, 0.16, 0.14, 0.12, -0.34, 0.32, 0.96, wyvFire, false);
+    const eR = addBox(head, 0.16, 0.14, 0.12, 0.34, 0.32, 0.96, wyvFire, false);
+    const hL = addBox(head, 0.12, 0.68, 0.14, -0.3, 0.64, 0.38, wyvDark);
+    hL.rotation.x = -0.68;
+    hL.rotation.z = 0.24;
+    const hR = addBox(head, 0.12, 0.68, 0.14, 0.3, 0.64, 0.38, wyvDark);
+    hR.rotation.x = -0.68;
+    hR.rotation.z = -0.24;
+
+    const jaw = new THREE.Group();
+    jaw.position.set(0, -0.02, 0.56);
+    addBox(jaw, 0.62, 0.18, 0.86, 0, -0.08, 0.42, wyvCharcoal);
+    for (const fx of [-0.2, 0.2]) {
+      addBox(jaw, 0.08, 0.16, 0.08, fx, 0.06, 0.74, whiteBone, false);
+    }
+    jaw.rotation.x = 0.26;
+    head.add(jaw);
+    bodyPivot.add(head);
+
+    // Huge crimson-veined dragon wings
+    const lWing = new THREE.Group();
+    lWing.position.set(-0.48, 1.04, 0.15);
+    addBox(lWing, 1.48, 0.14, 0.18, -0.72, 0.24, 0.08, wyvDark);
+    addBox(lWing, 1.56, 0.08, 1.18, -0.82, 0.16, -0.36, wyvRedScale);
+    addBox(lWing, 1.42, 0.12, 0.16, -2.02, 0.04, -0.1, wyvDark).rotation.z = -0.24;
+    addBox(lWing, 1.38, 0.08, 1.24, -1.96, -0.06, -0.58, wyvWingGlow, false);
+
+    const rWing = new THREE.Group();
+    rWing.position.set(0.48, 1.04, 0.15);
+    addBox(rWing, 1.48, 0.14, 0.18, 0.72, 0.24, 0.08, wyvDark);
+    addBox(rWing, 1.56, 0.08, 1.18, 0.82, 0.16, -0.36, wyvRedScale);
+    addBox(rWing, 1.42, 0.12, 0.16, 2.02, 0.04, -0.1, wyvDark).rotation.z = 0.24;
+    addBox(rWing, 1.38, 0.08, 1.24, 1.96, -0.06, -0.58, wyvWingGlow, false);
+    bodyPivot.add(lWing, rWing);
+
+    // Tucked clawed legs & spiked dragon whip tail
+    const legL = makeBipedLeg(-0.36, 0.56, 0.24, 0.28, wyvCharcoal, wyvDark);
+    legL.position.set(-0.36, 0.52, -0.18);
+    legL.rotation.x = 0.35;
+    const legR = makeBipedLeg(0.36, 0.56, 0.24, 0.28, wyvCharcoal, wyvDark);
+    legR.position.set(0.36, 0.52, -0.18);
+    legR.rotation.x = 0.35;
+    bodyPivot.add(legL, legR);
+
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.68, -0.78);
+    addBox(tail, 0.42, 0.38, 0.98, 0, 0, -0.46, wyvCharcoal);
+    addBox(tail, 0.24, 0.24, 0.94, 0, 0.06, -1.32, wyvRedScale);
+    const spade = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.52, 4), wyvRedScale);
+    spade.rotation.x = -Math.PI / 2;
+    spade.position.set(0, 0.08, -1.94);
+    tail.add(spade);
+    bodyPivot.add(tail);
+
+    rig.headGroup = head;
+    rig.jawPivot = jaw;
+    rig.leftWing = lWing;
+    rig.rightWing = rWing;
+    rig.legs = [legL, legR];
+    rig.tailPivot = tail;
+    rig.eyes = [eL, eR];
+  } else if (type === 'crimson_phoenix') {
+    // Sky #2: Crimson Phoenix (Burung Api) — blazing crimson body, layered flame-orange & gold feathers, fiery crest & fanned flame tail
+    const phxRed = palette.getMat(0xdc2626, 'gloss');
+    const phxOrange = palette.getMat(0xf97316, 'emissive');
+    const phxGold = palette.getMat(0xfacc15, 'emissive');
+    const phxBeak = palette.getMat(0xf59e0b, 'matte');
+
+    addBox(bodyPivot, 0.86, 0.98, 1.18, 0, 0.78, 0, phxRed);
+    addBox(bodyPivot, 0.68, 0.54, 0.76, 0, 0.66, 0.26, phxOrange, false);
+
+    const head = new THREE.Group();
+    head.position.set(0, 1.38, 0.36);
+    addBox(head, 0.54, 0.52, 0.56, 0, 0.22, 0.08, phxRed);
+    // 3 radiant head crest plumes
+    addBox(head, 0.14, 0.52, 0.14, 0, 0.62, -0.06, phxGold, false).rotation.x = -0.48;
+    addBox(head, 0.1, 0.42, 0.12, -0.14, 0.54, -0.12, phxOrange, false).rotation.x = -0.58;
+    addBox(head, 0.1, 0.42, 0.12, 0.14, 0.54, -0.12, phxOrange, false).rotation.x = -0.58;
+    // Hooked golden raptor beak
+    const beak = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.36, 4), phxBeak);
+    beak.rotation.x = Math.PI / 2;
+    beak.position.set(0, 0.18, 0.48);
+    head.add(beak);
+    const eL = addBox(head, 0.12, 0.12, 0.1, -0.24, 0.26, 0.24, phxGold, false);
+    const eR = addBox(head, 0.12, 0.12, 0.1, 0.24, 0.26, 0.24, phxGold, false);
+    bodyPivot.add(head);
+
+    // Sweeping blazing phoenix wings (3 layered flame feather tiers per wing)
+    const lWing = new THREE.Group();
+    lWing.position.set(-0.42, 1.02, 0.04);
+    addBox(lWing, 0.96, 0.16, 0.74, -0.5, 0.12, -0.08, phxRed);
+    addBox(lWing, 0.88, 0.12, 0.68, -1.24, 0.26, -0.12, phxOrange, false);
+    addBox(lWing, 0.72, 0.08, 0.54, -1.94, 0.38, -0.18, phxGold, false);
+    addBox(lWing, 0.42, 0.08, 0.36, -1.56, 0.14, -0.54, phxGold, false);
+
+    const rWing = new THREE.Group();
+    rWing.position.set(0.42, 1.02, 0.04);
+    addBox(rWing, 0.96, 0.16, 0.74, 0.5, 0.12, -0.08, phxRed);
+    addBox(rWing, 0.88, 0.12, 0.68, 1.24, 0.26, -0.12, phxOrange, false);
+    addBox(rWing, 0.72, 0.08, 0.54, 1.94, 0.38, -0.18, phxGold, false);
+    addBox(rWing, 0.42, 0.08, 0.36, 1.56, 0.14, -0.54, phxGold, false);
+    bodyPivot.add(lWing, rWing);
+
+    // Golden talons
+    const legL = makeBipedLeg(-0.22, 0.44, 0.16, 0.22, phxBeak, phxGold);
+    legL.position.set(-0.22, 0.42, 0.08);
+    legL.rotation.x = 0.28;
+    const legR = makeBipedLeg(0.22, 0.44, 0.16, 0.22, phxBeak, phxGold);
+    legR.position.set(0.22, 0.42, 0.08);
+    legR.rotation.x = 0.28;
+    bodyPivot.add(legL, legR);
+
+    // Fanned flame tail plumes
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.64, -0.58);
+    for (const [tx, rz, mat] of [
+      [-0.26, 0.3, phxOrange],
+      [0, 0, phxGold],
+      [0.26, -0.3, phxOrange],
+    ] as const) {
+      const plume = addBox(tail, 0.22, 0.1, 1.18, tx, 0.06, -0.56, mat, false);
+      plume.rotation.y = rz;
+    }
+    bodyPivot.add(tail);
+
+    rig.headGroup = head;
+    rig.leftWing = lWing;
+    rig.rightWing = rWing;
+    rig.legs = [legL, legR];
+    rig.tailPivot = tail;
+    rig.eyes = [eL, eR];
+  } else if (type === 'shadow_harpy') {
+    // Sky #3: Shadow Harpy (Harpi Kegelapan) — charcoal-slate shadowed harpy maiden, wide raven wings, clawed hands & hooked talons
+    const hrpDark = palette.getMat(0x111827, 'matte');
+    const hrpFeather = palette.getMat(0x1e293b, 'gloss');
+    const hrpSkin = palette.getMat(0x475569, 'matte');
+    const hrpEye = palette.getMat(0xfde047, 'emissive');
+
+    const legs = [
+      makeBipedLeg(-0.22, 0.72, 0.22, 0.28, hrpSkin, hrpDark),
+      makeBipedLeg(0.22, 0.72, 0.22, 0.28, hrpSkin, hrpDark),
+    ];
+    legs[0].rotation.x = 0.28;
+    legs[1].rotation.x = 0.16;
+    bodyPivot.add(...legs);
+
+    const upper = new THREE.Group();
+    upper.position.set(0, 0.72, 0);
+    bodyPivot.add(upper);
+    addBox(upper, 0.76, 0.94, 0.5, 0, 0.46, 0, hrpSkin);
+    addBox(upper, 0.84, 0.34, 0.56, 0, 0.82, -0.02, hrpFeather); // feathered shoulder mantle
+
+    const head = new THREE.Group();
+    head.position.set(0, 0.98, 0.06);
+    addBox(head, 0.56, 0.54, 0.54, 0, 0.28, 0, hrpSkin);
+    addBox(head, 0.64, 0.62, 0.58, 0, 0.3, -0.1, hrpDark); // swept shadow hair hood
+    const eL = addBox(head, 0.13, 0.1, 0.08, -0.15, 0.3, 0.27, hrpEye, false);
+    const eR = addBox(head, 0.13, 0.1, 0.08, 0.15, 0.3, 0.27, hrpEye, false);
+    upper.add(head);
+
+    // Wide raven-feathered wing-arms with claws
+    const lWing = new THREE.Group();
+    lWing.position.set(-0.42, 0.84, -0.06);
+    addBox(lWing, 0.92, 0.22, 0.68, -0.46, 0.12, -0.08, hrpFeather);
+    addBox(lWing, 1.06, 0.14, 0.86, -1.32, 0.28, -0.16, hrpDark);
+    addBox(lWing, 0.2, 0.28, 0.18, -0.52, -0.12, 0.32, hrpSkin); // forearm claw hand
+
+    const rWing = new THREE.Group();
+    rWing.position.set(0.42, 0.84, -0.06);
+    addBox(rWing, 0.92, 0.22, 0.68, 0.46, 0.12, -0.08, hrpFeather);
+    addBox(rWing, 1.06, 0.14, 0.86, 1.32, 0.28, -0.16, hrpDark);
+    addBox(rWing, 0.2, 0.28, 0.18, 0.52, -0.12, 0.32, hrpSkin);
+    upper.add(lWing, rWing);
+
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.12, -0.26);
+    addBox(tail, 0.58, 0.1, 0.72, 0, -0.18, -0.34, hrpDark).rotation.x = -0.35;
+    upper.add(tail);
+
+    rig.upperBody = upper;
+    rig.headGroup = head;
+    rig.leftWing = lWing;
+    rig.rightWing = rWing;
+    rig.legs = legs;
+    rig.tailPivot = tail;
+    rig.eyes = [eL, eR];
+  } else if (type === 'giant_phantom') {
+    // Sky #4: Giant Phantom (Pari Udara Raksasa) — deep astral-navy manta glider with glowing sky-cyan aura spots, cyan eyes & forked whip tail
+    const phmNavy = palette.getMat(0x1e293b, 'gloss');
+    const phmMidnight = palette.getMat(0x0f172a, 'matte');
+    const phmCyan = palette.getMat(0x38bdf8, 'emissive');
+    const phmAura = palette.getMat(0x7dd3fc, 'emissive');
+
+    addBox(bodyPivot, 1.15, 0.44, 1.85, 0, 0.48, 0, phmMidnight);
+    addBox(bodyPivot, 1.36, 0.24, 0.68, 0, 0.48, 0.72, phmNavy); // wide crescent manta head
+    const eL = addBox(bodyPivot, 0.22, 0.16, 0.14, -0.44, 0.52, 1.02, phmAura, false);
+    const eR = addBox(bodyPivot, 0.22, 0.16, 0.14, 0.44, 0.52, 1.02, phmAura, false);
+    // Glowing cyan dorsal stripes
+    addBox(bodyPivot, 0.24, 0.08, 1.1, 0, 0.72, -0.12, phmCyan, false);
+
+    // Swept aerodynamic sky-manta wings with glowing edge highlights
+    const lWing = new THREE.Group();
+    lWing.position.set(-0.56, 0.48, 0.08);
+    addBox(lWing, 1.05, 0.16, 1.36, -0.52, 0, -0.14, phmNavy);
+    addBox(lWing, 1.15, 0.1, 0.78, -1.42, 0.04, -0.42, phmMidnight);
+    addBox(lWing, 1.85, 0.08, 0.12, -1.06, 0.08, 0.36, phmCyan, false);
+
+    const rWing = new THREE.Group();
+    rWing.position.set(0.56, 0.48, 0.08);
+    addBox(rWing, 1.05, 0.16, 1.36, 0.52, 0, -0.14, phmNavy);
+    addBox(rWing, 1.15, 0.1, 0.78, 1.42, 0.04, -0.42, phmMidnight);
+    addBox(rWing, 1.85, 0.08, 0.12, 1.06, 0.08, 0.36, phmCyan, false);
+    bodyPivot.add(lWing, rWing);
+
+    // Long trailing phantom whip tail
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.44, -0.95);
+    addBox(tail, 0.24, 0.18, 0.96, 0, 0, -0.48, phmNavy);
+    addBox(tail, 0.12, 0.1, 1.05, 0, 0.02, -1.36, phmCyan, false);
+    bodyPivot.add(tail);
+
+    rig.leftWing = lWing;
+    rig.rightWing = rWing;
+    rig.tailPivot = tail;
+    rig.eyes = [eL, eR];
+  } else if (type === 'toxic_chimera') {
+    // Sky #5: Toxic Chimera (Beast Berbisa Sungging) — olive-green lion beast, purple mane, green horns, dragon wings & venomous serpent tail
+    const chiOlive = palette.getMat(0x65a30d, 'matte');
+    const chiDark = palette.getMat(0x3f6212, 'matte');
+    const chiMane = palette.getMat(0x7e22ce, 'matte');
+    const chiVenom = palette.getMat(0x4ade80, 'emissive');
+
+    const legs: THREE.Group[] = [];
+    for (const [lx, lz] of [
+      [-0.38, 0.52],
+      [0.38, 0.52],
+      [-0.38, -0.52],
+      [0.38, -0.52],
+    ]) {
+      const leg = makeBipedLeg(lx, 0.68, 0.24, 0.26, chiOlive, chiDark);
+      leg.position.z = lz;
+      legs.push(leg);
+    }
+    bodyPivot.add(...legs);
+
+    addBox(bodyPivot, 0.94, 0.76, 1.48, 0, 0.96, 0, chiOlive);
+
+    const head = new THREE.Group();
+    head.position.set(0, 1.18, 0.78);
+    addBox(head, 1.04, 0.98, 0.48, 0, 0.08, -0.08, chiMane); // thick purple lion mane
+    addBox(head, 0.68, 0.62, 0.68, 0, 0.08, 0.22, chiOlive);
+    addBox(head, 0.48, 0.3, 0.34, 0, -0.06, 0.62, chiDark);
+    const eL = addBox(head, 0.14, 0.12, 0.1, -0.2, 0.18, 0.58, chiVenom, false);
+    const eR = addBox(head, 0.14, 0.12, 0.1, 0.2, 0.18, 0.58, chiVenom, false);
+    addBox(head, 0.12, 0.54, 0.12, -0.24, 0.52, 0.08, chiVenom, false).rotation.x = -0.35;
+    addBox(head, 0.12, 0.54, 0.12, 0.24, 0.52, 0.08, chiVenom, false).rotation.x = -0.35;
+    bodyPivot.add(head);
+
+    // Purple-veined green dragon wings
+    const lWing = new THREE.Group();
+    lWing.position.set(-0.44, 1.28, 0.18);
+    addBox(lWing, 1.12, 0.12, 0.78, -0.56, 0.2, -0.14, chiMane);
+    addBox(lWing, 1.06, 0.08, 0.88, -1.48, 0.14, -0.28, chiDark);
+    addBox(lWing, 1.38, 0.1, 0.12, -1.16, 0.28, 0.2, chiVenom, false);
+
+    const rWing = new THREE.Group();
+    rWing.position.set(0.44, 1.28, 0.18);
+    addBox(rWing, 1.12, 0.12, 0.78, 0.56, 0.2, -0.14, chiMane);
+    addBox(rWing, 1.06, 0.08, 0.88, 1.48, 0.14, -0.28, chiDark);
+    addBox(rWing, 1.38, 0.1, 0.12, 1.16, 0.28, 0.2, chiVenom, false);
+    bodyPivot.add(lWing, rWing);
+
+    // Snapping venomous serpent tail!
+    const tail = new THREE.Group();
+    tail.position.set(0, 1.02, -0.74);
+    addBox(tail, 0.26, 0.26, 0.82, 0, 0.18, -0.36, chiDark);
+    addBox(tail, 0.22, 0.74, 0.24, 0, 0.56, -0.76, chiOlive);
+    addBox(tail, 0.44, 0.34, 0.52, 0, 0.96, -0.62, chiMane);
+    addBox(tail, 0.08, 0.18, 0.08, -0.12, 0.82, -0.38, chiVenom, false);
+    addBox(tail, 0.08, 0.18, 0.08, 0.12, 0.82, -0.38, chiVenom, false);
+    bodyPivot.add(tail);
+
+    rig.headGroup = head;
+    rig.leftWing = lWing;
+    rig.rightWing = rWing;
+    rig.legs = legs;
+    rig.tailPivot = tail;
+    rig.eyes = [eL, eR];
+  } else if (type === 'guardian_sentinel') {
+    // Sky #6: Guardian Sentinel (Drone Penjaga) — ancient carved stone temple cube, glowing crimson cyclops laser lens, gold trim & 4 mech drone legs
+    const senStone = palette.getMat(0xa8a29e, 'matte');
+    const senDark = palette.getMat(0x57534e, 'matte');
+    const senGold = palette.getMat(0xf59e0b, 'metal');
+    const senLaser = palette.getMat(0xf43f5e, 'emissive');
+
+    const upper = new THREE.Group();
+    upper.position.set(0, 1.18, 0);
+    addBox(upper, 1.18, 1.08, 1.18, 0, 0.28, 0, senStone);
+    addBox(upper, 1.24, 0.16, 1.24, 0, 0.52, 0, senDark);
+    addBox(upper, 0.74, 0.56, 0.18, 0, 0.24, 0.58, senGold);
+    addBox(upper, 0.56, 0.38, 0.14, 0, 0.24, 0.62, senDark);
+    const eye = addBox(upper, 0.28, 0.24, 0.12, 0, 0.24, 0.68, senLaser, false);
+    // Spinning golden rune stabilizer ring around top
+    const spin = new THREE.Group();
+    spin.position.set(0, 0.94, 0);
+    addBox(spin, 0.96, 0.1, 0.14, 0, 0, 0, senGold);
+    addBox(spin, 0.14, 0.1, 0.96, 0, 0, 0, senGold);
+    upper.add(spin);
+    bodyPivot.add(upper);
+
+    // 4 dangling golden-jointed mechanical drone legs
+    const legs: THREE.Group[] = [];
+    for (const [lx, lz] of [
+      [-0.56, 0.56],
+      [0.56, 0.56],
+      [-0.56, -0.56],
+      [0.56, -0.56],
+    ]) {
+      const leg = new THREE.Group();
+      leg.position.set(lx, 0.74, lz);
+      addBox(leg, 0.2, 0.24, 0.2, Math.sign(lx) * 0.1, -0.1, Math.sign(lz) * 0.1, senGold);
+      const shin = addBox(leg, 0.18, 0.62, 0.18, Math.sign(lx) * 0.18, -0.44, Math.sign(lz) * 0.18, senDark);
+      shin.rotation.z = Math.sign(lx) * -0.18;
+      legs.push(leg);
+      bodyPivot.add(leg);
+    }
+
+    rig.upperBody = upper;
+    rig.extraSpin = spin;
+    rig.legs = legs;
+    rig.eyes = [eye];
+  } else if (type === 'ice_shard_griffin') {
+    // Sky #7: Ice Shard Griffin (Griffin Badai Es) — warm tan beast hindquarters, glacial frost-blue feathered shoulders, eagle beak & crystalline ice wings
+    const grfFur = palette.getMat(0xa16207, 'matte');
+    const grfIce = palette.getMat(0x38bdf8, 'gloss');
+    const grfFrost = palette.getMat(0xe0f2fe, 'matte');
+    const grfGold = palette.getMat(0xfacc15, 'matte');
+    const grfEye = palette.getMat(0x67e8f9, 'emissive');
+
+    const legs: THREE.Group[] = [];
+    for (const [lx, lz, mat] of [
+      [-0.36, 0.52, grfGold],
+      [0.36, 0.52, grfGold],
+      [-0.36, -0.52, grfFur],
+      [0.36, -0.52, grfFur],
+    ] as const) {
+      const leg = makeBipedLeg(lx, 0.68, 0.22, 0.24, mat, grfGold);
+      leg.position.z = lz;
+      legs.push(leg);
+    }
+    bodyPivot.add(...legs);
+
+    addBox(bodyPivot, 0.92, 0.74, 1.48, 0, 0.96, 0, grfFur);
+    addBox(bodyPivot, 0.98, 0.84, 0.72, 0, 1.02, 0.42, grfIce);
+    addBox(bodyPivot, 0.78, 0.58, 0.34, 0, 0.98, 0.74, grfFrost);
+
+    const head = new THREE.Group();
+    head.position.set(0, 1.48, 0.66);
+    addBox(head, 0.62, 0.58, 0.62, 0, 0.14, 0.08, grfFrost);
+    addBox(head, 0.68, 0.38, 0.44, 0, 0.36, -0.06, grfIce); // icy crest ruff
+    addBox(head, 0.1, 0.44, 0.12, -0.22, 0.54, -0.06, grfIce).rotation.x = -0.52;
+    addBox(head, 0.1, 0.44, 0.12, 0.22, 0.54, -0.06, grfIce).rotation.x = -0.52;
+    const beak = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.42, 4), grfGold);
+    beak.rotation.x = Math.PI / 2;
+    beak.position.set(0, 0.08, 0.52);
+    head.add(beak);
+    const eL = addBox(head, 0.13, 0.11, 0.1, -0.24, 0.22, 0.28, grfEye, false);
+    const eR = addBox(head, 0.13, 0.11, 0.1, 0.24, 0.22, 0.28, grfEye, false);
+    bodyPivot.add(head);
+
+    const lWing = new THREE.Group();
+    lWing.position.set(-0.44, 1.32, 0.22);
+    addBox(lWing, 1.04, 0.14, 0.78, -0.52, 0.14, -0.1, grfIce);
+    addBox(lWing, 0.98, 0.1, 0.66, -1.36, 0.28, -0.18, grfFrost);
+
+    const rWing = new THREE.Group();
+    rWing.position.set(0.44, 1.32, 0.22);
+    addBox(rWing, 1.04, 0.14, 0.78, 0.52, 0.14, -0.1, grfIce);
+    addBox(rWing, 0.98, 0.1, 0.66, 1.36, 0.28, -0.18, grfFrost);
+    bodyPivot.add(lWing, rWing);
+
+    const tail = new THREE.Group();
+    tail.position.set(0, 1.02, -0.76);
+    addBox(tail, 0.14, 0.14, 0.86, 0, 0.1, -0.4, grfFur);
+    addBox(tail, 0.34, 0.24, 0.38, 0, 0.2, -0.92, grfIce);
+    bodyPivot.add(tail);
+
+    rig.headGroup = head;
+    rig.leftWing = lWing;
+    rig.rightWing = rWing;
+    rig.legs = legs;
+    rig.tailPivot = tail;
+    rig.eyes = [eL, eR];
+  } else if (type === 'blight_hornet') {
+    // Sky #8: Blight Hornet (Tawon Raksasa Beracun) — jet-black wasp thorax, striped green-toxic glowing abdomen, giant lime compound eyes & 4 translucent veined wings
+    const hrnBlack = palette.getMat(0x0f172a, 'gloss');
+    const hrnSlate = palette.getMat(0x1e293b, 'matte');
+    const hrnToxic = palette.getMat(0x4ade80, 'emissive');
+    const hrnWing = palette.getMat(0x86efac, 'glass');
+
+    addBox(bodyPivot, 0.74, 0.68, 0.86, 0, 0.76, 0.14, hrnBlack); // thorax
+
+    const head = new THREE.Group();
+    head.position.set(0, 0.74, 0.68);
+    addBox(head, 0.62, 0.54, 0.48, 0, 0, 0.12, hrnBlack);
+    const eL = addBox(head, 0.24, 0.26, 0.22, -0.26, 0.06, 0.24, hrnToxic, false);
+    const eR = addBox(head, 0.24, 0.26, 0.22, 0.26, 0.06, 0.24, hrnToxic, false);
+    addBox(head, 0.06, 0.34, 0.06, -0.16, 0.34, 0.26, hrnBlack).rotation.x = 0.48;
+    addBox(head, 0.06, 0.34, 0.06, 0.16, 0.34, 0.26, hrnBlack).rotation.x = 0.48;
+    bodyPivot.add(head);
+
+    // Striped toxic glowing hornet abdomen + sharp stinger
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.72, -0.32);
+    addBox(tail, 0.72, 0.68, 0.44, 0, -0.06, -0.28, hrnToxic, false);
+    addBox(tail, 0.76, 0.7, 0.24, 0, -0.08, -0.54, hrnBlack);
+    addBox(tail, 0.62, 0.58, 0.3, 0, -0.14, -0.78, hrnToxic, false);
+    addBox(tail, 0.48, 0.44, 0.28, 0, -0.2, -1.04, hrnBlack);
+    const stinger = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.46, 5), hrnSlate);
+    stinger.rotation.x = -Math.PI * 0.56;
+    stinger.position.set(0, -0.28, -1.32);
+    tail.add(stinger);
+    bodyPivot.add(tail);
+
+    // 4 translucent buzzing hornet wings
+    const lWing = new THREE.Group();
+    lWing.position.set(-0.34, 1.06, 0.14);
+    addBox(lWing, 1.38, 0.04, 0.52, -0.68, 0.08, -0.06, hrnWing, false).rotation.y = 0.18;
+    addBox(lWing, 0.96, 0.04, 0.38, -0.48, 0.02, -0.42, hrnWing, false).rotation.y = 0.44;
+
+    const rWing = new THREE.Group();
+    rWing.position.set(0.34, 1.06, 0.14);
+    addBox(rWing, 1.38, 0.04, 0.52, 0.68, 0.08, -0.06, hrnWing, false).rotation.y = -0.18;
+    addBox(rWing, 0.96, 0.04, 0.38, 0.48, 0.02, -0.42, hrnWing, false).rotation.y = -0.44;
+    bodyPivot.add(lWing, rWing);
+
+    // 6 jointed wasp legs tucked under thorax
+    const legs: THREE.Group[] = [];
+    for (const lz of [0.32, 0.06, -0.18]) {
+      for (const side of [-1, 1]) {
+        const leg = new THREE.Group();
+        leg.position.set(side * 0.34, 0.46, lz);
+        addBox(leg, 0.12, 0.42, 0.12, side * 0.14, -0.2, 0, hrnSlate).rotation.z = side * -0.42;
+        legs.push(leg);
+        bodyPivot.add(leg);
+      }
+    }
+
+    rig.headGroup = head;
+    rig.leftWing = lWing;
+    rig.rightWing = rWing;
+    rig.tailPivot = tail;
+    rig.legs = legs;
+    rig.eyes = [eL, eR];
+  } else if (type === 'acidic_sky_wyrm') {
+    // Sky #9: Acidic Sky-Wyrm (Naga Asam Udara) — flying emerald & chartreuse Eastern sky dragon with undulating S-coil segments & glowing acid fins
+    const wyrmGreen = palette.getMat(0x16a34a, 'gloss');
+    const wyrmDark = palette.getMat(0x14532d, 'matte');
+    const wyrmAcid = palette.getMat(0x84cc16, 'emissive');
+    const wyrmEye = palette.getMat(0xfef08a, 'emissive');
+
+    const head = new THREE.Group();
+    head.position.set(0, 1.02, 1.48);
+    addBox(head, 0.84, 0.52, 0.98, 0, 0.12, 0.25, wyrmGreen);
+    addBox(head, 0.96, 0.28, 0.34, 0, 0.22, -0.08, wyrmAcid, false); // acidic mane collar
+    addBox(head, 0.12, 0.46, 0.12, -0.28, 0.48, -0.05, wyrmAcid, false).rotation.x = -0.5;
+    addBox(head, 0.12, 0.46, 0.12, 0.28, 0.48, -0.05, wyrmAcid, false).rotation.x = -0.5;
+    const eL = addBox(head, 0.15, 0.13, 0.1, -0.36, 0.22, 0.56, wyrmEye, false);
+    const eR = addBox(head, 0.15, 0.13, 0.1, 0.36, 0.22, 0.56, wyrmEye, false);
+    const jaw = new THREE.Group();
+    jaw.position.set(0, -0.1, 0.1);
+    addBox(jaw, 0.66, 0.18, 0.86, 0, -0.1, 0.44, wyrmDark);
+    addBox(jaw, 0.08, 0.16, 0.08, -0.22, 0.04, 0.72, whiteBone, false);
+    addBox(jaw, 0.08, 0.16, 0.08, 0.22, 0.04, 0.72, whiteBone, false);
+    jaw.rotation.x = 0.24;
+    head.add(jaw);
+    bodyPivot.add(head);
+
+    // 7 undulating flying dragon body coils
+    const segments: THREE.Group[] = [];
+    for (let i = 0; i < 7; i++) {
+      const seg = new THREE.Group();
+      const xCoil = Math.sin(i * 0.95) * 0.56;
+      const yCoil = 0.78 + Math.cos(i * 0.85) * 0.26;
+      const zCoil = 0.82 - i * 0.58;
+      seg.position.set(xCoil, yCoil, zCoil);
+      const sz = Math.max(0.36, 0.78 - i * 0.055);
+      addBox(seg, sz, sz * 0.88, 0.68, 0, 0, 0, i % 2 === 0 ? wyrmGreen : wyrmDark);
+      addBox(seg, sz * 0.7, 0.16, 0.64, 0, -sz * 0.42, 0, wyrmAcid, false);
+      addBox(seg, 0.1, 0.44, 0.42, 0, sz * 0.54, 0, wyrmAcid, false); // glowing acid crest
+      bodyPivot.add(seg);
+      segments.push(seg);
+    }
+
+    rig.headGroup = head;
+    rig.jawPivot = jaw;
+    rig.segments = segments;
+    rig.eyes = [eL, eR];
+  } else if (type === 'volcanic_giant_bat') {
+    // Sky #10: Volcanic Giant Bat (Kelelawar Lava) — dark obsidian furry bat, tall ears, molten magma eyes & wide glowing lava-veined wings
+    const batFur = palette.getMat(0x271915, 'matte');
+    const batChar = palette.getMat(0x111827, 'matte');
+    const batLava = palette.getMat(0xf97316, 'emissive');
+    const batCore = palette.getMat(0xfacc15, 'emissive');
+
+    addBox(bodyPivot, 0.74, 0.88, 0.64, 0, 0.78, 0, batFur);
+
+    const head = new THREE.Group();
+    head.position.set(0, 1.32, 0.16);
+    addBox(head, 0.64, 0.56, 0.58, 0, 0.1, 0.08, batFur);
+    // Tall pointed bat ears
+    const earL = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.52, 4), batChar);
+    earL.position.set(-0.22, 0.56, 0.04);
+    const earR = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.52, 4), batChar);
+    earR.position.set(0.22, 0.56, 0.04);
+    head.add(earL, earR);
+    addBox(head, 0.24, 0.18, 0.14, 0, -0.02, 0.36, batChar); // snout
+    const eL = addBox(head, 0.14, 0.12, 0.1, -0.18, 0.14, 0.36, batCore, false);
+    const eR = addBox(head, 0.14, 0.12, 0.1, 0.18, 0.14, 0.36, batCore, false);
+    addBox(head, 0.07, 0.14, 0.07, -0.1, -0.14, 0.38, whiteBone, false);
+    addBox(head, 0.07, 0.14, 0.07, 0.1, -0.14, 0.38, whiteBone, false);
+    bodyPivot.add(head);
+
+    // Wide glowing volcanic magma bat wings
+    const lWing = new THREE.Group();
+    lWing.position.set(-0.36, 0.98, 0.04);
+    addBox(lWing, 1.24, 0.12, 0.14, -0.62, 0.18, 0.08, batChar);
+    addBox(lWing, 1.22, 0.07, 0.94, -0.66, 0.08, -0.26, batLava, false);
+    addBox(lWing, 1.08, 0.11, 0.14, -1.66, 0.06, -0.06, batChar).rotation.z = -0.22;
+    addBox(lWing, 1.04, 0.07, 0.88, -1.62, -0.04, -0.44, batCore, false);
+
+    const rWing = new THREE.Group();
+    rWing.position.set(0.36, 0.98, 0.04);
+    addBox(rWing, 1.24, 0.12, 0.14, 0.62, 0.18, 0.08, batChar);
+    addBox(rWing, 1.22, 0.07, 0.94, 0.66, 0.08, -0.26, batLava, false);
+    addBox(rWing, 1.08, 0.11, 0.14, 1.66, 0.06, -0.06, batChar).rotation.z = 0.22;
+    addBox(rWing, 1.04, 0.07, 0.88, 1.62, -0.04, -0.44, batCore, false);
+    bodyPivot.add(lWing, rWing);
+
+    const legL = makeBipedLeg(-0.18, 0.36, 0.14, 0.18, batChar, batChar);
+    legL.position.set(-0.18, 0.38, 0.04);
+    const legR = makeBipedLeg(0.18, 0.36, 0.14, 0.18, batChar, batChar);
+    legR.position.set(0.18, 0.38, 0.04);
+    bodyPivot.add(legL, legR);
+
+    rig.headGroup = head;
+    rig.leftWing = lWing;
+    rig.rightWing = rWing;
+    rig.legs = [legL, legR];
+    rig.eyes = [eL, eR];
   }
 
   root.userData.monsterRig = rig;
@@ -2421,4 +3254,51 @@ export const SEA_MONSTER_SPAWNS: SeaMonsterSpawnTemplate[] = [
 
   // Samudra Utara Gua Portal
   { zoneId: 'gua_portal', name: 'Leviathan Serpent', type: 'leviathan_serpent', x: 106, z: -218 },
+];
+
+export interface SkyMonsterSpawnTemplate {
+  zoneId: ZoneId;
+  name: string;
+  type: MonsterType;
+  x: number;
+  z: number;
+  combatOnly: boolean;
+}
+
+// 20 Monster Terbang Angkasa (semua 10 jenis monster langit — masing-masing 2 ekor):
+// 14 Penyerang Tempur Langit (70%) + 6 Pembawa Tantangan Kata Langit (30%)
+export const SKY_MONSTER_SPAWNS: SkyMonsterSpawnTemplate[] = [
+  // Desa Sapaan & Langit Selatan (3: 2 combat + 1 quiz)
+  { zoneId: 'desa_sapaan', name: 'Crimson Phoenix (Burung Api)', type: 'crimson_phoenix', x: 24, z: 112, combatOnly: true },
+  { zoneId: 'desa_sapaan', name: 'Blight Hornet (Tawon Beracun)', type: 'blight_hornet', x: -24, z: 124, combatOnly: true },
+  { zoneId: 'desa_sapaan', name: 'Giant Phantom Kata', type: 'giant_phantom', x: -6, z: 92, combatOnly: false },
+
+  // Pasar Rasa & Langit Barat (3: 2 combat + 1 quiz)
+  { zoneId: 'pasar_rasa', name: 'Shadow Harpy (Harpi Kegelapan)', type: 'shadow_harpy', x: -112, z: 62, combatOnly: true },
+  { zoneId: 'pasar_rasa', name: 'Toxic Chimera (Beast Berbisa)', type: 'toxic_chimera', x: -136, z: 36, combatOnly: true },
+  { zoneId: 'pasar_rasa', name: 'Crimson Phoenix Kata', type: 'crimson_phoenix', x: -100, z: 32, combatOnly: false },
+
+  // Hutan Satwa & Langit Timur (3: 2 combat + 1 quiz)
+  { zoneId: 'hutan_satwa', name: 'Blight Hornet (Tawon Beracun)', type: 'blight_hornet', x: 114, z: 68, combatOnly: true },
+  { zoneId: 'hutan_satwa', name: 'Acidic Sky-Wyrm (Naga Asam)', type: 'acidic_sky_wyrm', x: 146, z: 54, combatOnly: true },
+  { zoneId: 'hutan_satwa', name: 'Toxic Chimera Kata', type: 'toxic_chimera', x: 118, z: 34, combatOnly: false },
+
+  // Gerbang Kota & Langit Barat Laut (3: 2 combat + 1 quiz)
+  { zoneId: 'gerbang_kota', name: 'Guardian Sentinel (Drone Penjaga)', type: 'guardian_sentinel', x: -118, z: -88, combatOnly: true },
+  { zoneId: 'gerbang_kota', name: 'Shadow Harpy (Harpi Kegelapan)', type: 'shadow_harpy', x: -140, z: -112, combatOnly: true },
+  { zoneId: 'gerbang_kota', name: 'Ice Shard Griffin Kata', type: 'ice_shard_griffin', x: -98, z: -118, combatOnly: false },
+
+  // Menara Waktu & Langit Timur Laut (3: 2 combat + 1 quiz)
+  { zoneId: 'menara_waktu', name: 'Ice Shard Griffin (Griffin Es)', type: 'ice_shard_griffin', x: 138, z: -96, combatOnly: true },
+  { zoneId: 'menara_waktu', name: 'Giant Phantom (Pari Udara)', type: 'giant_phantom', x: 162, z: -74, combatOnly: true },
+  { zoneId: 'menara_waktu', name: 'Acidic Sky-Wyrm Kata', type: 'acidic_sky_wyrm', x: 126, z: -64, combatOnly: false },
+
+  // Gua Portal & Langit Vulkanik Utara (3: 2 combat + 1 quiz)
+  { zoneId: 'gua_portal', name: 'Giga-Wyvern (Naga Pembom)', type: 'giga_wyvern', x: 14, z: -176, combatOnly: true },
+  { zoneId: 'gua_portal', name: 'Volcanic Giant Bat (Kelelawar Lava)', type: 'volcanic_giant_bat', x: 44, z: -164, combatOnly: true },
+  { zoneId: 'gua_portal', name: 'Volcanic Giant Bat Kata', type: 'volcanic_giant_bat', x: -14, z: -182, combatOnly: false },
+
+  // Angkasa Alun-Alun Tengah Citadel (2: 2 combat)
+  { zoneId: 'desa_sapaan', name: 'Guardian Sentinel (Drone Penjaga)', type: 'guardian_sentinel', x: -18, z: -14, combatOnly: true },
+  { zoneId: 'gua_portal', name: 'Giga-Wyvern (Naga Pembom)', type: 'giga_wyvern', x: 20, z: -26, combatOnly: true },
 ];

@@ -506,7 +506,7 @@ export function applyHeroWeaponPose(
     idleDuration = 0,
     isSwimming = false,
   } = input;
-  const clampedAimPitch = THREE.MathUtils.clamp(aimPitch, -0.58, 0.65);
+  const clampedAimPitch = THREE.MathUtils.clamp(aimPitch, -0.68, 1.32);
   const moving = speed > 0.6;
   const airborne = !onGround && !isSwimming;
   const jumpRise = THREE.MathUtils.clamp(velY / 11.4, -1, 1);
@@ -729,15 +729,17 @@ export function applyHeroWeaponPose(
         targetRightLegZ = -0.12;
       }
     }
-    // Apply vertical crosshair aim pitch across torso, head, and weapon arms!
+    // Apply vertical crosshair aim pitch across torso, head, and weapon arms (including steep skyward aiming)!
     if (aimAlpha > 0.02 && Math.abs(clampedAimPitch) > 0.005) {
       const pitchShift = clampedAimPitch * aimAlpha;
       targetRightArmX -= pitchShift;
       if (cls !== 'handcannon') {
         targetLeftArmX -= pitchShift;
+      } else if (pitchShift > 0.22) {
+        targetLeftArmX -= (pitchShift - 0.22) * 0.35;
       }
-      targetHeadX -= pitchShift * 0.68;
-      targetUpperX -= pitchShift * 0.24;
+      targetHeadX -= pitchShift * 0.72;
+      targetUpperX -= pitchShift * 0.34;
     }
   }
 
@@ -1423,12 +1425,21 @@ export function animateMonsterRig(mesh: THREE.Object3D, input: MonsterAnimInput)
     });
   }
   if (rig.leftWing && rig.rightWing) {
-    const isRay = rig.type === 'spiny_mega_stingray';
-    const flapSpeed = isRay ? 4.2 : rig.type === 'obsidian_hydra' ? 9 : 15;
-    const flapAmp = isRay ? 0.26 : rig.type === 'obsidian_hydra' ? 0.42 : 0.6;
+    const isRay = rig.type === 'spiny_mega_stingray' || rig.type === 'giant_phantom';
+    const isHornet = rig.type === 'blight_hornet';
+    const isHeavyFlyer =
+      rig.type === 'obsidian_hydra' ||
+      rig.type === 'giga_wyvern' ||
+      rig.type === 'ice_shard_griffin' ||
+      rig.type === 'toxic_chimera';
+    const flapSpeed = isHornet ? 34 : isRay ? 4.8 : isHeavyFlyer ? 10.5 : 15.5;
+    const flapAmp = isHornet ? 0.38 : isRay ? 0.28 : isHeavyFlyer ? 0.46 : 0.62;
     const flap = Math.sin(elapsed * flapSpeed + phase) * flapAmp;
     rig.leftWing.rotation.z = flap;
     rig.rightWing.rotation.z = -flap;
+  }
+  if (rig.type === 'guardian_sentinel' && rig.upperBody) {
+    rig.upperBody.position.y = 1.18 + Math.sin(elapsed * 3.4 + phase) * 0.14;
   }
   if (rig.jawPivot) {
     const snapCycle =

@@ -196,6 +196,19 @@ export const SpotLegendIcon: React.FC<{ kind: RadarBlipKind; className?: string 
       </svg>
     );
   }
+  if (kind === 'sky_monster') {
+    return (
+      <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+        <path
+          d="M2 10l8 2 2-6 2 6 8-2-6 5 1 5-5-3-5 3 1-5-6-5z"
+          fill="#f97316"
+          stroke="#0f172a"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
   if (kind === 'monster_brawl' || kind === 'boss' || kind === 'monster_quiz') {
     return (
       <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -538,6 +551,22 @@ function drawIcon(
     ctx.beginPath();
     ctx.arc(0, 1.4, 1.4, 0, Math.PI * 2);
     ctx.fill();
+  } else if (kind === 'sky_monster') {
+    ctx.fillStyle = color || '#f97316';
+    ctx.strokeStyle = '#fef08a';
+    ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(-6.2, -2.2);
+    ctx.lineTo(-1.5, -0.6);
+    ctx.lineTo(0, -4.6);
+    ctx.lineTo(1.5, -0.6);
+    ctx.lineTo(6.2, -2.2);
+    ctx.lineTo(2.4, 2.6);
+    ctx.lineTo(0, 5.2);
+    ctx.lineTo(-2.4, 2.6);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
   } else if (kind === 'monster_quiz') {
     ctx.fillStyle = '#a855f7';
     ctx.strokeStyle = '#f5f3ff';
@@ -930,7 +959,7 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
         ? 4
         : k === 'door' || k === 'npc'
         ? 3
-        : k === 'sea_monster'
+        : k === 'sea_monster' || k === 'sky_monster'
         ? 2
         : 1;
     const orderedBlips = [...radar.blips].sort((a, b) => rank(a.kind) - rank(b.kind));
@@ -961,7 +990,7 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
       const drawY = Math.max(minClampY, Math.min(maxClampY, pt.sy));
       const scale = outOfBox
         ? 0.72
-        : b.kind === 'sea_monster'
+        : b.kind === 'sea_monster' || b.kind === 'sky_monster'
         ? 0.92
         : b.kind === 'monster_brawl' || b.kind === 'monster_quiz'
         ? 0.8
@@ -1218,12 +1247,29 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
       const hits: Array<{ x: number; y: number; r: number; zoneId?: ZoneId; isPortal?: boolean }> = [];
 
       if (worldMode === 'overworld') {
-        // Active night/roaming monsters from live radar blips
+        // Active night/roaming/sea/sky monsters from live radar blips
         if (curRadar) {
           for (const b of curRadar.blips) {
-            if (b.kind !== 'monster_brawl' && b.kind !== 'monster_quiz' && b.kind !== 'sea_monster') continue;
+            if (
+              b.kind !== 'monster_brawl' &&
+              b.kind !== 'monster_quiz' &&
+              b.kind !== 'sea_monster' &&
+              b.kind !== 'sky_monster'
+            ) {
+              continue;
+            }
             const mp = worldToMapPx(b.x, b.z, bounds, 0, 0, width, height);
-            drawIcon(ctx, b.kind, mp.sx, mp.sy, b.color, false, false, pulse, b.kind === 'sea_monster' ? 1.0 : 0.9);
+            drawIcon(
+              ctx,
+              b.kind,
+              mp.sx,
+              mp.sy,
+              b.color,
+              false,
+              false,
+              pulse,
+              b.kind === 'sea_monster' || b.kind === 'sky_monster' ? 1.0 : 0.9,
+            );
           }
         }
 

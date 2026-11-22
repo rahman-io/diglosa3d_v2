@@ -38,7 +38,17 @@ export type MonsterType =
   | 'toxic_sea_viper'
   | 'shadow_angler'
   | 'spiny_mega_stingray'
-  | 'charybdis_maw';
+  | 'charybdis_maw'
+  | 'giga_wyvern'
+  | 'crimson_phoenix'
+  | 'shadow_harpy'
+  | 'giant_phantom'
+  | 'toxic_chimera'
+  | 'guardian_sentinel'
+  | 'ice_shard_griffin'
+  | 'blight_hornet'
+  | 'acidic_sky_wyrm'
+  | 'volcanic_giant_bat';
 
 export type PickaxeTier = 1 | 2 | 3;
 
@@ -371,6 +381,7 @@ export type RadarBlipKind =
   | 'monster_quiz'
   | 'monster_brawl'
   | 'sea_monster'
+  | 'sky_monster'
   | 'boss'
   | 'craft'
   | 'chest'

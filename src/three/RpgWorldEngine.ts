@@ -133,6 +133,7 @@ import {
   NIGHT_SURFACE_SPAWNS,
   SEA_CAPABLE_WEAPONS,
   SEA_MONSTER_SPAWNS,
+  SKY_MONSTER_SPAWNS,
 } from './monstersCatalog';
 
 interface CollectibleItem {
@@ -163,6 +164,7 @@ interface RoamingMonster {
   isCaveMob?: boolean;
   isNightMonster?: boolean;
   isSeaMonster?: boolean;
+  isSkyMonster?: boolean;
   sunburnTimer?: number;
   combatOnly?: boolean;
   fuseTimer?: number;
@@ -172,6 +174,7 @@ interface RoamingMonster {
   attackCooldown?: number;
   windupTimer?: number;
   lungeTimer?: number;
+  diveOffset?: number;
   hitFlashTimer?: number;
   isAcademyShadow?: boolean;
   academySkill?: 'listening' | 'reading' | 'writing' | 'speaking';
@@ -618,6 +621,7 @@ export class RpgWorldEngine {
   private academyCitizens: Array<{ id: string; mesh: THREE.Group; x: number; z: number; message: string }> = [];
   private monsters: RoamingMonster[] = [];
   private seaMonsters: RoamingMonster[] = [];
+  private skyMonsters: RoamingMonster[] = [];
   private dungeonMonsters: RoamingMonster[] = [];
   private dungeonTotalSpawned = 0;
   private academyMonsters: RoamingMonster[] = [];
@@ -697,6 +701,8 @@ export class RpgWorldEngine {
   private shootAimTimer = 0;
   private shootRecoilTimer = 0;
   private shootAimYaw: number | null = null;
+  private shootAimPitch = 0;
+  private shootAimTargetId: string | null = null;
   private pendingTurnShot: { fromHold: boolean } | null = null;
   private isAiming = false;
   private aimToggled = false;
@@ -1603,9 +1609,84 @@ export class RpgWorldEngine {
     }
   }
 
+  private initSkyMonsters(): void {
+    for (const sk of this.skyMonsters) {
+      if (sk.mesh.parent) sk.mesh.parent.remove(sk.mesh);
+      const clickIdx = this.overworldClickables.indexOf(sk.mesh);
+      if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
+    }
+    this.skyMonsters = [];
+
+    const diff = this.settings.difficulty;
+    const diffHpMult = diff === 'santai' ? 0.85 : diff === 'pendekar' ? 1.25 : 1.0;
+
+    for (let i = 0; i < SKY_MONSTER_SPAWNS.length; i++) {
+      const tpl = SKY_MONSTER_SPAWNS[i];
+      const spec = MONSTER_SPECS[tpl.type];
+      const groundY = getArchipelagoGroundY(tpl.x, tpl.z);
+      const startY = groundY + spec.hoverY;
+      const mesh = createMonsterMesh(tpl.type, this.palette);
+      mesh.position.set(tpl.x, startY, tpl.z);
+
+      const ringRadius = Math.max(1.15, spec.hitRadius * 0.72);
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(ringRadius, ringRadius + 0.36, 22),
+        new THREE.MeshBasicMaterial({
+          color: tpl.combatOnly ? 0xf97316 : 0xa855f7,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.68,
+        }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = -0.35;
+      mesh.add(ring);
+      mesh.userData.combatRing = ring;
+
+      const mId = `sky_mob_${i}_${tpl.type}`;
+      mesh.userData.monsterId = mId;
+      this.overworldGroup.add(mesh);
+      this.overworldClickables.push(mesh);
+
+      const maxMobHp = Math.max(4, Math.round(spec.hitHp * diffHpMult));
+      this.skyMonsters.push({
+        id: mId,
+        type: tpl.type,
+        name: tpl.name,
+        zoneId: tpl.zoneId,
+        homeX: tpl.x,
+        homeZ: tpl.z,
+        x: tpl.x,
+        y: startY,
+        z: tpl.z,
+        maxHp: spec.quizHp,
+        mobHp: tpl.combatOnly ? maxMobHp : spec.quizHp,
+        maxMobHp: tpl.combatOnly ? maxMobHp : spec.quizHp,
+        stanceHp: tpl.combatOnly ? 0 : spec.stanceHp,
+        rewardXp: spec.rewardXp + (diff === 'pendekar' ? 10 : 0),
+        rewardDiamonds: spec.rewardDiamonds,
+        rewardScore: spec.rewardScore,
+        combatOnly: tpl.combatOnly,
+        isSkyMonster: true,
+        wordIds: tpl.combatOnly ? undefined : this.pickZoneChallengeWords(tpl.zoneId, 4),
+        aggroActive: false,
+        attackCooldown: 1.2 + Math.random() * 1.4,
+        windupTimer: -1,
+        lungeTimer: 0,
+        hitFlashTimer: 0,
+        mesh,
+        alive: true,
+        respawnTimer: 0,
+        patrolPhase: Math.random() * Math.PI * 2,
+        angryTimer: 0,
+      });
+    }
+  }
+
   private initOverworldMonsters(): void {
     this.monsters = [];
     this.initSeaMonsters();
+    this.initSkyMonsters();
   }
 
   private pickRandomWorldTimeTick(): number {
@@ -2230,6 +2311,8 @@ export class RpgWorldEngine {
     } else {
       this.shootAimTimer = 0;
       this.shootAimYaw = null;
+      this.shootAimPitch = 0;
+      this.shootAimTargetId = null;
     }
     this.fpSwingTimer = 0.16;
     this.refreshWeaponVisual();
@@ -2512,6 +2595,7 @@ export class RpgWorldEngine {
     this.syncShootersForDifficulty();
     this.syncOverworldMonstersByDiff();
     this.initSeaMonsters();
+    this.initSkyMonsters();
 
     const sp = OVERWORLD_ANCHORS.desaSpawn;
     if (
@@ -2657,6 +2741,9 @@ export class RpgWorldEngine {
     this.syncShootersForDifficulty(true);
     this.syncOverworldMonstersByDiff();
     this.initSeaMonsters();
+    this.initSkyMonsters();
+    this.shootAimPitch = 0;
+    this.shootAimTargetId = null;
     this.updateOverworldDayNightAtmosphere(0, false);
 
     const sp = OVERWORLD_ANCHORS.desaSpawn;
@@ -4805,15 +4892,19 @@ export class RpgWorldEngine {
       this.syncDungeonMonsterStats();
       this.checkAreaTrophy(this.dungeonState.zoneId);
     } else {
-      // Overworld Surface English-Challenge Monster defeated — scale XP, Diamonds, Ammo & Survival Heart!
-      const m = this.monsters.find((item) => item.id === battle.monsterId);
+      // Overworld Surface or Sky English-Challenge Monster defeated — scale XP, Diamonds, Ammo & Survival Heart!
+      const m =
+        this.monsters.find((item) => item.id === battle.monsterId) ??
+        this.skyMonsters.find((item) => item.id === battle.monsterId);
       if (m) {
         m.alive = false;
-        m.respawnTimer = 0;
+        m.respawnTimer = m.isSkyMonster ? 50 : 0;
         m.mesh.visible = false;
-        if (m.mesh.parent) m.mesh.parent.remove(m.mesh);
-        const clickIdx = this.overworldClickables.indexOf(m.mesh);
-        if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
+        if (!m.isSkyMonster) {
+          if (m.mesh.parent) m.mesh.parent.remove(m.mesh);
+          const clickIdx = this.overworldClickables.indexOf(m.mesh);
+          if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
+        }
         this.gainXp(m.rewardXp);
         this.diamonds += m.rewardDiamonds;
         this.addScore(m.rewardScore);
@@ -4826,7 +4917,7 @@ export class RpgWorldEngine {
             this.weaponAmmo[this.activeWeapon] + 4 + m.rewardDiamonds,
           );
         }
-        this.spawnBurst(m.x, 1.8, m.z, 0xfacc15, 24);
+        this.spawnBurst(m.x, (m.y ?? getArchipelagoGroundY(m.x, m.z)) + 1.8, m.z, 0xfacc15, 24);
         soundEngine.playWin();
         this.showBanner(
           `Menang melawan ${battle.monsterName}! +${m.rewardXp} XP · +${m.rewardDiamonds} 💎 · +${4 + m.rewardDiamonds} Peluru`,
@@ -5459,6 +5550,10 @@ export class RpgWorldEngine {
       this.constrainSeaMonsterToWater(knockPt, m.x, m.z, 2.2);
       m.x = knockPt.x;
       m.z = knockPt.z;
+    } else if (m.isSkyMonster && this.worldMode === 'overworld') {
+      const skyLimit = WORLD_OCEAN_LIMIT - 20;
+      m.x = THREE.MathUtils.clamp(m.x + (dirX / len) * 1.45, -skyLimit, skyLimit);
+      m.z = THREE.MathUtils.clamp(m.z + (dirZ / len) * 1.45, -skyLimit, skyLimit);
     } else if (this.worldMode === 'overworld') {
       const knockPt = {
         x: m.x + (dirX / len) * 1.15,
@@ -5472,7 +5567,13 @@ export class RpgWorldEngine {
       m.z = THREE.MathUtils.clamp(m.z + (dirZ / len) * 1.15, -18, 18);
     }
     soundEngine.playHit();
-    this.spawnBurst(m.x, (m.y ?? 0) + 1.3, m.z, m.isSeaMonster ? 0x06b6d4 : m.combatOnly ? 0xef4444 : 0x22c55e, 12);
+    this.spawnBurst(
+      m.x,
+      (m.y ?? 0) + 1.3,
+      m.z,
+      m.isSeaMonster ? 0x06b6d4 : m.isSkyMonster ? 0xf97316 : m.combatOnly ? 0xef4444 : 0x22c55e,
+      12,
+    );
     this.triggerHitMarker(m.mobHp <= 0);
 
     if (m.mobHp <= 0) {
@@ -5489,18 +5590,24 @@ export class RpgWorldEngine {
 
   private handleRealTimeMonsterDefeated(m: RoamingMonster): void {
     m.alive = false;
-    m.respawnTimer = m.isSeaMonster ? 45 : 0;
+    m.respawnTimer = m.isSeaMonster ? 45 : m.isSkyMonster ? 50 : 0;
     m.aggroActive = false;
     m.windupTimer = -1;
     m.lungeTimer = 0;
     m.mesh.visible = false;
-    if (this.worldMode === 'overworld' && !m.isSeaMonster) {
+    if (this.worldMode === 'overworld' && !m.isSeaMonster && !m.isSkyMonster) {
       if (m.mesh.parent) m.mesh.parent.remove(m.mesh);
       const clickIdx = this.overworldClickables.indexOf(m.mesh);
       if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
     }
     soundEngine.playBoom();
-    this.spawnBurst(m.x, (m.y ?? 0) + 1.5, m.z, m.isSeaMonster ? 0x22d3ee : 0xfacc15, 26);
+    this.spawnBurst(
+      m.x,
+      (m.y ?? 0) + 1.5,
+      m.z,
+      m.isSeaMonster ? 0x22d3ee : m.isSkyMonster ? 0xf97316 : 0xfacc15,
+      26,
+    );
 
     if (m.isCaveMob) {
       if (this.worldMode === 'dungeon' && this.dungeonState) {
@@ -5530,7 +5637,7 @@ export class RpgWorldEngine {
       return;
     }
 
-    // Combat-only Surface Monster, Sea Monster, Cave Guardian, or Combat Ambush!
+    // Combat-only Surface Monster, Sea Monster, Sky Monster, Cave Guardian, or Combat Ambush!
     if (this.worldMode === 'dungeon' && this.dungeonState) {
       this.markDungeonEnemyDefeated(this.dungeonState.zoneId, m.id);
     }
@@ -5554,6 +5661,11 @@ export class RpgWorldEngine {
     if (m.isSeaMonster) {
       this.showBanner(
         `🌊 ${m.name} ditaklukkan! Laut aman sementara · +${m.rewardXp} XP · +${diamondDrop} 💎 · +${ammoDrop} Peluru${healed ? ' · +1 ❤️' : ''}!`,
+        3.2,
+      );
+    } else if (m.isSkyMonster) {
+      this.showBanner(
+        `🦅 ${m.name} dijatuhkan dari langit! +${m.rewardXp} XP · +${diamondDrop} 💎 · +${ammoDrop} Peluru${healed ? ' · +1 ❤️' : ''}!`,
         3.2,
       );
     } else if (this.dungeonState && !m.isAmbush) {
@@ -6041,7 +6153,7 @@ export class RpgWorldEngine {
       (this.heroPos.y + 1.4 - ro.y) * rd.y +
       (this.heroPos.z - ro.z) * rd.z;
 
-    let bestT = 65;
+    let bestT = 78;
     let hitEnemy = false;
 
     // 1. Check Shooters under crosshair ray
@@ -6237,12 +6349,14 @@ export class RpgWorldEngine {
     const muzzleRight = this.cameraMode === 'first_person' ? 0.18 : 0.34;
 
     let aimYaw = this.heroYaw;
+    let aimPitch = 0;
+    let lockedTargetId: string | null = null;
     let dirX = Math.sin(aimYaw);
     let dirY = 0;
     let dirZ = Math.cos(aimYaw);
 
     if (isManualAim && (this.cameraMode === 'third_back' || this.cameraMode === 'first_person')) {
-      // Bidik Bebas: manual 3D crosshair aiming in TPS & FPS views
+      // Bidik Bebas: manual 3D crosshair aiming in TPS & FPS views (supports straight-up skyward shots)
       const aim = this.getCrosshairAimInfo();
       aimYaw = Math.atan2(aim.point.x - this.heroPos.x, aim.point.z - this.heroPos.z);
 
@@ -6263,9 +6377,10 @@ export class RpgWorldEngine {
         dirY = 0;
         dirZ = Math.cos(aimYaw);
       }
+      aimPitch = Math.atan2(dirY, Math.max(0.05, Math.hypot(dirX, dirZ)));
     } else {
-      // Bidik Otomatis: auto-lock nearest enemy within autoAimRange
-      let bestDist = TUNE.autoAimRange;
+      // Bidik Otomatis: auto-lock nearest ground, sea, or overhead sky enemy
+      let bestDist = Infinity;
       let targetX = 0;
       let targetY = this.heroPos.y + muzzleHeight;
       let targetZ = 0;
@@ -6275,11 +6390,12 @@ export class RpgWorldEngine {
         for (const s of this.shooters) {
           if (!s.alive) continue;
           const d = Math.hypot(s.x - this.heroPos.x, s.z - this.heroPos.z);
-          if (d < bestDist) {
+          if (d < TUNE.autoAimRange && d < bestDist) {
             bestDist = d;
             targetX = s.x;
             targetY = getArchipelagoGroundY(s.x, s.z) + 1.65;
             targetZ = s.z;
+            lockedTargetId = s.id;
             foundTarget = true;
           }
         }
@@ -6287,18 +6403,23 @@ export class RpgWorldEngine {
 
       for (const m of this.getActiveMonsters()) {
         if (!m.alive) continue;
-        const d = Math.hypot(m.x - this.heroPos.x, m.z - this.heroPos.z);
-        if (d < bestDist) {
-          bestDist = d;
+        const d2d = Math.hypot(m.x - this.heroPos.x, m.z - this.heroPos.z);
+        const maxRange = m.isSkyMonster ? TUNE.autoAimRange + 12 : TUNE.autoAimRange;
+        if (d2d > maxRange) continue;
+        const spec = MONSTER_SPECS[m.type];
+        const mBaseY =
+          m.y ??
+          (this.worldMode === 'overworld'
+            ? getArchipelagoGroundY(m.x, m.z) + spec.hoverY
+            : spec.hoverY);
+        const tY = mBaseY + (m.isBoss ? 2.1 : spec.hitCenterY);
+        const d3d = m.isSkyMonster ? Math.hypot(d2d, tY - (this.heroPos.y + muzzleHeight)) : d2d;
+        if (d3d < bestDist) {
+          bestDist = d3d;
           targetX = m.x;
-          const spec = MONSTER_SPECS[m.type];
-          const mBaseY =
-            m.y ??
-            (this.worldMode === 'overworld'
-              ? getArchipelagoGroundY(m.x, m.z) + spec.hoverY
-              : spec.hoverY);
-          targetY = mBaseY + (m.isBoss ? 2.1 : spec.hitCenterY);
+          targetY = tY;
           targetZ = m.z;
+          lockedTargetId = m.id;
           foundTarget = true;
         }
       }
@@ -6322,6 +6443,7 @@ export class RpgWorldEngine {
           dirY = 0;
           dirZ = Math.cos(aimYaw);
         }
+        aimPitch = Math.atan2(dirY, Math.max(0.05, Math.hypot(dirX, dirZ)));
       } else if (this.cameraMode === 'first_person') {
         const aim = this.getCrosshairAimInfo();
         aimYaw = Math.atan2(aim.point.x - this.heroPos.x, aim.point.z - this.heroPos.z);
@@ -6338,10 +6460,21 @@ export class RpgWorldEngine {
           dirY = _v1.y;
           dirZ = _v1.z;
         }
+        aimPitch = Math.atan2(dirY, Math.max(0.05, Math.hypot(dirX, dirZ)));
+      } else if (this.cameraMode === 'third_back' && this.cameraPitch < -0.15) {
+        // Auto-mode user tilted camera upward toward sky: allow manual skyward free-shot even with no lock
+        aimYaw = this.cameraYaw + Math.PI;
+        const upPitch = THREE.MathUtils.clamp(-this.cameraPitch, 0.15, 1.18);
+        const cosUp = Math.cos(upPitch);
+        dirX = Math.sin(aimYaw) * cosUp;
+        dirY = Math.sin(upPitch);
+        dirZ = Math.cos(aimYaw) * cosUp;
+        aimPitch = upPitch;
       } else {
         dirX = Math.sin(aimYaw);
         dirY = 0;
         dirZ = Math.cos(aimYaw);
+        aimPitch = 0;
       }
     }
 
@@ -6350,6 +6483,8 @@ export class RpgWorldEngine {
     while (turnDiff < -Math.PI) turnDiff += Math.PI * 2;
     if (!skipTurnWait && this.cameraMode !== 'first_person' && Math.abs(turnDiff) > 0.24) {
       this.shootAimYaw = aimYaw;
+      this.shootAimPitch = aimPitch;
+      this.shootAimTargetId = lockedTargetId;
       this.shootAimTimer = Math.max(this.shootAimTimer, 1.25);
       this.pendingTurnShot = { fromHold };
       return;
@@ -6359,6 +6494,8 @@ export class RpgWorldEngine {
     this.heroYaw = aimYaw;
     this.hero.body.rotation.y = aimYaw;
     this.shootAimYaw = aimYaw;
+    this.shootAimPitch = aimPitch;
+    this.shootAimTargetId = lockedTargetId;
 
     this.weaponAmmo[this.activeWeapon] -= 1;
     this.fireCooldown = wDef.cooldown;
@@ -6438,7 +6575,8 @@ export class RpgWorldEngine {
     slot.shieldDamage = opts.shieldDamage;
     slot.pierceLeft = opts.pierceLeft;
     slot.hitIds.clear();
-    slot.life = 1.45;
+    const horizSpd = Math.hypot(opts.vx, opts.vz);
+    slot.life = opts.fromPlayer && Math.abs(opts.vy ?? 0) > horizSpd * 0.18 ? 1.85 : 1.45;
     (slot.mesh.material as THREE.MeshBasicMaterial).color.setHex(opts.colorHex);
     slot.mesh.scale.setScalar(opts.damage > 1 ? 1.45 : 1.0);
     slot.mesh.position.set(opts.x, slot.y, opts.z);
@@ -6448,7 +6586,7 @@ export class RpgWorldEngine {
   private getActiveMonsters(): RoamingMonster[] {
     if (this.worldMode === 'dungeon') return this.dungeonMonsters;
     if (this.worldMode === 'academy') return this.academyMonsters;
-    return [...this.monsters, ...this.seaMonsters];
+    return [...this.monsters, ...this.seaMonsters, ...this.skyMonsters];
   }
 
   private engageMonster(m: RoamingMonster): void {
@@ -6688,7 +6826,7 @@ export class RpgWorldEngine {
 
     if (document.pointerLockElement === this.renderer.domElement) {
       this.cameraYaw -= e.movementX * 0.0042 * sensScale;
-      const minP = this.cameraMode === 'first_person' ? -1.1 : -0.52;
+      const minP = this.cameraMode === 'first_person' ? -1.25 : -1.18;
       this.cameraPitch = THREE.MathUtils.clamp(
         this.cameraPitch + e.movementY * 0.0038 * sensScale,
         minP,
@@ -6714,7 +6852,7 @@ export class RpgWorldEngine {
       this.lastInputActivityMs = performance.now();
       const sens = (e.pointerType === 'touch' ? 0.0072 : 0.0048) * sensScale;
       this.cameraYaw -= dx * sens;
-      const minP = this.cameraMode === 'first_person' ? -1.1 : -0.52;
+      const minP = this.cameraMode === 'first_person' ? -1.25 : -1.18;
       this.cameraPitch = THREE.MathUtils.clamp(
         this.cameraPitch + dy * sens,
         minP,
@@ -7432,6 +7570,17 @@ export class RpgWorldEngine {
               m.y = spec.hoverY;
               m.mesh.position.set(m.x, m.y, m.z);
               m.mesh.scale.setScalar(spec.baseScale);
+            } else if (m.isSkyMonster) {
+              m.mobHp = m.maxMobHp ?? spec.hitHp;
+              m.stanceHp = spec.stanceHp;
+              m.aggroActive = false;
+              m.windupTimer = -1;
+              m.lungeTimer = 0;
+              m.diveOffset = 0;
+              m.y = Math.max(getArchipelagoGroundY(m.x, m.z) + spec.hoverY, spec.hoverY);
+              m.mesh.position.set(m.x, m.y, m.z);
+              m.mesh.rotation.set(0, m.patrolPhase, 0);
+              m.mesh.scale.setScalar(spec.baseScale);
             }
           }
         }
@@ -7476,6 +7625,10 @@ export class RpgWorldEngine {
         if (m.angryTimer <= 0) {
           this.engageMonster(m);
         }
+        continue;
+      }
+      if (m.isSkyMonster && this.worldMode === 'overworld') {
+        this.updateSkyMonster(m, dt, baseSpeedMult);
         continue;
       }
 
@@ -8738,9 +8891,41 @@ export class RpgWorldEngine {
     }
 
     if (this.shootAimTimer > 0) {
+      if (!isManualAim && this.shootAimTargetId) {
+        let tx: number | null = null;
+        let ty = 0;
+        let tz = 0;
+        const tm = this.getActiveMonsters().find((item) => item.id === this.shootAimTargetId && item.alive);
+        if (tm) {
+          const spec = MONSTER_SPECS[tm.type];
+          const mBaseY =
+            tm.y ??
+            (this.worldMode === 'overworld'
+              ? getArchipelagoGroundY(tm.x, tm.z) + spec.hoverY
+              : spec.hoverY);
+          tx = tm.x;
+          ty = mBaseY + (tm.isBoss ? 2.1 : spec.hitCenterY);
+          tz = tm.z;
+        } else if (this.worldMode === 'overworld') {
+          const ts = this.shooters.find((item) => item.id === this.shootAimTargetId && item.alive);
+          if (ts) {
+            tx = ts.x;
+            ty = getArchipelagoGroundY(ts.x, ts.z) + 1.65;
+            tz = ts.z;
+          }
+        }
+        if (tx !== null) {
+          this.shootAimYaw = Math.atan2(tx - this.heroPos.x, tz - this.heroPos.z);
+          const horiz = Math.max(0.25, Math.hypot(tx - this.heroPos.x, tz - this.heroPos.z));
+          const targetPitch = Math.atan2(ty - (this.heroPos.y + 1.9), horiz);
+          this.shootAimPitch = THREE.MathUtils.damp(this.shootAimPitch, targetPitch, 16, dt);
+        }
+      }
       this.shootAimTimer = Math.max(0, this.shootAimTimer - dt);
       if (this.shootAimTimer === 0 && !this.pendingTurnShot) {
         this.shootAimYaw = null;
+        this.shootAimPitch = 0;
+        this.shootAimTargetId = null;
       }
     }
     if (this.shootRecoilTimer > 0) {
@@ -8801,12 +8986,25 @@ export class RpgWorldEngine {
       this.playerCaveLight.position.set(this.heroPos.x, this.heroPos.y + 2.8, this.heroPos.z);
     }
 
+    const skyPeekAlpha =
+      this.cameraMode === 'third_back' && this.cameraPitch < -0.15
+        ? THREE.MathUtils.clamp((-this.cameraPitch - 0.15) / 0.35, 0, 0.78)
+        : 0;
     const fireAimAlpha = this.shootAimTimer > 0 ? Math.min(1, this.shootAimTimer * 3.5) : 0;
-    const aimAlpha = Math.max(fireAimAlpha, this.aimBlend);
+    const aimAlpha = Math.max(fireAimAlpha, this.aimBlend, skyPeekAlpha);
     const recoil =
       this.shootRecoilTimer > 0 ? Math.sin((this.shootRecoilTimer / 0.22) * Math.PI) : 0;
     const landImpulse =
       this.jumpLandTimer > 0 ? Math.sin((this.jumpLandTimer / 0.16) * Math.PI) : 0;
+
+    const heroAimPitch =
+      isManualAim || this.cameraMode === 'first_person'
+        ? -(this.cameraPitch - this.recoilPitch)
+        : this.shootAimTimer > 0 || this.pendingTurnShot
+        ? this.shootAimPitch
+        : this.cameraMode === 'third_back' && this.cameraPitch < -0.15
+        ? -this.cameraPitch * 0.92
+        : 0;
 
     const canHoldInCurrentEnv =
       hasEquippedWeapon && (!this.isSwimming || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
@@ -8817,10 +9015,7 @@ export class RpgWorldEngine {
       recoil,
       dt,
       elapsed: this.elapsed,
-      aimPitch:
-        isManualAim || this.cameraMode === 'first_person'
-          ? -(this.cameraPitch - this.recoilPitch)
-          : 0,
+      aimPitch: heroAimPitch,
       onGround: this.heroOnGround,
       velY: this.heroVelY,
       landImpulse,
@@ -8853,7 +9048,7 @@ export class RpgWorldEngine {
     const cosY = Math.cos(this.cameraYaw);
     const effPitch = THREE.MathUtils.clamp(
       this.cameraPitch - (isManualAim ? this.recoilPitch : 0),
-      this.cameraMode === 'first_person' ? -1.12 : -0.58,
+      this.cameraMode === 'first_person' ? -1.25 : -1.18,
       1.12,
     );
     const cosP = Math.cos(effPitch);
@@ -8876,10 +9071,15 @@ export class RpgWorldEngine {
       const sign = this.cameraMode === 'third_front' ? -1 : 1;
       const baseDist =
         this.worldMode === 'dungeon' ? Math.min(this.thirdPersonDist, 6.2) : this.thirdPersonDist;
+      const skyUpT =
+        this.cameraMode === 'third_back' && effPitch < -0.15
+          ? THREE.MathUtils.clamp((-effPitch - 0.15) / 0.88, 0, 1)
+          : 0;
+      const skyShortenDist = THREE.MathUtils.lerp(baseDist, Math.min(baseDist, 4.4), skyUpT);
       const desiredDist =
         isManualAim && this.cameraMode === 'third_back'
-          ? THREE.MathUtils.lerp(baseDist, Math.min(baseDist, 3.45), this.aimBlend)
-          : baseDist;
+          ? THREE.MathUtils.lerp(skyShortenDist, Math.min(skyShortenDist, 3.45), this.aimBlend)
+          : skyShortenDist;
 
       // Offset camera to Hero's right shoulder only in Bidik Bebas TPS so center crosshair stays clear
       const shoulderRight =
@@ -8897,10 +9097,12 @@ export class RpgWorldEngine {
       const dirY = sinP;
       const dirZ = sign * cosY * cosP;
 
-      // Trace spring-arm from Hero center toward desired camera position
+      // Trace spring-arm from Hero center toward desired camera position (terrain-aware floor!)
       const goalX = pivotX + dirX * desiredDist;
-      const goalY = Math.max(0.75, pivotY + dirY * desiredDist);
       const goalZ = pivotZ + dirZ * desiredDist;
+      const camFloorY =
+        (this.worldMode === 'overworld' ? getArchipelagoGroundY(goalX, goalZ) : 0) + 0.55;
+      const goalY = Math.max(camFloorY, pivotY + dirY * desiredDist);
       const rx = goalX - this.heroPos.x;
       const ry = goalY - pivotY;
       const rz = goalZ - this.heroPos.z;
@@ -8923,8 +9125,10 @@ export class RpgWorldEngine {
       this.currentCamDist += (blockedDist - this.currentCamDist) * distAlpha;
 
       const camX = this.heroPos.x + (rx / rayLen) * this.currentCamDist;
-      const camY = Math.max(0.75, pivotY + (ry / rayLen) * this.currentCamDist);
       const camZ = this.heroPos.z + (rz / rayLen) * this.currentCamDist;
+      const liveCamFloorY =
+        (this.worldMode === 'overworld' ? getArchipelagoGroundY(camX, camZ) : 0) + 0.55;
+      const camY = Math.max(liveCamFloorY, pivotY + (ry / rayLen) * this.currentCamDist);
 
       _v1.set(camX, camY, camZ);
       this.camera.position.lerp(_v1, 1 - Math.exp(-28 * dt));
@@ -8933,6 +9137,13 @@ export class RpgWorldEngine {
           pivotX - dirX * 24,
           pivotY - dirY * 24,
           pivotZ - dirZ * 24,
+        );
+      } else if (this.cameraMode === 'third_back' && effPitch < -0.04) {
+        const skyLookT = THREE.MathUtils.clamp((-effPitch - 0.04) / 0.5, 0, 1);
+        this.camera.lookAt(
+          THREE.MathUtils.lerp(this.heroPos.x, pivotX - dirX * 24, skyLookT),
+          THREE.MathUtils.lerp(targetY, pivotY - dirY * 24, skyLookT),
+          THREE.MathUtils.lerp(this.heroPos.z, pivotZ - dirZ * 24, skyLookT),
         );
       } else {
         this.camera.lookAt(this.heroPos.x, targetY, this.heroPos.z);
@@ -9182,6 +9393,7 @@ export class RpgWorldEngine {
     let bestMonsterDist = 5.0;
     for (const m of this.getActiveMonsters()) {
       if (!m.alive || m.angryTimer > 0 || m.isCaveMob || m.combatOnly) continue;
+      if (m.isSkyMonster && Math.abs((m.y ?? 12) - (this.heroPos.y + 1.4)) > 3.4) continue;
       const d = Math.hypot(this.heroPos.x - m.x, this.heroPos.z - m.z);
       if (d < bestMonsterDist) {
         bestMonsterDist = d;
@@ -10058,7 +10270,17 @@ export class RpgWorldEngine {
               const spd = Math.max(1, Math.hypot(p.vx, p.vz));
               const kbX = m.x + (p.vx / spd) * 0.7;
               const kbZ = m.z + (p.vz / spd) * 0.7;
-              if (this.worldMode === 'overworld') {
+              if (m.isSkyMonster) {
+                const rLimit = WORLD_OCEAN_LIMIT - 20;
+                const dOut = Math.hypot(kbX, kbZ);
+                if (dOut > rLimit && dOut > 0.001) {
+                  m.x = (kbX / dOut) * rLimit;
+                  m.z = (kbZ / dOut) * rLimit;
+                } else {
+                  m.x = kbX;
+                  m.z = kbZ;
+                }
+              } else if (this.worldMode === 'overworld') {
                 const kbPt = { x: kbX, z: kbZ };
                 constrainToWalkableArchipelago(kbPt, 0.95);
                 m.x = kbPt.x;
@@ -10335,6 +10557,39 @@ export class RpgWorldEngine {
       }
     }
 
+    for (const m of this.skyMonsters) {
+      if (!m.alive) continue;
+      const distSq = (m.x - this.heroPos.x) ** 2 + (m.z - this.heroPos.z) ** 2;
+      if (distSq > 34 * 34) continue;
+      const spec = MONSTER_SPECS[m.type];
+      const pos = projectPoint(
+        m.x,
+        (m.y ?? spec.hoverY) + Math.max(2.3, spec.hitHalfH + 1.3),
+        m.z,
+      );
+      if (pos) {
+        if (m.combatOnly) {
+          labels.push({
+            id: `sky_${m.id}`,
+            x: pos.x,
+            y: pos.y,
+            title: `🦅 ${m.name} (${m.mobHp ?? spec.hitHp}/${m.maxMobHp ?? spec.hitHp})`,
+            subtext: 'Monster Angkasa · Mematikan',
+            kind: 'monster',
+          });
+        } else {
+          labels.push({
+            id: `sky_${m.id}`,
+            x: pos.x,
+            y: pos.y,
+            title: `🦅 ${m.name}`,
+            subtext: `Perisai Kata ${m.stanceHp ?? spec.stanceHp}/${spec.stanceHp} · Bawa Kuis`,
+            kind: 'monster',
+          });
+        }
+      }
+    }
+
     return labels;
   }
 
@@ -10550,6 +10805,228 @@ export class RpgWorldEngine {
     }
   }
 
+  private updateSkyMonster(m: RoamingMonster, dt: number, baseSpeedMult: number): void {
+    const spec = MONSTER_SPECS[m.type];
+    const dxHero = this.heroPos.x - m.x;
+    const dzHero = this.heroPos.z - m.z;
+    const distSqHero = dxHero * dxHero + dzHero * dzHero;
+    if (distSqHero > 86 * 86 && !m.aggroActive) {
+      return;
+    }
+
+    const distH = Math.sqrt(distSqHero);
+    if (m.hitFlashTimer && m.hitFlashTimer > 0) {
+      m.hitFlashTimer = Math.max(0, m.hitFlashTimer - dt);
+    }
+    if (m.attackCooldown && m.attackCooldown > 0) {
+      m.attackCooldown = Math.max(0, m.attackCooldown - dt);
+    }
+    if (m.attackAnimTimer && m.attackAnimTimer > 0) {
+      m.attackAnimTimer = Math.max(0, m.attackAnimTimer - dt);
+    }
+
+    const ring = m.mesh.userData.combatRing as THREE.Object3D | undefined;
+    if (ring) {
+      ring.rotation.z += dt * 2.1;
+    }
+
+    const groundY = getArchipelagoGroundY(m.x, m.z);
+    const cruiseY = Math.max(groundY + spec.hoverY, spec.hoverY);
+
+    if (this.phase === 'playing' && distH < spec.aggroRange) {
+      if (!m.aggroActive) {
+        soundEngine.playMonster();
+      }
+      m.aggroActive = true;
+    } else if (distH > spec.aggroRange + 14) {
+      m.aggroActive = false;
+      m.windupTimer = -1;
+      m.lungeTimer = 0;
+    }
+
+    let nextMx = m.x;
+    let nextMz = m.z;
+    let targetYaw = m.mesh.rotation.y;
+    let monMode: 'idle' | 'patrol' | 'windup' | 'attack' | 'shoot' | 'hit' = 'patrol';
+    let monAttackProg = 0;
+    let desiredDive = 0;
+
+    if (m.lungeTimer && m.lungeTimer > 0) {
+      m.lungeTimer = Math.max(0, m.lungeTimer - dt);
+      const swoopArc = Math.sin((m.lungeTimer / 0.58) * Math.PI);
+      desiredDive = swoopArc * Math.max(2.5, cruiseY - (this.heroPos.y + 1.55));
+      if (this.phase === 'playing' && distH > 0.35) {
+        const spd = 13.5 * spec.speedMult * dt;
+        nextMx += (dxHero / distH) * spd;
+        nextMz += (dzHero / distH) * spd;
+      }
+      targetYaw = Math.atan2(dxHero, dzHero);
+      monMode = 'attack';
+      monAttackProg = 1 - m.lungeTimer / 0.58;
+
+      if (
+        this.phase === 'playing' &&
+        this.encounterGraceTimer <= 0 &&
+        distH < 2.4 + spec.hitRadius * 0.45 &&
+        Math.abs((m.y ?? cruiseY) - (this.heroPos.y + 1.45)) < 2.85
+      ) {
+        if (!m.combatOnly) {
+          this.engageMonster(m);
+          return;
+        }
+        const dmg = spec.atkDamageHearts;
+        this.hp = Math.max(0, this.hp - dmg);
+        this.encounterGraceTimer = 1.45;
+        soundEngine.playHurt();
+        const len = Math.max(0.25, distH);
+        this.heroVel.set((dxHero / len) * 12, 0, (dzHero / len) * 12);
+        this.heroVelY = 3.8;
+        this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.4, this.heroPos.z, 0xf97316, 16);
+        this.showBanner(`🦅 Diserang ${m.name} dari langit! (-${dmg} ❤️)`, 2.4);
+        if (this.hp <= 0) {
+          this.phase = 'gameover';
+          soundEngine.playLose();
+          this.pushHud(true);
+          return;
+        }
+      }
+    } else if (m.windupTimer !== undefined && m.windupTimer > 0) {
+      m.windupTimer -= dt;
+      desiredDive = -1.25;
+      targetYaw = Math.atan2(dxHero, dzHero);
+      monMode = 'windup';
+      if (m.windupTimer <= 0) {
+        m.windupTimer = -1;
+        m.lungeTimer = 0.58;
+        soundEngine.playMonster();
+      }
+    } else if (this.phase === 'playing' && m.aggroActive && distH > 0.25) {
+      targetYaw = Math.atan2(dxHero, dzHero);
+      if (spec.ranged) {
+        const orbitDir = m.patrolPhase % 2 < 1 ? 1 : -1;
+        const nx = dxHero / distH;
+        const nz = dzHero / distH;
+        const strafeSpd = 3.8 * spec.speedMult * baseSpeedMult;
+        nextMx += (-nz * orbitDir) * strafeSpd * dt;
+        nextMz += (nx * orbitDir) * strafeSpd * dt;
+        if (distH > 19) {
+          const chaseSpd = 5.4 * spec.speedMult * baseSpeedMult;
+          nextMx += nx * chaseSpd * dt;
+          nextMz += nz * chaseSpd * dt;
+        } else if (distH < 10.5) {
+          const backSpd = 3.2 * spec.speedMult * baseSpeedMult;
+          nextMx -= nx * backSpd * dt;
+          nextMz -= nz * backSpd * dt;
+        }
+
+        if (distH >= 4.5 && distH < 30 && (m.attackCooldown ?? 0) <= 0) {
+          const pSpeed = this.settings.difficulty === 'pendekar' ? 13.4 : 10.8;
+          const mFireY = (m.y ?? cruiseY) + spec.hitCenterY * 0.6;
+          const aimY = this.heroPos.y + 1.35 - mFireY;
+          const dist3D = Math.max(0.5, Math.hypot(dxHero, aimY, dzHero));
+          const skyShotColor =
+            m.type === 'crimson_phoenix'
+              ? 0xfef08a
+              : m.type === 'giant_phantom'
+              ? 0x38bdf8
+              : m.type === 'toxic_chimera'
+              ? 0x4ade80
+              : m.type === 'guardian_sentinel'
+              ? 0xef4444
+              : m.type === 'ice_shard_griffin'
+              ? 0x7dd3fc
+              : m.type === 'acidic_sky_wyrm'
+              ? 0x84cc16
+              : 0xf97316;
+          this.spawnProjectile({
+            fromPlayer: false,
+            x: m.x + nx * (0.95 * spec.baseScale),
+            y: mFireY,
+            z: m.z + nz * (0.95 * spec.baseScale),
+            vx: (dxHero / dist3D) * pSpeed,
+            vy: (aimY / dist3D) * pSpeed,
+            vz: (dzHero / dist3D) * pSpeed,
+            damage: 1,
+            shieldDamage: 1,
+            pierceLeft: 0,
+            colorHex: skyShotColor,
+          });
+          m.attackCooldown = this.settings.difficulty === 'pendekar' ? 2.2 : 2.9;
+          m.attackAnimTimer = 0.34;
+        }
+      } else {
+        // Fast aerial swoopers: shadow_harpy, blight_hornet, volcanic_giant_bat
+        if (distH < 9.5 && (m.attackCooldown ?? 0) <= 0) {
+          m.windupTimer = 0.44;
+          m.attackCooldown = this.settings.difficulty === 'pendekar' ? 2.1 : 2.7;
+          soundEngine.playMonster();
+        } else if (distH > 2.2) {
+          const spd = 6.2 * spec.speedMult * baseSpeedMult;
+          nextMx += (dxHero / distH) * spd * dt;
+          nextMz += (dzHero / distH) * spd * dt;
+        }
+      }
+    } else {
+      m.patrolClock = (m.patrolClock ?? m.patrolPhase) + dt * 0.58 * spec.speedMult * baseSpeedMult;
+      const p = m.patrolClock;
+      const patrolRad = spec.tier === 'giant' ? 14 : 11;
+      nextMx = m.homeX + Math.cos(p) * patrolRad;
+      nextMz = m.homeZ + Math.sin(p * 0.72) * (patrolRad * 0.8);
+      targetYaw = Math.atan2(
+        -Math.sin(p) * patrolRad,
+        Math.cos(p * 0.72) * (patrolRad * 0.8) * 0.72,
+      );
+    }
+
+    if (m.hitFlashTimer && m.hitFlashTimer > 0) {
+      monMode = 'hit';
+    } else if ((m.attackAnimTimer ?? 0) > 0 && monMode === 'patrol') {
+      monMode = 'shoot';
+      monAttackProg = 1 - (m.attackAnimTimer ?? 0) / 0.34;
+    }
+
+    const skyLimit = WORLD_OCEAN_LIMIT - 22;
+    const dOut = Math.hypot(nextMx, nextMz);
+    if (dOut > skyLimit && dOut > 0.001) {
+      nextMx = (nextMx / dOut) * skyLimit;
+      nextMz = (nextMz / dOut) * skyLimit;
+    }
+
+    const prevX = m.x;
+    const prevZ = m.z;
+    m.x = nextMx;
+    m.z = nextMz;
+
+    const skySpd = Math.hypot(m.x - prevX, m.z - prevZ) / Math.max(0.001, dt);
+    m.walkPhase = (m.walkPhase ?? m.patrolPhase) + dt * (4.2 + skySpd * 0.65);
+    m.diveOffset = THREE.MathUtils.damp(m.diveOffset ?? 0, desiredDive, 10, dt);
+    m.y = cruiseY - m.diveOffset + Math.sin(this.elapsed * 2.1 + m.patrolPhase) * 0.55;
+
+    let yawDiff = targetYaw - m.mesh.rotation.y;
+    while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+    while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+    m.mesh.rotation.y += yawDiff * (1 - Math.exp(-8.5 * dt));
+    const bankRoll = THREE.MathUtils.clamp(-yawDiff * 0.38, -0.35, 0.35);
+    const divePitch = THREE.MathUtils.clamp((m.diveOffset ?? 0) * 0.055, -0.25, 0.42);
+    m.mesh.rotation.z = THREE.MathUtils.damp(m.mesh.rotation.z, bankRoll, 8, dt);
+    m.mesh.rotation.x = THREE.MathUtils.damp(m.mesh.rotation.x, divePitch, 8, dt);
+
+    m.mesh.position.set(m.x, m.y, m.z);
+    m.mesh.scale.setScalar(spec.baseScale);
+
+    if (distSqHero <= 76 * 76) {
+      animateMonsterRig(m.mesh, {
+        mode: monMode,
+        speed: skySpd,
+        walkPhase: m.walkPhase,
+        elapsed: this.elapsed,
+        phase: m.patrolPhase,
+        attackProgress: monAttackProg,
+        dt,
+      });
+    }
+  }
+
   private pickHeroIdleThought(): string {
     let nearestName = '';
     let nearestDist = Infinity;
@@ -10718,6 +11195,17 @@ export class RpgWorldEngine {
           z: m.z,
           kind: 'sea_monster',
           color: '#06b6d4',
+          label: m.name,
+        });
+      }
+      for (const m of this.skyMonsters) {
+        if (!m.alive) continue;
+        blips.push({
+          id: `sky_${m.id}`,
+          x: m.x,
+          z: m.z,
+          kind: 'sky_monster',
+          color: m.combatOnly ? '#f97316' : '#c084fc',
           label: m.name,
         });
       }
@@ -11340,7 +11828,7 @@ export class RpgWorldEngine {
 
   public voiceLook(dir: 'back' | 'left' | 'right' | 'up' | 'down' | 'center'): void {
     if (this.phase !== 'playing') return;
-    const minP = this.cameraMode === 'first_person' ? -1.1 : -0.52;
+    const minP = this.cameraMode === 'first_person' ? -1.25 : -1.18;
     if (dir === 'back') {
       this.cameraYaw += Math.PI;
       this.showBanner('🎙️ Melihat ke arah belakang!', 1.8);
@@ -11636,12 +12124,13 @@ export class RpgWorldEngine {
       if (slotIdx >= 0) this.selectHotbarSlot(slotIdx);
     }
 
-    // Cari monster / penembak terdekat (prioritaskan yang tidak terlalu jauh)
-    let bestTarget: { x: number; y: number; z: number; name: string; dist: number } | null = null;
+    // Cari monster / penembak terdekat (termasuk monster terbang di angkasa)
+    let bestTarget: { id: string; x: number; y: number; z: number; name: string; dist: number } | null = null;
     for (const m of this.getActiveMonsters()) {
       if (!m.alive) continue;
       const d = Math.hypot(m.x - this.heroPos.x, m.z - this.heroPos.z);
-      if (d <= TUNE.autoAimRange + 6 && (!bestTarget || d < bestTarget.dist)) {
+      const reach = m.isSkyMonster ? TUNE.autoAimRange + 12 : TUNE.autoAimRange + 6;
+      if (d <= reach && (!bestTarget || d < bestTarget.dist)) {
         const spec = MONSTER_SPECS[m.type];
         const mBaseY =
           m.y ??
@@ -11649,6 +12138,7 @@ export class RpgWorldEngine {
             ? getArchipelagoGroundY(m.x, m.z) + spec.hoverY
             : spec.hoverY);
         bestTarget = {
+          id: m.id,
           x: m.x,
           y: mBaseY + (m.isBoss ? 2.1 : spec.hitCenterY),
           z: m.z,
@@ -11663,6 +12153,7 @@ export class RpgWorldEngine {
         const d = Math.hypot(s.x - this.heroPos.x, s.z - this.heroPos.z);
         if (d <= TUNE.autoAimRange + 6 && (!bestTarget || d < bestTarget.dist)) {
           bestTarget = {
+            id: s.id,
             x: s.x,
             y: getArchipelagoGroundY(s.x, s.z) + 1.45,
             z: s.z,
@@ -11678,13 +12169,15 @@ export class RpgWorldEngine {
       this.heroYaw = aimYaw;
       this.hero.body.rotation.y = aimYaw;
       this.shootAimYaw = aimYaw;
+      this.shootAimTargetId = bestTarget.id;
       // Arahkan kamera agar langsung menghadap target yang dibidik
       this.cameraYaw = aimYaw + Math.PI;
       const horiz = Math.max(0.5, bestTarget.dist);
       const dy = bestTarget.y - (this.heroPos.y + 2.05);
+      this.shootAimPitch = Math.atan2(dy, horiz);
       const targetPitch = THREE.MathUtils.clamp(
         -Math.atan2(dy, horiz),
-        this.cameraMode === 'first_person' ? -0.9 : -0.42,
+        this.cameraMode === 'first_person' ? -1.25 : -1.18,
         0.75,
       );
       this.cameraPitch = targetPitch;
