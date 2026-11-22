@@ -1,0 +1,64 @@
+@import "tailwindcss";
+
+@layer base {
+  html,
+  body,
+  #root {
+    width: 100dvw;
+    height: 100dvh;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    overscroll-behavior: none;
+    font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    background-color: #8cc850;
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
+
+.font-mono-nums {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes diglosa-confetti-fall {
+  0% {
+    transform: translate3d(0, -18px, 0) rotate(0deg) scale(0.9);
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(var(--confetti-dx, 14px), 155px, 0) rotate(var(--confetti-rot, 320deg)) scale(1);
+    opacity: 0;
+  }
+}
+
+@keyframes diglosa-ko-pop {
+  0% {
+    transform: scale(0.35) rotate(-14deg);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1.12) rotate(-4deg);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1) rotate(-4deg);
+    opacity: 1;
+  }
+}
+
+.animate-confetti-fall {
+  animation: diglosa-confetti-fall 1.65s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.animate-ko-pop {
+  animation: diglosa-ko-pop 0.42s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
+}
+

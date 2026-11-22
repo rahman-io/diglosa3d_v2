@@ -1,0 +1,6 @@
+{
+  "name": "Voxelia Skyline Builder 3D",
+  "description": "100% 3D voxel metropolis builder & action-quest game with responsive drone & orbit controls, challenging city surge progression, and live online leaderboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,129 @@
+{
+  "entities": {
+    "UserProgress": {
+      "title": "UserProgress",
+      "description": "Private player progression and personal records for a signed-in builder.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the player."
+        },
+        "playerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Display name of the builder."
+        },
+        "bestScore": {
+          "type": "integer",
+          "description": "Highest score achieved."
+        },
+        "highestLevel": {
+          "type": "integer",
+          "description": "Highest city tier reached (1-10)."
+        },
+        "totalBuilt": {
+          "type": "integer",
+          "description": "Cumulative landmarks constructed."
+        },
+        "questsCompleted": {
+          "type": "integer",
+          "description": "Total district quests completed."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last-update timestamp."
+        }
+      },
+      "required": [
+        "uid",
+        "playerName",
+        "bestScore",
+        "highestLevel",
+        "totalBuilt",
+        "questsCompleted",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public non-PII online leaderboard entry keyed by player UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$",
+          "description": "Firebase Auth UID of the player."
+        },
+        "playerName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Public builder callsign."
+        },
+        "score": {
+          "type": "integer",
+          "description": "Best verified city score."
+        },
+        "cityLevel": {
+          "type": "integer",
+          "description": "City progression tier achieved."
+        },
+        "landmarksCount": {
+          "type": "integer",
+          "description": "Landmarks built in best run."
+        },
+        "maxCombo": {
+          "type": "integer",
+          "description": "Highest spark combo streak."
+        },
+        "districtTitle": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40,
+          "description": "Unlocked district rank title."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the record update."
+        }
+      },
+      "required": [
+        "uid",
+        "playerName",
+        "score",
+        "cityLevel",
+        "landmarksCount",
+        "maxCombo",
+        "districtTitle",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProgress"
+      },
+      "description": "Owner-only progression records for each player."
+    },
+    "/leaderboard/{userId}": {
+      "schema": {
+        "$ref": "#/entities/LeaderboardEntry"
+      },
+      "description": "Global online leaderboard rankings (non-PII)."
+    }
+  }
+}

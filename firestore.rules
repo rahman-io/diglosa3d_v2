@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global safety net: default deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidUserProgress(data) {
+      return data.keys().hasAll([
+          'uid',
+          'playerName',
+          'bestScore',
+          'highestLevel',
+          'totalBuilt',
+          'questsCompleted',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'playerName',
+          'bestScore',
+          'highestLevel',
+          'totalBuilt',
+          'questsCompleted',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+        data.uid == request.auth.uid &&
+        data.playerName is string && data.playerName.size() >= 1 && data.playerName.size() <= 40 &&
+        data.bestScore is int && data.bestScore >= 0 && data.bestScore <= 99999999 &&
+        data.highestLevel is int && data.highestLevel >= 1 && data.highestLevel <= 100 &&
+        data.totalBuilt is int && data.totalBuilt >= 0 && data.totalBuilt <= 1000000 &&
+        data.questsCompleted is int && data.questsCompleted >= 0 && data.questsCompleted <= 1000000 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidLeaderboardEntry(data) {
+      return data.keys().hasAll([
+          'uid',
+          'playerName',
+          'score',
+          'cityLevel',
+          'landmarksCount',
+          'maxCombo',
+          'districtTitle',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'playerName',
+          'score',
+          'cityLevel',
+          'landmarksCount',
+          'maxCombo',
+          'districtTitle',
+          'updatedAt'
+        ]) &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+        data.uid == request.auth.uid &&
+        data.playerName is string && data.playerName.size() >= 1 && data.playerName.size() <= 40 &&
+        data.score is int && data.score >= 0 && data.score <= 99999999 &&
+        data.cityLevel is int && data.cityLevel >= 1 && data.cityLevel <= 100 &&
+        data.landmarksCount is int && data.landmarksCount >= 0 && data.landmarksCount <= 1000 &&
+        data.maxCombo is int && data.maxCombo >= 0 && data.maxCombo <= 10000 &&
+        data.districtTitle is string && data.districtTitle.size() >= 1 && data.districtTitle.size() <= 40 &&
+        data.updatedAt is timestamp;
+    }
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && isOwner(userId);
+      allow list: if isOwner(userId) && resource.data.uid == request.auth.uid;
+      allow create: if isValidId(userId) &&
+        isVerified() &&
+        isOwner(userId) &&
+        isValidUserProgress(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) &&
+        isVerified() &&
+        isOwner(userId) &&
+        isValidUserProgress(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'playerName',
+          'bestScore',
+          'highestLevel',
+          'totalBuilt',
+          'questsCompleted',
+          'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /leaderboard/{userId} {
+      allow get: if isValidId(userId);
+      allow list: if resource.data.score >= 0 && request.query.limit <= 20;
+      allow create: if isValidId(userId) &&
+        isVerified() &&
+        isOwner(userId) &&
+        isValidLeaderboardEntry(incoming()) &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(userId) &&
+        isVerified() &&
+        isOwner(userId) &&
+        isValidLeaderboardEntry(incoming()) &&
+        incoming().uid == existing().uid &&
+        incoming().updatedAt == request.time &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'playerName',
+          'score',
+          'cityLevel',
+          'landmarksCount',
+          'maxCombo',
+          'districtTitle',
+          'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+  }
+}

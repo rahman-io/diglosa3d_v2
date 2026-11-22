@@ -1,0 +1,1857 @@
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  HelpCircle,
+  Lock,
+  Mic,
+  MicOff,
+  Search,
+  X,
+} from 'lucide-react';
+import {
+  VOICE_COMMAND_CATALOG,
+  VoiceCommandCategory,
+} from '../services/voiceCommandService';
+import {
+  ACADEMY_NPCS,
+  MAX_AMMO,
+  NPC_CATALOG,
+  WEAPON_ORDER,
+  WEAPONS,
+  ZONE_DOORS,
+} from '../data/diglosaCatalog';
+import { CameraMode, LiveMapSnapshot, RpgHudSnapshot, WeaponId } from '../types/game';
+import { isFullscreenActive, toggleAppFullscreen } from '../utils/fullscreen';
+import { getWeaponThumbnails } from '../utils/weaponThumbnails';
+import { RadarMinimap, StarterWeaponPixelIcon } from './RadarMinimap';
+import { WeaponPreviewCanvas } from './WeaponPreviewCanvas';
+import { scrollFieldIntoView, useVisualViewport } from '../utils/useVisualViewport';
+
+const CAMERA_VIEW_LABELS: Record<CameraMode, string> = {
+  third_back: 'Kamera Belakang',
+  first_person: 'Sudut Orang Pertama (FPS)',
+  third_front: 'Kamera Depan',
+  orbit: 'Kamera Bebas',
+};
+
+interface RpgHudProps {
+  hud: RpgHudSnapshot;
+  muted: boolean;
+  onToggleMute: () => void;
+  onToggleCamera: () => void;
+  onSelectHotbar: (slot: number) => void;
+  onPause: () => void;
+  onOpenBag: () => void;
+  onOpenKamus: () => void;
+  onOpenQuests: () => void;
+  onOpenMap: () => void;
+  onOpenGuide: () => void;
+  onOpenOptions: () => void;
+  onOpenLeaderboard: () => void;
+  onPrimaryAction: () => void;
+  onFireWeapon: () => void;
+  onSetFireHeld: (held: boolean) => void;
+  onToggleAim: () => void;
+  onTogglePointerLock: () => void;
+  onJump: () => void;
+  onOpenCrafting: () => void;
+  onVirtualMove: (vx: number, vz: number) => void;
+  onExitDungeon: () => void;
+  getLiveMapSnapshot?: (kind: 'minimap' | 'full') => LiveMapSnapshot | null;
+  voiceListening?: boolean;
+  voiceSupported?: boolean;
+  voiceTranscript?: string;
+  voiceLastAction?: string;
+  onToggleVoice?: () => void;
+}
+
+export const RpgHud: React.FC<RpgHudProps> = ({
+  hud,
+  muted,
+  onToggleMute,
+  onToggleCamera,
+  onSelectHotbar,
+  onPause,
+  onOpenBag,
+  onOpenKamus,
+  onOpenQuests,
+  onOpenMap,
+  onOpenGuide,
+  onOpenOptions,
+  onOpenLeaderboard,
+  onPrimaryAction,
+  onFireWeapon,
+  onSetFireHeld,
+  onToggleAim,
+  onTogglePointerLock,
+  onJump,
+  onOpenCrafting,
+  onVirtualMove,
+  onExitDungeon,
+  getLiveMapSnapshot,
+  voiceListening = false,
+  voiceSupported = true,
+  voiceTranscript = '',
+  voiceLastAction = '',
+  onToggleVoice,
+}) => {
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const [touchUsed, setTouchUsed] = useState(false);
+  const [isSmallViewport, setIsSmallViewport] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [hotbarOpen, setHotbarOpen] = useState(false);
+  const [voiceHelpOpen, setVoiceHelpOpen] = useState(false);
+  const [voiceSearch, setVoiceSearch] = useState('');
+  const voiceModalVp = useVisualViewport(voiceHelpOpen);
+  const [inspectedHotbar, setInspectedHotbar] = useState<
+    | { kind: 'weapon'; id: WeaponId }
+    | { kind: 'tool'; id: 'pickaxe' | 'torch' | 'shield_block' | 'tnt' }
+  >({ kind: 'weapon', id: hud.activeWeapon });
+  const [weaponThumbs] = useState<Partial<Record<WeaponId, string>>>(() => getWeaponThumbnails());
+  const [isFs, setIsFs] = useState(false);
+  const [floatingOrigin, setFloatingOrigin] = useState<{ x: number; y: number } | null>(null);
+  const knobImgRef = useRef<HTMLImageElement | null>(null);
+  const lastStickMoveRef = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
+  const stickOriginRef = useRef<{ x: number; y: number } | null>(null);
+  const stickPointerId = useRef<number | null>(null);
+  const firePointerId = useRef<number | null>(null);
+  const onVirtualMoveRef = useRef(onVirtualMove);
+  onVirtualMoveRef.current = onVirtualMove;
+  const onSetFireHeldRef = useRef(onSetFireHeld);
+  onSetFireHeldRef.current = onSetFireHeld;
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return;
+    const mq = window.matchMedia('(pointer: coarse)');
+    setIsCoarsePointer(mq.matches);
+    const handler = (e: MediaQueryListEvent) => setIsCoarsePointer(e.matches);
+    mq.addEventListener?.('change', handler);
+    const onGlobalPointer = (e: PointerEvent) => {
+      if (e.pointerType === 'touch') setTouchUsed(true);
+    };
+    window.addEventListener('pointerdown', onGlobalPointer, { passive: true });
+    const checkWidth = () => setIsSmallViewport(window.innerWidth < 640);
+    checkWidth();
+    window.addEventListener('resize', checkWidth);
+    const onFsChange = () => setIsFs(isFullscreenActive());
+    onFsChange();
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      mq.removeEventListener?.('change', handler);
+      window.removeEventListener('pointerdown', onGlobalPointer);
+      window.removeEventListener('resize', checkWidth);
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
+  }, []);
+
+  const showTouchControls =
+    hud.phase === 'playing' &&
+    (hud.settings.touchControls === 'on' ||
+      (hud.settings.touchControls === 'auto' && (isCoarsePointer || touchUsed)));
+
+  useEffect(() => {
+    if (!showTouchControls) {
+      stickPointerId.current = null;
+      stickOriginRef.current = null;
+      lastStickMoveRef.current = { dx: 0, dy: 0 };
+      setFloatingOrigin(null);
+      if (knobImgRef.current) {
+        knobImgRef.current.style.transform = 'translate3d(0px, 0px, 0)';
+      }
+      onVirtualMoveRef.current(0, 0);
+    }
+  }, [showTouchControls]);
+
+  useEffect(() => {
+    if (hud.phase !== 'playing') {
+      setMenuOpen(false);
+      setHotbarOpen(false);
+      setVoiceHelpOpen(false);
+      firePointerId.current = null;
+      onSetFireHeldRef.current(false);
+    }
+  }, [hud.phase]);
+
+  if (hud.phase !== 'playing') {
+    return null;
+  }
+
+  const hpPct = Math.max(0, Math.min(100, Math.round((hud.hp / Math.max(1, hud.maxHp)) * 100)));
+  const activeQuestCount = hud.quests.filter((q) => q.accepted && !q.claimed).length;
+
+  const nearbyOverworldNpc =
+    hud.worldMode === 'overworld' && hud.nearbyNpcId
+      ? NPC_CATALOG.find((n) => n.id === hud.nearbyNpcId)
+      : null;
+  const nearbyAcademyNpc =
+    hud.worldMode === 'academy' && hud.nearbyNpcId
+      ? ACADEMY_NPCS.find((n) => n.id === hud.nearbyNpcId)
+      : null;
+  const nearbyDoor =
+    hud.worldMode === 'dungeon' && hud.nearbyDoorIndex !== null && hud.dungeonState
+      ? ZONE_DOORS[hud.dungeonState.zoneId]?.[hud.nearbyDoorIndex]
+      : null;
+
+  const activeWeaponDef = WEAPONS[hud.activeWeapon];
+  const activeAmmo = hud.weaponAmmo[hud.activeWeapon] || 0;
+  const openWeaponSwitcher = () => {
+    setMenuOpen(false);
+    setHotbarOpen((prev) => {
+      const next = !prev;
+      if (next) {
+        if (hud.activeHotbarSlot === 8) setInspectedHotbar({ kind: 'tool', id: 'pickaxe' });
+        else if (hud.activeHotbarSlot === 9) setInspectedHotbar({ kind: 'tool', id: 'torch' });
+        else if (hud.activeHotbarSlot === 10)
+          setInspectedHotbar({ kind: 'tool', id: 'shield_block' });
+        else if (hud.activeHotbarSlot === 11) setInspectedHotbar({ kind: 'tool', id: 'tnt' });
+        else setInspectedHotbar({ kind: 'weapon', id: hud.activeWeapon });
+      }
+      return next;
+    });
+  };
+
+  const activeItemIconSrc =
+    hud.activeHotbarSlot === 8
+      ? './assets/ui/icon_pickaxe.png'
+      : hud.activeHotbarSlot === 9
+      ? './assets/ui/icon_torch.png'
+      : hud.activeHotbarSlot === 10
+      ? './assets/ui/icon_shield_block.png'
+      : hud.activeHotbarSlot === 11
+      ? './assets/ui/icon_tnt.png'
+      : hud.ownedWeapons.length > 0 && weaponThumbs[hud.activeWeapon]
+      ? weaponThumbs[hud.activeWeapon]!
+      : './assets/ui/icon_slingshot.png';
+
+  const activeSlotBadgeText =
+    hud.activeHotbarSlot === 8
+      ? `T${hud.pickaxeTier}`
+      : hud.activeHotbarSlot === 9
+      ? String(hud.caveTorchesLeft)
+      : hud.activeHotbarSlot === 10
+      ? String(hud.caveShieldBlocksLeft)
+      : hud.activeHotbarSlot === 11
+      ? String(hud.caveTntLeft)
+      : hud.ownedWeapons.length > 0
+      ? String(activeAmmo)
+      : null;
+
+  const updateJoystickFromPointer = (clientX: number, clientY: number) => {
+    const origin = stickOriginRef.current;
+    if (!origin) return;
+    const maxR = 36;
+    let dx = clientX - origin.x;
+    let dy = clientY - origin.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > maxR) {
+      dx = (dx / dist) * maxR;
+      dy = (dy / dist) * maxR;
+    }
+    const prev = lastStickMoveRef.current;
+    if (Math.abs(dx - prev.dx) < 0.4 && Math.abs(dy - prev.dy) < 0.4) return;
+    lastStickMoveRef.current = { dx, dy };
+    if (knobImgRef.current) {
+      knobImgRef.current.style.transform = `translate3d(${dx}px, ${dy}px, 0)`;
+    }
+    onVirtualMoveRef.current(dx / maxR, dy / maxR);
+  };
+
+  const resetFloatingJoystick = () => {
+    stickPointerId.current = null;
+    stickOriginRef.current = null;
+    lastStickMoveRef.current = { dx: 0, dy: 0 };
+    setFloatingOrigin(null);
+    if (knobImgRef.current) {
+      knobImgRef.current.style.transform = 'translate3d(0px, 0px, 0)';
+    }
+    onVirtualMoveRef.current(0, 0);
+  };
+
+  const drawerItems = [
+    { label: 'Tas', iconSrc: './assets/ui/icon_bag.png', onClick: onOpenBag, badge: hud.ownedWeapons.length },
+    { label: 'Kamus', iconSrc: './assets/ui/icon_kamus.png', onClick: onOpenKamus, badge: hud.wordsMastered },
+    { label: 'Misi', iconSrc: './assets/ui/icon_quest.png', onClick: onOpenQuests, badge: activeQuestCount },
+    { label: 'Peta', iconSrc: './assets/ui/icon_map.png', onClick: onOpenMap },
+    { label: 'Petunjuk', iconSrc: './assets/ui/menu_guide.png', onClick: onOpenGuide },
+    { label: 'Opsi', iconSrc: './assets/ui/icon_settings.png', onClick: onOpenOptions },
+    { label: 'Ranking', iconSrc: './assets/ui/menu_trophy.png', onClick: onOpenLeaderboard },
+    { label: 'Jeda', iconSrc: './assets/ui/btn_pause.png', onClick: onPause },
+  ];
+
+  return (
+    <div className="pointer-events-none fixed inset-0 z-10 overflow-hidden">
+      {/* Subtle World-Space Nameplates (kept light so world stays clear) */}
+      {hud.projectedLabels.map((lbl) => (
+        <div
+          key={lbl.id}
+          style={{ transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)` }}
+          className={`absolute left-0 top-0 whitespace-nowrap font-bold shadow-md ${
+            lbl.kind === 'speech'
+              ? 'rounded-xl border border-[#78350f] bg-white/95 px-2.5 py-0.5 text-[11px] font-extrabold text-[#78350f]'
+              : lbl.kind === 'thought'
+              ? 'max-w-[230px] whitespace-normal rounded-2xl border border-sky-200/80 bg-slate-900/90 px-3 py-1 text-center text-[10px] font-bold leading-snug text-sky-50 shadow-lg'
+              : lbl.kind === 'portal'
+              ? 'rounded-lg border border-purple-300/60 bg-[#2e1065]/90 px-2.5 py-0.5 text-[11px] font-extrabold text-white'
+              : lbl.kind === 'door'
+              ? 'rounded-lg border border-amber-300/60 bg-slate-950/85 px-2 py-0.5 text-[10px] font-extrabold text-amber-100'
+              : lbl.kind === 'pickup'
+              ? 'rounded-lg border border-cyan-300/70 bg-cyan-950/85 px-2 py-0.5 text-[10px] font-extrabold text-cyan-100'
+              : lbl.kind === 'monster'
+              ? 'rounded-lg border border-rose-400/70 bg-rose-950/85 px-2 py-0.5 text-[10px] font-extrabold text-amber-200'
+              : 'rounded-lg border border-white/20 bg-slate-950/85 px-2.5 py-0.5 text-[10px] font-extrabold text-slate-100'
+          }`}
+        >
+          <div>{lbl.title}</div>
+          {lbl.subtext && (
+            <div className="text-[9px] font-semibold text-amber-200">{lbl.subtext}</div>
+          )}
+          {lbl.kind === 'thought' && (
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute -bottom-2.5 left-1/2 flex -translate-x-1/2 flex-col items-center gap-0.5"
+            >
+              <span className="h-1.5 w-1.5 rounded-full border border-sky-200/70 bg-slate-900/80" />
+              <span className="h-1 w-1 rounded-full border border-sky-200/70 bg-slate-900/80" />
+            </span>
+          )}
+        </div>
+      ))}
+
+      {/* TOP-LEFT: Minimalist GTA Circular Minimap Radar + ML-style Gold Weapon/Tool Switcher */}
+      <div className="pointer-events-none fixed left-2.5 top-2.5 z-20 flex flex-col items-start gap-1.5 sm:left-4 sm:top-4">
+        {hud.radarState && (
+          <RadarMinimap
+            radar={hud.radarState}
+            size={isSmallViewport ? 94 : 118}
+            getLiveMapSnapshot={getLiveMapSnapshot}
+            onOpenMap={onOpenMap}
+          />
+        )}
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={(e) => {
+              (e.currentTarget as HTMLButtonElement).blur();
+              openWeaponSwitcher();
+            }}
+            title={hotbarOpen ? 'Tutup Daftar Senjata & Alat' : 'Pilih Senjata & Alat'}
+            aria-label={hotbarOpen ? 'Tutup Daftar Senjata & Alat' : 'Pilih Senjata & Alat'}
+            className={`pointer-events-auto relative flex h-[48px] w-[48px] touch-none select-none items-center justify-center rounded-full shadow-[0_4px_12px_rgba(245,158,11,0.45)] transition-transform active:scale-90 sm:h-[54px] sm:w-[54px] ${
+              hotbarOpen ? 'scale-105 ring-2 ring-amber-300' : 'hover:scale-105'
+            }`}
+          >
+            <img
+              src="./assets/ui/btn_weapons.png"
+              alt="Senjata & Alat"
+              className="pointer-events-none h-full w-full select-none object-contain"
+              draggable={false}
+            />
+            {hotbarOpen ? (
+              <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-amber-200 bg-slate-950/90 text-amber-200 shadow">
+                <X className="h-3 w-3" />
+              </span>
+            ) : (
+              <span className="pointer-events-none absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border border-amber-300/75 bg-slate-950/85 p-0.5 shadow-md sm:h-6 sm:w-6">
+                <img
+                  src={activeItemIconSrc}
+                  alt="Aktif"
+                  className="pointer-events-none h-full w-full object-contain"
+                  draggable={false}
+                />
+              </span>
+            )}
+            {activeSlotBadgeText !== null && (
+              <span className="pointer-events-none absolute -bottom-2 left-1/2 -translate-x-1/2 rounded-full border border-amber-300/60 bg-slate-950/85 px-1.5 font-mono-nums text-[9px] font-black leading-tight text-amber-200 shadow">
+                {activeSlotBadgeText}
+              </span>
+            )}
+          </button>
+
+          {hud.worldMode === 'overworld' && !hud.starterWeaponPicked && hud.starterWeaponGuide && (
+            <div className="flex items-center gap-1.5 rounded-full border border-cyan-300/40 bg-slate-950/85 px-2.5 py-0.5 text-[10px] font-bold text-cyan-100">
+              <StarterWeaponPixelIcon className="h-3.5 w-3.5 shrink-0" />
+              <span>Senjata ({hud.starterWeaponGuide.distance}m)</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* TOP-CENTER kept clear so nothing blocks hero or camera sightline */}
+
+      {/* TOP-RIGHT: RPG Minimalist HP / Stats + Weapon Square + Utility Medallion Bar */}
+      <div className="pointer-events-auto fixed right-2.5 top-2.5 z-20 flex flex-col items-end gap-1.5 sm:right-4 sm:top-4">
+        <div className="flex items-center gap-2">
+          {/* Sleek RPG Health & Compact Stats Pill */}
+          <div className="flex flex-col items-end rounded-xl border border-amber-300/25 bg-slate-950/85 px-2.5 py-1.5 text-white shadow-lg">
+            <div className="flex items-center gap-1.5">
+              <img
+                src="./assets/ui/icon_heart.png"
+                alt="Nyawa"
+                className="h-4 w-4 shrink-0 object-contain"
+                draggable={false}
+              />
+              <div className="h-2 w-20 overflow-hidden rounded-full bg-slate-900/90 ring-1 ring-white/15 sm:w-24">
+                <div
+                  className="h-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-200"
+                  style={{ width: `${hpPct}%` }}
+                />
+              </div>
+              <span className="font-mono-nums text-[10px] font-black text-rose-200">
+                {hud.hp}/{hud.maxHp}
+              </span>
+            </div>
+            <div className="mt-1 flex items-center gap-2.5 font-mono-nums text-[10px] font-bold">
+              <span className="text-amber-300">Lv.{String(hud.level).padStart(2, '0')}</span>
+              <span className="flex items-center gap-1 text-cyan-300">
+                <img
+                  src="./assets/ui/icon_diamond.png"
+                  alt="Berlian"
+                  className="h-3.5 w-3.5 shrink-0 object-contain"
+                  draggable={false}
+                />
+                {hud.diamonds}
+              </span>
+              <span className="flex items-center gap-1 text-amber-300">
+                <img
+                  src="./assets/ui/icon_crown.png"
+                  alt="Mahkota"
+                  className="h-3.5 w-3.5 shrink-0 object-contain"
+                  draggable={false}
+                />
+                {hud.crowns}/6
+              </span>
+            </div>
+          </div>
+
+          {/* Active Weapon & Tool Box (tap to open Tas) */}
+          <button
+            type="button"
+            onClick={onOpenBag}
+            title={
+              hud.ownedWeapons.length > 0
+                ? `${activeWeaponDef.name} (${activeAmmo}) — Buka Tas`
+                : 'Buka Tas & Senjata'
+            }
+            className="relative flex h-11 w-11 items-center justify-center rounded-xl border-2 border-amber-300/50 bg-slate-950/85 p-1 text-white shadow-lg transition hover:border-amber-300"
+          >
+            <img
+              src={activeItemIconSrc}
+              alt="Item Aktif"
+              className={`h-8 w-8 object-contain ${
+                hud.ownedWeapons.length === 0 && hud.activeHotbarSlot < 8 ? 'opacity-45 grayscale' : ''
+              }`}
+              draggable={false}
+            />
+            {activeSlotBadgeText !== null && (
+              <span className="absolute -bottom-1 right-0.5 rounded bg-slate-950/95 px-1 font-mono-nums text-[9px] font-black text-amber-300 ring-1 ring-amber-400/30">
+                {activeSlotBadgeText}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Top-Right Utility Medallion Row (Icon-Only: Mouse Lock, Camera Eye View, Fullscreen, Mute, Menu) */}
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {!showTouchControls &&
+            hud.phase === 'playing' &&
+            hud.settings.aimMode === 'manual' &&
+            (hud.cameraMode === 'third_back' || hud.cameraMode === 'first_person') && (
+            <button
+              type="button"
+              onClick={onTogglePointerLock}
+              title={hud.pointerLocked ? 'Lepas Kunci Bidik Mouse (Esc / L)' : 'Kunci Mouse untuk Bidik Bebas PC (L)'}
+              aria-label="Kunci Bidik Mouse"
+              className={`relative flex h-9 w-9 items-center justify-center rounded-full shadow-[0_3px_8px_rgba(34,211,238,0.42)] transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10 ${
+                hud.pointerLocked ? 'scale-105 ring-2 ring-cyan-300' : ''
+              }`}
+            >
+              <img
+                src="./assets/ui/btn_aim_lock.png"
+                alt="Kunci Bidik Mouse"
+                className="pointer-events-none h-full w-full select-none object-contain"
+                draggable={false}
+              />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onToggleCamera}
+            title={`Ganti Sudut Pandang: ${CAMERA_VIEW_LABELS[hud.cameraMode]} (C / F5)`}
+            aria-label={`Ganti Sudut Pandang: ${CAMERA_VIEW_LABELS[hud.cameraMode]}`}
+            className="relative flex h-9 w-9 items-center justify-center rounded-full shadow-[0_3px_8px_rgba(34,211,238,0.38)] transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10"
+          >
+            <img
+              src="./assets/ui/btn_view.png"
+              alt="Ganti Sudut Pandang Kamera"
+              className="pointer-events-none h-full w-full select-none object-contain"
+              draggable={false}
+            />
+          </button>
+
+          <button
+            type="button"
+            data-fullscreen-toggle="true"
+            onClick={() => void toggleAppFullscreen()}
+            title={isFs ? 'Keluar Layar Penuh' : 'Layar Penuh'}
+            aria-label={isFs ? 'Keluar Layar Penuh' : 'Layar Penuh'}
+            className={`relative flex h-9 w-9 items-center justify-center rounded-full shadow-[0_3px_8px_rgba(34,211,238,0.34)] transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10 ${
+              isFs ? 'ring-2 ring-cyan-300/75' : ''
+            }`}
+          >
+            <img
+              src="./assets/ui/btn_fullscreen.png"
+              alt={isFs ? 'Keluar Layar Penuh' : 'Layar Penuh'}
+              className="pointer-events-none h-full w-full select-none object-contain"
+              draggable={false}
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={onToggleMute}
+            title={muted ? 'Nyalakan Suara' : 'Matikan Suara'}
+            aria-label={muted ? 'Nyalakan Suara' : 'Matikan Suara'}
+            className="relative flex h-9 w-9 items-center justify-center rounded-full shadow-[0_3px_8px_rgba(0,0,0,0.42)] transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10"
+          >
+            <img
+              src={muted ? './assets/ui/btn_sound_off.png' : './assets/ui/btn_sound_on.png'}
+              alt={muted ? 'Suara Mati' : 'Suara Nyala'}
+              className="pointer-events-none h-full w-full select-none object-contain"
+              draggable={false}
+            />
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setHotbarOpen(false);
+              setMenuOpen((v) => !v);
+            }}
+            title="Menu (Tas, Kamus, Misi, Peta, Opsi)"
+            aria-label="Menu"
+            className={`relative flex h-9 w-9 items-center justify-center rounded-full shadow-[0_3px_8px_rgba(245,158,11,0.38)] transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10 ${
+              menuOpen ? 'scale-105 ring-2 ring-amber-300' : ''
+            }`}
+          >
+            <img
+              src="./assets/ui/btn_menu.png"
+              alt="Menu"
+              className="pointer-events-none h-full w-full select-none object-contain"
+              draggable={false}
+            />
+            {menuOpen ? (
+              <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-amber-200 bg-slate-950/95 text-amber-200 shadow">
+                <X className="h-2.5 w-2.5" />
+              </span>
+            ) : (
+              activeQuestCount > 0 && (
+                <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border border-slate-950 bg-rose-600 px-1 font-mono-nums text-[9px] font-black text-white shadow">
+                  {activeQuestCount}
+                </span>
+              )
+            )}
+          </button>
+        </div>
+
+        {/* Right-Side Location/Clock Strip + Area Monster Progress Tracker (below top-right utility medallions) */}
+        <div className="pointer-events-none mt-0.5 flex w-[212px] flex-col items-end gap-1 sm:w-[238px]">
+          {hud.worldMode === 'overworld' && hud.worldTime && (
+            <div
+              className={`flex w-full items-center justify-between gap-1.5 rounded-full border px-2.5 py-0.5 text-white shadow-md ${
+                hud.worldTime.phase === 'malam'
+                  ? 'border-indigo-300/45 bg-slate-950/88'
+                  : hud.worldTime.phase === 'sore'
+                  ? 'border-orange-300/50 bg-amber-950/85'
+                  : hud.worldTime.phase === 'pagi'
+                  ? 'border-amber-200/55 bg-amber-900/85'
+                  : 'border-sky-200/40 bg-slate-950/85'
+              }`}
+            >
+              <span className="flex min-w-0 items-center gap-1 font-mono-nums text-[10px] font-extrabold tracking-wide text-amber-100">
+                <span className="text-[11px] leading-none">
+                  {hud.worldTime.phase === 'pagi'
+                    ? '🌅'
+                    : hud.worldTime.phase === 'siang'
+                    ? '☀️'
+                    : hud.worldTime.phase === 'sore'
+                    ? '🌇'
+                    : '🌙'}
+                </span>
+                <span className="truncate">
+                  Hari {hud.worldTime.dayCount} · {hud.worldTime.phaseLabel}
+                </span>
+              </span>
+              <span className="shrink-0 rounded-full bg-white/10 px-1.5 py-0.5 font-mono-nums text-[9px] font-bold text-slate-200">
+                {Math.floor(hud.worldTime.phaseRemainingSec / 60)}:
+                {String(hud.worldTime.phaseRemainingSec % 60).padStart(2, '0')}
+              </span>
+            </div>
+          )}
+
+          {hud.worldMode === 'dungeon' && hud.dungeonState && (
+            <div className="pointer-events-auto flex w-full items-center justify-between gap-1.5 rounded-full border border-white/15 bg-slate-950/88 px-2.5 py-0.5 text-white shadow-md">
+              <span className="min-w-0 truncate font-mono-nums text-[10px] font-extrabold text-amber-200">
+                {hud.dungeonState.zoneName} · Pintu {hud.dungeonState.doorsCleared.length}/5
+                {hud.dungeonState.bossSpawned && !hud.dungeonState.bossDefeated
+                  ? ' · BOS!'
+                  : hud.dungeonState.bossDefeated && !hud.dungeonState.prisonKeyCollected
+                  ? ' · Ambil Kunci'
+                  : hud.dungeonState.prisonKeyCollected && !hud.dungeonState.prisonUnlocked
+                  ? ` · Bebaskan ${hud.dungeonState.captiveName}`
+                  : ''}
+              </span>
+              <button
+                type="button"
+                onClick={onExitDungeon}
+                className="shrink-0 rounded-full bg-cyan-600/90 px-2 py-0.5 text-[9px] font-extrabold text-white hover:bg-cyan-500"
+              >
+                Keluar
+              </button>
+            </div>
+          )}
+
+          {hud.worldMode === 'academy' && (
+            <div className="pointer-events-auto flex w-full items-center justify-between gap-1.5 rounded-full border border-purple-300/35 bg-slate-950/88 px-2.5 py-0.5 text-white shadow-md">
+              <span className="min-w-0 truncate font-mono-nums text-[10px] font-extrabold text-purple-200">
+                IELTS · L{hud.ieltsScores.listening}% R{hud.ieltsScores.reading}% W
+                {hud.ieltsScores.writing}% S{hud.ieltsScores.speaking}%
+              </span>
+              <button
+                type="button"
+                onClick={onExitDungeon}
+                className="shrink-0 rounded-full bg-cyan-600/90 px-2 py-0.5 text-[9px] font-extrabold text-white hover:bg-cyan-500"
+              >
+                Keluar
+              </button>
+            </div>
+          )}
+
+          {(() => {
+            const stats = hud.areaMonsterStats;
+            const pct = stats.total > 0 ? Math.min(100, Math.round((stats.defeated / stats.total) * 100)) : 100;
+
+            if (hud.worldMode === 'dungeon') {
+              return (
+                <div className="w-full rounded-xl border border-amber-300/30 bg-slate-950/88 px-2.5 py-1 text-white shadow-md">
+                  <div className="flex items-center justify-between gap-1.5 font-mono-nums text-[9.5px] font-extrabold sm:text-[10px]">
+                    <span className="truncate text-slate-200">⚔️ Monster Gua</span>
+                    <span className="shrink-0">
+                      <span className="text-emerald-300">
+                        Kalah {stats.defeated}/{stats.total}
+                      </span>
+                      <span className="mx-1 text-slate-500">·</span>
+                      <span className={stats.remaining > 0 ? 'text-rose-300' : 'text-emerald-300'}>
+                        {stats.remaining > 0 ? `Sisa ${stats.remaining}` : 'Bersih ✓'}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-800/90">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 transition-all duration-200"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="mt-0.5 truncate font-mono-nums text-[8.5px] font-bold text-slate-300 sm:text-[9px]">
+                    {stats.bossDefeated ? (
+                      <span className="text-emerald-300">
+                        ✓ Bos Kalah ·{' '}
+                        {hud.dungeonState?.prisonUnlocked
+                          ? 'Gua Terbebas!'
+                          : `Selamatkan ${hud.dungeonState?.captiveName}`}
+                      </span>
+                    ) : stats.bossActive ? (
+                      <span className="font-black text-rose-300">⚠️ BOS AREA AKTIF!</span>
+                    ) : (
+                      <span>
+                        Penjaga Pintu Bos: {stats.guardiansDefeated ?? 0}/{stats.guardiansTotal ?? 5} ·
+                        Bos Pintu 5
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
+            if (hud.worldMode === 'academy') {
+              return (
+                <div className="w-full rounded-xl border border-purple-300/30 bg-slate-950/88 px-2.5 py-1 text-white shadow-md">
+                  <div className="flex items-center justify-between gap-1.5 font-mono-nums text-[9.5px] font-extrabold sm:text-[10px]">
+                    <span className="truncate text-purple-200">⚔️ Penjaga IELTS</span>
+                    <span className="shrink-0">
+                      <span className="text-emerald-300">
+                        Kalah {stats.defeated}/{stats.total}
+                      </span>
+                      <span className="mx-1 text-slate-500">·</span>
+                      <span className={stats.remaining > 0 ? 'text-rose-300' : 'text-emerald-300'}>
+                        {stats.remaining > 0 ? `Sisa ${stats.remaining}` : 'Bersih ✓'}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-800/90">
+                    <div
+                      className="h-full bg-gradient-to-r from-purple-500 to-cyan-400 transition-all duration-200"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                </div>
+              );
+            }
+
+            // Overworld (Luar Gua / Area Penyelamatan)
+            if (stats.context === 'overworld_night') {
+              return (
+                <div className="w-full rounded-xl border border-rose-400/35 bg-slate-950/88 px-2.5 py-1 text-white shadow-md">
+                  <div className="flex items-center justify-between gap-1.5 font-mono-nums text-[9.5px] font-extrabold sm:text-[10px]">
+                    <span className="truncate text-rose-200">⚔️ Monster Malam</span>
+                    <span className="shrink-0">
+                      <span className="text-emerald-300">
+                        Kalah {stats.defeated}/{stats.total}
+                      </span>
+                      <span className="mx-1 text-slate-500">·</span>
+                      <span className={stats.remaining > 0 ? 'text-rose-300' : 'text-emerald-300'}>
+                        {stats.remaining > 0 ? `Sisa ${stats.remaining}` : 'Semua Kalah ✓'}
+                      </span>
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-800/90">
+                    <div
+                      className="h-full bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-400 transition-all duration-200"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-1.5 font-mono-nums text-[8.5px] font-bold text-slate-300 sm:text-[9px]">
+                    <span className="truncate">
+                      📍 {stats.areaName}
+                      {(stats.zoneNightTotal ?? 0) > 0
+                        ? ` · Luar: ${stats.zoneNightDefeated ?? 0}/${stats.zoneNightTotal}`
+                        : ''}
+                    </span>
+                    <span className={stats.caveLiberated ? 'text-emerald-300' : 'text-amber-200'}>
+                      {stats.caveLiberated
+                        ? 'Gua Aman ✓'
+                        : `Gua: ${stats.caveDefeated ?? 0}/${stats.caveTotal ?? 0} (Sisa ${stats.caveRemaining ?? 0})`}
+                    </span>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div className="w-full rounded-xl border border-amber-300/25 bg-slate-950/85 px-2.5 py-1 text-white shadow-md">
+                <div className="flex items-center justify-between gap-1.5 font-mono-nums text-[9.5px] font-extrabold sm:text-[10px]">
+                  <span className="truncate text-amber-100">📍 {stats.areaName}</span>
+                  {stats.caveLiberated ? (
+                    <span className="shrink-0 text-emerald-300">Terbebas · Sisa 0 ✓</span>
+                  ) : (
+                    <span className="shrink-0">
+                      <span className="text-emerald-300">
+                        Kalah {stats.defeated}/{stats.total}
+                      </span>
+                      <span className="mx-1 text-slate-500">·</span>
+                      <span className="text-amber-300">Sisa {stats.remaining} Gua</span>
+                    </span>
+                  )}
+                </div>
+                <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-800/90">
+                  <div
+                    className={`h-full transition-all duration-200 ${
+                      stats.caveLiberated
+                        ? 'bg-emerald-400'
+                        : 'bg-gradient-to-r from-amber-400 to-emerald-400'
+                    }`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+
+      {/* CENTERED TRANSPARENT RPG MENU PANEL (Tas, Kamus, Misi, Peta, Petunjuk, Opsi, Ranking, Jeda) */}
+      {menuOpen && (
+        <div className="pointer-events-none fixed inset-0 z-30 flex items-center justify-center px-3">
+          <div className="pointer-events-auto flex max-h-[78dvh] w-full max-w-[min(28rem,calc(100vw-110px))] flex-col overflow-hidden rounded-2xl border border-amber-300/45 bg-slate-950/88 p-3 text-slate-100 shadow-2xl sm:max-w-[32rem] sm:p-4">
+            <div className="mb-2.5 flex items-center justify-between gap-2 border-b border-white/15 pb-1.5">
+              <h3 className="truncate text-xs font-black uppercase tracking-wider text-amber-200 [text-shadow:0_1px_2px_rgba(0,0,0,0.92)] sm:text-sm">
+                Menu Petualangan
+              </h3>
+              <button
+                type="button"
+                onClick={(e) => {
+                  (e.currentTarget as HTMLButtonElement).blur();
+                  setMenuOpen(false);
+                }}
+                aria-label="Tutup Menu"
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-white/25 bg-slate-950/35 px-2.5 py-1 text-[10px] font-extrabold text-slate-100 hover:bg-slate-900/55"
+              >
+                <X className="h-3.5 w-3.5" />
+                <span>Tutup</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 overflow-y-auto overscroll-contain touch-pan-y sm:grid-cols-4">
+              {drawerItems.map((item) => (
+                <button
+                  key={item.label}
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    item.onClick();
+                  }}
+                  className="relative flex flex-col items-center justify-center gap-1.5 rounded-xl border border-white/20 bg-slate-950/18 px-2.5 py-3 text-center text-[11px] font-extrabold text-slate-100 transition hover:border-amber-300/60 hover:bg-slate-900/35 sm:py-3.5"
+                >
+                  {item.badge !== undefined && item.badge > 0 && (
+                    <span className="absolute right-1.5 top-1.5 rounded-full bg-rose-600 px-1.5 py-0.5 font-mono-nums text-[9px] font-black leading-none text-white shadow">
+                      {item.badge}
+                    </span>
+                  )}
+                  <img
+                    src={item.iconSrc}
+                    alt={item.label}
+                    className="h-8 w-8 shrink-0 object-contain sm:h-9 sm:w-9"
+                    draggable={false}
+                  />
+                  <span className="line-clamp-1 w-full [text-shadow:0_1px_2px_rgba(0,0,0,0.92)]">{item.label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Transient Event Toast (single slim pill near top edge) */}
+      {hud.bannerMessage && (
+        <div className="pointer-events-none fixed left-1/2 top-2.5 z-20 -translate-x-1/2 sm:top-3.5">
+          <div className="max-w-[78vw] truncate rounded-full border border-amber-300/50 bg-slate-950/90 px-3.5 py-0.5 text-[10px] font-extrabold text-amber-100 shadow-lg sm:text-[11px]">
+            {hud.bannerMessage}
+          </div>
+        </div>
+      )}
+
+      {/* Dynamic Tactical Crosshair & Hit Marker in Bidik Bebas TPS & FPS Modes */}
+      {hud.phase === 'playing' &&
+        (hud.cameraMode === 'first_person' ||
+          (hud.settings.aimMode === 'manual' &&
+            hud.cameraMode === 'third_back' &&
+            (hud.ownedWeapons.length > 0 || hud.isAiming))) && (() => {
+          const gap = hud.isAiming
+            ? 4 + hud.crosshairSpread * 5
+            : 8 + hud.crosshairSpread * 13;
+          const colorClass = hud.crosshairOnEnemy
+            ? 'bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.95)]'
+            : hud.isAiming
+            ? 'bg-cyan-200 shadow-[0_0_4px_rgba(0,0,0,0.9)]'
+            : 'bg-white shadow-[0_0_3px_rgba(0,0,0,0.9)]';
+          const tickLen = hud.isAiming ? 8 : 7;
+          return (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none fixed left-1/2 top-1/2 z-20 -translate-x-1/2 -translate-y-1/2"
+            >
+              {/* ADS Outer Precision Ring */}
+              {hud.isAiming && (
+                <div
+                  className={`absolute left-1/2 top-1/2 h-11 w-11 -translate-x-1/2 -translate-y-1/2 rounded-full border transition-colors ${
+                    hud.crosshairOnEnemy ? 'border-rose-400/75' : 'border-cyan-300/45'
+                  }`}
+                />
+              )}
+              {/* Center Precision Dot */}
+              <span
+                className={`absolute left-1/2 top-1/2 h-1.5 w-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors ${
+                  hud.crosshairOnEnemy
+                    ? 'bg-rose-400 shadow-[0_0_8px_rgba(244,63,94,1)]'
+                    : 'bg-white shadow-[0_0_3px_#000]'
+                }`}
+              />
+              {/* 4 Dynamic Reticle Ticks */}
+              <span
+                style={{ height: tickLen, transform: `translate(-50%, calc(-100% - ${gap}px))` }}
+                className={`absolute left-1/2 top-1/2 w-[2px] rounded-full transition-[background-color] ${colorClass}`}
+              />
+              <span
+                style={{ height: tickLen, transform: `translate(-50%, ${gap}px)` }}
+                className={`absolute left-1/2 top-1/2 w-[2px] rounded-full transition-[background-color] ${colorClass}`}
+              />
+              <span
+                style={{ width: tickLen, transform: `translate(calc(-100% - ${gap}px), -50%)` }}
+                className={`absolute left-1/2 top-1/2 h-[2px] rounded-full transition-[background-color] ${colorClass}`}
+              />
+              <span
+                style={{ width: tickLen, transform: `translate(${gap}px, -50%)` }}
+                className={`absolute left-1/2 top-1/2 h-[2px] rounded-full transition-[background-color] ${colorClass}`}
+              />
+              {/* Hit / Kill X Marker */}
+              {hud.hitMarkerKind !== 'none' && (
+                <div className="absolute left-1/2 top-1/2 h-7 w-7 -translate-x-1/2 -translate-y-1/2">
+                  <span
+                    className={`absolute left-1/2 top-0 h-2.5 w-[2.5px] -translate-x-1/2 rotate-45 rounded-full ${
+                      hud.hitMarkerKind === 'kill'
+                        ? 'bg-amber-300 shadow-[0_0_8px_#f59e0b]'
+                        : 'bg-white shadow-[0_0_5px_#000]'
+                    }`}
+                  />
+                  <span
+                    className={`absolute left-1/2 bottom-0 h-2.5 w-[2.5px] -translate-x-1/2 rotate-45 rounded-full ${
+                      hud.hitMarkerKind === 'kill'
+                        ? 'bg-amber-300 shadow-[0_0_8px_#f59e0b]'
+                        : 'bg-white shadow-[0_0_5px_#000]'
+                    }`}
+                  />
+                  <span
+                    className={`absolute left-1/2 top-0 h-2.5 w-[2.5px] -translate-x-1/2 -rotate-45 rounded-full ${
+                      hud.hitMarkerKind === 'kill'
+                        ? 'bg-amber-300 shadow-[0_0_8px_#f59e0b]'
+                        : 'bg-white shadow-[0_0_5px_#000]'
+                    }`}
+                  />
+                  <span
+                    className={`absolute left-1/2 bottom-0 h-2.5 w-[2.5px] -translate-x-1/2 -rotate-45 rounded-full ${
+                      hud.hitMarkerKind === 'kill'
+                        ? 'bg-amber-300 shadow-[0_0_8px_#f59e0b]'
+                        : 'bg-white shadow-[0_0_5px_#000]'
+                    }`}
+                  />
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
+      {/* Targeted Cave Voxel Block Pill (only when aiming at a cave block) */}
+      {hud.worldMode === 'dungeon' && hud.targetedBlock && (
+        <div className="pointer-events-none fixed bottom-16 left-1/2 z-20 -translate-x-1/2 sm:bottom-20">
+          <div className="flex items-center gap-2 rounded-full border border-white/20 bg-slate-950/88 px-3 py-1 text-[11px] font-extrabold text-slate-100 shadow-lg">
+            <span>{hud.targetedBlock.label}</span>
+            <span className="font-mono-nums text-[10px] text-amber-300">
+              {hud.targetedBlock.hp}/{hud.targetedBlock.maxHp}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* Clean GTA-style Left Floating Joystick Zone (invisible when idle, spawns under finger) */}
+      {showTouchControls && (
+        <>
+          <div
+            onPointerDown={(e) => {
+              if (stickPointerId.current !== null) return;
+              stickPointerId.current = e.pointerId;
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+              const origin = { x: e.clientX, y: e.clientY };
+              stickOriginRef.current = origin;
+              lastStickMoveRef.current = { dx: 0, dy: 0 };
+              setFloatingOrigin(origin);
+              if (knobImgRef.current) {
+                knobImgRef.current.style.transform = 'translate3d(0px, 0px, 0)';
+              }
+              onVirtualMoveRef.current(0, 0);
+            }}
+            onPointerMove={(e) => {
+              if (stickPointerId.current === e.pointerId) {
+                updateJoystickFromPointer(e.clientX, e.clientY);
+              }
+            }}
+            onPointerUp={(e) => {
+              if (stickPointerId.current === e.pointerId) {
+                resetFloatingJoystick();
+              }
+            }}
+            onPointerCancel={(e) => {
+              if (stickPointerId.current === e.pointerId) {
+                resetFloatingJoystick();
+              }
+            }}
+            className="pointer-events-auto fixed bottom-12 left-0 top-28 z-10 w-[44vw] touch-none sm:bottom-16 sm:top-32 sm:w-[40vw]"
+            aria-label="Area Floating Joystick"
+          />
+
+          {floatingOrigin && (
+            <div
+              aria-hidden="true"
+              style={{
+                left: floatingOrigin.x,
+                top: floatingOrigin.y,
+                transform: 'translate(-50%, -50%)',
+              }}
+              className="pointer-events-none fixed z-20 flex h-[112px] w-[112px] items-center justify-center sm:h-[126px] sm:w-[126px]"
+            >
+              <img
+                src="./assets/ui/joystick_base.png"
+                alt=""
+                className="pointer-events-none h-full w-full select-none object-contain"
+                draggable={false}
+              />
+              <img
+                ref={knobImgRef}
+                src="./assets/ui/joystick_knob.png"
+                alt=""
+                className="pointer-events-none absolute h-[46px] w-[46px] select-none object-contain will-change-transform sm:h-[52px] sm:w-[52px]"
+                style={{ transform: 'translate3d(0px, 0px, 0)' }}
+                draggable={false}
+              />
+            </div>
+          )}
+        </>
+      )}
+
+      {/* STORY/CHALLENGE-SIZED TRANSPARENT 3D WEAPON & TOOL SHOWCASE POPUP */}
+      {hotbarOpen && (
+        <div className="pointer-events-none fixed inset-0 z-30 flex items-start justify-center px-2 pt-7 sm:pt-9 lg:items-center lg:pt-0">
+          <div className="pointer-events-auto flex max-h-[68dvh] w-full max-w-[calc(100vw-130px)] flex-col overflow-hidden rounded-2xl border border-amber-300/45 bg-slate-950/88 p-2.5 text-slate-100 shadow-2xl sm:max-h-[76dvh] sm:max-w-[min(36rem,calc(100vw-220px))] sm:p-3.5">
+            <div className="mb-2 flex items-center justify-between gap-2 border-b border-white/15 pb-1.5">
+              <div className="min-w-0">
+                <h3 className="truncate text-xs font-black uppercase tracking-wider text-amber-200 [text-shadow:0_1px_2px_rgba(0,0,0,0.92)] sm:text-sm">
+                  Senjata 3D &amp; Alat ({hud.ownedWeapons.length}/8)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={(e) => {
+                  (e.currentTarget as HTMLButtonElement).blur();
+                  setHotbarOpen(false);
+                }}
+                aria-label="Tutup Panel Senjata"
+                className="inline-flex shrink-0 items-center gap-1 rounded-full border border-white/25 bg-slate-950/35 px-2.5 py-1 text-[10px] font-extrabold text-slate-100 hover:bg-slate-900/55"
+              >
+                <X className="h-3.5 w-3.5" />
+                <span>Tutup</span>
+              </button>
+            </div>
+
+            <div className="grid min-h-0 flex-1 grid-cols-1 gap-2.5 overflow-y-auto overscroll-contain touch-pan-y sm:grid-cols-[205px_1fr]">
+              {/* Left Column: Live 3D Rotating Model Showcase */}
+              <div className="flex flex-col justify-between rounded-xl border border-white/20 bg-slate-950/15 p-2">
+                {inspectedHotbar.kind === 'weapon' ? (
+                  (() => {
+                    const wId = inspectedHotbar.id;
+                    const wIdx = WEAPON_ORDER.indexOf(wId);
+                    const w = WEAPONS[wId];
+                    const owned = hud.ownedWeapons.includes(wId);
+                    const ammo = hud.weaponAmmo[wId] || 0;
+                    const equipped = owned && hud.activeHotbarSlot === wIdx;
+                    return (
+                      <>
+                        <div>
+                          <div className="flex items-center justify-between gap-1.5">
+                            <div className="flex min-w-0 items-center gap-1.5">
+                              <span
+                                className="inline-block h-2.5 w-2.5 shrink-0 rounded-full border border-white/75"
+                                style={{ backgroundColor: w.color }}
+                              />
+                              <span className="truncate text-xs font-black text-amber-200 [text-shadow:0_1px_2px_rgba(0,0,0,0.92)] sm:text-sm">
+                                {w.name}
+                              </span>
+                            </div>
+                            {owned ? (
+                              <span className="shrink-0 rounded-full bg-slate-950/60 px-1.5 py-0.5 font-mono-nums text-[10px] font-black text-amber-200">
+                                {ammo}/{MAX_AMMO}
+                              </span>
+                            ) : (
+                              <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-slate-950/65 px-1.5 py-0.5 text-[9px] font-bold text-slate-300">
+                                <Lock className="h-2.5 w-2.5" />
+                                Terkunci
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="relative my-1 overflow-hidden rounded-xl border border-white/15 bg-slate-950/12">
+                            <WeaponPreviewCanvas
+                              weaponId={wId}
+                              owned={owned}
+                              className="h-28 sm:h-36"
+                            />
+                            <span className="pointer-events-none absolute bottom-1 right-1.5 rounded bg-slate-950/55 px-1.5 py-0.5 text-[9px] font-bold text-slate-200">
+                              Geser Putar 3D
+                            </span>
+                          </div>
+
+                          <p className="line-clamp-2 text-[10px] font-semibold leading-snug text-slate-200 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+                            {w.desc}
+                          </p>
+                          <p className="mt-0.5 text-[9px] font-bold text-amber-200/90">
+                            Asal: {w.originLabel}
+                          </p>
+                        </div>
+
+                        <div className="mt-2 flex items-center gap-1.5">
+                          {owned ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                (e.currentTarget as HTMLButtonElement).blur();
+                                onSelectHotbar(wIdx);
+                                setHotbarOpen(false);
+                              }}
+                              className={`w-full rounded-xl border px-2.5 py-1.5 text-[11px] font-black transition ${
+                                equipped
+                                  ? 'border-emerald-300/80 bg-emerald-600/75 text-white hover:bg-emerald-500/85'
+                                  : 'border-amber-300/80 bg-amber-500/75 text-slate-950 hover:bg-amber-400/90'
+                              }`}
+                            >
+                              {equipped ? 'Dipakai · Tutup' : 'Pakai Senjata'}
+                            </button>
+                          ) : (
+                            <div className="w-full rounded-xl border border-white/15 bg-slate-950/45 px-2.5 py-1.5 text-center text-[10px] font-bold text-slate-300">
+                              Buka di {w.originLabel}
+                            </div>
+                          )}
+                        </div>
+                      </>
+                    );
+                  })()
+                ) : (
+                  (() => {
+                    const toolMeta =
+                      inspectedHotbar.id === 'pickaxe'
+                        ? {
+                            slot: 8,
+                            title: 'Beliung Tambang',
+                            badge: `Tier ${hud.pickaxeTier}`,
+                            icon: './assets/ui/icon_pickaxe.png',
+                            desc: 'Gali batu gua, bongkar blok pelindung, atau serang jarak dekat.',
+                          }
+                        : inspectedHotbar.id === 'torch'
+                        ? {
+                            slot: 9,
+                            title: 'Obor Gua',
+                            badge: `Stok ${hud.caveTorchesLeft}`,
+                            icon: './assets/ui/icon_torch.png',
+                            desc: 'Terangi lorong gelap gua dengan cahaya obor permanen.',
+                          }
+                        : inspectedHotbar.id === 'shield_block'
+                        ? {
+                            slot: 10,
+                            title: 'Blok Pelindung',
+                            badge: `Stok ${hud.caveShieldBlocksLeft}`,
+                            icon: './assets/ui/icon_shield_block.png',
+                            desc: 'Bangun benteng penahan peluru & jembatan di atas jurang lava.',
+                          }
+                        : {
+                            slot: 11,
+                            title: 'TNT Tambang',
+                            badge: `Stok ${hud.caveTntLeft}`,
+                            icon: './assets/ui/icon_tnt.png',
+                            desc: 'Ledakkan banyak batu gua sekaligus dan hantam monster sekitar.',
+                          };
+                    const equipped = hud.activeHotbarSlot === toolMeta.slot;
+                    return (
+                      <>
+                        <div>
+                          <div className="flex items-center justify-between gap-1.5">
+                            <span className="truncate text-xs font-black text-cyan-200 [text-shadow:0_1px_2px_rgba(0,0,0,0.92)] sm:text-sm">
+                              {toolMeta.title}
+                            </span>
+                            <span className="shrink-0 rounded-full bg-slate-950/60 px-1.5 py-0.5 font-mono-nums text-[10px] font-black text-cyan-200">
+                              {toolMeta.badge}
+                            </span>
+                          </div>
+                          <div className="my-1 flex h-28 items-center justify-center rounded-xl border border-white/15 bg-slate-950/12 sm:h-36">
+                            <img
+                              src={toolMeta.icon}
+                              alt={toolMeta.title}
+                              className="h-20 w-20 object-contain sm:h-24 sm:w-24"
+                              draggable={false}
+                            />
+                          </div>
+                          <p className="line-clamp-3 text-[10px] font-semibold leading-snug text-slate-200 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)]">
+                            {toolMeta.desc}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            (e.currentTarget as HTMLButtonElement).blur();
+                            onSelectHotbar(toolMeta.slot);
+                            setHotbarOpen(false);
+                          }}
+                          className={`mt-2 w-full rounded-xl border px-2.5 py-1.5 text-[11px] font-black transition ${
+                            equipped
+                              ? 'border-emerald-300/80 bg-emerald-600/75 text-white hover:bg-emerald-500/85'
+                              : 'border-cyan-300/80 bg-cyan-500/75 text-slate-950 hover:bg-cyan-400/90'
+                          }`}
+                        >
+                          {equipped ? 'Dipakai · Tutup' : 'Pakai Alat'}
+                        </button>
+                      </>
+                    );
+                  })()
+                )}
+              </div>
+
+              {/* Right Column: All 8 Weapons (3D Model Thumbnails) + 4 Tools */}
+              <div className="grid grid-cols-3 content-start gap-1.5 sm:grid-cols-4">
+                {WEAPON_ORDER.map((wId, idx) => {
+                  const w = WEAPONS[wId];
+                  const owned = hud.ownedWeapons.includes(wId);
+                  const ammo = hud.weaponAmmo[wId] || 0;
+                  const isEquipped = owned && hud.activeHotbarSlot === idx;
+                  const isInspected =
+                    inspectedHotbar.kind === 'weapon' && inspectedHotbar.id === wId;
+                  const thumbSrc = weaponThumbs[wId] || './assets/ui/icon_slingshot.png';
+                  return (
+                    <button
+                      key={wId}
+                      type="button"
+                      onClick={(e) => {
+                        (e.currentTarget as HTMLButtonElement).blur();
+                        setInspectedHotbar({ kind: 'weapon', id: wId });
+                        if (owned) {
+                          onSelectHotbar(idx);
+                        }
+                      }}
+                      title={owned ? `${idx + 1}. ${w.name} (${ammo})` : `${w.name} (${w.originLabel})`}
+                      className={`relative flex flex-col items-center justify-between gap-1 rounded-xl border px-1.5 py-1.5 text-center transition ${
+                        isEquipped
+                          ? 'border-emerald-300/90 bg-emerald-950/28 text-emerald-100 ring-1 ring-emerald-300/80'
+                          : isInspected
+                          ? 'border-amber-300/90 bg-amber-950/28 text-amber-100 ring-1 ring-amber-300/80'
+                          : owned
+                          ? 'border-white/20 bg-slate-950/15 text-slate-100 hover:border-white/45 hover:bg-slate-900/30'
+                          : 'border-white/15 bg-slate-950/12 text-slate-300/90 hover:border-white/30'
+                      }`}
+                    >
+                      {owned ? (
+                        <span className="absolute right-1 top-1 rounded-full bg-slate-950/65 px-1 font-mono-nums text-[9px] font-black text-amber-200">
+                          {ammo}
+                        </span>
+                      ) : (
+                        <span className="absolute right-1 top-1 flex h-4 w-4 items-center justify-center rounded-full bg-slate-950/70 text-slate-300">
+                          <Lock className="h-2.5 w-2.5" />
+                        </span>
+                      )}
+                      <div
+                        className="flex h-10 w-10 items-center justify-center rounded-lg sm:h-11 sm:w-11"
+                        style={{
+                          background: `radial-gradient(circle, ${w.color}${
+                            owned ? '38' : '16'
+                          } 0%, transparent 72%)`,
+                        }}
+                      >
+                        <img
+                          src={thumbSrc}
+                          alt={w.name}
+                          className={`h-10 w-10 object-contain sm:h-11 sm:w-11 ${
+                            owned ? '' : 'opacity-55 grayscale'
+                          }`}
+                          draggable={false}
+                        />
+                      </div>
+                      <span className="line-clamp-1 w-full text-[9px] font-extrabold leading-tight [text-shadow:0_1px_2px_rgba(0,0,0,0.9)] sm:text-[10px]">
+                        {w.name}
+                      </span>
+                    </button>
+                  );
+                })}
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    (e.currentTarget as HTMLButtonElement).blur();
+                    setInspectedHotbar({ kind: 'tool', id: 'pickaxe' });
+                    onSelectHotbar(8);
+                  }}
+                  title={`9. Beliung Tier ${hud.pickaxeTier}`}
+                  className={`relative flex flex-col items-center justify-between gap-1 rounded-xl border px-1.5 py-1.5 text-center transition ${
+                    hud.activeHotbarSlot === 8
+                      ? 'border-emerald-300/90 bg-emerald-950/28 text-emerald-100 ring-1 ring-emerald-300/80'
+                      : inspectedHotbar.kind === 'tool' && inspectedHotbar.id === 'pickaxe'
+                      ? 'border-cyan-300/90 bg-cyan-950/28 text-cyan-100 ring-1 ring-cyan-300/80'
+                      : 'border-white/20 bg-slate-950/15 text-slate-100 hover:border-white/45 hover:bg-slate-900/30'
+                  }`}
+                >
+                  <span className="absolute right-1 top-1 rounded-full bg-slate-950/65 px-1 font-mono-nums text-[9px] font-black text-cyan-200">
+                    T{hud.pickaxeTier}
+                  </span>
+                  <img
+                    src="./assets/ui/icon_pickaxe.png"
+                    alt="Beliung"
+                    className="h-9 w-9 object-contain sm:h-10 sm:w-10"
+                    draggable={false}
+                  />
+                  <span className="line-clamp-1 w-full text-[9px] font-extrabold leading-tight [text-shadow:0_1px_2px_rgba(0,0,0,0.9)] sm:text-[10px]">
+                    Beliung
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    (e.currentTarget as HTMLButtonElement).blur();
+                    setInspectedHotbar({ kind: 'tool', id: 'torch' });
+                    onSelectHotbar(9);
+                  }}
+                  title={`0. Obor (${hud.caveTorchesLeft})`}
+                  className={`relative flex flex-col items-center justify-between gap-1 rounded-xl border px-1.5 py-1.5 text-center transition ${
+                    hud.activeHotbarSlot === 9
+                      ? 'border-emerald-300/90 bg-emerald-950/28 text-emerald-100 ring-1 ring-emerald-300/80'
+                      : inspectedHotbar.kind === 'tool' && inspectedHotbar.id === 'torch'
+                      ? 'border-amber-300/90 bg-amber-950/28 text-amber-100 ring-1 ring-amber-300/80'
+                      : 'border-white/20 bg-slate-950/15 text-slate-100 hover:border-white/45 hover:bg-slate-900/30'
+                  }`}
+                >
+                  <span className="absolute right-1 top-1 rounded-full bg-slate-950/65 px-1 font-mono-nums text-[9px] font-black text-amber-200">
+                    {hud.caveTorchesLeft}
+                  </span>
+                  <img
+                    src="./assets/ui/icon_torch.png"
+                    alt="Obor"
+                    className="h-9 w-9 object-contain sm:h-10 sm:w-10"
+                    draggable={false}
+                  />
+                  <span className="line-clamp-1 w-full text-[9px] font-extrabold leading-tight [text-shadow:0_1px_2px_rgba(0,0,0,0.9)] sm:text-[10px]">
+                    Obor
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    (e.currentTarget as HTMLButtonElement).blur();
+                    setInspectedHotbar({ kind: 'tool', id: 'shield_block' });
+                    onSelectHotbar(10);
+                  }}
+                  title={`B. Blok Pelindung (${hud.caveShieldBlocksLeft})`}
+                  className={`relative flex flex-col items-center justify-between gap-1 rounded-xl border px-1.5 py-1.5 text-center transition ${
+                    hud.activeHotbarSlot === 10
+                      ? 'border-emerald-300/90 bg-emerald-950/28 text-emerald-100 ring-1 ring-emerald-300/80'
+                      : inspectedHotbar.kind === 'tool' && inspectedHotbar.id === 'shield_block'
+                      ? 'border-cyan-300/90 bg-cyan-950/28 text-cyan-100 ring-1 ring-cyan-300/80'
+                      : 'border-white/20 bg-slate-950/15 text-slate-100 hover:border-white/45 hover:bg-slate-900/30'
+                  }`}
+                >
+                  <span className="absolute right-1 top-1 rounded-full bg-slate-950/65 px-1 font-mono-nums text-[9px] font-black text-cyan-200">
+                    {hud.caveShieldBlocksLeft}
+                  </span>
+                  <img
+                    src="./assets/ui/icon_shield_block.png"
+                    alt="Blok Pelindung"
+                    className="h-9 w-9 object-contain sm:h-10 sm:w-10"
+                    draggable={false}
+                  />
+                  <span className="line-clamp-1 w-full text-[9px] font-extrabold leading-tight [text-shadow:0_1px_2px_rgba(0,0,0,0.9)] sm:text-[10px]">
+                    Pelindung
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    (e.currentTarget as HTMLButtonElement).blur();
+                    setInspectedHotbar({ kind: 'tool', id: 'tnt' });
+                    onSelectHotbar(11);
+                  }}
+                  title={`T. TNT Tambang (${hud.caveTntLeft})`}
+                  className={`relative flex flex-col items-center justify-between gap-1 rounded-xl border px-1.5 py-1.5 text-center transition ${
+                    hud.activeHotbarSlot === 11
+                      ? 'border-emerald-300/90 bg-emerald-950/28 text-emerald-100 ring-1 ring-emerald-300/80'
+                      : inspectedHotbar.kind === 'tool' && inspectedHotbar.id === 'tnt'
+                      ? 'border-rose-300/90 bg-rose-950/28 text-rose-100 ring-1 ring-rose-300/80'
+                      : 'border-white/20 bg-slate-950/15 text-slate-100 hover:border-white/45 hover:bg-slate-900/30'
+                  }`}
+                >
+                  <span className="absolute right-1 top-1 rounded-full bg-slate-950/65 px-1 font-mono-nums text-[9px] font-black text-rose-200">
+                    {hud.caveTntLeft}
+                  </span>
+                  <img
+                    src="./assets/ui/icon_tnt.png"
+                    alt="TNT"
+                    className="h-9 w-9 object-contain sm:h-10 sm:w-10"
+                    draggable={false}
+                  />
+                  <span className="line-clamp-1 w-full text-[9px] font-extrabold leading-tight [text-shadow:0_1px_2px_rgba(0,0,0,0.9)] sm:text-[10px]">
+                    TNT
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CONTEXTUAL ACTION MEDALLIONS (Mobile Legends style icon row left of Jump button) */}
+      <div className="pointer-events-auto fixed bottom-[16px] right-[168px] z-20 flex items-center gap-2.5 sm:bottom-[24px] sm:right-[198px] sm:gap-3">
+        {nearbyOverworldNpc && (
+          <button
+            type="button"
+            onClick={onPrimaryAction}
+            title={`Bicara: ${nearbyOverworldNpc.name}`}
+            aria-label={`Bicara dengan ${nearbyOverworldNpc.name}`}
+            className="relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_14px_rgba(245,158,11,0.48)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
+          >
+            <img
+              src="./assets/ui/btn_talk.png"
+              alt={nearbyOverworldNpc.name}
+              className="pointer-events-none h-full w-full select-none object-contain"
+              draggable={false}
+            />
+          </button>
+        )}
+
+        {nearbyAcademyNpc && (
+          <button
+            type="button"
+            onClick={onPrimaryAction}
+            title={`Bicara: ${nearbyAcademyNpc.name}`}
+            aria-label={`Bicara dengan ${nearbyAcademyNpc.name}`}
+            className="relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_14px_rgba(168,85,247,0.48)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
+          >
+            <img
+              src="./assets/ui/btn_talk.png"
+              alt={nearbyAcademyNpc.name}
+              className="pointer-events-none h-full w-full select-none object-contain"
+              draggable={false}
+            />
+          </button>
+        )}
+
+        {nearbyDoor && (
+          <button
+            type="button"
+            onClick={onPrimaryAction}
+            title={`Buka ${nearbyDoor.name}`}
+            aria-label={`Buka ${nearbyDoor.name}`}
+            className="relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_14px_rgba(16,185,129,0.52)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
+          >
+            <img
+              src="./assets/ui/btn_door.png"
+              alt={`Buka ${nearbyDoor.name}`}
+              className="pointer-events-none h-full w-full select-none object-contain"
+              draggable={false}
+            />
+            {hud.nearbyDoorIndex !== null && (
+              <span className="pointer-events-none absolute -bottom-0.5 rounded-full border border-emerald-300/70 bg-slate-950/95 px-1.5 font-mono-nums text-[9px] font-black leading-tight text-emerald-200 shadow">
+                {hud.nearbyDoorIndex + 1}
+              </span>
+            )}
+          </button>
+        )}
+
+        {hud.nearPortal && hud.worldMode === 'overworld' && (
+          <button
+            type="button"
+            onClick={onPrimaryAction}
+            title="Masuk Istana IELTS"
+            aria-label="Masuk Istana IELTS"
+            className="relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_14px_rgba(168,85,247,0.56)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
+          >
+            <img
+              src="./assets/ui/btn_portal.png"
+              alt="Istana IELTS"
+              className="pointer-events-none h-full w-full select-none object-contain"
+              draggable={false}
+            />
+          </button>
+        )}
+
+        {hud.nearDungeonExit && hud.worldMode !== 'overworld' && (
+          <button
+            type="button"
+            onClick={onExitDungeon}
+            title="Keluar ke Dunia Utama"
+            aria-label="Keluar"
+            className="relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_14px_rgba(34,211,238,0.52)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
+          >
+            <img
+              src="./assets/ui/btn_exit.png"
+              alt="Keluar"
+              className="pointer-events-none h-full w-full select-none object-contain"
+              draggable={false}
+            />
+          </button>
+        )}
+
+        {hud.worldMode === 'dungeon' &&
+          hud.nearCraftingTable &&
+          !nearbyDoor &&
+          !hud.nearDungeonExit && (
+            <button
+              type="button"
+              onClick={onOpenCrafting}
+              title="Meja Craft"
+              aria-label="Craft"
+              className="relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_14px_rgba(249,115,22,0.52)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
+            >
+              <img
+                src="./assets/ui/btn_craft.png"
+                alt="Craft"
+                className="pointer-events-none h-full w-full select-none object-contain"
+                draggable={false}
+              />
+            </button>
+          )}
+
+        {hud.worldMode === 'dungeon' &&
+          hud.nearPrisonKey &&
+          !hud.dungeonState?.prisonKeyCollected && (
+            <button
+              type="button"
+              onClick={onPrimaryAction}
+              title="Ambil Kunci Penjara"
+              aria-label="Ambil Kunci"
+              className="relative flex h-[54px] w-[54px] animate-pulse items-center justify-center rounded-full shadow-[0_5px_14px_rgba(250,204,21,0.56)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
+            >
+              <img
+                src="./assets/ui/btn_key.png"
+                alt="Ambil Kunci"
+                className="pointer-events-none h-full w-full select-none object-contain"
+                draggable={false}
+              />
+            </button>
+          )}
+
+        {hud.worldMode === 'dungeon' &&
+          hud.nearHiddenPrison &&
+          hud.dungeonState &&
+          !hud.dungeonState.prisonUnlocked && (
+            <button
+              type="button"
+              onClick={onPrimaryAction}
+              title={
+                hud.dungeonState.prisonKeyCollected
+                  ? `Bebaskan ${hud.dungeonState.captiveName}`
+                  : 'Penjara Terkunci (Butuh Kunci)'
+              }
+              aria-label={
+                hud.dungeonState.prisonKeyCollected
+                  ? `Bebaskan ${hud.dungeonState.captiveName}`
+                  : 'Terkunci'
+              }
+              className={`relative flex h-[54px] w-[54px] items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px] ${
+                hud.dungeonState.prisonKeyCollected
+                  ? 'shadow-[0_5px_14px_rgba(16,185,129,0.56)]'
+                  : 'opacity-80 grayscale-[35%] shadow-[0_5px_12px_rgba(244,63,94,0.48)]'
+              }`}
+            >
+              <img
+                src="./assets/ui/btn_unlock.png"
+                alt={hud.dungeonState.prisonKeyCollected ? 'Bebaskan' : 'Terkunci'}
+                className="pointer-events-none h-full w-full select-none object-contain"
+                draggable={false}
+              />
+              {!hud.dungeonState.prisonKeyCollected && (
+                <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-5 w-5 items-center justify-center rounded-full border border-rose-300 bg-rose-950/95 text-rose-200 shadow">
+                  <Lock className="h-3 w-3" />
+                </span>
+              )}
+            </button>
+          )}
+
+        {hud.worldMode === 'dungeon' &&
+          hud.nearbyDungeonGuardian &&
+          !nearbyDoor &&
+          !hud.nearDungeonExit &&
+          !hud.nearPrisonKey &&
+          !hud.nearHiddenPrison && (
+            <button
+              type="button"
+              onClick={onPrimaryAction}
+              title={`Bicara: ${hud.dungeonState?.guardianName || 'Penjaga'}`}
+              aria-label={hud.dungeonState?.guardianName || 'Penjaga'}
+              className="relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_14px_rgba(245,158,11,0.48)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
+            >
+              <img
+                src="./assets/ui/btn_talk.png"
+                alt={hud.dungeonState?.guardianName || 'Penjaga'}
+                className="pointer-events-none h-full w-full select-none object-contain"
+                draggable={false}
+              />
+            </button>
+          )}
+
+        {hud.worldMode === 'dungeon' &&
+          hud.targetedBlock?.kind === 'word_seal' &&
+          !nearbyDoor &&
+          !hud.nearDungeonExit &&
+          !hud.nearCraftingTable && (
+            <button
+              type="button"
+              onClick={onPrimaryAction}
+              title="Hancurkan Segel Kata"
+              aria-label="Segel Kata"
+              className="relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_14px_rgba(168,85,247,0.56)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
+            >
+              <img
+                src="./assets/ui/btn_seal.png"
+                alt="Segel Kata"
+                className="pointer-events-none h-full w-full select-none object-contain"
+                draggable={false}
+              />
+            </button>
+          )}
+      </div>
+
+      {/* BOTTOM-RIGHT: Mobile Legends Style Thumb Cluster (Jump, Scope, Attack) */}
+      <div className="pointer-events-none fixed bottom-3 right-3 z-20 h-[144px] w-[156px] sm:bottom-5 sm:right-5 sm:h-[168px] sm:w-[180px]">
+
+        {/* Button 2 (Arc Left): Winged-Boot Jump Medallion */}
+        <button
+          type="button"
+          data-no-click-sfx="true"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            onJump();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              onJump();
+            }
+          }}
+          title="Lompat (J)"
+          aria-label="Lompat"
+          className="pointer-events-auto absolute bottom-[6px] right-[88px] flex h-[58px] w-[58px] touch-none select-none items-center justify-center rounded-full shadow-[0_5px_14px_rgba(16,185,129,0.44)] transition-transform hover:scale-105 active:scale-90 sm:bottom-[8px] sm:right-[102px] sm:h-[66px] sm:w-[66px]"
+        >
+          <img
+            src="./assets/ui/btn_jump.png"
+            alt="Lompat"
+            className="pointer-events-none h-full w-full select-none object-contain"
+            draggable={false}
+          />
+        </button>
+
+        {/* Optional ADS / Scope Bidik Button (shows in Bidik Bebas mode when holding an owned weapon) */}
+        {hud.settings.aimMode === 'manual' &&
+          hud.activeHotbarSlot <= 7 &&
+          hud.ownedWeapons.includes(hud.activeWeapon) && (
+          <button
+            type="button"
+            onClick={onToggleAim}
+            title={hud.isAiming ? 'Keluar Mode Scope (Klik Kanan / Q)' : 'Mode Scope / Bidik Presisi (Klik Kanan / Q)'}
+            aria-label="Mode Scope"
+            className={`pointer-events-auto absolute bottom-[88px] right-[82px] flex h-[54px] w-[54px] items-center justify-center rounded-full transition-transform active:scale-90 sm:bottom-[102px] sm:right-[96px] sm:h-[60px] sm:w-[60px] ${
+              hud.isAiming
+                ? 'scale-110 ring-2 ring-rose-300 shadow-[0_0_16px_rgba(244,63,94,0.85)]'
+                : 'shadow-[0_5px_14px_rgba(244,63,94,0.45)] hover:scale-105'
+            }`}
+          >
+            <img
+              src="./assets/ui/btn_scope.png"
+              alt="Mode Scope"
+              className="pointer-events-none h-full w-full select-none object-contain"
+              draggable={false}
+            />
+          </button>
+        )}
+
+        {/* Button 3 (Primary Thumb Anchor): Large Attack / Active Tool Medallion (Hold to Spray!) */}
+        <button
+          type="button"
+          data-no-click-sfx="true"
+          onPointerDown={(e) => {
+            e.preventDefault();
+            firePointerId.current = e.pointerId;
+            try {
+              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+            } catch {
+              // ignore
+            }
+            onSetFireHeld(true);
+          }}
+          onPointerUp={(e) => {
+            if (firePointerId.current === null || firePointerId.current === e.pointerId) {
+              firePointerId.current = null;
+              onSetFireHeld(false);
+            }
+          }}
+          onPointerCancel={(e) => {
+            if (firePointerId.current === null || firePointerId.current === e.pointerId) {
+              firePointerId.current = null;
+              onSetFireHeld(false);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              onFireWeapon();
+            }
+          }}
+          title="Tahan / Tekan untuk Menembak ke Crosshair (Spasi / Klik Kiri)"
+          aria-label="Tembak"
+          className="pointer-events-auto absolute bottom-0 right-0 flex h-[78px] w-[78px] touch-none select-none items-center justify-center rounded-full shadow-[0_6px_16px_rgba(34,211,238,0.48)] transition-transform hover:scale-105 active:scale-90 sm:h-[90px] sm:w-[90px]"
+        >
+          <img
+            src="./assets/ui/btn_attack.png"
+            alt="Tembak"
+            className="pointer-events-none h-full w-full select-none object-contain"
+            draggable={false}
+          />
+          {hud.activeHotbarSlot >= 8 && (
+            <span className="pointer-events-none absolute flex h-10 w-10 items-center justify-center rounded-full border border-cyan-300/60 bg-slate-950/88 p-1 shadow-inner sm:h-12 sm:w-12">
+              <img
+                src={activeItemIconSrc}
+                alt="Alat Aktif"
+                className="h-full w-full object-contain"
+                draggable={false}
+              />
+            </span>
+          )}
+          {activeSlotBadgeText !== null && (
+            <span className="pointer-events-none absolute -bottom-0.5 rounded-full border border-cyan-300/60 bg-slate-950/90 px-1.5 font-mono-nums text-[10px] font-black leading-tight text-amber-300 shadow">
+              {activeSlotBadgeText}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* VOICE COMMAND BUTTON CLUSTER (Bottom-left below floating joystick zone so it never overlaps tracker or combat buttons) */}
+      {onToggleVoice && (
+        <div className="pointer-events-auto fixed bottom-2.5 left-2.5 z-20 flex items-center gap-1.5 sm:bottom-3.5 sm:left-4">
+          <button
+            type="button"
+            data-no-click-sfx="true"
+            onClick={(e) => {
+              (e.currentTarget as HTMLButtonElement).blur();
+              onToggleVoice();
+            }}
+            title={
+              !voiceSupported
+                ? 'Perintah suara tidak didukung browser ini'
+                : voiceListening
+                ? 'Matikan Perintah Suara (Mic Aktif)'
+                : 'Aktifkan Kontrol Suara (Ucapkan perintah Bahasa Indonesia)'
+            }
+            aria-label={voiceListening ? 'Matikan Kontrol Suara' : 'Aktifkan Kontrol Suara'}
+            className={`relative flex h-9 items-center gap-1.5 rounded-full border px-3 text-[11px] font-extrabold shadow-xl transition active:scale-95 sm:h-10 sm:px-3.5 sm:text-xs ${
+              voiceListening
+                ? 'border-emerald-300 bg-emerald-600/95 text-white ring-2 ring-emerald-300/60'
+                : 'border-cyan-300/45 bg-slate-950/90 text-cyan-100 hover:border-cyan-300 hover:bg-slate-900/95'
+            }`}
+          >
+            {voiceListening && (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute inset-0 animate-ping rounded-full bg-emerald-400/35"
+              />
+            )}
+            {voiceListening ? (
+              <Mic className="relative h-3.5 w-3.5 shrink-0 text-white sm:h-4 sm:w-4" />
+            ) : (
+              <MicOff className="relative h-3.5 w-3.5 shrink-0 text-cyan-300 sm:h-4 sm:w-4" />
+            )}
+            <span className="relative whitespace-nowrap">
+              {voiceListening ? 'Mendengarkan' : 'Suara'}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setVoiceHelpOpen((v) => !v)}
+            title={`Daftar ${VOICE_COMMAND_CATALOG.length}+ Perintah Suara`}
+            aria-label="Daftar Perintah Suara"
+            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/25 bg-slate-950/88 text-slate-200 shadow-lg transition hover:border-amber-300/70 hover:text-amber-200 active:scale-90 sm:h-9 sm:w-9"
+          >
+            <HelpCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+          </button>
+        </div>
+      )}
+
+      {/* LIVE VOICE TRANSCRIPT / FEEDBACK PILL */}
+      {(voiceListening || voiceLastAction || voiceTranscript) && (
+        <div className="pointer-events-none fixed left-1/2 top-9 z-20 -translate-x-1/2 sm:top-11">
+          <div className="flex max-w-[78vw] items-center gap-1.5 rounded-full border border-emerald-300/45 bg-slate-950/92 px-3 py-0.5 text-[10px] font-bold text-emerald-100 shadow-lg sm:text-[11px]">
+            <Mic className={`h-3 w-3 shrink-0 ${voiceListening ? 'animate-pulse text-emerald-300' : 'text-cyan-300'}`} />
+            <span className="truncate">
+              {voiceTranscript
+                ? `"${voiceTranscript}"`
+                : voiceLastAction || 'Ucapkan perintah... (mis. "eh coba ke kiri", "tembak monster itu")'}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL DAFTAR 100+ PERINTAH SUARA */}
+      {voiceHelpOpen && (
+        <div
+          style={{ top: `${voiceModalVp.offsetTop}px`, height: `${voiceModalVp.height}px` }}
+          className="pointer-events-auto fixed left-0 right-0 z-40 flex items-center justify-center bg-black/75 p-2 sm:p-3"
+        >
+          <div className="flex max-h-full w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-cyan-300/40 bg-slate-950/95 p-3 text-slate-100 shadow-2xl sm:p-4">
+            <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+              <div>
+                <h3 className="text-sm font-black text-cyan-300 sm:text-base">
+                  Daftar {VOICE_COMMAND_CATALOG.length}+ Perintah Suara
+                </h3>
+                {!voiceModalVp.isKeyboardOpen && (
+                  <p className="text-[11px] text-slate-300">
+                    Ketuk tombol <strong>Suara</strong> lalu ucapkan salah satu perintah di bawah ini dengan natural.
+                  </p>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => setVoiceHelpOpen(false)}
+                aria-label="Tutup Daftar Perintah Suara"
+                className="rounded-lg p-1.5 text-slate-300 hover:bg-white/10 hover:text-white"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="relative mt-2 shrink-0">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={voiceSearch}
+                onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
+                onChange={(e) => setVoiceSearch(e.target.value)}
+                placeholder="Cari perintah (mis. kiri, tembak, belakang, obor, portal)..."
+                className="w-full rounded-xl border border-white/15 bg-slate-900/90 py-1.5 pl-8 pr-3 text-xs text-white placeholder-slate-400 focus:border-cyan-400 focus:outline-none sm:py-2"
+              />
+            </div>
+
+            <div className="mt-2.5 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain touch-pan-y pr-1">
+              {(
+                [
+                  'Gerak & Navigasi',
+                  'Kamera & Pandangan',
+                  'Menuju Target',
+                  'Pertempuran & Senjata',
+                  'Gua & Alat',
+                  'Interaksi & Menu',
+                ] as VoiceCommandCategory[]
+              ).map((category) => {
+                const q = voiceSearch.trim().toLowerCase();
+                const items = VOICE_COMMAND_CATALOG.filter((entry) => {
+                  if (entry.category !== category) return false;
+                  if (!q) return true;
+                  return (
+                    entry.phrase.toLowerCase().includes(q) ||
+                    entry.description.toLowerCase().includes(q) ||
+                    (entry.aliases || []).some((a) => a.toLowerCase().includes(q))
+                  );
+                });
+                if (items.length === 0) return null;
+                return (
+                  <div key={category} className="rounded-xl border border-white/10 bg-white/5 p-2.5">
+                    <div className="mb-1.5 flex items-center justify-between text-xs font-extrabold text-amber-300">
+                      <span>{category}</span>
+                      <span className="font-mono-nums text-[10px] text-slate-300">{items.length} perintah</span>
+                    </div>
+                    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+                      {items.map((item) => (
+                        <div
+                          key={item.id}
+                          className="rounded-lg border border-white/10 bg-slate-900/75 px-2.5 py-1.5"
+                        >
+                          <div className="text-[11px] font-extrabold text-cyan-200">
+                            &ldquo;{item.phrase}&rdquo;
+                          </div>
+                          <div className="text-[10px] text-slate-300">{item.description}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
