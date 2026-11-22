@@ -5,6 +5,7 @@ import {
   getArchipelagoGroundY,
   isWalkableArchipelago,
   OVERWORLD_ANCHORS,
+  sampleArchipelagoTerrain,
 } from './archipelagoWorld';
 import { MaterialPalette } from './materials';
 
@@ -1130,7 +1131,9 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     [-113.5, 58.0], // Pasar Rasa West plaza lantern
     [85.5, 44.5],
     [134.5, 43.0],
-    [-56.5, -32.5],
+    [-114.5, -92.5],
+    [-125.0, -108.0],
+    [-114.0, -108.0],
     [57.5, -32.5],
     [-5.5, -72.5],
     [5.5, -72.5],
@@ -1390,11 +1393,11 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     [-78.0, 68.0, false],
     [-124.0, 80.0, true],
     [-86.0, 16.0, false],
-    // Gerbang Kota fortress hills
-    [-49.5, -36.5, true],
-    [-76.5, -24.5, false],
-    [-55.5, -52.5, true],
-    [-78.5, -54.5, false],
+    // Gerbang Kota fortress hills & scenic coastal cliffs
+    [-82.0, -102.0, true],
+    [-156.0, -124.0, false],
+    [-154.0, -68.0, true],
+    [-80.0, -68.0, false],
     // Menara Waktu autumn ridges
     [50.5, -34.5, false],
     [76.5, -24.5, true],
@@ -1410,13 +1413,16 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     [13.5, -9.5, true],
     [-12.5, 12.5, true],
     [12.5, 12.5, false],
-    // Exploratory Sea Islets + Desa Sapaan & Hutan Satwa NW strait islets
+    // Exploratory Sea Islets + Desa Sapaan, Hutan Satwa & Gerbang Kota NW strait islets
     [-68.0, 126.0, false],
     [62.0, 168.0, true],
-    [-142.0, -20.0, false],
+    [-172.0, -16.0, false],
     [196.0, 10.0, true],
-    [-42.0, -84.0, false],
+    [-36.0, -64.0, false],
     [42.0, -84.0, true],
+    [-206.0, -148.0, false],
+    [-196.0, -168.0, true],
+    [-182.0, -180.0, false],
     [-32.0, 50.0, false],
     [-48.0, 70.0, true],
     [-64.0, 82.0, false],
@@ -1520,6 +1526,8 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     const gx = base.x + Math.cos(a) * r;
     const gz = base.z + Math.sin(a) * r;
     if (!isWalkableArchipelago(gx, gz, 2.2)) continue;
+    const gs = sampleArchipelagoTerrain(gx, gz);
+    if (gs.surface === 'road' || gs.surface === 'stairs' || gs.groundY >= 24.0) continue;
     grassSpots.push([gx, gz]);
   }
   if (grassSpots.length > 0) {
@@ -1559,7 +1567,12 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     const r = 4.2 + ((i * 23) % 175) * 0.1;
     const fx = base.x + Math.cos(a) * r;
     const fz = base.z + Math.sin(a) * r;
-    if (isWalkableArchipelago(fx, fz, 2.5)) flowerSpots.push([fx, fz]);
+    if (isWalkableArchipelago(fx, fz, 2.5)) {
+      const fs = sampleArchipelagoTerrain(fx, fz);
+      if (fs.surface !== 'road' && fs.surface !== 'stairs' && fs.groundY < 24.0) {
+        flowerSpots.push([fx, fz]);
+      }
+    }
   }
   if (flowerSpots.length > 0) {
     const stemGeo = new THREE.BoxGeometry(0.1, 0.34, 0.1);

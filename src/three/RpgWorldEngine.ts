@@ -362,8 +362,8 @@ const NIGHT_SURFACE_ZONES: Array<{
   { zoneId: 'pasar_rasa', name: 'Creeper Lapar Malam', type: 'creeper_kata', x: -115.0, z: 42.0 },
   { zoneId: 'hutan_satwa', name: 'Monster Rimba Malam', type: 'semak_rimba', x: 96.0, z: 50.0 },
   { zoneId: 'hutan_satwa', name: 'Bayangan Satwa Malam', type: 'bayangan_kata', x: 132.0, z: 45.0 },
-  { zoneId: 'gerbang_kota', name: 'Ksatria Gelap Malam', type: 'ksatria_ielts', x: -53.5, z: -31.5 },
-  { zoneId: 'gerbang_kota', name: 'Gumpal Gerbang Malam', type: 'gumpal_salam', x: -72.0, z: -31.5 },
+  { zoneId: 'gerbang_kota', name: 'Ksatria Gelap Malam', type: 'ksatria_ielts', x: -102.0, z: -86.0 },
+  { zoneId: 'gerbang_kota', name: 'Gumpal Gerbang Malam', type: 'gumpal_salam', x: -120.0, z: -112.0 },
   { zoneId: 'menara_waktu', name: 'Bayangan Waktu Malam', type: 'jam_pasir', x: 54.0, z: -31.5 },
   { zoneId: 'menara_waktu', name: 'Creeper Menara Malam', type: 'creeper_kata', x: 70.0, z: -36.5 },
   { zoneId: 'gua_portal', name: 'Penyerbu Portal Malam', type: 'ksatria_ielts', x: 8.5, z: -69.5 },
@@ -480,10 +480,10 @@ export class RpgWorldEngine {
   };
   private lastFullMapBounds: LiveMapBounds = {
     worldMode: 'overworld',
-    centerX: 8,
-    centerZ: 34,
-    halfW: 240,
-    halfH: 150,
+    centerX: -6,
+    centerZ: 6,
+    halfW: 296,
+    halfH: 185,
   };
 
   private frameId = 0;
@@ -1820,7 +1820,7 @@ export class RpgWorldEngine {
       this.worldMode === 'overworld'
         ? [
             [4.0, 48.0],
-            [-43.0, -25.0],
+            [-114.0, -86.0],
           ]
         : this.worldMode === 'dungeon'
         ? [
@@ -1939,16 +1939,16 @@ export class RpgWorldEngine {
       [-29.8, -4.8, 'diamond'],
       [-37.5, 18.2, 'diamond'],
       [-92.0, 52.0, 'diamond'],
-      [-93.0, -12.0, 'diamond'],
+      [-125.0, -14.0, 'diamond'],
       [42.0, 24.0, 'diamond'],
       [83.0, 44.0, 'heart'],
       [106.0, 92.0, 'diamond'],
       [125.0, 68.5, 'heart'],
       [140.5, 42.5, 'diamond'],
       [94.0, -11.0, 'heart'],
-      [-38.0, -17.5, 'diamond'],
-      [-58.5, -34.0, 'diamond'],
-      [-66.0, -49.0, 'diamond'],
+      [-81.0, -28.0, 'diamond'],
+      [-106.0, -86.0, 'diamond'],
+      [-121.0, -112.0, 'diamond'],
       [58.0, -34.0, 'heart'],
       [70.0, -49.5, 'diamond'],
       [0.0, -35.0, 'diamond'],
@@ -2143,6 +2143,19 @@ export class RpgWorldEngine {
         safeDist = Math.min(safeDist, Math.max(1.2, hits[0].distance - 0.52));
       }
     } else if (this.worldMode === 'overworld') {
+      // Keep camera cleanly under Gerbang Kota 14m x 12m tunnel ceiling (y=24m) when inside the tunnel bore
+      if (
+        originX >= -172.5 &&
+        originX <= -137.5 &&
+        originZ >= -93.5 &&
+        originZ <= -78.5 &&
+        originY < 21.5
+      ) {
+        const tunnelMaxCamY = 22.6;
+        if (dirY > 0.01 && originY + dirY * safeDist > tunnelMaxCamY) {
+          safeDist = Math.min(safeDist, Math.max(1.8, (tunnelMaxCamY - originY) / dirY));
+        }
+      }
       for (const obs of this.villageRig.obstacles) {
         if (obs.halfW < 1.25 && obs.halfD < 1.25) continue;
         const baseY = getArchipelagoGroundY(obs.x, obs.z);
@@ -10143,17 +10156,17 @@ export class RpgWorldEngine {
         ? isMini
           ? {
               worldMode: 'overworld',
-              centerX: THREE.MathUtils.clamp(this.heroPos.x, -175, 175),
-              centerZ: THREE.MathUtils.clamp(this.heroPos.z, -110, 175),
+              centerX: THREE.MathUtils.clamp(this.heroPos.x, -210, 195),
+              centerZ: THREE.MathUtils.clamp(this.heroPos.z, -165, 175),
               halfW: 36,
               halfH: 36,
             }
           : {
               worldMode: 'overworld',
-              centerX: 8,
-              centerZ: 34,
-              halfW: 240,
-              halfH: 150,
+              centerX: -6,
+              centerZ: 6,
+              halfW: 296,
+              halfH: 185,
             }
         : isMini
         ? {
@@ -10223,7 +10236,7 @@ export class RpgWorldEngine {
     this.mapCamera.top = bounds.halfH;
     this.mapCamera.bottom = -bounds.halfH;
     this.mapCamera.near = 0.5;
-    this.mapCamera.far = 250;
+    this.mapCamera.far = 300;
     this.mapCamera.updateProjectionMatrix();
     this.mapCamera.position.set(bounds.centerX, 115, bounds.centerZ);
     this.mapCamera.up.set(0, 0, -1);

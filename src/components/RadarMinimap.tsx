@@ -1152,7 +1152,7 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
 
       const fallbackBounds: LiveMapBounds =
         worldMode === 'overworld'
-          ? { worldMode: 'overworld', centerX: 4, centerZ: -4, halfW: 108, halfH: 67.5 }
+          ? { worldMode: 'overworld', centerX: -6, centerZ: 6, halfW: 296, halfH: 185 }
           : { worldMode, centerX: 0, centerZ: 0, halfW: 36.8, halfH: 23 };
       const bounds = snap ? snap.bounds : fallbackBounds;
 

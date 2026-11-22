@@ -15,7 +15,7 @@ export const OVERWORLD_ANCHORS = {
     desa_sapaan: { x: -2.0, y: 2.6, z: 112.0 },
     pasar_rasa: { x: -102.0, y: 2.0, z: 52.0 },
     hutan_satwa: { x: 102, y: 3.4, z: 52 },
-    gerbang_kota: { x: -66, y: 7.8, z: -42 },
+    gerbang_kota: { x: -119.0, y: 12.0, z: -86.0 },
     menara_waktu: { x: 66, y: 6.2, z: -42 },
     gua_portal: { x: 0, y: 2.6, z: -78 },
   } as Record<ZoneId, { x: number; y: number; z: number }>,
@@ -23,7 +23,7 @@ export const OVERWORLD_ANCHORS = {
     npc_tetua: { x: 20.0, z: 118.0, rotY: -1.57 },
     npc_koki: { x: -89.5, z: 45.0, rotY: 0.75 },
     npc_rubah: { x: 87.5, z: 42.5, rotY: -1.1 },
-    npc_penjaga: { x: -58.5, z: -34.0, rotY: 0.65 },
+    npc_penjaga: { x: -110.5, z: -92.5, rotY: 0.45 },
     npc_penyihir: { x: 59.5, z: -34.2, rotY: -0.65 },
     npc_portal: { x: -4.8, z: -76.5, rotY: 0.45 },
   } as Record<string, { x: number; z: number; rotY: number }>,
@@ -31,7 +31,7 @@ export const OVERWORLD_ANCHORS = {
     npc_tetua: { x: 11.5, z: 109.0, rotY: -0.9, bedTint: 0xf59e0b },
     npc_koki: { x: -85.5, z: 41.0, rotY: -0.8, bedTint: 0xef4444 },
     npc_rubah: { x: 83.5, z: 36.5, rotY: 0.75, bedTint: 0x10b981 },
-    npc_penjaga: { x: -55.2, z: -39.5, rotY: -1.1, bedTint: 0x3b82f6 },
+    npc_penjaga: { x: -102.0, z: -95.5, rotY: -0.95, bedTint: 0x3b82f6 },
     npc_penyihir: { x: 56.2, z: -39.2, rotY: 1.1, bedTint: 0x8b5cf6 },
     npc_portal: { x: -10.5, z: -75.0, rotY: 0.7, bedTint: 0xa855f7 },
   } as Record<string, { x: number; z: number; rotY: number; bedTint: number }>,
@@ -101,7 +101,7 @@ export interface ParkourPad {
   chained?: boolean;
 }
 
-export const WORLD_OCEAN_LIMIT = 240;
+export const WORLD_OCEAN_LIMIT = 275;
 export const SEABED_Y = -1.1;
 
 export const ISLAND_DISKS: IslandDisk[] = [
@@ -112,7 +112,8 @@ export const ISLAND_DISKS: IslandDisk[] = [
   { id: 'pasar_rasa', cx: -122, cz: 50, radius: 55.0, groundY: 2.0 },
   // 130m (radius 65m) Full-Scale Zoo District ("Hutan Satwa") matching level design overview!
   { id: 'hutan_satwa', cx: 120, cz: 58, radius: 65.0, groundY: 3.4 },
-  { id: 'gerbang_kota', cx: -66, cz: -42, radius: 28.5, groundY: 4.0 },
+  // 140m (radius 70m) Full-Scale Fortress City ("Gerbang Kota") matching level design overview!
+  { id: 'gerbang_kota', cx: -118, cz: -98, radius: 70.0, groundY: 12.0 },
   { id: 'menara_waktu', cx: 66, cz: -42, radius: 28.0, groundY: 3.6 },
   { id: 'gua_portal', cx: 0, cz: -82, radius: 29.0, groundY: 2.6 },
 ];
@@ -120,9 +121,9 @@ export const ISLAND_DISKS: IslandDisk[] = [
 export const SEA_ISLETS: SeaIslet[] = [
   { id: 'islet_sw', cx: -68, cz: 126, radius: 7.4, peakY: 4.2, theme: 'sand_green' },
   { id: 'islet_se', cx: 62, cz: 168, radius: 7.4, peakY: 4.5, theme: 'jungle' },
-  { id: 'islet_w', cx: -142, cz: -20, radius: 8.2, peakY: 5.0, theme: 'rock_sand' },
+  { id: 'islet_w', cx: -172, cz: -16, radius: 8.0, peakY: 5.0, theme: 'rock_sand' },
   { id: 'islet_e', cx: 196, cz: 10, radius: 8.2, peakY: 5.2, theme: 'jungle' },
-  { id: 'islet_nw', cx: -42, cz: -84, radius: 7.6, peakY: 5.6, theme: 'basalt' },
+  { id: 'islet_nw', cx: -36, cz: -64, radius: 6.8, peakY: 5.2, theme: 'basalt' },
   { id: 'islet_ne', cx: 42, cz: -84, radius: 7.6, peakY: 5.4, theme: 'autumn' },
   // Scenic tiny sandy/green sea islets in NW strait off Desa Sapaan (matching level design!)
   { id: 'islet_desa_nw1', cx: -32, cz: 50, radius: 4.4, peakY: 3.1, theme: 'sand_green' },
@@ -132,6 +133,10 @@ export const SEA_ISLETS: SeaIslet[] = [
   { id: 'islet_satwa_nw1', cx: 52, cz: 8, radius: 5.2, peakY: 3.2, theme: 'sand_green' },
   { id: 'islet_satwa_nw2', cx: 68, cz: -4, radius: 4.6, peakY: 2.8, theme: 'jungle' },
   { id: 'islet_satwa_nw3', cx: 84, cz: -14, radius: 5.4, peakY: 3.5, theme: 'sand_green' },
+  // Scenic tiny sandy/green sea islets off Gerbang Kota NW (matching level design overview!)
+  { id: 'islet_gerbang_nw1', cx: -206, cz: -148, radius: 6.4, peakY: 4.0, theme: 'sand_green' },
+  { id: 'islet_gerbang_nw2', cx: -196, cz: -168, radius: 4.8, peakY: 3.0, theme: 'sand_green' },
+  { id: 'islet_gerbang_nw3', cx: -182, cz: -180, radius: 4.2, peakY: 2.8, theme: 'sand_green' },
 ];
 
 export const BRIDGE_SPANS: BridgeSpan[] = [
@@ -176,17 +181,30 @@ export const BRIDGE_SPANS: BridgeSpan[] = [
     style: 'rope',
   },
   {
+    // Exact 8m-wide (halfWidth 4.0) Tall Arched Stone Viaduct ("Jembatan Viaduk: Lebar 8m") extending SE from Gerbang Kota!
+    id: 'viaduct_gerbang',
+    ax: -114.0,
+    az: -80.0,
+    ay: 12.0,
+    bx: -92.0,
+    bz: -34.0,
+    by: 12.0,
+    halfWidth: 4.0,
+    archHeight: 0.0,
+    style: 'stone',
+  },
+  {
     id: 'bridge_gerbang',
     ax: -19.5,
     az: -11.5,
     ay: 2.8,
-    bx: -43.0,
-    bz: -27.5,
-    by: 4.0,
-    halfWidth: 2.95,
-    archHeight: 0.65,
+    bx: -92.0,
+    bz: -34.0,
+    by: 12.0,
+    halfWidth: 3.0,
+    archHeight: 0.6,
     style: 'stone',
-    gaps: [{ t0: 0.45, t1: 0.555 }],
+    gaps: [{ t0: 0.47, t1: 0.52 }],
   },
   {
     id: 'bridge_menara',
@@ -215,14 +233,15 @@ export const BRIDGE_SPANS: BridgeSpan[] = [
     gaps: [{ t0: 0.45, t1: 0.54 }],
   },
   {
+    // Exact 14m-wide (halfWidth 7.0) Highway Bridge exiting West out of the 14m x 12m Underground Tunnel!
     id: 'highway_gerbang',
-    ax: -82.0,
-    az: -32.0,
-    ay: 4.0,
-    bx: -118.0,
-    bz: -32.0,
-    by: 4.0,
-    halfWidth: 3.4,
+    ax: -171.0,
+    az: -86.0,
+    ay: 12.0,
+    bx: -226.0,
+    bz: -86.0,
+    by: 12.0,
+    halfWidth: 7.0,
     archHeight: 0.0,
     style: 'highway',
   },
@@ -235,16 +254,16 @@ export const PARKOUR_PLATFORMS: ParkourPad[] = [
   { id: 'hub_chain_2', x: -29.8, y: 5.0, z: -4.8, halfW: 1.65, halfD: 1.65, style: 'ruin_float', chained: true },
   { id: 'hub_chain_3', x: -33.8, y: 5.8, z: -5.2, halfW: 1.7, halfD: 1.7, style: 'ruin_float', chained: true },
 
-  // Gerbang Kota crumbling SE broken viaduct ruins jutting over sea
-  { id: 'viaduct_1', x: -42.5, y: 3.8, z: -20.5, halfW: 1.8, halfD: 1.65, style: 'stone' },
-  { id: 'viaduct_2', x: -38.0, y: 3.1, z: -17.5, halfW: 1.65, halfD: 1.55, style: 'stone' },
-  { id: 'viaduct_3', x: -33.5, y: 2.2, z: -14.8, halfW: 1.55, halfD: 1.5, style: 'stone' },
+  // Gerbang Kota crumbling SE broken viaduct ruins jutting over sea near Viaduct head
+  { id: 'viaduct_1', x: -86.0, y: 8.5, z: -31.0, halfW: 1.9, halfD: 1.7, style: 'stone' },
+  { id: 'viaduct_2', x: -81.0, y: 6.2, z: -28.0, halfW: 1.8, halfD: 1.6, style: 'stone' },
+  { id: 'viaduct_3', x: -75.5, y: 4.0, z: -25.0, halfW: 1.7, halfD: 1.55, style: 'stone' },
 
-  // Outer West Sea Stepping Stones (Pasar Rasa North Shore <-> Gerbang Kota SW)
-  { id: 'west_hop_1', x: -97.0, y: 0.9, z: -6.0, halfW: 1.8, halfD: 1.8, style: 'stone' },
-  { id: 'west_hop_2', x: -93.0, y: 1.4, z: -12.0, halfW: 1.7, halfD: 1.7, style: 'stone' },
-  { id: 'west_hop_3', x: -89.0, y: 1.9, z: -18.0, halfW: 1.7, halfD: 1.7, style: 'stone' },
-  { id: 'west_hop_4', x: -85.0, y: 2.4, z: -24.0, halfW: 1.8, halfD: 1.8, style: 'stone' },
+  // Outer West Sea Stepping Stones (Pasar Rasa North Shore <-> Gerbang Kota South Dock)
+  { id: 'west_hop_1', x: -124.0, y: 0.9, z: -9.5, halfW: 1.8, halfD: 1.8, style: 'stone' },
+  { id: 'west_hop_2', x: -125.0, y: 1.3, z: -14.0, halfW: 1.8, halfD: 1.8, style: 'stone' },
+  { id: 'west_hop_3', x: -125.5, y: 1.6, z: -18.5, halfW: 1.8, halfD: 1.8, style: 'stone' },
+  { id: 'west_hop_4', x: -126.0, y: 1.8, z: -23.0, halfW: 1.8, halfD: 1.8, style: 'stone' },
 
   // Outer East Sea Stepping Stones (Hutan Satwa NW coast <-> Menara Waktu South Dock)
   { id: 'east_hop_1', x: 102.0, y: 0.9, z: -9.5, halfW: 1.8, halfD: 1.8, style: 'wood' },
@@ -263,7 +282,7 @@ export const PARKOUR_PLATFORMS: ParkourPad[] = [
   { id: 'dock_satwa_east', x: 148.0, y: 0.3, z: 117.0, halfW: 3.0, halfD: 2.8, style: 'dock' },
   { id: 'dock_hub_west', x: -25.2, y: 0.32, z: 0, halfW: 2.4, halfD: 2.8, style: 'dock' },
   { id: 'dock_hub_east', x: 25.2, y: 0.32, z: 0, halfW: 2.4, halfD: 2.8, style: 'dock' },
-  { id: 'dock_gerbang_south', x: -66.0, y: 0.32, z: -13.8, halfW: 2.8, halfD: 2.5, style: 'dock' },
+  { id: 'dock_gerbang_south', x: -126.5, y: 0.32, z: -27.5, halfW: 3.0, halfD: 2.6, style: 'dock' },
   { id: 'dock_menara_south', x: 66.0, y: 0.32, z: -14.2, halfW: 2.8, halfD: 2.5, style: 'dock' },
   { id: 'dock_portal_west', x: -29.2, y: 0.3, z: -80.0, halfW: 2.5, halfD: 2.8, style: 'dock' },
   { id: 'dock_portal_east', x: 29.2, y: 0.3, z: -80.0, halfW: 2.5, halfD: 2.8, style: 'dock' },
@@ -636,39 +655,78 @@ function sampleIslandInterior(
   }
 
   if (isl.id === 'gerbang_kota') {
-    // 1. Sea-stairs down to South dock
-    if (wx >= -69.5 && wx <= -62.5 && wz >= -24.5) {
-      const t = THREE.MathUtils.clamp((wz - -24.5) / 9.5, 0, 1);
-      return { y: Math.max(0.32, quantizeTier(4.0 - t * 3.65, 0.52)), surface: 'stairs' };
-    }
-    // 2. Grand Stone Staircase climbing Highway Plaza (y=4.0) -> School Fortress Plateau (y=7.8)!
-    if (wx >= -63.0 && wx <= -57.2 && wz >= -42.0 && wz <= -35.0) {
-      const prog = THREE.MathUtils.clamp((-35.0 - wz) / 6.8, 0, 1);
-      return { y: Math.min(7.8, quantizeTier(4.0 + prog * 3.8, 0.55)), surface: 'stairs' };
-    }
-    // 3. Elevated Red-Brick School & Fortress Courtyard (y=7.8) + guardPost (-55.2, -39.5)
-    if (wz <= -39.0) {
-      if (wx >= -57.2 && wz >= -42.5) return { y: 7.8, surface: 'land' };
-      if (wx >= -80.0 && wx <= -53.0 && wz >= -56.5 && wz <= -41.5) return { y: 7.8, surface: 'land' };
-    }
-    // 4. Lower Highway Asphalt Corridor (y=4.0)
-    if (wz >= -35.6 && wz <= -28.0 && wx <= -44.0) {
-      return { y: 4.0, surface: 'road' };
+    // Full 140m (radius 70m) City Fortress Island ("Gerbang Kota"):
+    // Center: cx=-118, cz=-98 -> local coords lx = wx + 118, lz = wz + 98
+    const lx = wx + 118.0;
+    const lz = wz + 98.0;
+
+    // 1. South Harbor Cliff Staircase climbing smoothly from dock_gerbang_south (-126.5, -27.5, y=0.32) up to Lower Highway (y=12.0)!
+    if (lx >= -12.0 && lx <= -5.0 && lz >= 19.0) {
+      const t = THREE.MathUtils.clamp((lz - 19.0) / 50.0, 0, 1);
+      return { y: Math.max(0.32, quantizeTier(12.0 - t * 11.68, 0.5)), surface: 'stairs' };
     }
 
-    // 5. Surrounding Rugged Highlands & Cliff Coastal Ridges (NW Peak up to 13.0m!)
-    let h = 4.0 + hillWave(wx * 0.9, wz * 0.9) * 1.2;
-    const nwBastionPeak = Math.exp(-((wx + 83.0) ** 2 + (wz + 54.0) ** 2) / 115) * 8.6;
-    const neWatchRidge = Math.exp(-((wx + 50.0) ** 2 + (wz + 55.0) ** 2) / 95) * 6.2;
-    h += nwBastionPeak + neWatchRidge;
-
-    h = padBlend(wx, wz, -58.5, -34.0, 2.8, 5.5, 4.0, h); // npc_penjaga
-
-    if (dist > effR - 4.6 && dz > -4.0) {
-      const beachY = 0.3 + rimSlope * 2.8;
-      return { y: Math.max(0.3, quantizeTier(Math.min(Math.max(0.55, h), beachY), 0.4)), surface: 'beach' };
+    // 2. Grand City Gate Ramp rising smoothly from Lower Highway (lz=+5, y=12.0) through Gate (lz=-4) to Courtyard (lz=-9, y=20.0)!
+    if (lx >= -5.5 && lx <= 3.5 && lz >= -9.0 && lz <= 5.0) {
+      const prog = THREE.MathUtils.clamp((5.0 - lz) / 14.0, 0, 1);
+      return { y: Math.min(20.0, quantizeTier(12.0 + prog * 8.0, 0.48)), surface: 'stairs' };
     }
-    return { y: Math.max(0.65, quantizeTier(h, 0.55)), surface: 'land' };
+
+    // 3. Upper Fortress Courtyard (y=20.0m, 54m x 40m enclosed by 28m Benteng walls!)
+    if (lx >= -28.5 && lx <= 26.5 && lz >= -44.5 && lz < -4.0) {
+      // Paved asphalt driveway leading straight from City Gate up to Sekolah Bata Merah front steps
+      if (
+        (lx >= -5.5 && lx <= 3.5 && lz >= -19.0) ||
+        (lx >= -17.0 && lx <= 11.0 && lz >= -19.0 && lz <= -12.0)
+      ) {
+        return { y: 20.0, surface: 'road' };
+      }
+      return { y: 20.0, surface: 'land' };
+    }
+
+    // 4. Lower City Highway & 14m-Wide Hollow Walkable Underground Tunnel Corridor (y=12.0m)!
+    //    Includes T-intersection junction seamlessly joining the 8m Viaduct Bridge at (lx=+4, lz=+18) -> (-114, -80)!
+    if (lz >= 5.0 && lz <= 19.0 && lx <= 47.0) {
+      return { y: 12.0, surface: 'road' };
+    }
+    if (lx >= -0.5 && lx <= 8.5 && lz >= 18.0 && lz <= 26.0) {
+      return { y: 12.0, surface: 'road' };
+    }
+
+    // 5. Lower City Gate Stone Forecourt Plaza (y=12.0m) in front of Fortress East/West walls (npc_penjaga & guardPost!)
+    if (lx >= -26.0 && lx <= 32.0 && lz >= -4.0 && lz < 5.0) {
+      return { y: 12.0, surface: 'land' };
+    }
+    // East Coastal Highway Shoulder overlooking the Viaduct & Ocean (y=12.0m)
+    if (lx >= 10.0 && lx <= 48.0 && lz >= 19.0 && lz <= 25.0) {
+      return { y: 12.0, surface: 'land' };
+    }
+
+    // 6. Towering 36m Rocky City Cliffs ("Tinggi Tebing Kota: 36m") & Stepped Lower Basalt Headland!
+    let h = 12.0 + hillWave(wx * 0.42, wz * 0.42) * 1.1;
+
+    // Towering 36m mountain backdrop behind North & West/East shoulders of the Benteng
+    const northCliff = smoothstep(-38.0, -52.0, lz) * 23.6;
+    const westCliff = smoothstep(-24.0, -40.0, lx) * smoothstep(32.0, 14.0, lz) * 23.4;
+    const eastCliff = smoothstep(24.0, 38.0, lx) * smoothstep(14.0, -10.0, lz) * 21.8;
+    h += Math.min(24.2, Math.max(northCliff, westCliff, eastCliff));
+
+    // Front-South lower rocky cliff drop below the y=12m highway & tunnel mouth (creating the 12m cliff wall + sandy cove!)
+    if (lz > 19.5) {
+      const cliffDrop = smoothstep(20.0, 31.5, lz) * 7.8;
+      h = Math.max(1.8, 12.0 - cliffDrop + hillWave(wx * 0.65, wz * 0.65) * 1.35);
+    }
+
+    // Smooth plaza pad under npc_penjaga & guardPost
+    h = padBlend(wx, wz, -110.5, -92.5, 3.0, 5.5, 12.0, h);
+    h = padBlend(wx, wz, -102.0, -95.5, 3.0, 5.5, 12.0, h);
+
+    // Coastal sandy beach cove along the front-south shoreline (walkable swim-in shore!)
+    if (dist > effR - 7.5 && lz > 18.0) {
+      const beachY = 0.28 + rimSlope * 2.2;
+      return { y: Math.max(0.28, quantizeTier(Math.min(Math.max(0.45, h), beachY), 0.36)), surface: 'beach' };
+    }
+    return { y: Math.max(0.75, Math.min(36.0, quantizeTier(h, 0.75))), surface: 'land' };
   }
 
   if (isl.id === 'menara_waktu') {
@@ -803,7 +861,7 @@ export function sampleArchipelagoTerrain(x: number, z: number): TerrainSample {
     const effR = islandContourRadius(isl, x, z);
     if (dist <= effR) {
       const inner = sampleIslandInterior(isl, x, z, dist, effR);
-      if (bestBridgeY !== null && dist > effR - 3.2 && bestBridgeY > inner.y) {
+      if (bestBridgeY !== null && bestBridgeY > inner.y + 0.05) {
         return {
           groundY: bestBridgeY,
           isLandOrBridge: true,
@@ -1229,34 +1287,148 @@ function createFenceLoop(
 function createVoxelCar(
   palette: MaterialPalette,
   bodyColor: number,
-  isPolice = false,
+  variant: 'sedan' | 'taxi' | 'police' | 'bus' = 'sedan',
 ): THREE.Group {
   const car = new THREE.Group();
-  const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.75, 1.35), palette.getMat(bodyColor, 'gloss'));
-  chassis.position.y = 0.56;
+  const isBus = variant === 'bus';
+  const isPolice = variant === 'police';
+  const isTaxi = variant === 'taxi';
+
+  const bodyMat = palette.getMat(isPolice ? 0xf8fafc : bodyColor, 'gloss');
+  const trimMat = palette.getMat(0x1e293b, 'matte');
+  const glassMat = palette.getPixelMat('glass_pane', 0xe0f2fe);
+  const wheelMat = palette.getMat(0x0f172a, 'matte');
+  const rimMat = palette.getMat(0xcbd5e1, 'metal');
+  const headlightMat = palette.getMat(0xfef08a, 'emissive');
+  const taillightMat = palette.getMat(0xef4444, 'emissive');
+
+  if (isBus) {
+    // Full-scale Red City Bus (9.8m long x 3.2m wide x 4.85m tall — towers cleanly above the 3.43m Hero!)
+    const bumper = new THREE.Mesh(new THREE.BoxGeometry(10.0, 0.65, 3.25), trimMat);
+    bumper.position.y = 0.72;
+    const lowerBody = new THREE.Mesh(new THREE.BoxGeometry(9.8, 1.55, 3.16), bodyMat);
+    lowerBody.position.y = 1.68;
+    lowerBody.castShadow = true;
+    const beltStripe = new THREE.Mesh(new THREE.BoxGeometry(9.86, 0.28, 3.22), palette.getMat(0xf8fafc, 'matte'));
+    beltStripe.position.y = 2.48;
+    const glassCabin = new THREE.Mesh(new THREE.BoxGeometry(9.45, 1.45, 3.04), glassMat);
+    glassCabin.position.y = 3.32;
+    // Pillar dividers along passenger windows
+    [-3.3, -1.6, 0.1, 1.8, 3.5].forEach((px) => {
+      const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.45, 1.52, 3.12), bodyMat);
+      pillar.position.set(px, 3.32, 0);
+      car.add(pillar);
+    });
+    const roof = new THREE.Mesh(new THREE.BoxGeometry(9.7, 0.45, 3.14), palette.getMat(0xf8fafc, 'matte'));
+    roof.position.y = 4.26;
+    roof.castShadow = true;
+    const acUnit = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.38, 1.8), palette.getMat(0x94a3b8, 'metal'));
+    acUnit.position.set(-0.8, 4.66, 0);
+
+    // Front & Rear Lights
+    [-1.1, 1.1].forEach((lz) => {
+      const hl = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.36, 0.52), headlightMat);
+      hl.position.set(4.94, 1.25, lz);
+      const tl = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.36, 0.52), taillightMat);
+      tl.position.set(-4.94, 1.25, lz);
+      car.add(hl, tl);
+    });
+
+    // 4 Heavy Wheels + Metallic Hubcaps
+    const tireGeo = new THREE.BoxGeometry(1.18, 1.18, 0.52);
+    const hubGeo = new THREE.BoxGeometry(0.56, 0.56, 0.58);
+    [[-3.0, -1.48], [3.0, -1.48], [-3.0, 1.48], [3.0, 1.48]].forEach(([wx, wz]) => {
+      const tire = new THREE.Mesh(tireGeo, wheelMat);
+      tire.position.set(wx, 0.59, wz);
+      const hub = new THREE.Mesh(hubGeo, rimMat);
+      hub.position.set(wx, 0.59, wz);
+      car.add(tire, hub);
+    });
+    car.add(bumper, lowerBody, beltStripe, glassCabin, roof, acUnit);
+    return car;
+  }
+
+  // Human-proportional Sedan / Taxi / Police SUV (5.8m-6.4m long x 2.9m-3.1m wide x 3.45m-3.95m tall!)
+  // Ensures vehicles are NEVER smaller than the 3.43m Hero explorer!
+  const len = isPolice ? 6.4 : 5.8;
+  const wid = isPolice ? 3.1 : 2.9;
+  const bumper = new THREE.Mesh(new THREE.BoxGeometry(len + 0.24, 0.5, wid + 0.08), trimMat);
+  bumper.position.y = 0.68;
+
+  const chassis = new THREE.Mesh(new THREE.BoxGeometry(len, 1.32, wid), bodyMat);
+  chassis.position.y = 1.48;
   chassis.castShadow = true;
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.58, 1.18), palette.getPixelMat('glass_pane', 0xe0f2fe));
-  cabin.position.set(-0.08, 1.15, 0);
+
+  if (isPolice) {
+    const hoodMat = palette.getMat(0x1d4ed8, 'gloss');
+    const hood = new THREE.Mesh(new THREE.BoxGeometry(1.9, 1.36, wid + 0.04), hoodMat);
+    hood.position.set(2.05, 1.48, 0);
+    const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.36, wid + 0.04), hoodMat);
+    trunk.position.set(-2.3, 1.48, 0);
+    const stripe = new THREE.Mesh(new THREE.BoxGeometry(len * 0.52, 0.28, wid + 0.06), hoodMat);
+    stripe.position.set(-0.2, 1.45, 0);
+    car.add(hood, trunk, stripe);
+  }
+
+  const cabLen = isPolice ? 3.9 : 3.25;
+  const cabH = isPolice ? 1.25 : 1.15;
+  const cabX = isPolice ? -0.35 : -0.22;
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(cabLen, cabH, wid - 0.34), glassMat);
+  cabin.position.set(cabX, 2.14 + cabH * 0.5, 0);
+  // Roof pillars for realistic voxel car look
+  [-cabLen * 0.44, cabLen * 0.44].forEach((px) => {
+    const p = new THREE.Mesh(new THREE.BoxGeometry(0.32, cabH + 0.04, wid - 0.3), trimMat);
+    p.position.set(cabX + px, 2.14 + cabH * 0.5, 0);
+    car.add(p);
+  });
+
   const roof = new THREE.Mesh(
-    new THREE.BoxGeometry(1.32, 0.14, 1.22),
+    new THREE.BoxGeometry(cabLen + 0.14, 0.28, wid - 0.28),
     palette.getMat(isPolice ? 0xf8fafc : bodyColor, 'gloss'),
   );
-  roof.position.set(-0.08, 1.48, 0);
+  roof.position.set(cabX, 2.14 + cabH + 0.14, 0);
+  roof.castShadow = true;
+
   if (isPolice) {
-    const beaconR = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.18, 0.42), palette.getMat(0xef4444, 'emissive'));
-    beaconR.position.set(-0.08, 1.62, -0.25);
-    const beaconB = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.18, 0.42), palette.getMat(0x3b82f6, 'emissive'));
-    beaconB.position.set(-0.08, 1.62, 0.25);
-    car.add(beaconR, beaconB);
+    const barBase = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.16, 1.75), trimMat);
+    barBase.position.set(cabX + 0.2, 3.62, 0);
+    const beaconR = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.32, 0.72), palette.getMat(0xef4444, 'emissive'));
+    beaconR.position.set(cabX + 0.2, 3.82, -0.46);
+    const beaconB = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.32, 0.72), palette.getMat(0x3b82f6, 'emissive'));
+    beaconB.position.set(cabX + 0.2, 3.82, 0.46);
+    car.add(barBase, beaconR, beaconB);
+  } else if (isTaxi) {
+    const taxiSign = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.34, 1.1), palette.getMat(0xfef08a, 'emissive'));
+    taxiSign.position.set(cabX + 0.25, 3.6, 0);
+    car.add(taxiSign);
   }
-  const wheelMat = palette.getMat(0x0f172a, 'matte');
-  const wheelG = new THREE.BoxGeometry(0.45, 0.45, 0.24);
-  [[-0.7, -0.68], [0.7, -0.68], [-0.7, 0.68], [0.7, 0.68]].forEach(([wx, wz]) => {
-    const w = new THREE.Mesh(wheelG, wheelMat);
-    w.position.set(wx, 0.24, wz);
-    car.add(w);
+
+  // Headlights, Taillights & Grille
+  const grille = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.52, wid * 0.48), trimMat);
+  grille.position.set(len * 0.5 + 0.04, 1.15, 0);
+  car.add(grille);
+  [-wid * 0.34, wid * 0.34].forEach((lz) => {
+    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.34, 0.48), headlightMat);
+    hl.position.set(len * 0.5 + 0.05, 1.32, lz);
+    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.34, 0.48), taillightMat);
+    tl.position.set(-len * 0.5 - 0.05, 1.32, lz);
+    car.add(hl, tl);
   });
-  car.add(chassis, cabin, roof);
+
+  // 4 Large Voxel Tires + Metallic Hubcaps
+  const wheelGeo = new THREE.BoxGeometry(1.06, 1.06, 0.46);
+  const hubGeo = new THREE.BoxGeometry(0.48, 0.48, 0.52);
+  const wxOff = len * 0.32;
+  const wzOff = wid * 0.46;
+  [[-wxOff, -wzOff], [wxOff, -wzOff], [-wxOff, wzOff], [wxOff, wzOff]].forEach(([wx, wz]) => {
+    const w = new THREE.Mesh(wheelGeo, wheelMat);
+    w.position.set(wx, 0.53, wz);
+    const hub = new THREE.Mesh(hubGeo, rimMat);
+    hub.position.set(wx, 0.53, wz);
+    car.add(w, hub);
+  });
+
+  car.add(bumper, chassis, cabin, roof);
   return car;
 }
 
@@ -1277,8 +1449,8 @@ export function createArchipelagoWorld(
   const disposables: Array<{ dispose: () => void }> = [];
   const waterUniforms = { uTime: { value: 0 } };
 
-  // 1. Expansive Vibrant Azure Ocean (swimmable across ±240 archipelago!)
-  const oceanGeo = new THREE.PlaneGeometry(840, 840, lowDetail ? 36 : 84, lowDetail ? 36 : 84);
+  // 1. Expansive Vibrant Azure Ocean (swimmable across ±275 archipelago!)
+  const oceanGeo = new THREE.PlaneGeometry(960, 960, lowDetail ? 36 : 84, lowDetail ? 36 : 84);
   const oceanMat = palette.createSurfaceMat({
     color: 0x0284c7,
     emissive: 0x0369a1,
@@ -1304,7 +1476,7 @@ export function createArchipelagoWorld(
   walkableTargets.push(oceanMesh);
   disposables.push(oceanGeo, oceanMat);
 
-  const seabedGeo = new THREE.PlaneGeometry(620, 620);
+  const seabedGeo = new THREE.PlaneGeometry(740, 740);
   const seabedMat = palette.getMat(0x0c4a6e, 'matte');
   const seabedMesh = new THREE.Mesh(seabedGeo, seabedMat);
   seabedMesh.rotation.x = -Math.PI / 2;
@@ -1403,12 +1575,12 @@ export function createArchipelagoWorld(
     },
     gerbang_kota: {
       lowColors: [0x94a3b8, 0x64748b, 0x65a30d],
-      highColors: [0x64748b, 0x475569, 0x94a3b8, 0x4d7c0f],
-      pathColors: [0x475569, 0x334155],
-      stairColors: [0xe2e8f0, 0x94a3b8],
-      beachColors: [0xcbd5e1, 0x94a3b8],
-      cliffColors: [0x52525b, 0x3f3f46, 0x64748b],
-      foamColors: [0x38bdf8, 0x93c5fd],
+      highColors: [0x65a30d, 0x4d7c0f, 0x64748b, 0x52525b],
+      pathColors: [0x334155, 0x1e293b],
+      stairColors: [0x94a3b8, 0xcbd5e1],
+      beachColors: [0xfde68a, 0xfcd34d],
+      cliffColors: [0x64748b, 0x52525b, 0x475569],
+      foamColors: [0x38bdf8, 0xbae6fd],
     },
     menara_waktu: {
       lowColors: [0x84cc16, 0x65a30d, 0xa3e635],
@@ -1457,6 +1629,12 @@ export function createArchipelagoWorld(
               ? theme.pathColors
               : inner.surface === 'beach'
               ? theme.beachColors
+              : isl.id === 'gerbang_kota' && Math.abs(inner.y - 20.0) < 0.2
+              ? [0x65a30d, 0x589e2e, 0x71bd3d]
+              : isl.id === 'gerbang_kota' && Math.abs(inner.y - 12.0) < 0.2
+              ? [0x94a3b8, 0x64748b, 0xcbd5e1]
+              : isl.id === 'gerbang_kota' && inner.y < 11.0
+              ? [0x65a30d, 0x4d7c0f, 0x64748b]
               : isl.id === 'pasar_rasa' && inner.y >= 26.5
               ? [0x65a30d, 0x84cc16, 0x4d7c0f]
               : inner.y > isl.groundY + 3.2
@@ -1568,21 +1746,21 @@ export function createArchipelagoWorld(
   const roadMat = palette.roadMat;
 
   for (const br of BRIDGE_SPANS) {
-    const segs = 20;
     const dx = br.bx - br.ax;
     const dz = br.bz - br.az;
     const totalLen = Math.hypot(dx, dz);
+    const isViaductOrHwy = br.id === 'viaduct_gerbang' || br.style === 'highway';
+    const segs = Math.max(20, Math.round(totalLen / 2.2));
     const yaw = Math.atan2(dx, dz);
     const stepLen = totalLen / segs + 0.1;
     const width = br.halfWidth * 2;
-    const deckMat =
-      br.style === 'highway'
-        ? roadMat
-        : br.style === 'stone'
-        ? cobbleMat
-        : br.style === 'rope'
-        ? spruceMat
-        : plankMat;
+    const deckMat = isViaductOrHwy
+      ? roadMat
+      : br.style === 'stone'
+      ? cobbleMat
+      : br.style === 'rope'
+      ? spruceMat
+      : plankMat;
 
     for (let s = 0; s < segs; s++) {
       const t0 = s / segs;
@@ -1607,14 +1785,13 @@ export function createArchipelagoWorld(
             inGap = true;
             break;
           }
-          if (Math.abs(tm - g.t0) < 0.06 || Math.abs(tm - g.t1) < 0.06) {
+          if (Math.abs(tm - g.t0) < 0.045 || Math.abs(tm - g.t1) < 0.045) {
             isJumpEdge = true;
           }
         }
       }
 
       if (inGap) {
-        // Sunken rubble or sagging rope cables clearly marking the jumpable chasm!
         if (br.style === 'rope') {
           const perpX = Math.cos(yaw) * (br.halfWidth - 0.16);
           const perpZ = -Math.sin(yaw) * (br.halfWidth - 0.16);
@@ -1643,9 +1820,9 @@ export function createArchipelagoWorld(
         continue;
       }
 
-      const segGeo = new THREE.BoxGeometry(width, 0.42, stepLen);
+      const segGeo = new THREE.BoxGeometry(width, isViaductOrHwy ? 0.72 : 0.42, stepLen);
       const segMesh = new THREE.Mesh(segGeo, deckMat);
-      segMesh.position.set(mx, my - 0.21, mz);
+      segMesh.position.set(mx, my - (isViaductOrHwy ? 0.36 : 0.21), mz);
       segMesh.rotation.order = 'YXZ';
       segMesh.rotation.y = yaw;
       segMesh.rotation.x = -slope;
@@ -1655,50 +1832,113 @@ export function createArchipelagoWorld(
       walkableTargets.push(segMesh);
       disposables.push(segGeo);
 
-      // Clear amber/gold edge markers flanking broken gap edges so jump timing is obvious!
-      if (isJumpEdge) {
-        const perpX = Math.cos(yaw) * (br.halfWidth - 0.24);
-        const perpZ = -Math.sin(yaw) * (br.halfWidth - 0.24);
-        [-1, 1].forEach((side) => {
+      if (isViaductOrHwy) {
+        // Dashed white centerline + continuous stone parapets with crenellated posts!
+        if (s % 2 === 0) {
           cliffBlocks.push({
-            x: mx + perpX * side,
-            y: my + 0.72,
-            z: mz + perpZ * side,
+            x: mx,
+            y: my + 0.05,
+            z: mz,
             sx: 0.42,
-            sy: 1.45,
-            sz: 0.42,
-            color: br.style === 'rope' ? 0xd97706 : 0xf59e0b,
+            sy: 0.08,
+            sz: stepLen * 0.65,
+            color: 0xf8fafc,
           });
-        });
-      } else if (s % 2 === 0 || s === segs - 1) {
-        const perpX = Math.cos(yaw) * (br.halfWidth - 0.16);
-        const perpZ = -Math.sin(yaw) * (br.halfWidth - 0.16);
-        const railColor = br.style === 'stone' || br.style === 'highway' ? 0x64748b : 0x78350f;
-        const railH = br.style === 'rope' ? 1.1 : 0.78;
+        }
+        const perpX = Math.cos(yaw) * (br.halfWidth - 0.35);
+        const perpZ = -Math.sin(yaw) * (br.halfWidth - 0.35);
         [-1, 1].forEach((side) => {
           cliffBlocks.push({
             x: mx + perpX * side,
-            y: my + railH * 0.5,
+            y: my + 0.46,
             z: mz + perpZ * side,
-            sx: 0.28,
-            sy: railH,
-            sz: 0.28,
-            color: railColor,
+            sx: 0.72,
+            sy: 0.96,
+            sz: 0.72,
+            color: s % 3 === 0 ? 0xcbd5e1 : 0x94a3b8,
           });
+          if (s % 3 === 0) {
+            cliffBlocks.push({
+              x: mx + perpX * side,
+              y: my + 1.1,
+              z: mz + perpZ * side,
+              sx: 0.85,
+              sy: 0.38,
+              sz: 0.85,
+              color: 0x64748b,
+            });
+          }
         });
-      }
+        // Tall arched stone viaduct piers & arch shoulders down to SEABED_Y
+        if (s === 0 || s === segs - 1 || s % 7 === 0) {
+          const pierW = br.style === 'highway' ? 3.8 : 2.8;
+          cliffBlocks.push({
+            x: mx,
+            y: (my + SEABED_Y) * 0.5 - 0.3,
+            z: mz,
+            sx: pierW,
+            sy: my - SEABED_Y + 0.2,
+            sz: pierW,
+            color: 0x64748b,
+          });
+        } else {
+          // Underside stone arch haunches curving between piers
+          const archPhase = (s % 7) / 7;
+          const archDrop = Math.pow(Math.abs(archPhase - 0.5) * 2, 1.8) * 3.8 + 1.2;
+          cliffBlocks.push({
+            x: mx,
+            y: my - 0.6 - archDrop * 0.5,
+            z: mz,
+            sx: width * 0.78,
+            sy: archDrop,
+            sz: stepLen * 0.96,
+            color: 0x475569,
+          });
+        }
+      } else {
+        if (isJumpEdge) {
+          const perpX = Math.cos(yaw) * (br.halfWidth - 0.24);
+          const perpZ = -Math.sin(yaw) * (br.halfWidth - 0.24);
+          [-1, 1].forEach((side) => {
+            cliffBlocks.push({
+              x: mx + perpX * side,
+              y: my + 0.72,
+              z: mz + perpZ * side,
+              sx: 0.42,
+              sy: 1.45,
+              sz: 0.42,
+              color: br.style === 'rope' ? 0xd97706 : 0xf59e0b,
+            });
+          });
+        } else if (s % 2 === 0 || s === segs - 1) {
+          const perpX = Math.cos(yaw) * (br.halfWidth - 0.16);
+          const perpZ = -Math.sin(yaw) * (br.halfWidth - 0.16);
+          const railColor = br.style === 'stone' ? 0x64748b : 0x78350f;
+          const railH = br.style === 'rope' ? 1.1 : 0.78;
+          [-1, 1].forEach((side) => {
+            cliffBlocks.push({
+              x: mx + perpX * side,
+              y: my + railH * 0.5,
+              z: mz + perpZ * side,
+              sx: 0.28,
+              sy: railH,
+              sz: 0.28,
+              color: railColor,
+            });
+          });
+        }
 
-      // Sturdy Sea Piers supporting intact spans
-      if (s === 3 || s === 7 || s === 12 || s === 16 || isJumpEdge) {
-        cliffBlocks.push({
-          x: mx,
-          y: (my + SEABED_Y) * 0.5 - 0.2,
-          z: mz,
-          sx: br.style === 'highway' ? 2.6 : 1.55,
-          sy: my - SEABED_Y + 0.2,
-          sz: br.style === 'highway' ? 2.6 : 1.55,
-          color: br.style === 'stone' || br.style === 'highway' ? 0x475569 : 0x5c3a1e,
-        });
+        if (s % 5 === 2 || isJumpEdge) {
+          cliffBlocks.push({
+            x: mx,
+            y: (my + SEABED_Y) * 0.5 - 0.2,
+            z: mz,
+            sx: 1.65,
+            sy: my - SEABED_Y + 0.2,
+            sz: 1.65,
+            color: br.style === 'stone' ? 0x475569 : 0x5c3a1e,
+          });
+        }
       }
     }
   }
@@ -2542,98 +2782,396 @@ export function createArchipelagoWorld(
   }
 
   // ============================================================================
-  // 4. GERBANG KOTA ISLAND (-66, z=-42)
-  //    Lower Cliff Highway (y=4.0) + Grand Stone Stairs -> Upper School Fortress (y=7.8)
+  // 4. GERBANG KOTA ISLAND (cx=-118, cz=-98, Panjang 140m!)
+  //    - Tinggi Tebing Kota: 36m | Benteng & Gerbang Kota: T: 28m
+  //    - Sekolah Bata Merah: 28m x 18m (T: 15m) atop y=20m Courtyard
+  //    - Terowongan Bawah Tanah: T: 12m / L: 14m (walkable!) + Jembatan Viaduk: Lebar 8m
+  //    - Human-Proportional Vehicles (>= 3.45m tall, larger than 3.43m Hero!)
   // ============================================================================
   {
-    const schoolY = getArchipelagoGroundY(-70.0, -50.0);
+    const cx = -118.0;
+    const cz = -98.0;
+    const courtY = 20.0;
+    const hwyY = 12.0;
+
+    // 4a. Sekolah Bata Merah: Exact 28m x 18m (T: 15m -> y=20m to 35m!)
+    const schoolX = cx - 3.0; // -121.0
+    const schoolZ = cz - 28.0; // -126.0
     const school = new THREE.Group();
-    school.position.set(-70.0, schoolY, -50.0);
+    school.position.set(schoolX, courtY, schoolZ);
     const brickMat = palette.getMat(0xb91c1c, 'matte');
-    const roofMat = palette.getMat(0x78350f, 'matte');
+    const brickTrimMat = palette.getMat(0xe2e8f0, 'matte');
+    const roofTerraMat = palette.getMat(0x9a3412, 'matte');
+    const roofDarkMat = palette.getMat(0x7c2d12, 'matte');
     const winMat = palette.getPixelMat('glass_pane', 0xe0f2fe);
-    const body = new THREE.Mesh(new THREE.BoxGeometry(10.5, 5.8, 6.6), brickMat);
-    body.position.y = 2.9;
+    const darkFrameMat = palette.getMat(0x1e293b, 'matte');
+    const concreteMat = palette.getMat(0x94a3b8, 'matte');
+
+    // Concrete foundation plinth + front 2-step concrete stairs
+    const plinth = new THREE.Mesh(new THREE.BoxGeometry(28.6, 0.9, 18.6), concreteMat);
+    plinth.position.y = 0.45;
+    plinth.receiveShadow = true;
+    const step1 = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.45, 2.2), concreteMat);
+    step1.position.set(0, 0.22, 10.2);
+    const step2 = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.85, 1.3), concreteMat);
+    step2.position.set(0, 0.42, 9.6);
+
+    // 2-story Red Brick Main Body (28m x 8.4m x 18m)
+    const body = new THREE.Mesh(new THREE.BoxGeometry(28.0, 8.4, 18.0), brickMat);
+    body.position.y = 5.1;
     body.castShadow = true;
-    const roofL = new THREE.Mesh(new THREE.BoxGeometry(11.4, 1.4, 4.1), roofMat);
-    roofL.position.set(0, 6.25, -1.4);
-    roofL.rotation.x = -0.34;
-    const roofR = new THREE.Mesh(new THREE.BoxGeometry(11.4, 1.4, 4.1), roofMat);
-    roofR.position.set(0, 6.25, 1.4);
-    roofR.rotation.x = 0.34;
-    const door = new THREE.Mesh(new THREE.BoxGeometry(1.75, 2.6, 0.28), spruceMat);
-    door.position.set(0, 1.3, 3.34);
-    school.add(body, roofL, roofR, door);
-    [-3.4, -1.6, 1.6, 3.4].forEach((wx) => {
-      [1.9, 4.1].forEach((wy) => {
-        if (wy < 2.2 && Math.abs(wx) < 1.8) return;
-        const win = new THREE.Mesh(new THREE.BoxGeometry(1.05, 1.15, 0.2), winMat);
-        win.position.set(wx, wy, 3.34);
-        school.add(win);
+    body.receiveShadow = true;
+    const midBand = new THREE.Mesh(new THREE.BoxGeometry(28.3, 0.35, 18.3), brickTrimMat);
+    midBand.position.y = 4.9;
+    const corniceBand = new THREE.Mesh(new THREE.BoxGeometry(28.5, 0.42, 18.5), brickTrimMat);
+    corniceBand.position.y = 9.2;
+
+    // Recessed Stone Entrance Portico + Realistic Tall Double Doors (3.8m wide x 4.4m tall!)
+    const portico = new THREE.Mesh(new THREE.BoxGeometry(6.8, 5.2, 1.2), concreteMat);
+    portico.position.set(0, 3.0, 9.0);
+    const doorRecess = new THREE.Mesh(new THREE.BoxGeometry(4.2, 4.4, 0.4), darkFrameMat);
+    doorRecess.position.set(0, 2.6, 9.5);
+    const doorWood = new THREE.Mesh(new THREE.BoxGeometry(3.8, 4.1, 0.46), spruceMat);
+    doorWood.position.set(0, 2.55, 9.56);
+    const doorMullion = new THREE.Mesh(new THREE.BoxGeometry(0.22, 4.1, 0.52), darkFrameMat);
+    doorMullion.position.set(0, 2.55, 9.58);
+    school.add(plinth, step1, step2, body, midBand, corniceBand, portico, doorRecess, doorWood, doorMullion);
+
+    // Stepped Terracotta Pitched Roof (y=9.3m -> peak y=15.0m!) + Intersecting Central Front Gable + Clock!
+    for (let t = 0; t < 6; t++) {
+      const tierH = 0.95;
+      const tierD = 19.6 - t * 2.8;
+      const tier = new THREE.Mesh(
+        new THREE.BoxGeometry(29.4, tierH, tierD),
+        t % 2 === 0 ? roofTerraMat : roofDarkMat,
+      );
+      tier.position.y = 9.78 + t * 0.92;
+      tier.castShadow = true;
+      school.add(tier);
+    }
+    // Projecting Front Center Gable Wing (10.6m wide, climbing cleanly to T=15.0m!)
+    const gableWall = new THREE.Mesh(new THREE.BoxGeometry(9.2, 3.8, 7.5), brickMat);
+    gableWall.position.set(0, 11.2, 6.2);
+    gableWall.castShadow = true;
+    school.add(gableWall);
+    for (let g = 0; g < 6; g++) {
+      const gw = 10.6 - g * 1.6;
+      const gr = new THREE.Mesh(
+        new THREE.BoxGeometry(gw, 0.92, 9.4),
+        g % 2 === 0 ? roofTerraMat : roofDarkMat,
+      );
+      gr.position.set(0, 9.85 + g * 0.92, 6.2);
+      gr.castShadow = true;
+      school.add(gr);
+    }
+    // Iconic Front Gable School Clock Face!
+    const clockRim = new THREE.Mesh(new THREE.CylinderGeometry(1.18, 1.18, 0.36, 16), darkFrameMat);
+    clockRim.rotation.x = Math.PI / 2;
+    clockRim.position.set(0, 11.8, 10.95);
+    const clockDial = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.98, 0.98, 0.42, 16),
+      palette.createSurfaceMat({ color: 0xf8fafc, emissive: 0xfef3c7, emissiveIntensity: 0.25 }),
+    );
+    clockDial.rotation.x = Math.PI / 2;
+    clockDial.position.set(0, 11.8, 10.96);
+    const schoolClockHands = new THREE.Group();
+    schoolClockHands.position.set(0, 11.8, 11.2);
+    const chMin = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.72, 0.12), darkFrameMat);
+    chMin.position.y = 0.28;
+    const chHr = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.14, 0.12), darkFrameMat);
+    chHr.position.x = 0.18;
+    schoolClockHands.add(chMin, chHr);
+    clockHands.push(schoolClockHands);
+    school.add(clockRim, clockDial, schoolClockHands);
+
+    // 2-Story Window Grid along Front (+Z), Back (-Z), and Side Facades
+    [-11.0, -7.2, -3.5, 3.5, 7.2, 11.0].forEach((wx) => {
+      [2.8, 6.9].forEach((wy) => {
+        if (wy < 4.5 && Math.abs(wx) < 4.2) return;
+        [-9.06, 9.06].forEach((wz) => {
+          const frame = new THREE.Mesh(new THREE.BoxGeometry(2.1, 2.35, 0.24), darkFrameMat);
+          frame.position.set(wx, wy, wz);
+          const glass = new THREE.Mesh(new THREE.BoxGeometry(1.72, 1.95, 0.28), winMat);
+          glass.position.set(wx, wy, wz);
+          const sill = new THREE.Mesh(new THREE.BoxGeometry(2.35, 0.26, 0.44), brickTrimMat);
+          sill.position.set(wx, wy - 1.22, wz);
+          school.add(frame, glass, sill);
+        });
+      });
+    });
+    [-4.8, 0, 4.8].forEach((wz) => {
+      [2.8, 6.9].forEach((wy) => {
+        [-14.06, 14.06].forEach((wx) => {
+          const frame = new THREE.Mesh(new THREE.BoxGeometry(0.24, 2.35, 2.1), darkFrameMat);
+          frame.position.set(wx, wy, wz);
+          const glass = new THREE.Mesh(new THREE.BoxGeometry(0.28, 1.95, 1.72), winMat);
+          glass.position.set(wx, wy, wz);
+          school.add(frame, glass);
+        });
       });
     });
     group.add(school);
-    obstacles.push({ x: -70.0, z: -50.0, halfW: 5.5, halfD: 3.5 });
+    obstacles.push({ x: schoolX, z: schoolZ, halfW: 14.3, halfD: 9.4 });
 
-    // Crenellated Castle Walls & Corner Watchtowers atop y=7.8 fortress plateau
-    const northWall = new THREE.Mesh(new THREE.BoxGeometry(24, 4.6, 1.7), cobbleMat);
-    northWall.position.set(-66.0, schoolY + 2.3, -56.2);
-    northWall.castShadow = true;
-    const eastWall = new THREE.Mesh(new THREE.BoxGeometry(1.7, 4.6, 15.0), cobbleMat);
-    eastWall.position.set(-53.5, schoolY + 2.3, -49.0);
-    const towerNE = new THREE.Mesh(new THREE.BoxGeometry(3.2, 6.8, 3.2), cobbleMat);
-    towerNE.position.set(-53.5, schoolY + 3.4, -56.2);
-    const towerNW = towerNE.clone();
-    towerNW.position.set(-78.5, schoolY + 3.4, -56.2);
-    group.add(northWall, eastWall, towerNE, towerNW);
-    for (let mx = -77; mx <= -55; mx += 2.4) {
+    // 4b. Benteng & Gerbang Kota (T: 28m -> walls from courtY=20m up to y=28m, towers up to 30.5m!)
+    const wallLight = 0xcbd5e1;
+    const wallMid = 0x94a3b8;
+    const wallDark = 0x64748b;
+    const addFortWallSegment = (wx: number, wz: number, lenX: number, lenZ: number, wallH = 8.0) => {
       cliffBlocks.push({
-        x: mx,
-        y: schoolY + 5.05,
-        z: -56.2,
-        sx: 1.1,
-        sy: 0.9,
-        sz: 1.4,
-        color: 0x94a3b8,
+        x: wx,
+        y: courtY + wallH * 0.5 - 0.5,
+        z: wz,
+        sx: lenX,
+        sy: wallH + 1.0,
+        sz: lenZ,
+        color: wallMid,
       });
-    }
+      // Top stone parapet ledge + voxel crenellations reaching T=28.0..29.2m!
+      const isEastWest = lenX >= lenZ;
+      const span = isEastWest ? lenX : lenZ;
+      for (let off = -span * 0.5 + 1.2; off <= span * 0.5 - 1.2; off += 2.6) {
+        cliffBlocks.push({
+          x: isEastWest ? wx + off : wx,
+          y: courtY + wallH + 0.65,
+          z: isEastWest ? wz : wz + off,
+          sx: isEastWest ? 1.25 : lenX * 0.72,
+          sy: 1.3,
+          sz: isEastWest ? lenZ * 0.72 : 1.25,
+          color: wallLight,
+        });
+      }
+    };
+    const addWatchTower = (tx: number, tz: number, size = 5.0, height = 10.4) => {
+      cliffBlocks.push({
+        x: tx,
+        y: courtY + height * 0.5 - 1.0,
+        z: tz,
+        sx: size,
+        sy: height + 2.0,
+        sz: size,
+        color: wallMid,
+      });
+      cliffBlocks.push({
+        x: tx,
+        y: courtY + height + 0.35,
+        z: tz,
+        sx: size + 0.8,
+        sy: 0.9,
+        sz: size + 0.8,
+        color: wallDark,
+      });
+      const half = size * 0.48;
+      [[-half, -half], [half, -half], [-half, half], [half, half], [0, -half], [0, half], [-half, 0], [half, 0]].forEach(([mx, mz]) => {
+        cliffBlocks.push({
+          x: tx + mx,
+          y: courtY + height + 1.35,
+          z: tz + mz,
+          sx: 1.15,
+          sy: 1.15,
+          sz: 1.15,
+          color: wallLight,
+        });
+      });
+    };
+
+    const fWest = cx - 28.0; // -146
+    const fEast = cx + 26.0; // -92
+    const fNorth = cz - 44.0; // -142
+    const fSouth = cz - 4.0; // -102
+    const fMidX = (fWest + fEast) * 0.5; // -119
+
+    // North, West, East fortress perimeter walls (y=20 -> 28m!)
+    addFortWallSegment(fMidX, fNorth, fEast - fWest + 2.0, 2.4, 8.0);
+    addFortWallSegment(fWest, (fNorth + fSouth) * 0.5, 2.4, fSouth - fNorth, 8.0);
+    addFortWallSegment(fEast, (fNorth + fSouth) * 0.5, 2.4, fSouth - fNorth, 8.0);
+    // South front walls flanking the 9m-wide City Gate opening (x=-125.5..-112.5)
+    addFortWallSegment(-136.0, fSouth, 20.0, 2.4, 8.0);
+    addFortWallSegment(-102.0, fSouth, 20.0, 2.4, 8.0);
+
+    // Substructure retaining stone wall beneath the front South Benteng face down to the y=12m highway plaza
+    cliffBlocks.push({ x: -136.0, y: 16.0, z: fSouth, sx: 20.0, sy: 8.4, sz: 2.8, color: wallDark });
+    cliffBlocks.push({ x: -102.0, y: 16.0, z: fSouth, sx: 20.0, sy: 8.4, sz: 2.8, color: wallDark });
+
+    // 4 Corner Watchtowers + Twin Gatehouse Towers (T=30.5m!)
+    addWatchTower(fWest, fNorth, 5.2, 10.2);
+    addWatchTower(fEast, fNorth, 5.2, 10.2);
+    addWatchTower(fWest, fSouth, 5.2, 10.2);
+    addWatchTower(fEast, fSouth, 5.2, 10.2);
+    addWatchTower(-125.5, fSouth, 4.8, 10.6);
+    addWatchTower(-112.5, fSouth, 4.8, 10.6);
+
+    // Tall Substructure Bases under Gatehouse Towers down to y=12m plaza
+    cliffBlocks.push({ x: -125.5, y: 16.0, z: fSouth, sx: 5.0, sy: 8.4, sz: 5.0, color: wallDark });
+    cliffBlocks.push({ x: -112.5, y: 16.0, z: fSouth, sx: 5.0, sy: 8.4, sz: 5.0, color: wallDark });
+
+    // Twin Red Exclamation [!] Warning Sign Plaques mounted on front of Gatehouse Towers (matching image!)
+    const signWhiteMat = palette.getMat(0xf8fafc, 'matte');
+    const signRedMat = palette.getMat(0xdc2626, 'emissive');
+    [-125.5, -112.5].forEach((gx) => {
+      const board = new THREE.Mesh(new THREE.BoxGeometry(1.9, 3.2, 0.25), signRedMat);
+      board.position.set(gx, 22.8, fSouth + 2.65);
+      const inner = new THREE.Mesh(new THREE.BoxGeometry(1.45, 2.75, 0.28), signWhiteMat);
+      inner.position.set(gx, 22.8, fSouth + 2.68);
+      const exclBar = new THREE.Mesh(new THREE.BoxGeometry(0.36, 1.35, 0.34), signRedMat);
+      exclBar.position.set(gx, 23.25, fSouth + 2.71);
+      const exclDot = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.36, 0.34), signRedMat);
+      exclDot.position.set(gx, 22.0, fSouth + 2.71);
+      group.add(board, inner, exclBar, exclDot);
+    });
+
+    // Open Double Black Iron Gates flanking the walkable City Gate Ramp (x=-123.1..-114.9 stays WIDE OPEN!)
+    const ironMat = palette.getMat(0x0f172a, 'metal');
+    [-1, 1].forEach((side) => {
+      const gateLeaf = new THREE.Group();
+      gateLeaf.position.set(-119.0 + side * 4.3, 18.2, fSouth);
+      gateLeaf.rotation.y = side * 1.15; // swung open cleanly inside the gatehouse throat!
+      const topRail = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.32, 0.24), ironMat);
+      topRail.position.set(-side * 1.7, 7.2, 0);
+      const botRail = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.32, 0.24), ironMat);
+      botRail.position.set(-side * 1.7, 0.6, 0);
+      gateLeaf.add(topRail, botRail);
+      for (let b = 0; b < 5; b++) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.22, 7.4, 0.22), ironMat);
+        bar.position.set(-side * (0.35 + b * 0.72), 3.7, 0);
+        gateLeaf.add(bar);
+      }
+      group.add(gateLeaf);
+    });
+
+    // Stone arch lintel spanning high above the twin iron gates (y=26.5..28.5m, 8.5m clearance above ramp!)
+    cliffBlocks.push({ x: -119.0, y: 27.6, z: fSouth, sx: 8.8, sy: 1.8, sz: 2.6, color: wallLight });
+
+    // Fortress Wall & Watchtower Colliders (keeping City Gate Ramp x=-123.1..-114.9 unobstructed!)
     obstacles.push(
-      { x: -66.0, z: -56.2, halfW: 12.2, halfD: 1.1 },
-      { x: -53.5, z: -49.0, halfW: 1.1, halfD: 7.7 },
+      { x: fMidX, z: fNorth, halfW: 28.0, halfD: 1.6 },
+      { x: fWest, z: (fNorth + fSouth) * 0.5, halfW: 1.6, halfD: 21.0 },
+      { x: fEast, z: (fNorth + fSouth) * 0.5, halfW: 1.6, halfD: 21.0 },
+      { x: -136.0, z: fSouth, halfW: 10.4, halfD: 1.6 },
+      { x: -102.0, z: fSouth, halfW: 10.4, halfD: 1.6 },
+      { x: -125.5, z: fSouth, halfW: 2.5, halfD: 2.5 },
+      { x: -112.5, z: fSouth, halfW: 2.5, halfD: 2.5 },
     );
 
-    const hwyY = getArchipelagoGroundY(-66, -32);
-    const cityRoad = new THREE.Mesh(new THREE.BoxGeometry(34, 0.14, 6.4), roadMat);
-    cityRoad.position.set(-64, hwyY + 0.05, -32);
-    cityRoad.receiveShadow = true;
-    walkableTargets.push(cityRoad);
-    const tunnelFrame = new THREE.Group();
-    tunnelFrame.position.set(-80.5, hwyY, -32);
-    const tunL = new THREE.Mesh(new THREE.BoxGeometry(2.6, 4.8, 1.6), cobbleMat);
-    tunL.position.set(0, 2.4, -3.6);
-    const tunR = tunL.clone();
-    tunR.position.set(0, 2.4, 3.6);
-    const tunTop = new THREE.Mesh(new THREE.BoxGeometry(2.8, 1.7, 9.2), cobbleMat);
-    tunTop.position.set(0, 5.4, 0);
-    tunTop.castShadow = true;
-    const tlPole = new THREE.Mesh(new THREE.BoxGeometry(0.28, 3.8, 0.28), palette.getMat(0x1e293b, 'metal'));
-    tlPole.position.set(2.4, 1.9, 3.6);
-    const tlGreen = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.38, 0.38), palette.getMat(0x22c55e, 'emissive'));
-    tlGreen.position.set(2.4, 3.4, 3.6);
-    tunnelFrame.add(tunL, tunR, tunTop, tlPole, tlGreen);
-    group.add(cityRoad, tunnelFrame);
-    obstacles.push(
-      { x: -80.5, z: -35.6, halfW: 1.5, halfD: 1.0 },
-      { x: -80.5, z: -28.4, halfW: 1.5, halfD: 1.0 },
-    );
-
+    // Courtyard Voxel Oak Trees & Shrubs flanking Sekolah Bata Merah
     [
-      { z: -30.5, color: 0xef4444, baseX: -72, range: 16, speed: 0.72, phase: 0, police: false },
-      { z: -33.5, color: 0xfacc15, baseX: -84, range: 18, speed: 0.6, phase: 2.2, police: false },
-      { z: -30.5, color: 0x2563eb, baseX: -58, range: 11, speed: 0.85, phase: 4.1, police: true },
+      [-140.0, -110.0, 4.4, 4.2],
+      [-139.0, -133.0, 4.8, 4.4],
+      [-100.0, -112.0, 4.6, 4.2],
+      [-99.5, -132.0, 4.2, 4.0],
+    ].forEach(([tx, tz, th, cw], ti) => {
+      cliffBlocks.push({ x: tx, y: courtY + th * 0.5, z: tz, sx: 1.0, sy: th, sz: 1.0, color: 0x5c3a1e });
+      obstacles.push({ x: tx, z: tz, halfW: 0.75, halfD: 0.75 });
+      walkableTopBlocks.push({
+        x: tx,
+        y: courtY + th + 0.9,
+        z: tz,
+        sx: cw,
+        sy: 1.8,
+        sz: cw,
+        color: ti % 2 === 0 ? 0x22c55e : 0x65a30d,
+      });
+      walkableTopBlocks.push({
+        x: tx,
+        y: courtY + th + 2.4,
+        z: tz,
+        sx: cw * 0.68,
+        sy: 1.4,
+        sz: cw * 0.68,
+        color: 0x4ade80,
+      });
+    });
+
+    // White & Blue Police Patrol SUV parked inside the Fortress Courtyard (6.4m x 3.1m x 3.95m!)
+    const policeCar = createVoxelCar(palette, 0xf8fafc, 'police');
+    policeCar.position.set(-127.0, courtY + 0.04, -109.5);
+    policeCar.rotation.y = -0.35;
+    group.add(policeCar);
+    obstacles.push({ x: -127.0, z: -109.5, halfW: 2.9, halfD: 2.9 });
+
+    // 4c. Terowongan Bawah Tanah (T: 12m / L: 14m) + 36m Cliff Overburden + Twin Traffic Lights!
+    //     Tunnel Bore runs x=-172 to x=-138, z=-93 to z=-79 (14m wide!) at floor y=12m, ceiling y=24m!
+    const tunX0 = cx - 54.0; // -172
+    const tunX1 = cx - 20.0; // -138
+    const tunLen = tunX1 - tunX0; // 34m
+    const tunMidX = (tunX0 + tunX1) * 0.5; // -155
+    const tunZ = cz + 12.0; // -86.0
+
+    // Inner stone tunnel side walls (outside the 14m roadway -> z=-94.5 & z=-77.5)
+    [-94.6, -77.4].forEach((tz) => {
+      cliffBlocks.push({ x: tunMidX, y: hwyY + 6.2, z: tz, sx: tunLen, sy: 12.8, sz: 2.8, color: 0x334155 });
+      obstacles.push({ x: tunMidX, z: tz, halfW: tunLen * 0.5 + 0.4, halfD: 1.4 });
+    });
+
+    // Dark tunnel vault ceiling (y=24.0m..26.0m -> exact 12m clear height above road!) + West & East Stone Arch Portal Frames
+    cliffBlocks.push({ x: tunMidX, y: hwyY + 12.8, z: tunZ, sx: tunLen + 2.0, sy: 1.8, sz: 18.6, color: 0x1e293b });
+    [tunX0, tunX1].forEach((px) => {
+      // Stepped arched stone portal collar (18m outer width x 14m outer height framing the 14m x 12m bore!)
+      cliffBlocks.push({ x: px, y: hwyY + 6.5, z: tunZ - 8.4, sx: 2.6, sy: 13.0, sz: 2.8, color: 0x475569 });
+      cliffBlocks.push({ x: px, y: hwyY + 6.5, z: tunZ + 8.4, sx: 2.6, sy: 13.0, sz: 2.8, color: 0x475569 });
+      cliffBlocks.push({ x: px, y: hwyY + 12.6, z: tunZ, sx: 3.0, sy: 2.4, sz: 19.6, color: 0x64748b });
+      cliffBlocks.push({ x: px, y: hwyY + 14.3, z: tunZ, sx: 2.6, sy: 1.4, sz: 15.0, color: 0x94a3b8 });
+    });
+
+    // Towering 36m Mountain Cliff Overburden directly above the Tunnel (y=25.5m -> 36.0m!)
+    // Built cleanly above the 12m tunnel clearance so Hero walks freely underneath!
+    cliffBlocks.push({ x: tunMidX, y: 29.8, z: tunZ, sx: tunLen + 1.5, sy: 8.8, sz: 18.4, color: 0x64748b });
+    walkableTopBlocks.push({ x: tunMidX, y: 34.8, z: tunZ, sx: tunLen + 1.5, sy: 1.4, sz: 18.4, color: 0x65a30d });
+    cliffBlocks.push({ x: tunMidX - 4.0, y: 35.6, z: tunZ - 2.0, sx: 22.0, sy: 1.2, sz: 12.0, color: 0x4d7c0f });
+
+    // Twin 6.5m-tall Traffic Lights flanking West Tunnel Portal (matching image!)
+    const poleMat = palette.getMat(0x1e293b, 'metal');
+    const tlRedMat = palette.getMat(0xef4444, 'emissive');
+    const tlYelMat = palette.getMat(0xfacc15, 'emissive');
+    const tlGrnMat = palette.getMat(0x22c55e, 'emissive');
+    [-93.2, -78.8].forEach((tz) => {
+      const pole = new THREE.Mesh(new THREE.BoxGeometry(0.45, 6.4, 0.45), poleMat);
+      pole.position.set(tunX0 - 1.6, hwyY + 3.2, tz);
+      pole.castShadow = true;
+      const box = new THREE.Mesh(new THREE.BoxGeometry(0.85, 2.3, 0.85), poleMat);
+      box.position.set(tunX0 - 1.6, hwyY + 5.6, tz);
+      const redL = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.48, 0.48), tlRedMat);
+      redL.position.set(tunX0 - 1.6, hwyY + 6.25, tz);
+      const yelL = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.48, 0.48), tlYelMat);
+      yelL.position.set(tunX0 - 1.6, hwyY + 5.6, tz);
+      const grnL = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.48, 0.48), tlGrnMat);
+      grnL.position.set(tunX0 - 1.6, hwyY + 4.95, tz);
+      group.add(pole, box, redL, yelL, grnL);
+    });
+
+    // Dashed white road centerline markings & roadside stone curbs across the 14m Lower City Highway
+    for (let rx = tunX0 + 2; rx <= cx + 44; rx += 5.0) {
+      cliffBlocks.push({ x: rx, y: hwyY + 0.04, z: tunZ, sx: 2.5, sy: 0.08, sz: 0.44, color: 0xf8fafc });
+    }
+    // Lower Highway Cliff Trees & Grassy Shoulder Islands (matching image!)
+    [
+      [-103.5, -75.0, 4.2, 4.0],
+      [-86.0, -76.5, 4.5, 4.2],
+      [-81.0, -96.5, 4.8, 4.4],
+    ].forEach(([tx, tz, th, cw], ti) => {
+      const ty = getArchipelagoGroundY(tx, tz);
+      if (ty < 8.0) return;
+      cliffBlocks.push({ x: tx, y: ty + th * 0.5, z: tz, sx: 0.95, sy: th, sz: 0.95, color: 0x5c3a1e });
+      obstacles.push({ x: tx, z: tz, halfW: 0.65, halfD: 0.65 });
+      walkableTopBlocks.push({ x: tx, y: ty + th + 0.85, z: tz, sx: cw, sy: 1.7, sz: cw, color: ti % 2 === 0 ? 0x22c55e : 0x65a30d });
+      walkableTopBlocks.push({ x: tx, y: ty + th + 2.2, z: tz, sx: cw * 0.65, sy: 1.2, sz: cw * 0.65, color: 0x4ade80 });
+    });
+
+    // Small background wooden pier off NE Gerbang Kota cliff (visible on far right of level design image!)
+    walkableTopBlocks.push({ x: -46.0, y: 0.45, z: -112.0, sx: 10.0, sy: 0.35, sz: 4.5, color: 0xb88a4c });
+    [[-50, -113.8], [-42, -113.8], [-50, -110.2], [-42, -110.2]].forEach(([px, pz]) => {
+      cliffBlocks.push({ x: px, y: 0.25, z: pz, sx: 0.45, sy: 2.4, sz: 0.45, color: 0x5c3a1e });
+    });
+
+    // 4d. Human-Proportional Vehicles on the 14m Lower City Highway (ALL >= Hero height!)
+    [
+      { z: tunZ + 3.5, color: 0x2563eb, variant: 'sedan' as const, baseX: -152.0, range: 38.0, speed: 0.24, phase: 0.4 },
+      { z: tunZ - 3.5, color: 0xfacc15, variant: 'taxi' as const, baseX: -134.0, range: 34.0, speed: 0.28, phase: 2.6 },
+      { z: tunZ - 3.6, color: 0xdc2626, variant: 'bus' as const, baseX: -92.0, range: 15.0, speed: 0.22, phase: 4.2 },
+      { z: tunZ + 3.4, color: 0xf97316, variant: 'sedan' as const, baseX: -90.0, range: 14.0, speed: 0.26, phase: 1.1 },
     ].forEach((cfg) => {
-      const car = createVoxelCar(palette, cfg.color, cfg.police);
-      car.position.set(cfg.baseX, hwyY + 0.1, cfg.z);
+      const car = createVoxelCar(palette, cfg.color, cfg.variant);
+      car.position.set(cfg.baseX, hwyY + 0.06, cfg.z);
       group.add(car);
       cars.push({ mesh: car, baseX: cfg.baseX, rangeX: cfg.range, speed: cfg.speed, phase: cfg.phase });
     });
@@ -2858,7 +3396,7 @@ export function createArchipelagoWorld(
     [-132, 3.8, 174],
     [136, 3.2, 152],
     [154, 4.0, 172],
-    [-132, 3.5, -94],
+    [-226, 4.5, -182],
     [158, 4.0, -16],
   ];
   outerCloudSpots.forEach(([ox, oy, oz]) => {
