@@ -9,13 +9,26 @@ export type ZoneId =
 export type WorldLocationMode = 'overworld' | 'dungeon' | 'academy';
 
 export type MonsterType =
-  | 'gumpal_salam'
-  | 'bayangan_kata'
-  | 'jam_pasir'
-  | 'semak_rimba'
-  | 'ksatria_ielts'
-  | 'creeper_kata'
-  | 'kelelawar_gua';
+  | 'forest_slime'
+  | 'poison_beetle'
+  | 'cave_spider'
+  | 'thorn_goblin'
+  | 'wild_boar'
+  | 'dire_wolf'
+  | 'skeleton_warrior'
+  | 'swamp_lizardman'
+  | 'sand_scorpion'
+  | 'lava_imp'
+  | 'stone_gargoyle'
+  | 'jungle_troll'
+  | 'crystal_golem'
+  | 'minotaur_brute'
+  | 'magma_elemental'
+  | 'frost_ogre'
+  | 'iron_juggernaut'
+  | 'ancient_treant'
+  | 'obsidian_hydra'
+  | 'titan_colossus';
 
 export type PickaxeTier = 1 | 2 | 3;
 
@@ -286,6 +299,11 @@ export interface AreaMonsterStats {
   zoneNightDefeated?: number;
   zoneNightRemaining?: number;
   zoneNightTotal?: number;
+  zoneSurfaceDefeated?: number;
+  zoneSurfaceRemaining?: number;
+  zoneSurfaceTotal?: number;
+  surfaceCombatRemaining?: number;
+  surfaceQuizRemaining?: number;
   guardiansDefeated?: number;
   guardiansTotal?: number;
   bossPending?: boolean;
@@ -393,6 +411,9 @@ export interface WorldTimeState {
   nightMonsterCount: number;
   nightWaveDefeated?: number;
   nightWaveTotal?: number;
+  surfaceMonsterCount?: number;
+  surfaceWaveDefeated?: number;
+  surfaceWaveTotal?: number;
 }
 
 export interface RpgHudSnapshot {

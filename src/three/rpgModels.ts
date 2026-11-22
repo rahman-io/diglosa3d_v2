@@ -14,6 +14,11 @@ import {
   NpcArchetypeId,
   resolveNpcArchetype,
 } from './diverseNpcs';
+import {
+  buildMonsterRig,
+  MonsterAnimRig,
+} from './monstersCatalog';
+export type { MonsterAnimRig } from './monstersCatalog';
 
 export interface HeroAvatarRig {
   root: THREE.Group;
@@ -988,20 +993,7 @@ export interface ZoneNpcRig {
   archetype?: NpcArchetypeId;
 }
 
-export interface MonsterAnimRig {
-  type: MonsterType;
-  bodyPivot: THREE.Group;
-  upperBody?: THREE.Group;
-  headGroup?: THREE.Group;
-  eyes?: THREE.Object3D[];
-  leftArm?: THREE.Group;
-  rightArm?: THREE.Group;
-  legs?: THREE.Group[];
-  leftWing?: THREE.Group;
-  rightWing?: THREE.Group;
-  weaponGroup?: THREE.Group;
-  extraSpin?: THREE.Object3D;
-}
+
 
 export interface ShooterAnimRig {
   bodyPivot: THREE.Group;
@@ -1257,337 +1249,13 @@ export function animateZoneNpc(
   }
 }
 
-// 5. 5 Distinct 3D Word Monsters + Armed Bosses with Living Articulated Rigs
+// 5. 20 Distinct 3D Dangerous Land Monsters (Small to Giant) with Living Articulated Rigs
 export function createMonsterMesh(
   type: MonsterType,
   palette: MaterialPalette,
-  scale = 1,
+  scale?: number,
 ): THREE.Group {
-  const root = new THREE.Group();
-  addShadow(root, palette, 1.05);
-
-  const bodyPivot = new THREE.Group();
-  root.add(bodyPivot);
-
-  const rig: MonsterAnimRig = { type, bodyPivot };
-
-  if (type === 'gumpal_salam') {
-    const orange = palette.getMat(0xf97316, 'gloss');
-    const lightOrange = palette.getMat(0xfb923c, 'gloss');
-    const body = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.25, 1.45), orange);
-    body.position.y = 0.65;
-    body.castShadow = true;
-    const topDrop = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.45, 0.9), lightOrange);
-    topDrop.position.y = 1.42;
-    const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.28, 0.12), palette.getMat(0xfef08a, 'emissive'));
-    eyeL.position.set(-0.32, 0.82, 0.74);
-    const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.28, 0.12), palette.getMat(0xfef08a, 'emissive'));
-    eyeR.position.set(0.32, 0.82, 0.74);
-
-    // Expressive bouncy Slime/Gumpal arms
-    const makeSlimeArm = (ax: number): THREE.Group => {
-      const arm = new THREE.Group();
-      arm.position.set(ax, 0.85, 0.08);
-      const nub = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.56, 0.34), lightOrange);
-      nub.position.y = -0.22;
-      nub.castShadow = true;
-      arm.add(nub);
-      return arm;
-    };
-    const leftArm = makeSlimeArm(-0.88);
-    const rightArm = makeSlimeArm(0.88);
-    bodyPivot.add(body, topDrop, eyeL, eyeR, leftArm, rightArm);
-    rig.leftArm = leftArm;
-    rig.rightArm = rightArm;
-    rig.eyes = [eyeL, eyeR];
-    rig.extraSpin = topDrop;
-  } else if (type === 'bayangan_kata') {
-    const cloak = new THREE.Mesh(new THREE.ConeGeometry(0.85, 1.68, 6), palette.getMat(0x4c1d95, 'gloss'));
-    cloak.position.y = 0.92;
-    cloak.castShadow = true;
-    const upperBody = new THREE.Group();
-    upperBody.position.set(0, 1.15, 0);
-    bodyPivot.add(cloak, upperBody);
-
-    const headGroup = new THREE.Group();
-    headGroup.position.set(0, 0.65, 0);
-    const hood = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.85, 0.92), palette.getMat(0x5b21b6, 'gloss'));
-    hood.position.y = 0.2;
-    const eye = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), palette.getMat(0xf43f5e, 'emissive'));
-    eye.position.set(0, 0.18, 0.48);
-    headGroup.add(hood, eye);
-    upperBody.add(headGroup);
-
-    const clawMat = palette.getMat(0x3b0764, 'gloss');
-    const glowMat = palette.getMat(0xe879f9, 'emissive');
-    const makeWraithArm = (ax: number, withWand: boolean): THREE.Group => {
-      const arm = new THREE.Group();
-      arm.position.set(ax, 0.52, 0);
-      const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.52, 0.3), cloak.material as THREE.Material);
-      sleeve.position.y = -0.22;
-      const hand = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.3, 0.26), clawMat);
-      hand.position.y = -0.58;
-      arm.add(sleeve, hand);
-      if (withWand) {
-        const wGroup = new THREE.Group();
-        wGroup.position.set(0, -0.68, 0.1);
-        wGroup.rotation.x = Math.PI / 2;
-        const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.06, 1.35, 6), clawMat);
-        staff.rotation.x = Math.PI / 2;
-        staff.position.z = 0.45;
-        const tip = new THREE.Mesh(new THREE.OctahedronGeometry(0.18, 0), glowMat);
-        tip.position.z = 1.18;
-        wGroup.add(staff, tip);
-        arm.add(wGroup);
-        rig.weaponGroup = wGroup;
-      }
-      return arm;
-    };
-    const leftArm = makeWraithArm(-0.68, false);
-    const rightArm = makeWraithArm(0.68, true);
-    upperBody.add(leftArm, rightArm);
-    rig.upperBody = upperBody;
-    rig.headGroup = headGroup;
-    rig.eyes = [eye];
-    rig.leftArm = leftArm;
-    rig.rightArm = rightArm;
-  } else if (type === 'jam_pasir') {
-    const brass = palette.getMat(0xf59e0b, 'metal');
-    const botCap = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.3, 1.4), brass);
-    botCap.position.y = 0.24;
-    const upperBody = new THREE.Group();
-    upperBody.position.set(0, 0.35, 0);
-    bodyPivot.add(botCap, upperBody);
-
-    const topCap = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.3, 1.4), brass);
-    topCap.position.y = 1.82;
-    const glass = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 1.48, 8), palette.getMat(0x7c3aed, 'emissive'));
-    glass.position.y = 0.92;
-    const headGroup = new THREE.Group();
-    headGroup.position.set(0, 1.1, 0);
-    const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.1), palette.getMat(0xfef08a, 'emissive'));
-    eyeL.position.set(-0.25, 0, 0.56);
-    const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.1), palette.getMat(0xfef08a, 'emissive'));
-    eyeR.position.set(0.25, 0, 0.56);
-    headGroup.add(eyeL, eyeR);
-    upperBody.add(topCap, glass, headGroup);
-
-    const makeBrassArm = (ax: number): THREE.Group => {
-      const arm = new THREE.Group();
-      arm.position.set(ax, 1.25, 0);
-      const pauldron = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.34, 0.32), brass);
-      pauldron.position.y = -0.14;
-      const fist = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.42, 0.3), palette.getMat(0xb45309, 'metal'));
-      fist.position.y = -0.52;
-      arm.add(pauldron, fist);
-      return arm;
-    };
-    const leftArm = makeBrassArm(-0.92);
-    const rightArm = makeBrassArm(0.92);
-    upperBody.add(leftArm, rightArm);
-    rig.upperBody = upperBody;
-    rig.headGroup = headGroup;
-    rig.eyes = [eyeL, eyeR];
-    rig.leftArm = leftArm;
-    rig.rightArm = rightArm;
-    rig.extraSpin = glass;
-  } else if (type === 'semak_rimba') {
-    const leafDark = palette.getMat(0x16a34a, 'matte');
-    const leafLight = palette.getMat(0x22c55e, 'matte');
-    const bush = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.35, 1.5), leafDark);
-    bush.position.y = 0.72;
-    bush.castShadow = true;
-    const crown = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.48, 1.1), leafLight);
-    crown.position.y = 1.55;
-    const flower = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.32, 0.42), palette.getMat(0xf472b6, 'emissive'));
-    flower.position.y = 1.92;
-    const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.1), palette.getMat(0xfef08a, 'emissive'));
-    eyeL.position.set(-0.3, 0.88, 0.77);
-    const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.1), palette.getMat(0xfef08a, 'emissive'));
-    eyeR.position.set(0.3, 0.88, 0.77);
-
-    const makeVineArm = (ax: number): THREE.Group => {
-      const arm = new THREE.Group();
-      arm.position.set(ax, 1.05, 0.06);
-      const vine = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.56, 0.32), leafLight);
-      vine.position.y = -0.24;
-      vine.castShadow = true;
-      const claw = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.24, 0.34), palette.getMat(0x78350f, 'matte'));
-      claw.position.set(0, -0.58, 0.08);
-      arm.add(vine, claw);
-      return arm;
-    };
-    const leftArm = makeVineArm(-0.9);
-    const rightArm = makeVineArm(0.9);
-    bodyPivot.add(bush, crown, flower, eyeL, eyeR, leftArm, rightArm);
-    rig.leftArm = leftArm;
-    rig.rightArm = rightArm;
-    rig.eyes = [eyeL, eyeR];
-    rig.extraSpin = flower;
-  } else if (type === 'creeper_kata') {
-    const greenBody = palette.getMat(0x16a34a, 'matte');
-    const greenHead = palette.getMat(0x22c55e, 'matte');
-    const darkPixel = palette.getMat(0x0f172a, 'matte');
-    const legGeo = new THREE.BoxGeometry(0.42, 0.56, 0.42);
-    const legMat = palette.getMat(0x15803d, 'matte');
-    const legs: THREE.Group[] = [];
-    const legCoords: Array<[number, number]> = [
-      [-0.36, 0.34],
-      [0.36, 0.34],
-      [-0.36, -0.34],
-      [0.36, -0.34],
-    ];
-    legCoords.forEach(([lx, lz]) => {
-      const legPivot = new THREE.Group();
-      legPivot.position.set(lx, 0.56, lz);
-      const m = new THREE.Mesh(legGeo, legMat);
-      m.position.y = -0.28;
-      m.castShadow = true;
-      legPivot.add(m);
-      legs.push(legPivot);
-      bodyPivot.add(legPivot);
-    });
-    const upperBody = new THREE.Group();
-    upperBody.position.set(0, 0.56, 0);
-    bodyPivot.add(upperBody);
-
-    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.88, 1.24, 0.62), greenBody);
-    torso.position.y = 0.62;
-    torso.castShadow = true;
-    const headGroup = new THREE.Group();
-    headGroup.position.set(0, 1.24, 0);
-    const head = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.92, 0.96), greenHead);
-    head.position.y = 0.44;
-    head.castShadow = true;
-    const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.08), darkPixel);
-    eyeL.position.set(-0.22, 0.54, 0.49);
-    const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.08), darkPixel);
-    eyeR.position.set(0.22, 0.54, 0.49);
-    const mouth = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.26, 0.08), darkPixel);
-    mouth.position.set(0, 0.22, 0.49);
-    headGroup.add(head, eyeL, eyeR, mouth);
-
-    const fuseCore = new THREE.Mesh(new THREE.OctahedronGeometry(0.26, 0), palette.getMat(0xf97316, 'emissive'));
-    fuseCore.position.set(0, 0.78, 0.34);
-    upperBody.add(torso, headGroup, fuseCore);
-
-    rig.legs = legs;
-    rig.upperBody = upperBody;
-    rig.headGroup = headGroup;
-    rig.eyes = [eyeL, eyeR];
-    rig.extraSpin = fuseCore;
-  } else if (type === 'kelelawar_gua') {
-    const batBodyMat = palette.getMat(0x312e81, 'matte');
-    const batWingMat = palette.getMat(0x1e1b4b, 'matte');
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.56, 0.74), batBodyMat);
-    body.position.y = 0;
-    const earL = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.32, 4), batBodyMat);
-    earL.position.set(-0.2, 0.42, 0.12);
-    const earR = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.32, 4), batBodyMat);
-    earR.position.set(0.2, 0.42, 0.12);
-    const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.08), palette.getMat(0xf43f5e, 'emissive'));
-    eyeL.position.set(-0.15, 0.08, 0.38);
-    const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.08), palette.getMat(0xf43f5e, 'emissive'));
-    eyeR.position.set(0.15, 0.08, 0.38);
-    const leftWing = new THREE.Group();
-    leftWing.position.set(-0.31, 0.08, 0);
-    const lwMesh = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.08, 0.64), batWingMat);
-    lwMesh.position.x = -0.58;
-    leftWing.add(lwMesh);
-    const rightWing = new THREE.Group();
-    rightWing.position.set(0.31, 0.08, 0);
-    const rwMesh = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.08, 0.64), batWingMat);
-    rwMesh.position.x = 0.58;
-    rightWing.add(rwMesh);
-    root.userData.leftWing = leftWing;
-    root.userData.rightWing = rightWing;
-    bodyPivot.add(body, earL, earR, eyeL, eyeR, leftWing, rightWing);
-    rig.eyes = [eyeL, eyeR];
-    rig.leftWing = leftWing;
-    rig.rightWing = rightWing;
-  } else {
-    // Bosses / Ksatria IELTS — full articulated Overlord holding Boss Cannon!
-    const darkArmor = palette.getMat(0x1e1b4b, 'metal');
-    const midArmor = palette.getMat(0x312e81, 'metal');
-    const glowMat = palette.getMat(0x22d3ee, 'emissive');
-    const hornGlow = palette.getMat(0xe879f9, 'emissive');
-
-    const legs: THREE.Group[] = [];
-    [-0.36, 0.36].forEach((lx) => {
-      const leg = new THREE.Group();
-      leg.position.set(lx, 0.85, 0);
-      const greave = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.85, 0.48), darkArmor);
-      greave.position.y = -0.42;
-      greave.castShadow = true;
-      leg.add(greave);
-      legs.push(leg);
-      bodyPivot.add(leg);
-    });
-
-    const upperBody = new THREE.Group();
-    upperBody.position.set(0, 0.88, 0);
-    bodyPivot.add(upperBody);
-
-    const armor = new THREE.Mesh(new THREE.BoxGeometry(1.36, 1.15, 0.96), darkArmor);
-    armor.position.y = 0.56;
-    armor.castShadow = true;
-    const chestCore = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), hornGlow);
-    chestCore.position.set(0, 0.68, 0.5);
-    upperBody.add(armor, chestCore);
-
-    const headGroup = new THREE.Group();
-    headGroup.position.set(0, 1.16, 0);
-    const helm = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.88, 0.98), midArmor);
-    helm.position.y = 0.42;
-    helm.castShadow = true;
-    const hornL = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.58, 5), hornGlow);
-    hornL.position.set(-0.46, 0.98, 0);
-    const hornR = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.58, 5), hornGlow);
-    hornR.position.set(0.46, 0.98, 0);
-    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.2, 0.1), glowMat);
-    visor.position.set(0, 0.44, 0.51);
-    headGroup.add(helm, hornL, hornR, visor);
-    upperBody.add(headGroup);
-
-    const makeBossArm = (ax: number, withWeapon: boolean): THREE.Group => {
-      const arm = new THREE.Group();
-      arm.position.set(ax, 1.0, 0);
-      const pauldron = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.44, 0.5), midArmor);
-      pauldron.position.y = -0.14;
-      pauldron.castShadow = true;
-      const gauntlet = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.62, 0.4), darkArmor);
-      gauntlet.position.y = -0.58;
-      gauntlet.castShadow = true;
-      arm.add(pauldron, gauntlet);
-      if (withWeapon) {
-        const wGroup = new THREE.Group();
-        wGroup.position.set(0, -0.78, 0.08);
-        wGroup.rotation.x = Math.PI / 2;
-        const gun = createEnemyBlasterMesh(palette, 'boss', 1.05);
-        wGroup.add(gun);
-        arm.add(wGroup);
-        rig.weaponGroup = wGroup;
-      }
-      return arm;
-    };
-    const leftArm = makeBossArm(-0.88, false);
-    const rightArm = makeBossArm(0.88, true);
-    upperBody.add(leftArm, rightArm);
-
-    rig.legs = legs;
-    rig.upperBody = upperBody;
-    rig.headGroup = headGroup;
-    rig.eyes = [visor];
-    rig.leftArm = leftArm;
-    rig.rightArm = rightArm;
-  }
-
-  root.userData.monsterRig = rig;
-  if (scale !== 1) {
-    root.scale.setScalar(scale);
-  }
-
-  return root;
+  return buildMonsterRig(type, palette, scale);
 }
 
 export interface MonsterAnimInput {
@@ -1710,6 +1378,18 @@ export function animateMonsterRig(mesh: THREE.Object3D, input: MonsterAnimInput)
     rig.headGroup.rotation.y = THREE.MathUtils.damp(rig.headGroup.rotation.y, targetHeadY, 10, dt);
     rig.headGroup.rotation.x = THREE.MathUtils.damp(rig.headGroup.rotation.x, targetHeadX, 10, dt);
   }
+  if (rig.extraHeads) {
+    rig.extraHeads.forEach((eh, idx) => {
+      const sign = idx === 0 ? 1 : -1;
+      const sway = Math.sin(elapsed * 2.4 + phase + idx * 1.9) * 0.22;
+      eh.rotation.y = sign * 0.26 + sway;
+      eh.rotation.x = targetHeadX + Math.cos(elapsed * 1.9 + idx * 2.3) * 0.1;
+    });
+  }
+  if (rig.tailPivot) {
+    rig.tailPivot.rotation.y = Math.sin(elapsed * (speed > 0.25 ? 7.5 : 3.2) + phase) * 0.26;
+    rig.tailPivot.rotation.x = mode === 'attack' || mode === 'shoot' ? 0.35 : 0;
+  }
   if (rig.rightArm) {
     rig.rightArm.rotation.x = THREE.MathUtils.damp(rig.rightArm.rotation.x, targetRightArmX, 22, dt);
     rig.rightArm.rotation.z = THREE.MathUtils.damp(rig.rightArm.rotation.z, targetRightArmZ, 18, dt);
@@ -1719,8 +1399,16 @@ export function animateMonsterRig(mesh: THREE.Object3D, input: MonsterAnimInput)
     rig.leftArm.rotation.z = THREE.MathUtils.damp(rig.leftArm.rotation.z, targetLeftArmZ, 18, dt);
   }
   if (rig.legs) {
+    const legCount = rig.legs.length;
     rig.legs.forEach((leg, idx) => {
-      const sign = idx % 2 === 0 ? 1 : -1;
+      let sign = idx % 2 === 0 ? 1 : -1;
+      if (legCount === 4) {
+        // Quadruped diagonal gait: [FL, FR, BL, BR]
+        sign = idx === 0 || idx === 3 ? 1 : -1;
+      } else if (legCount >= 6) {
+        // Insect / arachnid tripod wave gait
+        sign = ((Math.floor(idx / 2) + (idx % 2)) % 2 === 0) ? 1 : -1;
+      }
       let targetLegX = mode === 'ko' ? 0 : swing * sign;
       if (mode === 'idle' && monsterIdle?.action === 'leg_bounce' && monsterIdle.env > 0.01 && idx === 0) {
         targetLegX = -Math.abs(Math.sin(monsterIdle.t * Math.PI * 6)) * 0.22 * monsterIdle.env;
@@ -1729,7 +1417,8 @@ export function animateMonsterRig(mesh: THREE.Object3D, input: MonsterAnimInput)
     });
   }
   if (rig.leftWing && rig.rightWing) {
-    const flap = Math.sin(elapsed * 16 + phase) * 0.64;
+    const flapSpeed = rig.type === 'obsidian_hydra' ? 9 : 15;
+    const flap = Math.sin(elapsed * flapSpeed + phase) * (rig.type === 'obsidian_hydra' ? 0.42 : 0.6);
     rig.leftWing.rotation.z = flap;
     rig.rightWing.rotation.z = -flap;
   }

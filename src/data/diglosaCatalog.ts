@@ -774,28 +774,28 @@ export const ZONE_DOORS: Record<ZoneId, DoorDef[]> = {
 };
 
 export const DOOR_MINI_MONSTER: Record<ZoneId, { name: string; hp: number; type: MonsterSpawnDef['type'] }> = {
-  desa_sapaan: { name: 'Gumpal Kecil', hp: 3, type: 'gumpal_salam' },
-  pasar_rasa: { name: 'Lendir Kecil', hp: 3, type: 'bayangan_kata' },
-  hutan_satwa: { name: 'Semak Kecil', hp: 3, type: 'semak_rimba' },
-  gerbang_kota: { name: 'Bayangan Kecil', hp: 3, type: 'bayangan_kata' },
-  menara_waktu: { name: 'Jam Pasir Kecil', hp: 3, type: 'jam_pasir' },
-  gua_portal: { name: 'Bayangan Kilat', hp: 4, type: 'ksatria_ielts' },
+  desa_sapaan: { name: 'Forest Slime Kecil', hp: 3, type: 'forest_slime' },
+  pasar_rasa: { name: 'Thorn Goblin Kecil', hp: 3, type: 'thorn_goblin' },
+  hutan_satwa: { name: 'Dire Wolf Muda', hp: 3, type: 'dire_wolf' },
+  gerbang_kota: { name: 'Skeleton Penjaga', hp: 3, type: 'skeleton_warrior' },
+  menara_waktu: { name: 'Stone Gargoyle Kecil', hp: 3, type: 'stone_gargoyle' },
+  gua_portal: { name: 'Lava Imp Kilat', hp: 4, type: 'lava_imp' },
 };
 
 export const BOSSES: Record<ZoneId, BossDef> = {
   desa_sapaan: {
     id: 'boss_desa',
-    name: 'Gumpal Salam',
-    monsterType: 'gumpal_salam',
+    name: 'Raja Forest Slime',
+    monsterType: 'forest_slime',
     zoneId: 'desa_sapaan',
     phases: 3,
     hpPerPhase: 10,
     mechanic: 'none',
     mechanicDesc: 'Eskalasi tempo antar fase. Kalahkan 3 fase untuk menyelamatkan Rani!',
     taunts: [
-      'Gumpal Salam menghalangi Rumah Rani!',
-      'Fase 2: Gumpal Salam bergetar lebih cepat!',
-      'Fase 3: Serangan salam terakhir! Jangan menyerah!',
+      'Raja Forest Slime menghalangi Rumah Rani!',
+      'Fase 2: Slime raksasa bergetar lebih cepat!',
+      'Fase 3: Serangan terakhir! Jangan menyerah!',
     ],
     rewardRelic: 'pedang',
     rewardWeapon: 'emas',
@@ -803,17 +803,17 @@ export const BOSSES: Record<ZoneId, BossDef> = {
   },
   pasar_rasa: {
     id: 'boss_pasar',
-    name: 'Lendir Kuali',
-    monsterType: 'bayangan_kata',
+    name: 'Sand Scorpion Raksasa',
+    monsterType: 'sand_scorpion',
     zoneId: 'pasar_rasa',
     phases: 3,
     hpPerPhase: 10,
     mechanic: 'slime',
-    mechanicDesc: 'Fase 2–3: Peluang 55% melumuri 1 pilihan salah menjadi 🟢 ???.',
+    mechanicDesc: 'Fase 2–3: Peluang 55% menyamarkan 1 pilihan salah dengan racun pasir 🟢 ???.',
     taunts: [
-      'Lendir Kuali mendidih di tengah pasar!',
-      'Fase 2: Lendir mulai menyamarkan pilihan jawaban!',
-      'Fase 3: Kuali meluap! Pilih arti yang benar dengan cermat!',
+      'Sand Scorpion Raksasa mengadang di tengah pasar!',
+      'Fase 2: Racun pasirnya mulai menyamarkan pilihan jawaban!',
+      'Fase 3: Sengatan terakhir! Pilih arti yang benar dengan cermat!',
     ],
     rewardRelic: 'perisai',
     rewardWeapon: 'saus',
@@ -821,15 +821,15 @@ export const BOSSES: Record<ZoneId, BossDef> = {
   },
   hutan_satwa: {
     id: 'boss_satwa',
-    name: 'Semak Gigit',
-    monsterType: 'semak_rimba',
+    name: 'Ancient Treant Rimba',
+    monsterType: 'ancient_treant',
     zoneId: 'hutan_satwa',
     phases: 3,
     hpPerPhase: 10,
     mechanic: 'grow',
     mechanicDesc: 'Fase 2–3: Jawaban salah memulihkan HP bos +1 (maks 2x/fase).',
     taunts: [
-      'Semak Gigit menjerat akar-akar Hutan Satwa!',
+      'Ancient Treant menjerat akar-akar Hutan Satwa!',
       'Fase 2: Akarnya tumbuh lagi setiap kali kamu salah!',
       'Fase 3: Rimba berguncang! Taklukkan akar terakhir!',
     ],
@@ -839,17 +839,17 @@ export const BOSSES: Record<ZoneId, BossDef> = {
   },
   gerbang_kota: {
     id: 'boss_kota',
-    name: 'Bayangan Gerbang',
-    monsterType: 'ksatria_ielts',
+    name: 'Iron Juggernaut Gerbang',
+    monsterType: 'iron_juggernaut',
     zoneId: 'gerbang_kota',
     phases: 3,
     hpPerPhase: 10,
     mechanic: 'close',
     mechanicDesc: 'Fase 2–3: Tiap 2 putaran mengunci 1 opsi 🔒 & memangkas waktu AMBIL -1 dtk.',
     taunts: [
-      'Bayangan Gerbang mengunci Pintu Sekolah!',
-      'Fase 2: Gerbang menyempit! Waktu reaksi berkurang!',
-      'Fase 3: Bayangan terakhir menuju kota!',
+      'Iron Juggernaut mengunci Pintu Sekolah!',
+      'Fase 2: Baja gerbang menyempit! Waktu reaksi berkurang!',
+      'Fase 3: Serangan baja terakhir menuju kota!',
     ],
     rewardRelic: 'sepatu',
     rewardWeapon: 'kertas',
@@ -857,15 +857,15 @@ export const BOSSES: Record<ZoneId, BossDef> = {
   },
   menara_waktu: {
     id: 'boss_waktu',
-    name: 'Jam Pasir Liar',
-    monsterType: 'jam_pasir',
+    name: 'Titan Colossus Waktu',
+    monsterType: 'titan_colossus',
     zoneId: 'menara_waktu',
     phases: 3,
     hpPerPhase: 10,
     mechanic: 'rewind',
     mechanicDesc: 'Fase 2–3: Tiap 2 soal baru memutar ulang soal sebelumnya!',
     taunts: [
-      'Jam Pasir Liar membekukan jarum jam menara!',
+      'Titan Colossus membekukan jarum jam menara!',
       'Fase 2: Waktu berputar balik! Ingat soal yang baru saja muncul!',
       'Fase 3: Dentang terakhir pukul tujuh!',
     ],
@@ -875,17 +875,17 @@ export const BOSSES: Record<ZoneId, BossDef> = {
   },
   gua_portal: {
     id: 'boss_gua',
-    name: 'Hantu Portal',
-    monsterType: 'ksatria_ielts',
+    name: 'Obsidian Hydra Portal',
+    monsterType: 'obsidian_hydra',
     zoneId: 'gua_portal',
     phases: 3,
     hpPerPhase: 10,
     mechanic: 'none',
-    mechanicDesc: 'Penjaga tekateki terakhir sebelum gerbang Istana IELTS terbuka!',
+    mechanicDesc: 'Naga berkepala tiga penjaga terakhir sebelum gerbang Istana IELTS terbuka!',
     taunts: [
-      'Hantu Portal membisikkan kata tanya di kegelapan gua!',
-      'Fase 2: Gema gua semakin kuat! Gunakan kata sambungmu!',
-      'Fase 3: Taklukkan Hantu Portal untuk Mahkota ke-6!',
+      'Obsidian Hydra membisikkan kata tanya di kegelapan gua!',
+      'Fase 2: Tiga kepalanya bergema semakin kuat! Gunakan kata sambungmu!',
+      'Fase 3: Taklukkan Obsidian Hydra untuk Mahkota ke-6!',
     ],
     rewardRelic: 'kompas',
     rewardWeapon: 'kristal',
@@ -1342,20 +1342,20 @@ export const ACADEMY_INHABITANTS: AcademyInhabitantDef[] = [
   },
 ];
 
-// Overworld roaming monsters (scaled dynamically by DIFF_CONFIG[diff].roamingCount)
+// Overworld roaming monsters reference (actual day 30 / night 50 waves driven by monstersCatalog)
 export const MONSTER_SPAWNS: MonsterSpawnDef[] = [
-  { id: 'm_gumpal_1', type: 'gumpal_salam', name: 'Gumpal Salam', zoneId: 'desa_sapaan', x: -14, z: 10, maxHp: 3, rewardXp: 30, rewardDiamonds: 1, rewardScore: 220 },
-  { id: 'm_bayangan_1', type: 'bayangan_kata', name: 'Lendir Liar', zoneId: 'pasar_rasa', x: -14, z: 24, maxHp: 3, rewardXp: 35, rewardDiamonds: 1, rewardScore: 280 },
-  { id: 'm_semak_1', type: 'semak_rimba', name: 'Semak Rimba', zoneId: 'hutan_satwa', x: 19, z: 5, maxHp: 3, rewardXp: 40, rewardDiamonds: 1, rewardScore: 300 },
-  { id: 'm_gumpal_2', type: 'gumpal_salam', name: 'Bayangan Kota', zoneId: 'gerbang_kota', x: 8, z: 18, maxHp: 3, rewardXp: 40, rewardDiamonds: 1, rewardScore: 240 },
-  { id: 'm_jam_1', type: 'jam_pasir', name: 'Jam Pasir Liar', zoneId: 'menara_waktu', x: -13, z: -16, maxHp: 4, rewardXp: 50, rewardDiamonds: 1, rewardScore: 380 },
+  { id: 'm_slime_1', type: 'forest_slime', name: 'Forest Slime', zoneId: 'desa_sapaan', x: -14, z: 10, maxHp: 2, rewardXp: 20, rewardDiamonds: 1, rewardScore: 160 },
+  { id: 'm_scorpion_1', type: 'sand_scorpion', name: 'Sand Scorpion', zoneId: 'pasar_rasa', x: -14, z: 24, maxHp: 3, rewardXp: 35, rewardDiamonds: 1, rewardScore: 280 },
+  { id: 'm_troll_1', type: 'jungle_troll', name: 'Jungle Troll', zoneId: 'hutan_satwa', x: 19, z: 5, maxHp: 4, rewardXp: 45, rewardDiamonds: 2, rewardScore: 360 },
+  { id: 'm_skeleton_1', type: 'skeleton_warrior', name: 'Skeleton Warrior', zoneId: 'gerbang_kota', x: 8, z: 18, maxHp: 3, rewardXp: 35, rewardDiamonds: 1, rewardScore: 260 },
+  { id: 'm_golem_1', type: 'crystal_golem', name: 'Crystal Golem', zoneId: 'menara_waktu', x: -13, z: -16, maxHp: 4, rewardXp: 50, rewardDiamonds: 2, rewardScore: 420 },
 ];
 
 export const ACADEMY_SHADOWS: MonsterSpawnDef[] = [
-  { id: 'ae_listen', type: 'bayangan_kata', name: 'Bayangan Dengar', zoneId: 'gua_portal', x: -7, z: -1, maxHp: 3, rewardXp: 45, rewardDiamonds: 1, rewardScore: 300, isAcademyShadow: true, academySkill: 'listening' },
-  { id: 'ae_read', type: 'jam_pasir', name: 'Bayangan Baca', zoneId: 'gua_portal', x: 7, z: -1, maxHp: 3, rewardXp: 45, rewardDiamonds: 1, rewardScore: 300, isAcademyShadow: true, academySkill: 'reading' },
-  { id: 'ae_write', type: 'semak_rimba', name: 'Bayangan Tulis', zoneId: 'gua_portal', x: -7, z: 5, maxHp: 3, rewardXp: 45, rewardDiamonds: 1, rewardScore: 300, isAcademyShadow: true, academySkill: 'writing' },
-  { id: 'ae_speak', type: 'ksatria_ielts', name: 'Bayangan Bicara', zoneId: 'gua_portal', x: 7, z: 5, maxHp: 3, rewardXp: 45, rewardDiamonds: 1, rewardScore: 300, isAcademyShadow: true, academySkill: 'speaking' },
+  { id: 'ae_listen', type: 'cave_spider', name: 'Cave Spider Dengar', zoneId: 'gua_portal', x: -7, z: -1, maxHp: 3, rewardXp: 45, rewardDiamonds: 1, rewardScore: 300, isAcademyShadow: true, academySkill: 'listening' },
+  { id: 'ae_read', type: 'stone_gargoyle', name: 'Stone Gargoyle Baca', zoneId: 'gua_portal', x: 7, z: -1, maxHp: 3, rewardXp: 45, rewardDiamonds: 1, rewardScore: 300, isAcademyShadow: true, academySkill: 'reading' },
+  { id: 'ae_write', type: 'magma_elemental', name: 'Magma Elemental Tulis', zoneId: 'gua_portal', x: -7, z: 5, maxHp: 4, rewardXp: 50, rewardDiamonds: 2, rewardScore: 340, isAcademyShadow: true, academySkill: 'writing' },
+  { id: 'ae_speak', type: 'obsidian_hydra', name: 'Obsidian Hydra Bicara', zoneId: 'gua_portal', x: 7, z: 5, maxHp: 4, rewardXp: 55, rewardDiamonds: 2, rewardScore: 380, isAcademyShadow: true, academySkill: 'speaking' },
 ];
 
 // 21 Mini IELTS Questions (MQ) for Academy Shadows (9 TFNG, 6 MCQ, 6 Short/Vocab)

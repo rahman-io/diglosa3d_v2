@@ -9,6 +9,11 @@ import {
   createMonsterMesh,
   setHeroWeaponVisual,
 } from '../three/rpgModels';
+import {
+  FLYING_MONSTER_TYPES,
+  MONSTER_SPECS,
+  RANGED_MONSTER_TYPES,
+} from '../three/monstersCatalog';
 import { MonsterType, WeaponId } from '../types/game';
 
 export type BattleAnimEvent =
@@ -138,9 +143,13 @@ export const BattleArenaCanvas: React.FC<BattleArenaCanvasProps> = ({
     scene.add(heroRig.root);
 
     // 3D Monster / Boss
-    const monsterGroup = createMonsterMesh(monsterType, palette, isBoss ? 1.15 : 0.96);
+    const monSpec = MONSTER_SPECS[monsterType];
+    const baseArenaScale = isBoss
+      ? Math.min(1.12, (monSpec?.arenaScale ?? 0.9) * 1.18)
+      : (monSpec?.arenaScale ?? 0.96);
+    const monsterGroup = createMonsterMesh(monsterType, palette, baseArenaScale);
     const MON_HOME_X = 2.25;
-    const MON_BASE_Y = monsterType === 'kelelawar_gua' ? 1.45 : 0;
+    const MON_BASE_Y = FLYING_MONSTER_TYPES.has(monsterType) ? 1.15 : 0;
     monsterGroup.position.set(MON_HOME_X, MON_BASE_Y, 0);
     monsterGroup.rotation.y = -Math.PI * 0.42;
     scene.add(monsterGroup);
@@ -244,7 +253,7 @@ export const BattleArenaCanvas: React.FC<BattleArenaCanvasProps> = ({
       let mx = MON_HOME_X;
       let my = MON_BASE_Y + Math.sin(totalTime * 2.8 + 1.1) * 0.08;
       let mRotZ = 0;
-      let mScale = isBoss ? 1.15 : 0.96;
+      let mScale = baseArenaScale;
       let monMode: 'idle' | 'patrol' | 'windup' | 'attack' | 'shoot' | 'hit' | 'ko' | 'celebrate' =
         'idle';
       let monAttackProg = 0;
@@ -286,7 +295,7 @@ export const BattleArenaCanvas: React.FC<BattleArenaCanvasProps> = ({
         if (t < 0.35) {
           const p = t / 0.35;
           mx = MON_HOME_X - Math.sin(p * Math.PI) * 1.45;
-          monMode = isBoss || monsterType === 'bayangan_kata' ? 'shoot' : 'attack';
+          monMode = isBoss || RANGED_MONSTER_TYPES.has(monsterType) ? 'shoot' : 'attack';
           monAttackProg = p;
           projMesh.visible = true;
           projMesh.material = monProjMat;

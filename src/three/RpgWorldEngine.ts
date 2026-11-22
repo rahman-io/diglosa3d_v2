@@ -125,6 +125,12 @@ import {
   updateAndEvaluateObstacles,
   WorldObstaclesRig,
 } from './worldObstacles';
+import {
+  DAY_SURFACE_SPAWNS,
+  FLYING_MONSTER_TYPES,
+  MONSTER_SPECS,
+  NIGHT_SURFACE_SPAWNS,
+} from './monstersCatalog';
 
 interface CollectibleItem {
   active: boolean;
@@ -276,11 +282,17 @@ interface SavedOverworldNightMonster {
   name: string;
   zoneId: ZoneId;
   x: number;
+  y?: number;
   z: number;
   homeX: number;
   homeZ: number;
   mobHp: number;
   maxMobHp: number;
+  maxHp?: number;
+  stanceHp?: number;
+  combatOnly?: boolean;
+  isNightMonster?: boolean;
+  wordIds?: string[];
   rewardXp: number;
   rewardDiamonds: number;
   rewardScore: number;
@@ -329,6 +341,8 @@ interface SavedStatePayload {
   lastHeroPos?: { x: number; y: number; z: number; yaw: number };
   savedOverworldHeroPos?: { x: number; y: number; z: number };
   nightWaveDaySpawned?: number;
+  dayWaveDaySpawned?: number;
+  surfaceWaveMode?: 'day' | 'night';
   nightWaveTotal?: number;
   nightZoneTotals?: Partial<Record<ZoneId, number>>;
   nightMonsterSeq?: number;
@@ -347,36 +361,13 @@ interface SavedStatePayload {
   defeatedAcademyEnemyIds?: string[];
 }
 
-const MAX_COLLECTIBLES = 28;
+const MAX_COLLECTIBLES = 56;
 const MAX_PARTICLES = 110;
 const MAX_PROJECTILES = 36;
 const TICKS_PER_DAY = 24000;
 const TICKS_PER_SEC = 20;
 
 const OVERWORLD_GUARD_POSTS = OVERWORLD_ANCHORS.guardPosts;
-
-// Area spawn untuk monster malam di sekitar pemukiman NPC & luar gua tantangan di kepulauan Nusantara Kata
-const NIGHT_SURFACE_ZONES: Array<{
-  zoneId: ZoneId;
-  name: string;
-  type: MonsterType;
-  x: number;
-  z: number;
-}> = [
-  { zoneId: 'desa_sapaan', name: 'Bayangan Desa Malam', type: 'gumpal_salam', x: 4.5, z: 122.0 },
-  { zoneId: 'desa_sapaan', name: 'Peronda Sapaan Malam', type: 'bayangan_kata', x: -8.0, z: 106.0 },
-  { zoneId: 'pasar_rasa', name: 'Pencuri Pasar Malam', type: 'bayangan_kata', x: -88.0, z: 48.0 },
-  { zoneId: 'pasar_rasa', name: 'Creeper Lapar Malam', type: 'creeper_kata', x: -115.0, z: 42.0 },
-  { zoneId: 'hutan_satwa', name: 'Monster Rimba Malam', type: 'semak_rimba', x: 96.0, z: 50.0 },
-  { zoneId: 'hutan_satwa', name: 'Bayangan Satwa Malam', type: 'bayangan_kata', x: 132.0, z: 45.0 },
-  { zoneId: 'gerbang_kota', name: 'Ksatria Gelap Malam', type: 'ksatria_ielts', x: -102.0, z: -86.0 },
-  { zoneId: 'gerbang_kota', name: 'Gumpal Gerbang Malam', type: 'gumpal_salam', x: -120.0, z: -112.0 },
-  { zoneId: 'menara_waktu', name: 'Bayangan Waktu Malam', type: 'jam_pasir', x: 122.0, z: -70.0 },
-  { zoneId: 'menara_waktu', name: 'Creeper Menara Malam', type: 'creeper_kata', x: 150.0, z: -96.0 },
-  { zoneId: 'gua_portal', name: 'Penyerbu Portal Malam', type: 'ksatria_ielts', x: 14.0, z: -165.0 },
-  { zoneId: 'gua_portal', name: 'Jam Gelap Pelataran', type: 'jam_pasir', x: -2.0, z: -166.0 },
-  { zoneId: 'desa_sapaan', name: 'Peronda Alun-Alun Tengah', type: 'semak_rimba', x: -14.0, z: -6.0 },
-];
 
 const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -601,6 +592,9 @@ export class RpgWorldEngine {
   private dayCount = 1;
   private lastOverworldDayPhase: DayPhaseId = this.getDayPhaseForTick(this.worldTimeTick);
   private nightWaveDaySpawned = 0;
+  private dayWaveDaySpawned = 0;
+  private surfaceWaveMode: 'day' | 'night' = 'day';
+  private pendingDayWaveTimer = -1;
   private nightWaveTotal = 0;
   private nightZoneTotals: Partial<Record<ZoneId, number>> = {};
   private nightShooterSaved: Array<{
@@ -1174,18 +1168,24 @@ export class RpgWorldEngine {
       const overworldPos =
         this.worldMode === 'overworld' ? this.heroPos : this.savedOverworldHeroPos;
       const savedNightMonsters: SavedOverworldNightMonster[] = this.monsters
-        .filter((m) => m.alive && m.isNightMonster)
+        .filter((m) => m.alive)
         .map((m) => ({
           id: m.id,
           type: m.type,
           name: m.name,
           zoneId: m.zoneId,
           x: m.x,
+          y: m.y,
           z: m.z,
           homeX: m.homeX,
           homeZ: m.homeZ,
           mobHp: m.mobHp ?? m.maxMobHp ?? 4,
           maxMobHp: m.maxMobHp ?? 4,
+          maxHp: m.maxHp,
+          stanceHp: m.stanceHp,
+          combatOnly: Boolean(m.combatOnly),
+          isNightMonster: Boolean(m.isNightMonster),
+          wordIds: m.wordIds,
           rewardXp: m.rewardXp,
           rewardDiamonds: m.rewardDiamonds,
           rewardScore: m.rewardScore,
@@ -1244,6 +1244,8 @@ export class RpgWorldEngine {
           z: overworldPos.z,
         },
         nightWaveDaySpawned: this.nightWaveDaySpawned,
+        dayWaveDaySpawned: this.dayWaveDaySpawned,
+        surfaceWaveMode: this.surfaceWaveMode,
         nightWaveTotal: this.nightWaveTotal,
         nightZoneTotals: { ...this.nightZoneTotals },
         nightMonsterSeq: this.nightMonsterSeq,
@@ -1376,6 +1378,8 @@ export class RpgWorldEngine {
         this.savedOverworldHeroPos.set(sp.x, getArchipelagoGroundY(sp.x, sp.z), sp.z);
       }
       this.nightWaveDaySpawned = data.nightWaveDaySpawned || 0;
+      this.dayWaveDaySpawned = data.dayWaveDaySpawned || 0;
+      this.surfaceWaveMode = data.surfaceWaveMode || 'night';
       this.nightWaveTotal = data.nightWaveTotal || 0;
       this.nightZoneTotals = data.nightZoneTotals ? { ...data.nightZoneTotals } : {};
       this.nightMonsterSeq = data.nightMonsterSeq || 0;
@@ -1469,7 +1473,6 @@ export class RpgWorldEngine {
   }
 
   private initOverworldMonsters(): void {
-    // Monster permukaan hanya muncul saat malam hari (Pagi/Siang/Sore permukaan aman!)
     this.monsters = [];
   }
 
@@ -1517,20 +1520,25 @@ export class RpgWorldEngine {
         : phase === 'malam'
         ? 23000 - t
         : 24000 - t;
+    const activeSurfaceCount = this.monsters.filter((m) => m.alive).length;
     const activeNightCount =
       this.monsters.filter((m) => m.alive && m.isNightMonster).length +
       this.shooters.filter((s) => s.alive && s.isNightShooter).length;
-    const waveTotal = phase === 'malam' ? Math.max(this.nightWaveTotal, activeNightCount) : 0;
-    const waveDefeated = phase === 'malam' ? Math.max(0, waveTotal - activeNightCount) : 0;
+    const expectedTotal = phase === 'malam' ? 50 : 30;
+    const waveTotal = Math.max(this.nightWaveTotal || expectedTotal, activeSurfaceCount);
+    const waveDefeated = Math.max(0, waveTotal - activeSurfaceCount);
     return {
       tick: Math.round(t),
       phase,
       phaseLabel: labelMap[phase],
       dayCount: this.dayCount,
       phaseRemainingSec: Math.max(0, Math.ceil(remTicks / TICKS_PER_SEC)),
-      nightMonsterCount: activeNightCount,
-      nightWaveDefeated: waveDefeated,
-      nightWaveTotal: waveTotal,
+      nightMonsterCount: phase === 'malam' ? activeNightCount : 0,
+      nightWaveDefeated: phase === 'malam' ? waveDefeated : 0,
+      nightWaveTotal: phase === 'malam' ? waveTotal : 0,
+      surfaceMonsterCount: activeSurfaceCount,
+      surfaceWaveDefeated: waveDefeated,
+      surfaceWaveTotal: waveTotal,
     };
   }
 
@@ -1546,6 +1554,61 @@ export class RpgWorldEngine {
     this.nightShooterSaved = [];
   }
 
+  private pickZoneChallengeWords(zoneId: ZoneId, count = 4): string[] {
+    const zonePool = getWordsForZone(zoneId);
+    const source = zonePool.length > 0 ? zonePool : VOCAB_CATALOG;
+    const out: string[] = [];
+    for (let i = 0; i < count && source.length > 0; i++) {
+      const picked = source[Math.floor(Math.random() * source.length)];
+      if (picked && !out.includes(picked.id)) {
+        out.push(picked.id);
+      }
+    }
+    return out;
+  }
+
+  private resolveSafeOverworldMonsterSpot(rawX: number, rawZ: number): { x: number; z: number } {
+    let sx = rawX;
+    let sz = rawZ;
+    const avoidPoints = [
+      { x: this.heroPos.x, z: this.heroPos.z, minR: 11.0 },
+      { x: OVERWORLD_ANCHORS.desaSpawn.x, z: OVERWORLD_ANCHORS.desaSpawn.z, minR: 12.0 },
+      { x: OVERWORLD_ANCHORS.starterWeapon.x, z: OVERWORLD_ANCHORS.starterWeapon.z, minR: 10.0 },
+    ];
+    for (const pt of avoidPoints) {
+      const dx = sx - pt.x;
+      const dz = sz - pt.z;
+      const d = Math.hypot(dx, dz);
+      if (d < pt.minR) {
+        const angle = d > 0.1 ? Math.atan2(dz, dx) : Math.random() * Math.PI * 2;
+        sx = pt.x + Math.cos(angle) * (pt.minR + 2.5);
+        sz = pt.z + Math.sin(angle) * (pt.minR + 2.5);
+      }
+    }
+    // Nudge out of village buildings/trees/obstacles
+    for (let pass = 0; pass < 2; pass++) {
+      for (const obs of this.villageRig.obstacles) {
+        const cx = THREE.MathUtils.clamp(sx, obs.x - obs.halfW, obs.x + obs.halfW);
+        const cz = THREE.MathUtils.clamp(sz, obs.z - obs.halfD, obs.z + obs.halfD);
+        const dx = sx - cx;
+        const dz = sz - cz;
+        const distSq = dx * dx + dz * dz;
+        if (distSq < 1.8 * 1.8) {
+          if (distSq > 0.001) {
+            const d = Math.sqrt(distSq);
+            sx += (dx / d) * (1.85 - d);
+            sz += (dz / d) * (1.85 - d);
+          } else {
+            sx += obs.halfW + 1.8;
+          }
+        }
+      }
+    }
+    const clampPt = { x: sx, z: sz };
+    constrainToWalkableArchipelago(clampPt, 1.3);
+    return clampPt;
+  }
+
   private restoreNightMonstersFromSave(): void {
     for (const m of this.monsters) {
       if (m.mesh.parent) m.mesh.parent.remove(m.mesh);
@@ -1554,47 +1617,61 @@ export class RpgWorldEngine {
     }
     this.monsters = [];
     for (const saved of this.restoredNightMonsters) {
+      const mType: MonsterType = saved.type in MONSTER_SPECS ? saved.type : 'thorn_goblin';
+      const spec = MONSTER_SPECS[mType];
       const fallback = OVERWORLD_ANCHORS.zones[saved.zoneId] ?? OVERWORLD_ANCHORS.desaSpawn;
       const sx = isWalkableArchipelago(saved.x, saved.z, 0.5) ? saved.x : fallback.x;
       const sz = isWalkableArchipelago(saved.x, saved.z, 0.5) ? saved.z : fallback.z;
-      const sy = getArchipelagoGroundY(sx, sz);
-      const mesh = createMonsterMesh(saved.type, this.palette);
+      const baseGroundY = getArchipelagoGroundY(sx, sz);
+      const sy = saved.y ?? baseGroundY + spec.hoverY;
+      const isCombat = saved.combatOnly ?? true;
+      const mesh = createMonsterMesh(mType, this.palette);
       mesh.position.set(sx, sy, sz);
 
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(0.85, 1.15, 20),
+        new THREE.RingGeometry(0.85 * spec.baseScale, 1.15 * spec.baseScale, 20),
         new THREE.MeshBasicMaterial({
-          color: 0xef4444,
+          color: isCombat ? 0xef4444 : 0xa855f7,
           side: THREE.DoubleSide,
           transparent: true,
           opacity: 0.78,
         }),
       );
       ring.rotation.x = -Math.PI / 2;
-      ring.position.y = 0.06;
+      ring.position.y = 0.06 - spec.hoverY;
       mesh.add(ring);
       mesh.userData.combatRing = ring;
       mesh.userData.monsterId = saved.id;
       this.overworldGroup.add(mesh);
       this.overworldClickables.push(mesh);
 
+      const wordIds =
+        !isCombat
+          ? saved.wordIds && saved.wordIds.length > 0
+            ? saved.wordIds
+            : this.pickZoneChallengeWords(saved.zoneId, 4)
+          : undefined;
+
       this.monsters.push({
         id: saved.id,
-        type: saved.type,
-        name: saved.name,
+        type: mType,
+        name: saved.name || spec.name,
         zoneId: saved.zoneId,
         homeX: sx,
         homeZ: sz,
         x: sx,
+        y: sy,
         z: sz,
-        maxHp: 3,
-        mobHp: saved.mobHp,
-        maxMobHp: saved.maxMobHp,
-        rewardXp: saved.rewardXp,
-        rewardDiamonds: saved.rewardDiamonds,
-        rewardScore: saved.rewardScore,
-        combatOnly: true,
-        isNightMonster: true,
+        maxHp: saved.maxHp ?? spec.quizHp,
+        mobHp: saved.mobHp ?? spec.hitHp,
+        maxMobHp: saved.maxMobHp ?? spec.hitHp,
+        stanceHp: !isCombat ? (saved.stanceHp ?? spec.stanceHp) : undefined,
+        rewardXp: saved.rewardXp ?? spec.rewardXp,
+        rewardDiamonds: saved.rewardDiamonds ?? spec.rewardDiamonds,
+        rewardScore: saved.rewardScore ?? spec.rewardScore,
+        combatOnly: isCombat,
+        isNightMonster: saved.isNightMonster ?? this.surfaceWaveMode === 'night',
+        wordIds,
         aggroActive: false,
         attackCooldown: 0.9 + Math.random() * 0.9,
         windupTimer: -1,
@@ -1610,62 +1687,58 @@ export class RpgWorldEngine {
   }
 
   private spawnNightSurfaceWave(): void {
+    this.spawnOverworldSurfaceWave('night');
+  }
+
+  private spawnOverworldSurfaceWave(mode: 'day' | 'night'): void {
     this.clearOverworldNightMonsters();
+    this.pendingDayWaveTimer = -1;
+    this.surfaceWaveMode = mode;
+
+    const templates = mode === 'night' ? NIGHT_SURFACE_SPAWNS : DAY_SURFACE_SPAWNS;
     const diff = this.settings.difficulty;
-    const [minC, maxC] =
-      diff === 'santai' ? [4, 6] : diff === 'pendekar' ? [9, 13] : [6, 10];
-    const totalSpawn = minC + Math.floor(Math.random() * (maxC - minC + 1));
+    const diffHpMult = diff === 'santai' ? 0.8 : diff === 'pendekar' ? 1.25 : 1.0;
 
-    // Acak urutan titik spawn di sekitar area NPC & luar gua tantangan
-    const pool = [...NIGHT_SURFACE_ZONES];
-    for (let i = pool.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [pool[i], pool[j]] = [pool[j], pool[i]];
-    }
-
-    const baseHp = diff === 'santai' ? 3 : diff === 'pendekar' ? 5 : 4;
-    const spawnClamp = { x: 0, z: 0 };
-
-    for (let i = 0; i < totalSpawn; i++) {
-      const template = pool[i % pool.length];
-      let sx = template.x + (Math.random() - 0.5) * 3.0;
-      let sz = template.z + (Math.random() - 0.5) * 3.0;
-      // Hindari tabrakan langsung dengan Hero saat spawn
-      if (Math.hypot(sx - this.heroPos.x, sz - this.heroPos.z) < 6.5) {
-        sx += sx >= this.heroPos.x ? 5.2 : -5.2;
-      }
-      spawnClamp.x = sx;
-      spawnClamp.z = sz;
-      constrainToWalkableArchipelago(spawnClamp, 1.2);
-      sx = spawnClamp.x;
-      sz = spawnClamp.z;
-      const sy = getArchipelagoGroundY(sx, sz);
+    for (let i = 0; i < templates.length; i++) {
+      const template = templates[i];
+      const spec = MONSTER_SPECS[template.type];
+      const jitterX = template.x + (Math.random() - 0.5) * 4.2;
+      const jitterZ = template.z + (Math.random() - 0.5) * 4.2;
+      const safe = this.resolveSafeOverworldMonsterSpot(jitterX, jitterZ);
+      const sx = safe.x;
+      const sz = safe.z;
+      const groundY = getArchipelagoGroundY(sx, sz);
+      const sy = groundY + spec.hoverY;
 
       const mesh = createMonsterMesh(template.type, this.palette);
       mesh.position.set(sx, sy, sz);
 
-      // Tambah cincin aura pertarungan malam (merah menyala) di kaki monster
+      // Cincin aura di kaki: Merah (70% Duel Fisik) vs Ungu (30% Tantangan Bahasa Inggris)
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(0.85, 1.15, 20),
+        new THREE.RingGeometry(0.85 * spec.baseScale, 1.15 * spec.baseScale, 20),
         new THREE.MeshBasicMaterial({
-          color: 0xef4444,
+          color: template.combatOnly ? 0xef4444 : 0xa855f7,
           side: THREE.DoubleSide,
           transparent: true,
           opacity: 0.78,
         }),
       );
       ring.rotation.x = -Math.PI / 2;
-      ring.position.y = 0.06;
+      ring.position.y = 0.06 - spec.hoverY;
       mesh.add(ring);
       mesh.userData.combatRing = ring;
 
       this.nightMonsterSeq += 1;
-      const mId = `night_mob_${this.dayCount}_${this.nightMonsterSeq}`;
+      const mId = `${mode}_mob_${this.dayCount}_${this.nightMonsterSeq}`;
       mesh.userData.monsterId = mId;
       this.overworldGroup.add(mesh);
       this.overworldClickables.push(mesh);
 
-      const maxMobHp = baseHp + (i % 2);
+      const maxMobHp = Math.max(2, Math.round(spec.hitHp * diffHpMult));
+      const wordIds = template.combatOnly
+        ? undefined
+        : this.pickZoneChallengeWords(template.zoneId, spec.tier === 'giant' ? 5 : 4);
+
       this.monsters.push({
         id: mId,
         type: template.type,
@@ -1674,15 +1747,18 @@ export class RpgWorldEngine {
         homeX: sx,
         homeZ: sz,
         x: sx,
+        y: sy,
         z: sz,
-        maxHp: 3,
+        maxHp: spec.quizHp,
         mobHp: maxMobHp,
         maxMobHp,
-        rewardXp: 18 + (diff === 'pendekar' ? 6 : 0),
-        rewardDiamonds: 1,
-        rewardScore: 180,
-        combatOnly: true,
-        isNightMonster: true,
+        stanceHp: template.combatOnly ? undefined : spec.stanceHp,
+        rewardXp: spec.rewardXp + (diff === 'pendekar' ? 5 : 0),
+        rewardDiamonds: spec.rewardDiamonds,
+        rewardScore: spec.rewardScore,
+        combatOnly: template.combatOnly,
+        isNightMonster: mode === 'night',
+        wordIds,
         aggroActive: false,
         attackCooldown: 0.9 + Math.random() * 0.9,
         windupTimer: -1,
@@ -1694,33 +1770,35 @@ export class RpgWorldEngine {
         patrolPhase: Math.random() * Math.PI * 2,
         angryTimer: 0,
       });
-
-      this.spawnBurst(sx, sy + 1.2, sz, 0xa855f7, 14);
     }
 
-    this.nightWaveDaySpawned = this.dayCount;
-    this.syncShootersForDifficulty(true);
+    if (mode === 'night') {
+      this.nightWaveDaySpawned = this.dayCount;
+    } else {
+      this.dayWaveDaySpawned = this.dayCount;
+    }
+    this.syncShootersForDifficulty(mode === 'night');
     const zoneTotals: Partial<Record<ZoneId, number>> = {};
     for (const m of this.monsters) {
-      if (m.alive && m.isNightMonster) {
+      if (m.alive) {
         zoneTotals[m.zoneId] = (zoneTotals[m.zoneId] || 0) + 1;
       }
     }
-    for (const s of this.shooters) {
-      if (s.alive && s.isNightShooter && s.zoneId) {
-        zoneTotals[s.zoneId] = (zoneTotals[s.zoneId] || 0) + 1;
-      }
-    }
     this.nightZoneTotals = zoneTotals;
-    this.nightWaveTotal =
-      this.monsters.filter((m) => m.alive && m.isNightMonster).length +
-      this.shooters.filter((s) => s.alive && s.isNightShooter).length;
+    this.nightWaveTotal = this.monsters.filter((m) => m.alive).length;
     if (this.worldMode === 'overworld') {
-      soundEngine.playBoss();
-      this.showBanner(
-        `🌙 Malam Hari ke-${this.dayCount} tiba! ${this.nightWaveTotal} monster muncul di sekitar pemukiman NPC & luar gua!`,
-        5.0,
-      );
+      if (mode === 'night') {
+        soundEngine.playBoss();
+        this.showBanner(
+          `🌙 Malam Hari ke-${this.dayCount}! ${this.nightWaveTotal} monster (35 Duel · 15 Inggris) muncul di seluruh pulau!`,
+          5.0,
+        );
+      } else {
+        this.showBanner(
+          `☀️ Hari ke-${this.dayCount}! ${this.nightWaveTotal} monster wilayah (21 Duel · 9 Inggris) berkeliaran di 6 pulau!`,
+          4.5,
+        );
+      }
     }
     this.pushHud(true);
   }
@@ -1728,7 +1806,7 @@ export class RpgWorldEngine {
   private triggerMorningSunlightDestruction(): void {
     let anyDoomed = false;
     for (const m of this.monsters) {
-      if (!m.alive || m.sunburnTimer !== undefined) continue;
+      if (!m.alive || !m.isNightMonster || m.sunburnTimer !== undefined) continue;
       m.sunburnTimer = 0.25 + Math.random() * 1.1;
       anyDoomed = true;
     }
@@ -1737,9 +1815,10 @@ export class RpgWorldEngine {
       s.sunburnTimer = 0.2 + Math.random() * 0.9;
       anyDoomed = true;
     }
+    this.pendingDayWaveTimer = 2.1;
     if (anyDoomed && this.worldMode === 'overworld') {
       this.showBanner(
-        '☀️ Cahaya panas matahari fajar membakar & menghancurkan monster malam!',
+        '☀️ Cahaya matahari fajar membakar monster malam! Gelombang siang (30 monster) segera muncul!',
         4.6,
       );
     }
@@ -1778,65 +1857,21 @@ export class RpgWorldEngine {
     }
     this.shooters = [];
 
-    // Di permukaan Overworld, penembak hanya muncul saat Malam Hari
-    if (this.worldMode === 'overworld' && this.getCurrentDayPhase() !== 'malam') {
-      return;
-    }
-
-    const maxCount = DIFF_CONFIG[this.settings.difficulty].maxShooters;
-    if (maxCount <= 0) {
-      if (this.worldMode === 'overworld' && resetNightShooters) {
+    // Overworld uses exact 30 (day) / 50 (night) wave spawns including ranged monster types
+    if (this.worldMode === 'overworld') {
+      if (resetNightShooters) {
         this.nightShooterSaved = [];
       }
       return;
     }
 
-    // Jika malam ini penembak sudah pernah dibuat & pemain hanya keluar/masuk gua, pulihkan yang masih hidup saja
-    if (
-      this.worldMode === 'overworld' &&
-      !resetNightShooters &&
-      this.nightWaveDaySpawned === this.dayCount
-    ) {
-      for (let i = 0; i < this.nightShooterSaved.length; i++) {
-        const saved = this.nightShooterSaved[i];
-        if (!saved.alive) continue;
-        const fallback = OVERWORLD_ANCHORS.zones[saved.zoneId] ?? OVERWORLD_ANCHORS.desaSpawn;
-        const sx = isWalkableArchipelago(saved.x, saved.z, 0.5) ? saved.x : fallback.x;
-        const sz = isWalkableArchipelago(saved.x, saved.z, 0.5) ? saved.z : fallback.z;
-        const mesh = createShooterMesh(this.palette);
-        mesh.position.set(sx, getArchipelagoGroundY(sx, sz), sz);
-        this.overworldGroup.add(mesh);
-        this.shooters.push({
-          id: saved.id,
-          x: sx,
-          z: sz,
-          homeX: sx,
-          homeZ: sz,
-          hp: saved.hp,
-          cooldown: 1.5 + i * 0.7,
-          phase: i * 1.4,
-          walkPhase: i * 1.4,
-          recoilTimer: 0,
-          hitSquashTimer: 0,
-          prevX: sx,
-          prevZ: sz,
-          mesh,
-          alive: true,
-          respawnTimer: 0,
-          zoneId: saved.zoneId,
-          isNightShooter: true,
-        });
-      }
+    const maxCount = DIFF_CONFIG[this.settings.difficulty].maxShooters;
+    if (maxCount <= 0) {
       return;
     }
 
     const coords: Array<[number, number]> =
-      this.worldMode === 'overworld'
-        ? [
-            [-18.0, 72.0],
-            [-114.0, -86.0],
-          ]
-        : this.worldMode === 'dungeon'
+      this.worldMode === 'dungeon'
         ? [
             [-10, -10],
             [10, -10],
@@ -1853,16 +1888,10 @@ export class RpgWorldEngine {
         ? this.academyRig.group
         : this.overworldGroup;
 
-    if (this.worldMode === 'overworld') {
-      this.nightShooterSaved = [];
-    }
-
     for (let i = 0; i < maxCount; i++) {
       const [sx, sz] = coords[i % coords.length];
-      const sZone = this.worldMode === 'overworld' ? getZoneForPosition(sx, sz) : undefined;
-      const sy = this.worldMode === 'overworld' ? getArchipelagoGroundY(sx, sz) : 0;
       const mesh = createShooterMesh(this.palette);
-      mesh.position.set(sx, sy, sz);
+      mesh.position.set(sx, 0, sz);
       parent.add(mesh);
       const id = `shooter_${this.worldMode}_${i}`;
       this.shooters.push({
@@ -1882,21 +1911,9 @@ export class RpgWorldEngine {
         mesh,
         alive: true,
         respawnTimer: 0,
-        zoneId: sZone,
-        isNightShooter: this.worldMode === 'overworld',
+        zoneId: undefined,
+        isNightShooter: false,
       });
-      if (this.worldMode === 'overworld' && sZone) {
-        this.nightShooterSaved.push({
-          id,
-          x: sx,
-          z: sz,
-          homeX: sx,
-          homeZ: sz,
-          zoneId: sZone,
-          hp: 3,
-          alive: true,
-        });
-      }
     }
 
     if (this.worldMode === 'dungeon' && this.dungeonState) {
@@ -1943,35 +1960,69 @@ export class RpgWorldEngine {
   private spawnCollectibles(): void {
     this.collectibles = [];
     const spots: Array<[number, number, 'diamond' | 'heart']> = [
+      // Desa Sapaan
       [-5.0, 91.0, 'heart'],
       [-3.0, 114.0, 'diamond'],
       [19.0, 118.0, 'diamond'],
       [-4.0, 148.0, 'heart'],
+      [26.0, 94.0, 'diamond'],
+      [-32.0, 134.0, 'heart'],
+      [-18.0, 78.0, 'diamond'],
+      [14.0, 142.0, 'heart'],
+      // Central Hub Citadel & Bridges
       [-23.2, 43.3, 'diamond'],
       [-8.0, -10.0, 'diamond'],
       [0.0, -53.0, 'heart'],
+      [24.0, 8.0, 'heart'],
+      [-26.0, -32.0, 'diamond'],
+      [28.0, -28.0, 'diamond'],
+      [0.0, 18.0, 'heart'],
+      // Pasar Rasa
       [-64.6, -21.0, 'diamond'],
       [-61.5, 10.8, 'diamond'],
       [-92.0, 52.0, 'diamond'],
       [-125.0, -14.0, 'diamond'],
+      [-142.0, 62.0, 'heart'],
+      [-104.0, 80.0, 'diamond'],
+      [-146.0, 24.0, 'heart'],
+      [-112.0, 16.0, 'diamond'],
+      // Hutan Satwa
       [55.5, 26.25, 'diamond'],
       [83.0, 44.0, 'heart'],
       [106.0, 92.0, 'diamond'],
       [125.0, 68.5, 'heart'],
       [140.5, 42.5, 'diamond'],
       [145.5, -9.5, 'heart'],
+      [112.0, 22.0, 'diamond'],
+      [152.0, 74.0, 'heart'],
+      // Gerbang Kota
       [-81.0, -28.0, 'diamond'],
       [-106.0, -86.0, 'diamond'],
       [-121.0, -112.0, 'diamond'],
+      [-88.0, -126.0, 'heart'],
+      [-152.0, -92.0, 'heart'],
+      [-140.0, -138.0, 'diamond'],
+      [-110.0, -58.0, 'diamond'],
+      // Menara Waktu
       [115.0, -76.0, 'heart'],
       [152.0, -98.0, 'diamond'],
       [176.0, -54.0, 'diamond'],
+      [128.0, -126.0, 'heart'],
+      [174.0, -116.0, 'diamond'],
+      [140.0, -52.0, 'heart'],
+      [108.0, -68.0, 'diamond'],
+      // Gua Portal & Kepulauan Laut
       [-16.2, -84.0, 'diamond'],
       [-14.0, -158.0, 'diamond'],
       [10.0, -168.0, 'diamond'],
       [20.0, -184.0, 'heart'],
+      [52.0, -156.0, 'heart'],
+      [-22.0, -196.0, 'diamond'],
+      [48.0, -196.0, 'diamond'],
+      [14.0, -214.0, 'heart'],
       [-74.0, 126.0, 'diamond'],
       [62.0, 168.0, 'heart'],
+      [-164.0, -12.0, 'heart'],
     ];
 
     for (let i = 0; i < MAX_COLLECTIBLES; i++) {
@@ -2284,7 +2335,18 @@ export class RpgWorldEngine {
     this.refreshAreaMists();
     this.refreshWeaponVisual();
 
-    if (this.nightWaveDaySpawned === this.dayCount && this.getCurrentDayPhase() === 'malam') {
+    const curPhase = this.getCurrentDayPhase();
+    const canRestoreNight =
+      curPhase === 'malam' &&
+      this.surfaceWaveMode === 'night' &&
+      this.nightWaveDaySpawned === this.dayCount &&
+      this.restoredNightMonsters.length > 0;
+    const canRestoreDay =
+      curPhase !== 'malam' &&
+      this.surfaceWaveMode === 'day' &&
+      this.dayWaveDaySpawned === this.dayCount &&
+      this.restoredNightMonsters.length > 0;
+    if (canRestoreNight || canRestoreDay) {
       this.restoreNightMonstersFromSave();
     } else {
       this.clearOverworldNightMonsters();
@@ -2439,6 +2501,9 @@ export class RpgWorldEngine {
     this.dayCount = 1;
     this.lastOverworldDayPhase = this.getDayPhaseForTick(this.worldTimeTick);
     this.nightWaveDaySpawned = 0;
+    this.dayWaveDaySpawned = 0;
+    this.surfaceWaveMode = this.lastOverworldDayPhase === 'malam' ? 'night' : 'day';
+    this.pendingDayWaveTimer = -1;
     this.nightWaveTotal = 0;
     this.nightZoneTotals = {};
     this.nightShooterSaved = [];
@@ -3274,9 +3339,9 @@ export class RpgWorldEngine {
     ];
     const monsterTypes: MonsterType[] = [
       BOSSES[zoneId].monsterType,
-      'bayangan_kata',
+      'skeleton_warrior',
       BOSSES[zoneId].monsterType,
-      'jam_pasir',
+      'crystal_golem',
     ];
 
     quizWaves.forEach((wordIds, idx) => {
@@ -3322,8 +3387,8 @@ export class RpgWorldEngine {
     const brawlerHp = this.settings.difficulty === 'pendekar' ? 5 : 4;
     brawlerCoords.forEach(([bx, bz], idx) => {
       const id = `db_${zoneId}_${idx}`;
-      const mType = idx === 0 ? BOSSES[zoneId].monsterType : 'jam_pasir';
-      const mesh = createMonsterMesh(mType, this.palette, 1.08);
+      const mType: MonsterType = idx === 0 ? BOSSES[zoneId].monsterType : 'minotaur_brute';
+      const mesh = createMonsterMesh(mType, this.palette, 1.05);
       mesh.position.set(bx, 0, bz);
       mesh.userData.monsterId = id;
 
@@ -3378,7 +3443,7 @@ export class RpgWorldEngine {
       }
     });
 
-    // Spawn Cave-Exclusive Mobs: 2 Creeper Kata (explosive) & 2 Kelelawar Gua (flying ceiling bats)
+    // Spawn Cave-Exclusive Mobs: 2 Cave Spiders (volatile ambushers) & 2 Lava Imps (flying ceiling swoopers)
     const creeperSpots: Array<[number, number]> = [
       [-11, 2],
       [11, -3],
@@ -3386,14 +3451,14 @@ export class RpgWorldEngine {
     creeperSpots.forEach(([cx, cz], idx) => {
       const cid = `creeper_${zoneId}_${idx}`;
       const isAlive = !bossBeaten && !defeatedSet.has(cid);
-      const cMesh = createMonsterMesh('creeper_kata', this.palette, 1.0);
+      const cMesh = createMonsterMesh('cave_spider', this.palette, 1.0);
       cMesh.position.set(cx, 0, cz);
       cMesh.visible = isAlive;
       rig.group.add(cMesh);
       this.dungeonMonsters.push({
         id: cid,
-        type: 'creeper_kata',
-        name: 'Creeper Kata',
+        type: 'cave_spider',
+        name: 'Cave Spider',
         zoneId,
         homeX: cx,
         homeZ: cz,
@@ -3422,14 +3487,14 @@ export class RpgWorldEngine {
     batSpots.forEach(([bx, bz], idx) => {
       const bid = `bat_${zoneId}_${idx}`;
       const isAlive = !bossBeaten && !defeatedSet.has(bid);
-      const bMesh = createMonsterMesh('kelelawar_gua', this.palette, 1.05);
+      const bMesh = createMonsterMesh('lava_imp', this.palette, 1.0);
       bMesh.position.set(bx, 3.4, bz);
       bMesh.visible = isAlive;
       rig.group.add(bMesh);
       this.dungeonMonsters.push({
         id: bid,
-        type: 'kelelawar_gua',
-        name: 'Kelelawar Gua',
+        type: 'lava_imp',
+        name: 'Lava Imp',
         zoneId,
         homeX: bx,
         homeZ: bz,
@@ -4599,7 +4664,7 @@ export class RpgWorldEngine {
       this.syncDungeonMonsterStats();
       this.checkAreaTrophy(this.dungeonState.zoneId);
     } else {
-      // Overworld night monster (+10 XP, +1 Diamond) — no respawn within the same night wave
+      // Overworld Surface English-Challenge Monster defeated — scale XP, Diamonds, Ammo & Survival Heart!
       const m = this.monsters.find((item) => item.id === battle.monsterId);
       if (m) {
         m.alive = false;
@@ -4608,13 +4673,28 @@ export class RpgWorldEngine {
         if (m.mesh.parent) m.mesh.parent.remove(m.mesh);
         const clickIdx = this.overworldClickables.indexOf(m.mesh);
         if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
-        this.gainXp(10);
-        this.diamonds += 1;
+        this.gainXp(m.rewardXp);
+        this.diamonds += m.rewardDiamonds;
         this.addScore(m.rewardScore);
+        if (this.hp < this.maxHp) {
+          this.hp += 1;
+        }
+        if (this.ownedWeapons.size > 0) {
+          this.weaponAmmo[this.activeWeapon] = Math.min(
+            MAX_AMMO,
+            this.weaponAmmo[this.activeWeapon] + 4 + m.rewardDiamonds,
+          );
+        }
         this.spawnBurst(m.x, 1.8, m.z, 0xfacc15, 24);
+        soundEngine.playWin();
+        this.showBanner(
+          `Menang melawan ${battle.monsterName}! +${m.rewardXp} XP · +${m.rewardDiamonds} 💎 · +${4 + m.rewardDiamonds} Peluru`,
+          3.0,
+        );
+      } else {
+        soundEngine.playWin();
+        this.showBanner(`Menang melawan ${battle.monsterName}!`, 2.8);
       }
-      soundEngine.playWin();
-      this.showBanner(`Menang melawan ${battle.monsterName}! +10 XP · +1 💎`, 2.8);
     }
 
     this.saveProgress();
@@ -5125,8 +5205,9 @@ export class RpgWorldEngine {
     const isCombatAmbush =
       isCombatAmbushOverride !== undefined ? isCombatAmbushOverride : Math.random() < 0.4;
     const id = fixedId || `ambush_${zId}_${this.ambushSeq}`;
+    const ambushType: MonsterType = isCombatAmbush ? 'swamp_lizardman' : 'stone_gargoyle';
     const mesh = createMonsterMesh(
-      isCombatAmbush ? 'jam_pasir' : 'bayangan_kata',
+      ambushType,
       this.palette,
       isCombatAmbush ? 1.02 : 0.95,
     );
@@ -5154,7 +5235,7 @@ export class RpgWorldEngine {
 
     this.dungeonMonsters.push({
       id,
-      type: isCombatAmbush ? 'jam_pasir' : 'bayangan_kata',
+      type: ambushType,
       name: isCombatAmbush ? title.replace('Penjaga', 'Petarung') : title,
       zoneId: zId,
       homeX: sx,
@@ -5220,19 +5301,27 @@ export class RpgWorldEngine {
     dirZ: number,
   ): void {
     m.mobHp = (m.mobHp ?? m.maxMobHp ?? 4) - damage;
-    if (m.type === 'creeper_kata') {
+    if (m.isCaveMob && m.type === 'cave_spider') {
       m.fuseTimer = -1;
-      m.mesh.scale.setScalar(1.0);
+      m.mesh.scale.setScalar(MONSTER_SPECS[m.type].baseScale);
     } else if (m.combatOnly) {
       m.aggroActive = true;
       m.hitFlashTimer = 0.22;
     }
 
     const len = Math.max(0.25, Math.hypot(dirX, dirZ));
-    const boundX = this.worldMode === 'overworld' ? 39 : 18;
-    const boundZ = this.worldMode === 'overworld' ? 37 : 18;
-    m.x = THREE.MathUtils.clamp(m.x + (dirX / len) * 1.15, -boundX, boundX);
-    m.z = THREE.MathUtils.clamp(m.z + (dirZ / len) * 1.15, -boundZ, boundZ);
+    if (this.worldMode === 'overworld') {
+      const knockPt = {
+        x: m.x + (dirX / len) * 1.15,
+        z: m.z + (dirZ / len) * 1.15,
+      };
+      constrainToWalkableArchipelago(knockPt, 0.95);
+      m.x = knockPt.x;
+      m.z = knockPt.z;
+    } else {
+      m.x = THREE.MathUtils.clamp(m.x + (dirX / len) * 1.15, -18, 18);
+      m.z = THREE.MathUtils.clamp(m.z + (dirZ / len) * 1.15, -18, 18);
+    }
     soundEngine.playHit();
     this.spawnBurst(m.x, (m.y ?? 0) + 1.3, m.z, m.combatOnly ? 0xef4444 : 0x22c55e, 12);
     this.triggerHitMarker(m.mobHp <= 0);
@@ -5253,7 +5342,7 @@ export class RpgWorldEngine {
     m.alive = false;
     m.respawnTimer = 0;
     m.mesh.visible = false;
-    if (m.isNightMonster) {
+    if (this.worldMode === 'overworld') {
       if (m.mesh.parent) m.mesh.parent.remove(m.mesh);
       const clickIdx = this.overworldClickables.indexOf(m.mesh);
       if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
@@ -5274,14 +5363,14 @@ export class RpgWorldEngine {
           this.weaponAmmo[this.activeWeapon] + 3,
         );
       }
-      if (m.type === 'creeper_kata') {
+      if (m.type === 'cave_spider') {
         this.caveShieldBlocksLeft = Math.min(32, this.caveShieldBlocksLeft + 1);
       } else {
         this.caveTorchesLeft = Math.min(24, this.caveTorchesLeft + 1);
       }
       this.syncDungeonMonsterStats();
       this.showBanner(
-        `${m.name} kalah! +15 XP · +3 Peluru · ${m.type === 'creeper_kata' ? '+1 🧱' : '+1 🔦'}`,
+        `${m.name} kalah! +15 XP · +3 Peluru · ${m.type === 'cave_spider' ? '+1 🧱' : '+1 🔦'}`,
         2.6,
       );
       this.saveProgress();
@@ -5289,23 +5378,25 @@ export class RpgWorldEngine {
       return;
     }
 
-    // Combat-only Night Monster, Cave Guardian, or Combat Ambush!
+    // Combat-only Surface Monster, Cave Guardian, or Combat Ambush!
     if (this.worldMode === 'dungeon' && this.dungeonState) {
       this.markDungeonEnemyDefeated(this.dungeonState.zoneId, m.id);
     }
     this.monstersDefeated += 1;
     this.gainXp(m.rewardXp);
     this.addScore(m.rewardScore);
+    const diamondDrop = Math.max(1, m.rewardDiamonds || 1);
+    const ammoDrop = 3 + diamondDrop;
     if (this.ownedWeapons.size > 0) {
       this.weaponAmmo[this.activeWeapon] = Math.min(
         MAX_AMMO,
-        this.weaponAmmo[this.activeWeapon] + 4,
+        this.weaponAmmo[this.activeWeapon] + ammoDrop,
       );
     }
-    if (this.hp < this.maxHp) {
+    this.diamonds += diamondDrop;
+    const healed = this.hp < this.maxHp;
+    if (healed) {
       this.hp += 1;
-    } else {
-      this.diamonds += 1;
     }
 
     if (this.dungeonState && !m.isAmbush) {
@@ -5316,13 +5407,13 @@ export class RpgWorldEngine {
       this.updateDungeonDoorVisuals();
       this.showBanner(
         remainingNonBoss > 0
-          ? `⚔️ ${m.name} kalah dalam duel aksi! +${m.rewardXp} XP · +4 Peluru (Sisa ${remainingNonBoss} penjaga)`
+          ? `⚔️ ${m.name} kalah dalam duel aksi! +${m.rewardXp} XP · +${diamondDrop} 💎 · +${ammoDrop} Peluru (Sisa ${remainingNonBoss} penjaga)`
           : '⚔️ Semua Penjaga Gua kalah! Buka Pintu ke-5 untuk memanggil Bos!',
         3.4,
       );
     } else {
       this.showBanner(
-        `⚔️ ${m.name} kalah! +${m.rewardXp} XP · +4 Peluru · +1 ❤️/💎!`,
+        `⚔️ ${m.name} kalah! +${m.rewardXp} XP · +${diamondDrop} 💎 · +${ammoDrop} Peluru${healed ? ' · +1 ❤️' : ''}!`,
         3.0,
       );
     }
@@ -5814,11 +5905,14 @@ export class RpgWorldEngine {
       }
     }
 
-    // 2. Check Monsters (ground & flying bats) under crosshair ray
+    // 2. Check Monsters (ground, giant, & flying) under crosshair ray
     for (const m of this.getActiveMonsters()) {
       if (!m.alive || m.angryTimer > 0) continue;
-      const cy = (m.y ?? (m.type === 'kelelawar_gua' ? 3.4 : 0)) + (m.isBoss ? 1.85 : 1.15);
-      const rad = m.isBoss ? 1.65 : m.type === 'kelelawar_gua' ? 1.15 : 1.18;
+      const spec = MONSTER_SPECS[m.type];
+      const baseGround =
+        m.y ?? (this.worldMode === 'overworld' ? getArchipelagoGroundY(m.x, m.z) + spec.hoverY : spec.hoverY);
+      const cy = baseGround + (m.isBoss ? 2.15 : spec.hitCenterY);
+      const rad = m.isBoss ? Math.max(1.85, spec.hitRadius * 1.15) : spec.hitRadius;
       const tx = m.x - ro.x;
       const ty = cy - ro.y;
       const tz = m.z - ro.z;
@@ -6031,9 +6125,13 @@ export class RpgWorldEngine {
         if (d < bestDist) {
           bestDist = d;
           targetX = m.x;
+          const spec = MONSTER_SPECS[m.type];
           const mBaseY =
-            m.y ?? (this.worldMode === 'overworld' ? getArchipelagoGroundY(m.x, m.z) : 0);
-          targetY = mBaseY + (m.type === 'kelelawar_gua' ? 0.1 : m.isBoss ? 2.0 : 1.35);
+            m.y ??
+            (this.worldMode === 'overworld'
+              ? getArchipelagoGroundY(m.x, m.z) + spec.hoverY
+              : spec.hoverY);
+          targetY = mBaseY + (m.isBoss ? 2.1 : spec.hitCenterY);
           targetZ = m.z;
           foundTarget = true;
         }
@@ -7143,6 +7241,7 @@ export class RpgWorldEngine {
     // Animate active monster pool (torches inside caves calm nearby monsters!)
     const baseSpeedMult = this.settings.difficulty === 'pendekar' ? 1.3 : 1.0;
     for (const m of this.getActiveMonsters()) {
+      const spec = MONSTER_SPECS[m.type];
       if (!m.alive) {
         if (this.phase === 'playing' && m.respawnTimer > 0) {
           m.respawnTimer -= dt;
@@ -7153,9 +7252,9 @@ export class RpgWorldEngine {
             m.z = m.homeZ;
             if (m.isCaveMob) {
               m.mobHp = 2;
-              m.fuseTimer = m.type === 'creeper_kata' ? -1 : undefined;
-              m.y = m.type === 'kelelawar_gua' ? 3.4 : 0;
-              m.mesh.scale.setScalar(m.type === 'kelelawar_gua' ? 1.05 : 1.0);
+              m.fuseTimer = m.type === 'cave_spider' ? -1 : undefined;
+              m.y = FLYING_MONSTER_TYPES.has(m.type) ? 3.4 : 0;
+              m.mesh.scale.setScalar(spec.baseScale);
             }
           }
         }
@@ -7166,9 +7265,9 @@ export class RpgWorldEngine {
         const jx = Math.sin(this.elapsed * 52 + m.patrolPhase) * 0.14;
         const jz = Math.cos(this.elapsed * 47 + m.patrolPhase) * 0.14;
         m.mesh.position.set(m.x + jx, (m.y ?? 0) + Math.abs(Math.sin(this.elapsed * 24)) * 0.25, m.z + jz);
-        m.mesh.scale.setScalar(1.0 + Math.max(0, 1.3 - m.sunburnTimer) * 0.26);
+        m.mesh.scale.setScalar(spec.baseScale * (1.0 + Math.max(0, 1.3 - m.sunburnTimer) * 0.26));
         if (this.sunburnFxTimer > 0.14) {
-          this.spawnBurst(m.x, 1.3, m.z, 0xf97316, 4);
+          this.spawnBurst(m.x, (m.y ?? 0) + 1.3, m.z, 0xf97316, 4);
         }
         if (m.sunburnTimer <= 0) {
           m.sunburnTimer = undefined;
@@ -7178,15 +7277,15 @@ export class RpgWorldEngine {
           const clickIdx = this.overworldClickables.indexOf(m.mesh);
           if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
           soundEngine.playBoom();
-          this.spawnBurst(m.x, 1.6, m.z, 0xff7a00, 30);
-          this.spawnBurst(m.x, 2.2, m.z, 0xfacc15, 16);
+          this.spawnBurst(m.x, (m.y ?? 0) + 1.6, m.z, 0xff7a00, 30);
+          this.spawnBurst(m.x, (m.y ?? 0) + 2.2, m.z, 0xfacc15, 16);
         }
         continue;
       }
 
       if (m.angryTimer > 0) {
         m.angryTimer -= dt;
-        m.mesh.scale.setScalar(m.isBoss ? 1.65 : 1.0);
+        m.mesh.scale.setScalar(m.isBoss ? 1.65 : spec.baseScale);
         animateMonsterRig(m.mesh, {
           mode: 'windup',
           elapsed: this.elapsed,
@@ -7209,8 +7308,8 @@ export class RpgWorldEngine {
         }
       }
 
-      // Special AI 1: Creeper Kata (chases Hoot, hisses & swells, explodes unless blocked by Blok Pelindung!)
-      if (m.type === 'creeper_kata' && this.worldMode === 'dungeon' && this.dungeonRig) {
+      // Special AI 1: Cave Spider (chases Hoot & unleashes venom burst unless blocked by Blok Pelindung!)
+      if (m.isCaveMob && m.type === 'cave_spider' && this.worldMode === 'dungeon' && this.dungeonRig) {
         const dxH = this.heroPos.x - m.x;
         const dzH = this.heroPos.z - m.z;
         const distH = Math.hypot(dxH, dzH);
@@ -7219,10 +7318,12 @@ export class RpgWorldEngine {
           if (this.phase === 'playing') {
             if (distH > 6.4) {
               m.fuseTimer = -1;
-              m.mesh.scale.setScalar(1.0);
+              m.mesh.scale.setScalar(spec.baseScale);
             } else {
               m.fuseTimer -= dt;
-              const swell = 1 + (1.65 - Math.max(0, m.fuseTimer)) * 0.24 + Math.sin(this.elapsed * 34) * 0.08;
+              const swell =
+                spec.baseScale *
+                (1 + (1.65 - Math.max(0, m.fuseTimer)) * 0.22 + Math.sin(this.elapsed * 34) * 0.08);
               m.mesh.scale.setScalar(swell);
               m.mesh.rotation.y = Math.atan2(dxH, dzH);
               animateMonsterRig(m.mesh, {
@@ -7236,14 +7337,14 @@ export class RpgWorldEngine {
                 m.mesh.visible = false;
                 m.respawnTimer = 0;
                 m.fuseTimer = -1;
-                m.mesh.scale.setScalar(1.0);
+                m.mesh.scale.setScalar(spec.baseScale);
                 if (this.worldMode === 'dungeon' && this.dungeonState) {
                   this.markDungeonEnemyDefeated(this.dungeonState.zoneId, m.id);
                 }
                 this.syncDungeonMonsterStats();
                 this.pushHud(true);
                 soundEngine.playBoom();
-                this.spawnBurst(m.x, 1.5, m.z, 0x22c55e, 34);
+                this.spawnBurst(m.x, 1.5, m.z, 0xa855f7, 34);
 
                 let blockedByShield = false;
                 for (const blk of this.dungeonRig.caveBlocks) {
@@ -7268,7 +7369,7 @@ export class RpgWorldEngine {
                         if (savedSb) savedSb.hp = blk.hp;
                       }
                     }
-                    this.showBanner('Blok Pelindung menahan ledakan Creeper Kata!', 2.4);
+                    this.showBanner('Blok Pelindung menahan ledakan racun Cave Spider!', 2.4);
                     break;
                   }
                 }
@@ -7281,7 +7382,7 @@ export class RpgWorldEngine {
                   this.heroVel.set((dxH / len) * 18, 0, (dzH / len) * 18);
                   this.heroVelY = 6.5;
                   this.showBanner(
-                    'BOOM! Terkena ledakan Creeper Kata! Tahan dengan Blok Pelindung (-1 ❤️)',
+                    'BOOM! Terkena semburan Cave Spider! Tahan dengan Blok Pelindung (-1 ❤️)',
                     2.6,
                   );
                   if (this.hp <= 0) {
@@ -7298,14 +7399,14 @@ export class RpgWorldEngine {
         let nextMx = m.x;
         let nextMz = m.z;
         if (this.phase === 'playing' && distH < 10.5 && distH > 0.3) {
-          const spd = 2.65 * baseSpeedMult * calmMult;
+          const spd = 2.7 * baseSpeedMult * calmMult;
           nextMx += (dxH / distH) * spd * dt;
           nextMz += (dzH / distH) * spd * dt;
           m.mesh.rotation.y = Math.atan2(dxH, dzH);
           if (distH < 3.4) {
             m.fuseTimer = 1.65;
             soundEngine.playHit();
-            this.showBanner('SSSS...! Creeper Kata hampir meledak! Pasang Blok Pelindung atau mundur!', 2.2);
+            this.showBanner('SSSS...! Cave Spider bersiap meledak! Pasang Blok Pelindung atau mundur!', 2.2);
           }
         } else {
           const p = this.elapsed * 0.85 * baseSpeedMult * calmMult + m.patrolPhase;
@@ -7351,8 +7452,8 @@ export class RpgWorldEngine {
         continue;
       }
 
-      // Special AI 2: Kelelawar Gua (flies near ceiling, flaps wings, swoops down at Hoot!)
-      if (m.type === 'kelelawar_gua' && this.worldMode === 'dungeon') {
+      // Special AI 2: Cave Flying Imp (flies near ceiling, flaps wings, swoops down at Hoot!)
+      if (m.isCaveMob && FLYING_MONSTER_TYPES.has(m.type) && this.worldMode === 'dungeon') {
         const dxH = this.heroPos.x - m.x;
         const dzH = this.heroPos.z - m.z;
         const distH = Math.hypot(dxH, dzH);
@@ -7393,12 +7494,12 @@ export class RpgWorldEngine {
           this.hp = Math.max(0, this.hp - 1);
           this.encounterGraceTimer = 1.6;
           soundEngine.playHurt();
-          this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.3, this.heroPos.z, 0x6366f1, 14);
+          this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.3, this.heroPos.z, 0xf97316, 14);
           m.y = 4.0;
           const len = Math.max(0.2, distH);
           m.x = THREE.MathUtils.clamp(m.x - (dxH / len) * 2.8, -17.5, 17.5);
           m.z = THREE.MathUtils.clamp(m.z - (dzH / len) * 2.8, -17.5, 17.5);
-          this.showBanner('Diserang Kelelawar Gua! Tembak dengan senjatamu (-1 ❤️)', 2.2);
+          this.showBanner(`Diserang ${m.name}! Tembak dengan senjatamu (-1 ❤️)`, 2.2);
           if (this.hp <= 0) {
             this.triggerDefeatExit(this.dungeonState?.zoneId);
             return;
@@ -7407,15 +7508,20 @@ export class RpgWorldEngine {
         continue;
       }
 
-      // Special AI 3: Combat Brawlers (Cave Guardians, Ambush, & Overworld Night Monsters — NO QUIZ!)
+      // Distance culling for far Overworld surface monsters (keeps 50-mob Night & 30-mob Day locked at 60 FPS)
+      const dxHero = this.heroPos.x - m.x;
+      const dzHero = this.heroPos.z - m.z;
+      const distSqHero = dxHero * dxHero + dzHero * dzHero;
+      if (this.worldMode === 'overworld' && distSqHero > 52 * 52 && !m.aggroActive) {
+        continue;
+      }
+
+      // Special AI 3: Combat Brawlers (70% Overworld Day & Night Combat Monsters + Cave Guardians — NO QUIZ!)
       if (
         m.combatOnly &&
-        ((this.worldMode === 'dungeon' && this.dungeonRig) ||
-          (this.worldMode === 'overworld' && m.isNightMonster))
+        ((this.worldMode === 'dungeon' && this.dungeonRig) || this.worldMode === 'overworld')
       ) {
-        const dxH = this.heroPos.x - m.x;
-        const dzH = this.heroPos.z - m.z;
-        const distH = Math.hypot(dxH, dzH);
+        const distH = Math.sqrt(distSqHero);
 
         if (m.hitFlashTimer && m.hitFlashTimer > 0) {
           m.hitFlashTimer = Math.max(0, m.hitFlashTimer - dt);
@@ -7432,34 +7538,36 @@ export class RpgWorldEngine {
           ring.rotation.z += dt * 2.5;
         }
 
-        const aggroRange = m.isNightMonster ? 16.5 : calmMult < 0.7 ? 7.8 : 12.8;
+        const aggroRange =
+          this.worldMode === 'overworld' ? spec.aggroRange : calmMult < 0.7 ? 7.8 : 12.8;
         if (this.phase === 'playing' && distH < aggroRange) {
           if (!m.aggroActive) {
             soundEngine.playMonster();
           }
           m.aggroActive = true;
-        } else if (m.isNightMonster && distH > 22.0) {
+        } else if (this.worldMode === 'overworld' && distH > aggroRange + 7.0) {
           m.aggroActive = false;
         }
 
         let nextMx = m.x;
         let nextMz = m.z;
-        const baseScale = m.isNightMonster ? 1.06 : m.isAmbush ? 1.02 : 1.08;
+        const baseScale = m.isBoss ? 1.65 : spec.baseScale;
         m.mesh.scale.setScalar(baseScale);
         m.mesh.rotation.x = 0;
 
         let monMode: 'idle' | 'patrol' | 'windup' | 'attack' | 'shoot' | 'hit' = 'patrol';
         let monAttackProg = 0;
+        const meleeReach = 2.0 + spec.baseScale * 0.45;
 
         // Phase A: Active Lunging Melee Strike!
         if (m.lungeTimer && m.lungeTimer > 0) {
           m.lungeTimer = Math.max(0, m.lungeTimer - dt);
           if (this.phase === 'playing' && distH > 0.2) {
-            const spd = 9.4 * dt;
-            nextMx += (dxH / distH) * spd;
-            nextMz += (dzH / distH) * spd;
+            const spd = 9.0 * spec.speedMult * dt;
+            nextMx += (dxHero / distH) * spd;
+            nextMz += (dzHero / distH) * spd;
           }
-          m.mesh.rotation.y = Math.atan2(dxH, dzH);
+          m.mesh.rotation.y = Math.atan2(dxHero, dzHero);
           monMode = 'attack';
           monAttackProg = 1 - m.lungeTimer / 0.28;
 
@@ -7470,14 +7578,14 @@ export class RpgWorldEngine {
               if (
                 blk.alive &&
                 blk.kind === 'player_shield' &&
-                Math.hypot(blk.x - (m.x + dxH * 0.5), blk.z - (m.z + dzH * 0.5)) < 1.85
+                Math.hypot(blk.x - (m.x + dxHero * 0.5), blk.z - (m.z + dzHero * 0.5)) < 1.85
               ) {
                 shieldBlocked = true;
                 blk.hp -= 1;
                 if (blk.hp <= 0) this.shatterCaveBlock(blk, false);
                 else this.updateBlockCrackVisual(blk);
                 m.lungeTimer = 0;
-                this.showBanner('🧱 Blok Pelindung menahan serangan Petarung Gua!', 1.8);
+                this.showBanner('🧱 Blok Pelindung menahan serangan monster!', 1.8);
                 break;
               }
             }
@@ -7488,16 +7596,20 @@ export class RpgWorldEngine {
             !jumpedOver &&
             this.phase === 'playing' &&
             this.encounterGraceTimer <= 0 &&
-            distH < 2.15
+            distH < meleeReach
           ) {
-            this.hp = Math.max(0, this.hp - 1);
+            const dmg = spec.atkDamageHearts;
+            this.hp = Math.max(0, this.hp - dmg);
             this.encounterGraceTimer = 1.45;
             soundEngine.playHurt();
             const len = Math.max(0.2, distH);
-            this.heroVel.set((dxH / len) * 15, 0, (dzH / len) * 15);
+            this.heroVel.set((dxHero / len) * 15, 0, (dzHero / len) * 15);
             this.heroVelY = 4.8;
             this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.2, this.heroPos.z, 0xef4444, 16);
-            this.showBanner(`⚔️ Diserang ${m.name}! Lompat / Tembak untuk membalas (-1 ❤️)`, 2.2);
+            this.showBanner(
+              `⚔️ Diserang ${m.name} (ATK ${spec.stats.atk})! Lompat / Tembak (-${dmg} ❤️)`,
+              2.2,
+            );
             if (this.hp <= 0) {
               if (this.worldMode !== 'overworld') {
                 this.triggerDefeatExit(this.dungeonState?.zoneId);
@@ -7512,7 +7624,7 @@ export class RpgWorldEngine {
         } else if (m.windupTimer !== undefined && m.windupTimer > 0) {
           // Phase B: Telegraphing windup before lunge
           m.windupTimer -= dt;
-          m.mesh.rotation.y = Math.atan2(dxH, dzH);
+          m.mesh.rotation.y = Math.atan2(dxHero, dzHero);
           monMode = 'windup';
           if (m.windupTimer <= 0) {
             m.windupTimer = -1;
@@ -7521,40 +7633,41 @@ export class RpgWorldEngine {
           }
         } else if (this.phase === 'playing' && m.aggroActive && distH > 0.2) {
           // Phase C: Relentless Chase + Melee/Ranged Decisions
-          m.mesh.rotation.y = Math.atan2(dxH, dzH);
+          m.mesh.rotation.y = Math.atan2(dxHero, dzHero);
 
-          if (distH < 2.65 && (m.attackCooldown ?? 0) <= 0) {
+          if (distH < meleeReach + 0.55 && (m.attackCooldown ?? 0) <= 0) {
             m.windupTimer = 0.52;
             m.attackCooldown = this.settings.difficulty === 'pendekar' ? 1.8 : 2.3;
             soundEngine.playMonster();
           } else {
-            const spd = (m.isNightMonster ? 3.5 : 3.25) * baseSpeedMult * calmMult;
-            if (distH > 1.7) {
-              nextMx += (dxH / distH) * spd * dt;
-              nextMz += (dzH / distH) * spd * dt;
+            const spd = 3.35 * spec.speedMult * baseSpeedMult * calmMult;
+            if (distH > 1.75) {
+              nextMx += (dxHero / distH) * spd * dt;
+              nextMz += (dzHero / distH) * spd * dt;
             }
-            if (distH >= 4.0 && distH < 14.5 && (m.attackCooldown ?? 0) <= 0) {
+            if (spec.ranged && distH >= 4.5 && distH < 15.0 && (m.attackCooldown ?? 0) <= 0) {
               const pSpeed = this.settings.difficulty === 'pendekar' ? 10.5 : 8.6;
-              const mFireY =
-                (this.worldMode === 'overworld' ? getArchipelagoGroundY(m.x, m.z) : 0) + 1.45;
+              const mGround =
+                this.worldMode === 'overworld' ? getArchipelagoGroundY(m.x, m.z) : 0;
+              const mFireY = mGround + spec.hoverY + spec.hitCenterY;
               this.spawnProjectile({
                 fromPlayer: false,
-                x: m.x + (dxH / distH) * 1.15,
+                x: m.x + (dxHero / distH) * (0.9 * spec.baseScale),
                 y: mFireY,
-                z: m.z + (dzH / distH) * 1.15,
-                vx: (dxH / distH) * pSpeed,
-                vz: (dzH / distH) * pSpeed,
+                z: m.z + (dzHero / distH) * (0.9 * spec.baseScale),
+                vx: (dxHero / distH) * pSpeed,
+                vz: (dzHero / distH) * pSpeed,
                 damage: 1,
                 shieldDamage: 1,
                 pierceLeft: 0,
                 colorHex: 0xef4444,
               });
-              m.attackCooldown = this.settings.difficulty === 'pendekar' ? 2.4 : 3.2;
+              m.attackCooldown = this.settings.difficulty === 'pendekar' ? 2.5 : 3.4;
               m.attackAnimTimer = 0.3;
             }
           }
         } else {
-          // Idle Patrol near NPC & challenge zone (with periodic standing/scanning pauses)
+          // Idle Patrol near settlement & outer islands
           if (m.patrolClock === undefined) {
             m.patrolClock = m.patrolPhase;
             m.idleRoamTimer = 3.5 + (m.patrolPhase % 3.5);
@@ -7567,14 +7680,14 @@ export class RpgWorldEngine {
               m.idleRoamTimer = 4.2 + Math.random() * 3.6;
             }
           } else {
-            m.patrolClock += dt * 0.9 * baseSpeedMult * calmMult;
+            m.patrolClock += dt * 0.85 * spec.speedMult * baseSpeedMult * calmMult;
             m.idleRoamTimer = (m.idleRoamTimer ?? 4.5) - dt;
             if ((m.idleRoamTimer ?? 0) <= 0) {
               m.idleRestTimer = 2.8 + Math.random() * 2.8;
             }
             const p = m.patrolClock;
-            nextMx = m.homeX + Math.cos(p) * 3.0;
-            nextMz = m.homeZ + Math.sin(p * 0.85) * 2.4;
+            nextMx = m.homeX + Math.cos(p) * 3.2;
+            nextMz = m.homeZ + Math.sin(p * 0.85) * 2.6;
             m.mesh.rotation.y = Math.atan2(-Math.sin(p), Math.cos(p * 0.85));
           }
         }
@@ -7586,7 +7699,7 @@ export class RpgWorldEngine {
           monAttackProg = 1 - (m.attackAnimTimer ?? 0) / 0.3;
         }
 
-        const mRad = 0.95;
+        const mRad = 0.85 * spec.baseScale;
         const pushBrawlerBox = (bx: number, bz: number, hw: number, hd = hw) => {
           const cx = THREE.MathUtils.clamp(nextMx, bx - hw, bx + hw);
           const cz = THREE.MathUtils.clamp(nextMz, bz - hd, bz + hd);
@@ -7626,15 +7739,15 @@ export class RpgWorldEngine {
           monMode = 'idle';
         }
         const mGroundY = this.worldMode === 'overworld' ? getArchipelagoGroundY(m.x, m.z) : 0;
-        m.mesh.position.set(
-          m.x,
-          mGroundY + (bSpd > 0.25 ? Math.abs(Math.sin(m.walkPhase ?? 0)) * 0.08 : 0),
-          m.z,
-        );
-        const bDistSq =
-          (m.x - this.heroPos.x) * (m.x - this.heroPos.x) +
-          (m.z - this.heroPos.z) * (m.z - this.heroPos.z);
-        if (bDistSq <= 42 * 42) {
+        const hoverBob =
+          spec.hoverY > 0
+            ? spec.hoverY + Math.sin(this.elapsed * 3.0 + m.patrolPhase) * 0.24
+            : bSpd > 0.25
+            ? Math.abs(Math.sin(m.walkPhase ?? 0)) * 0.08
+            : 0;
+        m.y = mGroundY + hoverBob;
+        m.mesh.position.set(m.x, m.y, m.z);
+        if (distSqHero <= 42 * 42) {
           animateMonsterRig(m.mesh, {
             mode: monMode,
             speed: bSpd,
@@ -7648,10 +7761,15 @@ export class RpgWorldEngine {
         continue;
       }
 
+      // 30% English Quiz Monsters (Overworld Day/Night & Dungeon Guardians & Academy)
       if (m.patrolClock === undefined) {
         m.patrolClock = m.patrolPhase;
         m.idleRoamTimer = 4.0 + (m.patrolPhase % 3.5);
         m.idleRestTimer = 0;
+      }
+      const qRing = m.mesh.userData.combatRing as THREE.Object3D | undefined;
+      if (qRing) {
+        qRing.rotation.z -= dt * 1.8;
       }
       let normalMonMode: 'idle' | 'patrol' = 'patrol';
       let nextMx = m.x;
@@ -7663,7 +7781,7 @@ export class RpgWorldEngine {
           m.idleRoamTimer = 4.5 + Math.random() * 3.8;
         }
       } else {
-        m.patrolClock += dt * 0.85 * baseSpeedMult * calmMult;
+        m.patrolClock += dt * 0.85 * spec.speedMult * baseSpeedMult * calmMult;
         m.idleRoamTimer = (m.idleRoamTimer ?? 4.5) - dt;
         if ((m.idleRoamTimer ?? 0) <= 0) {
           m.idleRestTimer = 2.8 + Math.random() * 2.8;
@@ -7693,7 +7811,7 @@ export class RpgWorldEngine {
             if (blk.alive) pushMonsterBox(blk.x, blk.z, blk.halfW);
           }
         } else if (this.worldMode === 'overworld') {
-          const mRad = 0.95;
+          const mRad = 0.85 * spec.baseScale;
           for (const obs of this.villageRig.obstacles) {
             const cx = THREE.MathUtils.clamp(nextMx, obs.x - obs.halfW, obs.x + obs.halfW);
             const cz = THREE.MathUtils.clamp(nextMz, obs.z - obs.halfD, obs.z + obs.halfD);
@@ -7724,15 +7842,15 @@ export class RpgWorldEngine {
         normalMonMode = 'idle';
       }
       const nGroundY = this.worldMode === 'overworld' ? getArchipelagoGroundY(m.x, m.z) : 0;
-      m.mesh.position.set(
-        m.x,
-        nGroundY + (mSpd > 0.2 ? Math.abs(Math.sin(m.walkPhase ?? 0)) * 0.06 : 0),
-        m.z,
-      );
-      const nDistSq =
-        (m.x - this.heroPos.x) * (m.x - this.heroPos.x) +
-        (m.z - this.heroPos.z) * (m.z - this.heroPos.z);
-      if (nDistSq <= 42 * 42) {
+      const nHover =
+        spec.hoverY > 0
+          ? spec.hoverY + Math.sin(this.elapsed * 3.0 + m.patrolPhase) * 0.24
+          : mSpd > 0.2
+          ? Math.abs(Math.sin(m.walkPhase ?? 0)) * 0.06
+          : 0;
+      m.y = nGroundY + nHover;
+      m.mesh.position.set(m.x, m.y, m.z);
+      if (distSqHero <= 42 * 42) {
         animateMonsterRig(m.mesh, {
           mode: normalMonMode,
           speed: mSpd,
@@ -9706,19 +9824,18 @@ export class RpgWorldEngine {
           continue;
         }
 
-        // Check Hit on Cave Mobs, 40% Combat Brawlers, & 60% Word Monsters
+        // Check Hit on Cave Mobs, 70% Combat Brawlers, & 30% Word Monsters
         for (const m of this.getActiveMonsters()) {
           if (!m.alive || m.angryTimer > 0) continue;
-          const hitRadius = m.isCaveMob || m.combatOnly ? 2.15 : 1.9;
+          const spec = MONSTER_SPECS[m.type];
+          const hitRadius = m.isBoss ? Math.max(2.1, spec.hitRadius * 1.15) : spec.hitRadius + 0.35;
           const mBaseY =
             m.y ??
-            (m.type === 'kelelawar_gua'
-              ? 3.4
-              : this.worldMode === 'overworld'
-              ? getArchipelagoGroundY(m.x, m.z)
-              : 0);
-          const targetCenterY = mBaseY + (m.isBoss ? 1.8 : 1.15);
-          const halfH = m.isBoss ? 2.4 : m.type === 'kelelawar_gua' ? 1.55 : 1.75;
+            (this.worldMode === 'overworld'
+              ? getArchipelagoGroundY(m.x, m.z) + spec.hoverY
+              : spec.hoverY);
+          const targetCenterY = mBaseY + (m.isBoss ? 2.1 : spec.hitCenterY);
+          const halfH = m.isBoss ? Math.max(2.4, spec.hitHalfH * 1.2) : spec.hitHalfH + 0.35;
           if (Math.hypot(p.x - m.x, p.z - m.z) < hitRadius && Math.abs(p.y - targetCenterY) < halfH) {
             p.active = false;
             p.mesh.visible = false;
@@ -9728,7 +9845,8 @@ export class RpgWorldEngine {
               break;
             }
 
-            const curStance = m.stanceHp ?? 3;
+            const maxStance = spec.stanceHp;
+            const curStance = m.stanceHp ?? maxStance;
             const nextStance = Math.max(0, curStance - p.shieldDamage);
             m.stanceHp = nextStance;
             soundEngine.playHit();
@@ -9736,15 +9854,24 @@ export class RpgWorldEngine {
 
             if (nextStance > 0) {
               const spd = Math.max(1, Math.hypot(p.vx, p.vz));
-              m.x += (p.vx / spd) * 0.7;
-              m.z += (p.vz / spd) * 0.7;
+              const kbX = m.x + (p.vx / spd) * 0.7;
+              const kbZ = m.z + (p.vz / spd) * 0.7;
+              if (this.worldMode === 'overworld') {
+                const kbPt = { x: kbX, z: kbZ };
+                constrainToWalkableArchipelago(kbPt, 0.95);
+                m.x = kbPt.x;
+                m.z = kbPt.z;
+              } else {
+                m.x = THREE.MathUtils.clamp(kbX, -18, 18);
+                m.z = THREE.MathUtils.clamp(kbZ, -18, 18);
+              }
               this.spawnBurst(m.x, mBaseY + 1.8, m.z, 0x38bdf8, 8);
               this.showBanner(
-                `Kena ${m.name}! Perisai Kata ${nextStance}/3 — bidik lagi!`,
+                `Kena ${m.name}! Perisai Kata ${nextStance}/${maxStance} — bidik lagi!`,
                 1.6,
               );
             } else {
-              m.stanceHp = 3;
+              m.stanceHp = maxStance;
               m.angryTimer = 0.65;
               this.spawnBurst(m.x, mBaseY + 1.8, m.z, 0xf59e0b, 14);
               this.showBanner(
@@ -10133,8 +10260,8 @@ export class RpgWorldEngine {
           id: `om_${m.id}`,
           x: m.x,
           z: m.z,
-          kind: m.isNightMonster ? 'monster_brawl' : 'monster_quiz',
-          color: m.isNightMonster ? '#ef4444' : '#a855f7',
+          kind: m.combatOnly ? 'monster_brawl' : 'monster_quiz',
+          color: m.combatOnly ? '#ef4444' : '#a855f7',
           label: m.name,
         });
       }
@@ -10658,29 +10785,33 @@ export class RpgWorldEngine {
       ? caveTotal
       : Math.max(0, caveTotal - caveRemaining);
 
+    const remainingAll = this.monsters.filter((m) => m.alive).length;
+    const expectedTotal = this.getCurrentDayPhase() === 'malam' ? 50 : 30;
+    const totalAll = Math.max(this.nightWaveTotal || expectedTotal, remainingAll);
+    const defeatedAll = Math.max(0, totalAll - remainingAll);
+
+    const zoneSurfaceRemaining = this.monsters.filter((m) => m.alive && m.zoneId === zoneId).length;
+    const zoneSurfaceTotal = Math.max(this.nightZoneTotals[zoneId] || 0, zoneSurfaceRemaining);
+    const zoneSurfaceDefeated = Math.max(0, zoneSurfaceTotal - zoneSurfaceRemaining);
+    const surfaceCombatRemaining = this.monsters.filter((m) => m.alive && m.combatOnly).length;
+    const surfaceQuizRemaining = this.monsters.filter((m) => m.alive && !m.combatOnly).length;
+
     const phase = this.getCurrentDayPhase();
     if (phase === 'malam') {
-      const remainingAll =
-        this.monsters.filter((m) => m.alive && m.isNightMonster).length +
-        this.shooters.filter((s) => s.alive && s.isNightShooter).length;
-      const totalAll = Math.max(this.nightWaveTotal, remainingAll);
-      const defeatedAll = Math.max(0, totalAll - remainingAll);
-
-      const zoneNightRemaining =
-        this.monsters.filter((m) => m.alive && m.isNightMonster && m.zoneId === zoneId).length +
-        this.shooters.filter((s) => s.alive && s.isNightShooter && s.zoneId === zoneId).length;
-      const zoneNightTotal = Math.max(this.nightZoneTotals[zoneId] || 0, zoneNightRemaining);
-      const zoneNightDefeated = Math.max(0, zoneNightTotal - zoneNightRemaining);
-
       return {
         context: 'overworld_night',
         areaName: ZONE_INFO[zoneId].name,
         defeated: defeatedAll,
         remaining: remainingAll,
         total: totalAll,
-        zoneNightDefeated,
-        zoneNightRemaining,
-        zoneNightTotal,
+        zoneNightDefeated: zoneSurfaceDefeated,
+        zoneNightRemaining: zoneSurfaceRemaining,
+        zoneNightTotal: zoneSurfaceTotal,
+        zoneSurfaceDefeated,
+        zoneSurfaceRemaining,
+        zoneSurfaceTotal,
+        surfaceCombatRemaining,
+        surfaceQuizRemaining,
         caveDefeated,
         caveRemaining,
         caveTotal,
@@ -10691,9 +10822,14 @@ export class RpgWorldEngine {
     return {
       context: 'overworld_day',
       areaName: ZONE_INFO[zoneId].name,
-      defeated: caveDefeated,
-      remaining: caveRemaining,
-      total: caveTotal,
+      defeated: defeatedAll,
+      remaining: remainingAll,
+      total: totalAll,
+      zoneSurfaceDefeated,
+      zoneSurfaceRemaining,
+      zoneSurfaceTotal,
+      surfaceCombatRemaining,
+      surfaceQuizRemaining,
       caveDefeated,
       caveRemaining,
       caveTotal,
@@ -11050,16 +11186,15 @@ export class RpgWorldEngine {
       if (!m.alive) continue;
       const d = Math.hypot(m.x - this.heroPos.x, m.z - this.heroPos.z);
       if (d <= TUNE.autoAimRange + 6 && (!bestTarget || d < bestTarget.dist)) {
+        const spec = MONSTER_SPECS[m.type];
         const mBaseY =
           m.y ??
-          (m.type === 'kelelawar_gua'
-            ? 3.4
-            : this.worldMode === 'overworld'
-            ? getArchipelagoGroundY(m.x, m.z)
-            : 0);
+          (this.worldMode === 'overworld'
+            ? getArchipelagoGroundY(m.x, m.z) + spec.hoverY
+            : spec.hoverY);
         bestTarget = {
           x: m.x,
-          y: mBaseY + (m.isBoss ? 1.85 : 1.18),
+          y: mBaseY + (m.isBoss ? 2.1 : spec.hitCenterY),
           z: m.z,
           name: m.name,
           dist: d,

@@ -700,7 +700,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               );
             }
 
-            // Overworld (Luar Gua / Area Penyelamatan)
+            // Overworld (Luar Gua / Area Penyelamatan — Siang 30 Monster & Malam 50 Monster)
             if (stats.context === 'overworld_night') {
               return (
                 <div className="w-full rounded-xl border border-rose-400/35 bg-slate-950/88 px-2.5 py-1 text-white shadow-md">
@@ -725,14 +725,20 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                   <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-1.5 font-mono-nums text-[8.5px] font-bold text-slate-300 sm:text-[9px]">
                     <span className="truncate">
                       📍 {stats.areaName}
-                      {(stats.zoneNightTotal ?? 0) > 0
-                        ? ` · Luar: ${stats.zoneNightDefeated ?? 0}/${stats.zoneNightTotal}`
+                      {(stats.zoneSurfaceTotal ?? stats.zoneNightTotal ?? 0) > 0
+                        ? ` · Pulau: ${stats.zoneSurfaceDefeated ?? stats.zoneNightDefeated ?? 0}/${stats.zoneSurfaceTotal ?? stats.zoneNightTotal}`
                         : ''}
                     </span>
-                    <span className={stats.caveLiberated ? 'text-emerald-300' : 'text-amber-200'}>
-                      {stats.caveLiberated
-                        ? 'Gua Aman ✓'
-                        : `Gua: ${stats.caveDefeated ?? 0}/${stats.caveTotal ?? 0} (Sisa ${stats.caveRemaining ?? 0})`}
+                    <span className="text-slate-300">
+                      <span className="text-rose-300">⚔️{stats.surfaceCombatRemaining ?? 0}</span>
+                      {' · '}
+                      <span className="text-purple-300">📘{stats.surfaceQuizRemaining ?? 0}</span>
+                      {' · '}
+                      <span className={stats.caveLiberated ? 'text-emerald-300' : 'text-amber-200'}>
+                        {stats.caveLiberated
+                          ? 'Gua ✓'
+                          : `Gua ${stats.caveRemaining ?? 0}`}
+                      </span>
                     </span>
                   </div>
                 </div>
@@ -740,30 +746,43 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             }
 
             return (
-              <div className="w-full rounded-xl border border-amber-300/25 bg-slate-950/85 px-2.5 py-1 text-white shadow-md">
+              <div className="w-full rounded-xl border border-amber-300/30 bg-slate-950/88 px-2.5 py-1 text-white shadow-md">
                 <div className="flex items-center justify-between gap-1.5 font-mono-nums text-[9.5px] font-extrabold sm:text-[10px]">
-                  <span className="truncate text-amber-100">📍 {stats.areaName}</span>
-                  {stats.caveLiberated ? (
-                    <span className="shrink-0 text-emerald-300">Terbebas · Sisa 0 ✓</span>
-                  ) : (
-                    <span className="shrink-0">
-                      <span className="text-emerald-300">
-                        Kalah {stats.defeated}/{stats.total}
-                      </span>
-                      <span className="mx-1 text-slate-500">·</span>
-                      <span className="text-amber-300">Sisa {stats.remaining} Gua</span>
+                  <span className="truncate text-amber-100">⚔️ Monster Wilayah</span>
+                  <span className="shrink-0">
+                    <span className="text-emerald-300">
+                      Kalah {stats.defeated}/{stats.total}
                     </span>
-                  )}
+                    <span className="mx-1 text-slate-500">·</span>
+                    <span className={stats.remaining > 0 ? 'text-amber-300' : 'text-emerald-300'}>
+                      {stats.remaining > 0 ? `Sisa ${stats.remaining}` : 'Aman ✓'}
+                    </span>
+                  </span>
                 </div>
                 <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-800/90">
                   <div
-                    className={`h-full transition-all duration-200 ${
-                      stats.caveLiberated
-                        ? 'bg-emerald-400'
-                        : 'bg-gradient-to-r from-amber-400 to-emerald-400'
-                    }`}
+                    className="h-full bg-gradient-to-r from-amber-400 to-emerald-400 transition-all duration-200"
                     style={{ width: `${pct}%` }}
                   />
+                </div>
+                <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-1.5 font-mono-nums text-[8.5px] font-bold text-slate-300 sm:text-[9px]">
+                  <span className="truncate">
+                    📍 {stats.areaName}
+                    {(stats.zoneSurfaceTotal ?? 0) > 0
+                      ? ` · Pulau: ${stats.zoneSurfaceDefeated ?? 0}/${stats.zoneSurfaceTotal}`
+                      : ''}
+                  </span>
+                  <span>
+                    <span className="text-rose-300">⚔️{stats.surfaceCombatRemaining ?? 0}</span>
+                    {' · '}
+                    <span className="text-purple-300">📘{stats.surfaceQuizRemaining ?? 0}</span>
+                    {' · '}
+                    <span className={stats.caveLiberated ? 'text-emerald-300' : 'text-amber-200'}>
+                      {stats.caveLiberated
+                        ? 'Gua ✓'
+                        : `Gua ${stats.caveRemaining ?? 0}`}
+                    </span>
+                  </span>
                 </div>
               </div>
             );
