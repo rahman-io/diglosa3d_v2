@@ -1124,8 +1124,8 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     [4.5, 122.0],
     [-15.5, 65.0],
     [-6.0, 96.0],
-    [-8.5, 4.2],
-    [8.5, -2.2],
+    [-15.0, -1.0],
+    [2.5, 1.5],
     [-58.5, 34.5], // bridge approach lantern
     [-81.5, 42.5], // Pasar Rasa East plaza lantern
     [-113.5, 58.0], // Pasar Rasa West plaza lantern
@@ -1161,7 +1161,7 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     { style: 'farmer', waypoints: [[0.5, 122], [-3.8, 118], [-3.5, 108], [4.0, 114]], homeDoor: [-13.5, 90.0], speed: 1.9 },
     { style: 'librarian', waypoints: [[-9.5, 116], [-3.5, 115], [-2.5, 124], [-9.2, 124]], homeDoor: [-14.0, 118.0], speed: 2.0 },
     { style: 'shepherd', waypoints: [[6.5, 120], [1.2, 128], [-4.5, 130], [1.5, 118]], homeDoor: [-14.0, 118.0], speed: 1.85 },
-    { style: 'cleric', waypoints: [[-4.5, 5.5], [3.5, 4.5], [2.5, -2.5], [-4.8, -2.0]], homeDoor: [-4.5, 5.5], speed: 1.9 },
+    { style: 'cleric', waypoints: [[-12.5, -2.5], [-4.5, -2.5], [-4.5, -9.5], [-12.5, -9.5]], homeDoor: [-12.5, -2.5], speed: 1.9 },
     { style: 'fletcher', waypoints: [[-91.0, 48.0], [-94.0, 58.0], [-110.0, 56.0], [-108.0, 43.0]], homeDoor: [-89.5, 45.0], speed: 1.95 },
   ];
 
@@ -1334,10 +1334,10 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
 
   const golem2 = createIronGolemMesh(palette, false);
   golem2.waypoints = [
-    [-5.5, -2.0],
-    [4.5, -2.0],
-    [4.0, 5.5],
-    [-5.5, 5.5],
+    [-15.5, -10.5],
+    [-2.5, -10.5],
+    [-2.5, -1.0],
+    [-15.5, -1.0],
   ];
   golem2.x = golem2.waypoints[0][0];
   golem2.z = golem2.waypoints[0][1];
@@ -1354,7 +1354,7 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     [-3.5, 114.0],
     [-11.5, 122.0],
     [106.0, 74.0],
-    [-2.5, 2.0],
+    [-14.5, -4.0],
   ];
   beeCenters.forEach(([bx, bz], idx) => {
     const by = getArchipelagoGroundY(bx, bz) + 2.2;
@@ -1410,27 +1410,29 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     [166.0, -112.0, false],
     [118.0, -118.0, true],
     [182.0, -88.0, false],
-    // Central Hub ancient grove
-    [-13.5, -9.5, false],
-    [13.5, -9.5, true],
-    [-12.5, 12.5, true],
-    [12.5, 12.5, false],
+    // Central Citadel Hub ancient grove (courtyard & mossy terraces, clear of 35m x 25m lava caldera)
+    [-28.0, -8.0, false],
+    [-24.0, -34.0, true],
+    [18.0, -18.0, false],
+    [36.0, -4.0, true],
+    [-38.0, 12.0, false],
+    [32.0, 4.0, true],
     // Exploratory Sea Islets + Desa Sapaan, Hutan Satwa & Gerbang Kota NW strait islets
-    [-68.0, 126.0, false],
+    [-74.0, 126.0, false],
     [62.0, 168.0, true],
     [-172.0, -16.0, false],
     [196.0, 10.0, true],
-    [-36.0, -64.0, false],
-    [42.0, -84.0, true],
+    [-62.0, -162.0, false],
+    [42.0, -88.0, true],
     [-206.0, -148.0, false],
     [-196.0, -168.0, true],
     [-182.0, -180.0, false],
     [-32.0, 50.0, false],
     [-48.0, 70.0, true],
     [-64.0, 82.0, false],
-    [52.0, 8.0, false],
-    [68.0, -4.0, true],
-    [84.0, -14.0, false],
+    [76.0, -16.0, false],
+    [88.0, -8.0, true],
+    [96.0, -24.0, false],
   ];
   islandTreeSpots.forEach(([tx, tz, isBirch], i) => {
     if (!isWalkableArchipelago(tx, tz, 1.8)) return;

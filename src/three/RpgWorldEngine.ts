@@ -118,6 +118,12 @@ import {
   setHeroWeaponVisual,
   updateDoorRigVisual,
 } from './rpgModels';
+import {
+  createWorldObstacles,
+  getObstacleSupportHeight,
+  updateAndEvaluateObstacles,
+  WorldObstaclesRig,
+} from './worldObstacles';
 
 interface CollectibleItem {
   active: boolean;
@@ -368,7 +374,7 @@ const NIGHT_SURFACE_ZONES: Array<{
   { zoneId: 'menara_waktu', name: 'Creeper Menara Malam', type: 'creeper_kata', x: 150.0, z: -96.0 },
   { zoneId: 'gua_portal', name: 'Penyerbu Portal Malam', type: 'ksatria_ielts', x: 14.0, z: -165.0 },
   { zoneId: 'gua_portal', name: 'Jam Gelap Pelataran', type: 'jam_pasir', x: -2.0, z: -166.0 },
-  { zoneId: 'desa_sapaan', name: 'Peronda Alun-Alun Tengah', type: 'semak_rimba', x: -8.0, z: 6.5 },
+  { zoneId: 'desa_sapaan', name: 'Peronda Alun-Alun Tengah', type: 'semak_rimba', x: -14.0, z: -6.0 },
 ];
 
 const _v1 = new THREE.Vector3();
@@ -539,6 +545,8 @@ export class RpgWorldEngine {
   private overworldGroup: THREE.Group;
   private archipelagoRig!: ArchipelagoRig;
   private villageRig!: MinecraftVillageRig;
+  private worldObstaclesRig!: WorldObstaclesRig;
+  private heroOnIce = false;
   private extraVillageColliders: VillageObstacle[] = [];
   private dungeonRig: DungeonArenaRig | null = null;
   private academyRig: AcademyHallRig | null = null;
@@ -1408,6 +1416,9 @@ export class RpgWorldEngine {
     this.villageRig.torchesFlame.push(...this.archipelagoRig.torchesFlame);
     this.overworldGroup.add(this.villageRig.group);
     this.overworldClickables.push(...this.villageRig.clickables);
+
+    this.worldObstaclesRig = createWorldObstacles(this.palette);
+    this.overworldGroup.add(this.worldObstaclesRig.group);
   }
 
   private initNpcs(): void {
@@ -1820,7 +1831,7 @@ export class RpgWorldEngine {
     const coords: Array<[number, number]> =
       this.worldMode === 'overworld'
         ? [
-            [4.0, 48.0],
+            [-18.0, 72.0],
             [-114.0, -86.0],
           ]
         : this.worldMode === 'dungeon'
@@ -1934,14 +1945,14 @@ export class RpgWorldEngine {
       [-3.0, 114.0, 'diamond'],
       [19.0, 118.0, 'diamond'],
       [-4.0, 148.0, 'heart'],
-      [-10.0, 44.0, 'diamond'],
-      [0.0, -14.0, 'diamond'],
-      [-7.5, -5.0, 'heart'],
-      [-29.8, -4.8, 'diamond'],
-      [-37.5, 18.2, 'diamond'],
+      [-23.2, 43.3, 'diamond'],
+      [-8.0, -10.0, 'diamond'],
+      [0.0, -53.0, 'heart'],
+      [-64.6, -21.0, 'diamond'],
+      [-61.5, 10.8, 'diamond'],
       [-92.0, 52.0, 'diamond'],
       [-125.0, -14.0, 'diamond'],
-      [42.0, 24.0, 'diamond'],
+      [55.5, 26.25, 'diamond'],
       [83.0, 44.0, 'heart'],
       [106.0, 92.0, 'diamond'],
       [125.0, 68.5, 'heart'],
@@ -1953,11 +1964,11 @@ export class RpgWorldEngine {
       [115.0, -76.0, 'heart'],
       [152.0, -98.0, 'diamond'],
       [176.0, -54.0, 'diamond'],
-      [-3.8, -53.0, 'diamond'],
+      [-16.2, -84.0, 'diamond'],
       [-14.0, -158.0, 'diamond'],
       [10.0, -168.0, 'diamond'],
       [20.0, -184.0, 'heart'],
-      [-68.0, 126.0, 'diamond'],
+      [-74.0, 126.0, 'diamond'],
       [62.0, 168.0, 'heart'],
     ];
 
@@ -8127,7 +8138,7 @@ export class RpgWorldEngine {
       }
     }
 
-    this.heroVel.multiplyScalar(Math.exp(-7.5 * dt));
+    this.heroVel.multiplyScalar(Math.exp(-(this.heroOnIce ? 1.85 : 7.5) * dt));
     const prevHeroX = this.heroPos.x;
     const prevHeroY = this.heroPos.y;
     const prevHeroZ = this.heroPos.z;
@@ -8144,6 +8155,7 @@ export class RpgWorldEngine {
     this.heroPos.y += this.heroVelY * dt;
 
     if (this.worldMode !== 'overworld') {
+      this.heroOnIce = false;
       this.isSwimming = false;
       this.swimLeapTimer = 0;
       this.heroPos.x = THREE.MathUtils.clamp(this.heroPos.x, -18.5, 18.5);
@@ -8235,12 +8247,21 @@ export class RpgWorldEngine {
       }
 
       const curSample = sampleArchipelagoTerrain(this.heroPos.x, this.heroPos.z);
+      const obsSupportY = this.worldObstaclesRig
+        ? getObstacleSupportHeight(this.worldObstaclesRig, this.heroPos.x, this.heroPos.z, prevHeroY)
+        : null;
+      const hasObsSupport = obsSupportY !== null && this.heroPos.y >= obsSupportY - 1.35;
+      const effGroundY = hasObsSupport ? Math.max(curSample.groundY, obsSupportY!) : curSample.groundY;
+      const effLandOrBridge = curSample.isLandOrBridge || hasObsSupport;
+      const effSurface = hasObsSupport && obsSupportY! >= curSample.groundY ? 'bridge' : curSample.surface;
+
       const underDeckNow =
         curSample.isLandOrBridge &&
         !curSample.isDryLand &&
+        !hasObsSupport &&
         prevHeroY < curSample.groundY - 1.35 &&
         !(this.swimLeapTimer > 0 && this.heroVelY > 0.5);
-      const inWaterZone = !curSample.isLandOrBridge || curSample.groundY < -0.15 || underDeckNow;
+      const inWaterZone = !effLandOrBridge || effGroundY < -0.15 || underDeckNow;
       // Lower pivot so standing/freestyle swimmer's chest, arms & head stay cleanly above water surface y=0!
       const SWIM_FLOAT_Y = -1.16;
 
@@ -8264,19 +8285,16 @@ export class RpgWorldEngine {
       } else {
         const shoreOrLeap = wasSwimming || this.swimLeapTimer > 0;
         const bridgeLedgeCatch =
-          (curSample.surface === 'bridge' || curSample.surface === 'parkour') &&
-          this.heroVelY <= 2.0
-            ? 0.42
-            : 0.12;
-        const aboveCatch = shoreOrLeap && curSample.groundY <= 2.9 ? 1.15 : bridgeLedgeCatch;
-        const belowCatch = shoreOrLeap && curSample.groundY <= 2.9 ? 1.45 : 1.05;
+          (effSurface === 'bridge' || effSurface === 'parkour') && this.heroVelY <= 2.0 ? 0.42 : 0.12;
+        const aboveCatch = shoreOrLeap && effGroundY <= 2.9 ? 1.15 : bridgeLedgeCatch;
+        const belowCatch = shoreOrLeap && effGroundY <= 2.9 ? 1.45 : 1.05;
         const canStandOnSolid =
           !inWaterZone &&
-          this.heroPos.y <= curSample.groundY + aboveCatch &&
-          (this.heroPos.y >= curSample.groundY - belowCatch ||
-            (curSample.isDryLand && (!wasSwimming || curSample.groundY <= climbLimit)));
+          this.heroPos.y <= effGroundY + aboveCatch &&
+          (this.heroPos.y >= effGroundY - belowCatch ||
+            (curSample.isDryLand && (!wasSwimming || effGroundY <= climbLimit)));
         if (canStandOnSolid) {
-          this.heroPos.y = curSample.groundY;
+          this.heroPos.y = effGroundY;
           this.heroVelY = 0;
           this.heroOnGround = true;
           this.isSwimming = false;
@@ -8285,17 +8303,61 @@ export class RpgWorldEngine {
           !inWaterZone &&
           !wasAirborne &&
           !wasSwimming &&
-          curSample.groundY < prevHeroY &&
-          prevHeroY - curSample.groundY <= 0.85 &&
+          effGroundY < prevHeroY &&
+          prevHeroY - effGroundY <= 0.85 &&
           this.heroVelY <= 0.25
         ) {
-          this.heroPos.y = curSample.groundY;
+          this.heroPos.y = effGroundY;
           this.heroVelY = 0;
           this.heroOnGround = true;
           this.isSwimming = false;
         } else {
           this.heroOnGround = false;
           this.isSwimming = false;
+        }
+      }
+
+      if (this.worldObstaclesRig) {
+        const obsEval = updateAndEvaluateObstacles(
+          this.worldObstaclesRig,
+          dt,
+          this.elapsed,
+          this.heroPos,
+          this.heroVel,
+          this.heroOnGround,
+          this.phase === 'playing' && this.encounterGraceTimer <= 0,
+        );
+        this.heroOnIce = obsEval.onIce;
+        if (obsEval.pushX !== 0 || obsEval.pushZ !== 0) {
+          this.heroVel.x += obsEval.pushX * dt;
+          this.heroVel.z += obsEval.pushZ * dt;
+        }
+        if (obsEval.bounceVelY > 0) {
+          this.heroVelY = obsEval.bounceVelY;
+          this.heroOnGround = false;
+          this.coyoteTimer = 0;
+          soundEngine.playDash();
+          this.spawnBurst(this.heroPos.x, this.heroPos.y + 0.3, this.heroPos.z, 0xf43f5e, 14);
+          this.showBanner('🚀 Bouncy Pad melontarkanmu tinggi ke udara!', 1.8);
+        }
+        if (obsEval.hazardHit && this.phase === 'playing' && this.encounterGraceTimer <= 0) {
+          this.hp = Math.max(0, this.hp - 1);
+          this.encounterGraceTimer = 1.45;
+          soundEngine.playHurt();
+          this.heroVel.set(obsEval.hazardHit.knockX, 0, obsEval.hazardHit.knockZ);
+          this.heroVelY = 5.4;
+          this.heroOnGround = false;
+          this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.1, this.heroPos.z, 0xef4444, 16);
+          this.showBanner(
+            `⚠️ Terkena ${obsEval.hazardHit.name}! ${obsEval.hazardHit.hint} (-1 ❤️)`,
+            2.8,
+          );
+          if (this.hp <= 0) {
+            this.phase = 'gameover';
+            soundEngine.playLose();
+            this.pushHud(true);
+            return;
+          }
         }
       }
 
@@ -11072,6 +11134,7 @@ export class RpgWorldEngine {
     this.controls.dispose();
     this.archipelagoRig?.disposables.forEach((d) => d.dispose());
     this.villageRig?.disposables.forEach((d) => d.dispose());
+    this.worldObstaclesRig?.disposables.forEach((d) => d.dispose());
     this.palette.dispose();
     this.mapRtMinimap.dispose();
     this.mapRtFull.dispose();

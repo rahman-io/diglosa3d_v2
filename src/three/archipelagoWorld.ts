@@ -6,7 +6,7 @@ import { VillageObstacle } from './minecraftVillage';
 export const IELTS_TEMPORARILY_LOCKED = true;
 
 export const OVERWORLD_ANCHORS = {
-  hub: { x: 0, y: 2.8, z: 0 },
+  hub: { x: -8.0, y: 6.0, z: -5.0 },
   desaSpawn: { x: -6.0, y: 2.6, z: 126.0, yaw: Math.PI * 0.85 },
   starterWeapon: { x: -12.5, y: 2.6, z: 123.0 },
   portal: { x: 2.0, y: 14.0, z: -185.0 },
@@ -105,7 +105,8 @@ export const WORLD_OCEAN_LIMIT = 275;
 export const SEABED_Y = -1.1;
 
 export const ISLAND_DISKS: IslandDisk[] = [
-  { id: 'hub', cx: 0, cz: 0, radius: 25.0, groundY: 2.8 },
+  // 125m (radius 62.5m) Full-Scale Citadel Reruntuhan ("Central Hub") matching level design overview!
+  { id: 'hub', cx: 0, cz: -17, radius: 62.5, groundY: 6.0 },
   // 120m (radius 60m) Full-Scale Starter Village ("Desa Sapaan") matching level design overview!
   { id: 'desa_sapaan', cx: 0, cz: 118, radius: 60.0, groundY: 2.6 },
   // 110m (radius 55m) Full-Scale Festival Market ("Pasar Rasa") matching level design overview!
@@ -121,20 +122,20 @@ export const ISLAND_DISKS: IslandDisk[] = [
 ];
 
 export const SEA_ISLETS: SeaIslet[] = [
-  { id: 'islet_sw', cx: -68, cz: 126, radius: 7.4, peakY: 4.2, theme: 'sand_green' },
+  { id: 'islet_sw', cx: -74, cz: 126, radius: 7.4, peakY: 4.2, theme: 'sand_green' },
   { id: 'islet_se', cx: 62, cz: 168, radius: 7.4, peakY: 4.5, theme: 'jungle' },
   { id: 'islet_w', cx: -172, cz: -16, radius: 8.0, peakY: 5.0, theme: 'rock_sand' },
   { id: 'islet_e', cx: 196, cz: 10, radius: 8.2, peakY: 5.2, theme: 'jungle' },
-  { id: 'islet_nw', cx: -36, cz: -64, radius: 6.8, peakY: 5.2, theme: 'basalt' },
-  { id: 'islet_ne', cx: 42, cz: -84, radius: 7.6, peakY: 5.4, theme: 'autumn' },
+  { id: 'islet_nw', cx: -62, cz: -162, radius: 5.8, peakY: 4.6, theme: 'basalt' },
+  { id: 'islet_ne', cx: 42, cz: -88, radius: 6.4, peakY: 4.8, theme: 'autumn' },
   // Scenic tiny sandy/green sea islets in NW strait off Desa Sapaan (matching level design!)
   { id: 'islet_desa_nw1', cx: -32, cz: 50, radius: 4.4, peakY: 3.1, theme: 'sand_green' },
   { id: 'islet_desa_nw2', cx: -48, cz: 70, radius: 4.6, peakY: 2.9, theme: 'sand_green' },
   { id: 'islet_desa_nw3', cx: -64, cz: 82, radius: 5.4, peakY: 3.5, theme: 'sand_green' },
-  // Scenic tiny sandy/jungle sea islets in NW strait off Hutan Satwa (matching level design!)
-  { id: 'islet_satwa_nw1', cx: 52, cz: 8, radius: 5.2, peakY: 3.2, theme: 'sand_green' },
-  { id: 'islet_satwa_nw2', cx: 68, cz: -4, radius: 4.6, peakY: 2.8, theme: 'jungle' },
-  { id: 'islet_satwa_nw3', cx: 84, cz: -14, radius: 5.4, peakY: 3.5, theme: 'sand_green' },
+  // Scenic tiny sandy/jungle sea islets in East strait between Citadel, Hutan Satwa & Menara Waktu
+  { id: 'islet_satwa_nw1', cx: 76, cz: -16, radius: 4.4, peakY: 3.1, theme: 'sand_green' },
+  { id: 'islet_satwa_nw2', cx: 88, cz: -8, radius: 4.6, peakY: 2.9, theme: 'jungle' },
+  { id: 'islet_satwa_nw3', cx: 96, cz: -24, radius: 5.0, peakY: 3.4, theme: 'sand_green' },
   // Scenic tiny sandy/green sea islets off Gerbang Kota NW (matching level design overview!)
   { id: 'islet_gerbang_nw1', cx: -206, cz: -148, radius: 6.4, peakY: 4.0, theme: 'sand_green' },
   { id: 'islet_gerbang_nw2', cx: -196, cz: -168, radius: 4.8, peakY: 3.0, theme: 'sand_green' },
@@ -146,24 +147,24 @@ export const SEA_ISLETS: SeaIslet[] = [
 
 export const BRIDGE_SPANS: BridgeSpan[] = [
   {
+    // Exact 4m-wide (halfWidth 2.0) Suspension Bridge ("Jembatan Gantung: Lebar 4m") connecting Citadel SW to Desa Sapaan!
     id: 'bridge_desa',
-    ax: 0,
-    az: 21.5,
-    ay: 2.8,
+    ax: -26.0,
+    az: 33.0,
+    ay: 5.0,
     bx: -18.0,
     bz: 62.5,
     by: 2.6,
-    halfWidth: 2.6,
-    archHeight: 1.0,
+    halfWidth: 2.0,
+    archHeight: 1.1,
     style: 'rope',
-    // Scenic suspension bridge connecting Hub South to Desa Sapaan NW shore
   },
   {
-    // Exact 5m-wide (halfWidth 2.5) Wooden Bridge ("Jembatan Kayu: Lebar 5m") connecting Hub SW to Pasar Rasa Plaza
+    // Exact 5m-wide (halfWidth 2.5) Wooden Bridge ("Jembatan Kayu: Lebar 5m") connecting Citadel WSW to Pasar Rasa Plaza
     id: 'bridge_pasar',
-    ax: -19.5,
-    az: 11.5,
-    ay: 2.8,
+    ax: -58.0,
+    az: 4.0,
+    ay: 5.0,
     bx: -72.0,
     bz: 31.0,
     by: 2.0,
@@ -173,16 +174,16 @@ export const BRIDGE_SPANS: BridgeSpan[] = [
     gaps: [{ t0: 0.45, t1: 0.545 }],
   },
   {
-    // Exact 6m-wide (halfWidth 3.0) rope suspension bridge from Hub East directly to Hutan Satwa 16m Gate!
+    // Exact 4m-wide (halfWidth 2.0) Suspension Bridge ("Jembatan Gantung: Lebar 4m") connecting Citadel SE to Hutan Satwa!
     id: 'bridge_satwa',
-    ax: 19.5,
-    az: 11.5,
-    ay: 2.8,
+    ax: 46.0,
+    az: 16.0,
+    ay: 5.0,
     bx: 65.0,
     bz: 36.5,
     by: 3.4,
-    halfWidth: 3.0,
-    archHeight: 1.35,
+    halfWidth: 2.0,
+    archHeight: 1.15,
     style: 'rope',
   },
   {
@@ -200,41 +201,42 @@ export const BRIDGE_SPANS: BridgeSpan[] = [
   },
   {
     id: 'bridge_gerbang',
-    ax: -19.5,
-    az: -11.5,
-    ay: 2.8,
+    ax: -57.0,
+    az: -31.0,
+    ay: 6.5,
     bx: -92.0,
     bz: -34.0,
     by: 12.0,
     halfWidth: 3.0,
-    archHeight: 0.6,
+    archHeight: 0.85,
     style: 'stone',
-    gaps: [{ t0: 0.47, t1: 0.52 }],
+    gaps: [{ t0: 0.44, t1: 0.52 }],
   },
   {
-    // Exact 5m-wide (halfWidth 2.5) Wooden Gear Bridge ("Jembatan Roda Gigi: Lebar 5m") connecting Hub NE to Menara Waktu!
+    // Exact 5m-wide (halfWidth 2.5) Wooden Gear Bridge ("Jembatan Roda Gigi: Lebar 5m") connecting Citadel ENE to Menara Waktu!
     id: 'bridge_menara',
-    ax: 19.5,
-    az: -11.5,
-    ay: 2.8,
+    ax: 50.0,
+    az: -49.0,
+    ay: 6.5,
     bx: 94.0,
     bz: -66.0,
     by: 10.0,
     halfWidth: 2.5,
-    archHeight: 0.7,
+    archHeight: 0.85,
     style: 'wood',
     gaps: [{ t0: 0.45, t1: 0.54 }],
   },
   {
+    // Exact 3m Rail Stone Bridge connecting Citadel North-NW Pass directly to Gua Portal South Quarry!
     id: 'bridge_portal',
-    ax: 0,
-    az: -22.5,
-    ay: 2.8,
+    ax: -18.0,
+    az: -73.0,
+    ay: 5.0,
     bx: -12.0,
     bz: -118.0,
     by: 4.0,
     halfWidth: 3.2,
-    archHeight: 0.85,
+    archHeight: 0.9,
     style: 'stone',
     gaps: [{ t0: 0.46, t1: 0.525 }],
   },
@@ -255,10 +257,11 @@ export const BRIDGE_SPANS: BridgeSpan[] = [
 
 // Floating chain ruins, crumbling viaduct jutting over water, sea stepping stones & harbor climb docks
 export const PARKOUR_PLATFORMS: ParkourPad[] = [
-  // Hub West floating chained stone platforms hovering off the cliff edge over open sea!
-  { id: 'hub_chain_1', x: -25.8, y: 4.2, z: -4.6, halfW: 1.7, halfD: 1.7, style: 'ruin_float', chained: true },
-  { id: 'hub_chain_2', x: -29.8, y: 5.0, z: -4.8, halfW: 1.65, halfD: 1.65, style: 'ruin_float', chained: true },
-  { id: 'hub_chain_3', x: -33.8, y: 5.8, z: -5.2, halfW: 1.7, halfD: 1.7, style: 'ruin_float', chained: true },
+  // Citadel West Floating Chain Obby Platforms: exact 4m x 4m (halfW=2.0, halfD=2.0) hovering over cliff cove & ocean!
+  { id: 'hub_chain_1', x: -45.5, y: 12.8, z: -20.0, halfW: 2.0, halfD: 2.0, style: 'ruin_float', chained: true },
+  { id: 'hub_chain_2', x: -51.8, y: 13.7, z: -21.2, halfW: 2.0, halfD: 2.0, style: 'wood', chained: true },
+  { id: 'hub_chain_3', x: -58.2, y: 14.6, z: -19.8, halfW: 2.0, halfD: 2.0, style: 'ruin_float', chained: true },
+  { id: 'hub_chain_4', x: -64.6, y: 15.5, z: -21.0, halfW: 2.0, halfD: 2.0, style: 'wood', chained: true },
 
   // Gerbang Kota crumbling SE broken viaduct ruins jutting over sea near Viaduct head
   { id: 'viaduct_1', x: -86.0, y: 8.5, z: -31.0, halfW: 1.9, halfD: 1.7, style: 'stone' },
@@ -286,8 +289,8 @@ export const PARKOUR_PLATFORMS: ParkourPad[] = [
   { id: 'dock_satwa_south', x: 120.0, y: 0.3, z: 123.5, halfW: 3.2, halfD: 2.8, style: 'dock' },
   { id: 'dock_satwa_west', x: 54.5, y: 0.3, z: 62.0, halfW: 2.8, halfD: 3.2, style: 'dock' },
   { id: 'dock_satwa_east', x: 148.0, y: 0.3, z: 117.0, halfW: 3.0, halfD: 2.8, style: 'dock' },
-  { id: 'dock_hub_west', x: -25.2, y: 0.32, z: 0, halfW: 2.4, halfD: 2.8, style: 'dock' },
-  { id: 'dock_hub_east', x: 25.2, y: 0.32, z: 0, halfW: 2.4, halfD: 2.8, style: 'dock' },
+  { id: 'dock_hub_west', x: -63.0, y: 0.32, z: -17.0, halfW: 2.6, halfD: 2.8, style: 'dock' },
+  { id: 'dock_hub_east', x: 63.0, y: 0.32, z: -17.0, halfW: 2.6, halfD: 2.8, style: 'dock' },
   { id: 'dock_gerbang_south', x: -126.5, y: 0.32, z: -27.5, halfW: 3.0, halfD: 2.6, style: 'dock' },
   { id: 'dock_menara_south', x: 148.0, y: 0.32, z: -26.5, halfW: 3.0, halfD: 2.8, style: 'dock' },
   { id: 'dock_portal_west', x: -48.0, y: 0.3, z: -174.0, halfW: 2.8, halfD: 3.0, style: 'dock' },
@@ -359,6 +362,10 @@ function islandContourRadius(isl: IslandDisk, wx: number, wz: number): number {
   const dx = wx - isl.cx;
   const dz = wz - isl.cz;
   const ang = Math.atan2(dz, dx);
+  if (isl.id === 'hub') {
+    const wobble = Math.sin(ang * 4) * 0.65 + Math.cos(ang * 3 + 0.5) * 0.45;
+    return isl.radius - 0.55 + wobble * 0.6;
+  }
   const wobble =
     Math.sin(ang * 3 + isl.cx * 0.13) * 1.35 +
     Math.cos(ang * 5 - isl.cz * 0.11) * 0.9;
@@ -400,72 +407,152 @@ function sampleIslandInterior(
   const rimSlope = smoothstep(effR, effR - 4.4, dist);
 
   if (isl.id === 'hub') {
-    // 1. Sloping E/W coastal beaches & sea-stairs down to docks (walkable right from water!)
-    if (wx < -18.0 && Math.abs(wz) <= 3.0) {
-      const t = THREE.MathUtils.clamp((-18.0 - wx) / 6.5, 0, 1);
-      return { y: Math.max(0.32, quantizeTier(2.8 - t * 2.45, 0.48)), surface: 'stairs' };
+    // Citadel Reruntuhan (Central Hub: cx=0, cz=-17, radius=62.5m -> Total Panjang 125m!)
+    // Local coords hx = wx, hz = wz + 17
+    const hx = dx;
+    const hz = dz;
+
+    const segDist = (ax: number, az: number, bx: number, bz: number): { d: number; t: number } => {
+      const vx = bx - ax;
+      const vz = bz - az;
+      const lSq = vx * vx + vz * vz || 1;
+      const t = Math.max(0, Math.min(1, ((hx - ax) * vx + (hz - az) * vz) / lSq));
+      return { d: Math.hypot(hx - (ax + vx * t), hz - (az + vz * t)), t };
+    };
+
+    // 1. Sloping West & East Harbor Swim Dock Stairs (hx=±50..±62, |hz| <= 3.5)
+    if (hx <= -50.0 && Math.abs(hz) <= 3.5) {
+      const t = THREE.MathUtils.clamp((-50.0 - hx) / 11.5, 0, 1);
+      return { y: Math.max(0.32, quantizeTier(5.0 - t * 4.68, 0.45)), surface: 'stairs' };
     }
-    if (wx > 18.0 && Math.abs(wz) <= 3.0) {
-      const t = THREE.MathUtils.clamp((wx - 18.0) / 6.5, 0, 1);
-      return { y: Math.max(0.32, quantizeTier(2.8 - t * 2.45, 0.48)), surface: 'stairs' };
-    }
-    // 2. North, South, E/W & diagonal NW/NE/SW/SE bridgehead causeways at y=2.8!
-    if ((Math.abs(dx) <= 3.0 && Math.abs(dz) >= 3.2) || (Math.abs(dz) <= 3.2 && Math.abs(dx) <= 18.5)) {
-      return { y: 2.8, surface: 'road' };
-    }
-    // Diagonal spoke corridors linking center Hub to bridge_pasar / bridge_satwa / bridge_gerbang / bridge_menara
-    const absDx = Math.abs(dx);
-    const absDz = Math.abs(dz);
-    const diagProj = (absDx * 19.5 + absDz * 11.5) / (19.5 * 19.5 + 11.5 * 11.5);
-    if (diagProj >= 0.15 && diagProj <= 1.25) {
-      const perpDiag = Math.abs(absDx * 11.5 - absDz * 19.5) / Math.hypot(19.5, 11.5);
-      if (perpDiag <= 2.95) {
-        return { y: 2.8, surface: 'road' };
-      }
-    }
-    // 3. Grand North-East Citadel Staircase up to Rune Obelisk Mountain Summit (y=11.0)!
-    if (wx >= 4.2 && wx <= 9.2 && wz <= -4.2 && wz >= -16.4) {
-      const prog = THREE.MathUtils.clamp((-4.2 - wz) / 12.0, 0, 1);
-      return { y: Math.min(11.0, quantizeTier(2.8 + prog * 8.2, 0.58)), surface: 'stairs' };
-    }
-    // Summit Obelisk plateau on NE Citadel Peak
-    if (wx >= 4.8 && wx <= 15.2 && wz < -15.6 && wz >= -21.8) {
-      return { y: 11.0, surface: 'land' };
+    if (hx >= 50.0 && Math.abs(hz) <= 3.5) {
+      const t = THREE.MathUtils.clamp((hx - 50.0) / 11.5, 0, 1);
+      return { y: Math.max(0.32, quantizeTier(6.0 - t * 5.68, 0.45)), surface: 'stairs' };
     }
 
-    // Organic terraced citadel mountain & lowlands everywhere else!
-    let h = 2.6 + hillWave(wx, wz) * 0.95;
-    if (dz < -2.0 && dx > 3.2) {
-      // Sweeping north-east citadel mountain ridge rising steeply behind Obelisk
-      const northFactor = smoothstep(-2.0, -18.5, dz) * smoothstep(22.0, 4.0, Math.abs(dx - 10.0));
-      h += northFactor * 7.8 + Math.max(0, Math.sin(dx * 0.25)) * 1.4;
-    } else if (dz < -2.0 && dx < -3.2) {
-      // Western watch ridge overlooking chain parkour
-      const nwFactor = smoothstep(-2.0, -17.5, dz) * smoothstep(20.0, 4.0, Math.abs(dx + 10.5));
-      h += nwFactor * 5.2;
+    // 2. Kawah Lava Utama (35m x 25m): hx ∈ [-13.5, +21.5], hz ∈ [+27.0, +52.0] + Twin Front Spillways!
+    if (hx >= -13.5 && hx <= 21.5 && hz >= 27.0 && hz <= 52.0) {
+      return { y: 1.75, surface: 'land' };
     }
-    // Lava Caldera & cascading lava trough on SE
-    const lavaDist = Math.hypot(wx - 9.2, wz - 9.2);
-    if (lavaDist <= 4.4) {
-      return { y: 2.8, surface: 'land' };
-    }
-    if (wx > 9.5 && wz > 9.5 && Math.abs(wx - wz) <= 3.2) {
-      const tFall = THREE.MathUtils.clamp((wx - 9.5) / 10.5, 0, 1);
-      return { y: Math.max(0.35, quantizeTier(2.8 - tFall * 2.4, 0.55)), surface: 'land' };
-    }
-    // West elevated parkour bluff leading to chain platforms
-    if (dx <= -7.5 && dz >= -8.0 && dz <= 4.5 && dist < effR - 3.0) {
-      h = Math.max(h, 4.0 + smoothstep(-7.5, -16.0, dx) * 1.2);
+    // Twin Lava Waterfall Spillways breaching front basalt sea-cliff down into the sea!
+    if (hz > 51.0 && (Math.abs(hx + 7.5) <= 2.4 || Math.abs(hx - 13.5) <= 2.4)) {
+      const tFall = THREE.MathUtils.clamp((hz - 51.0) / 9.5, 0, 1);
+      return { y: Math.max(0.32, quantizeTier(2.6 - tFall * 2.25, 0.55)), surface: 'land' };
     }
 
-    // Protect center plaza & lava rim smoothly
-    h = padBlend(wx, wz, 0, 0, 4.2, 8.8, 2.8, h);
-    // Coastal sandy/pebble beach slope down into sea around rim (except steep N mountain cliff)
-    if (dist > effR - 4.4 && dz > -10.5) {
-      const beachY = 0.28 + rimSlope * 2.1;
-      return { y: Math.max(0.28, quantizeTier(Math.min(Math.max(0.45, h), beachY), 0.35)), surface: 'beach' };
+    // 3. Grand Tangga Batu Kuno (Exact 6m wide = ±3.0m) ascending from Citadel Plaza -> Mid Landing -> 34m Obelisk Summit!
+    // Lower Flight (hx ∈ [-6.0, 0.0], hz ∈ [-14.0, +6.0], y: 6.0 -> 20.0m, 20m run!)
+    if (hx >= -6.0 && hx <= 0.0 && hz >= -14.0 && hz <= 6.0) {
+      const prog = THREE.MathUtils.clamp((6.0 - hz) / 20.0, 0, 1);
+      return { y: Math.min(20.0, quantizeTier(6.0 + prog * 14.0, 0.46)), surface: 'stairs' };
     }
-    return { y: Math.max(0.55, quantizeTier(h, 0.55)), surface: 'land' };
+    // Mid-Citadel Ruin Landing Terrace (y = 20.0m)
+    if (hx >= -11.0 && hx <= 15.0 && hz >= -18.0 && hz < -14.0) {
+      return { y: 20.0, surface: 'road' };
+    }
+    // Upper Flight (hx ∈ [-3.0, +3.0] — exact 6m wide!, hz ∈ [-36.5, -18.0], y: 20.0 -> 34.0m, 18.5m run -> <=0.46m step!)
+    if (hx >= -3.0 && hx <= 3.0 && hz >= -36.5 && hz < -18.0) {
+      const prog = THREE.MathUtils.clamp((-18.0 - hz) / 18.5, 0, 1);
+      return { y: Math.min(34.0, quantizeTier(20.0 + prog * 14.0, 0.46)), surface: 'stairs' };
+    }
+    // Summit Obelisk Plateau Terrace (y = 34.0m — 20m Obelisk + Plinth reaches exact T = 54.0m!)
+    if (hx >= -12.0 && hx <= 12.0 && hz >= -49.5 && hz < -36.5) {
+      return { y: 34.0, surface: 'land' };
+    }
+
+    // 4. West Ruin Bastion Stairway & Launch Terrace (leading straight to 4m x 4m Platform Rantai Obby!)
+    if (hx >= -24.0 && hx <= -12.0 && hz >= -6.0 && hz <= -0.5) {
+      const prog = THREE.MathUtils.clamp((-12.0 - hx) / 12.0, 0, 1);
+      return { y: Math.min(12.0, quantizeTier(6.0 + prog * 6.0, 0.45)), surface: 'stairs' };
+    }
+    if (hx >= -42.0 && hx < -24.0 && hz >= -10.0 && hz <= 2.0) {
+      return { y: 12.0, surface: 'road' };
+    }
+
+    // 5. East Watchtower Bastion Stairway & Terrace (y = 14.0m)
+    if (hx >= 6.0 && hx <= 18.0 && hz >= -10.0 && hz <= -4.0) {
+      const prog = THREE.MathUtils.clamp((hx - 6.0) / 12.0, 0, 1);
+      return { y: Math.min(14.0, quantizeTier(6.0 + prog * 8.0, 0.46)), surface: 'stairs' };
+    }
+    if (hx > 18.0 && hx <= 34.5 && hz >= -26.0 && hz <= -6.0) {
+      return { y: 14.0, surface: 'land' };
+    }
+
+    // 6. Central Courtyard & Paved Citadel Causeways connecting ALL 6 Archipelago Bridges cleanly!
+    if (hx >= -22.0 && hx <= 6.0 && hz >= 4.0 && hz <= 22.0) {
+      return { y: 6.0, surface: 'road' };
+    }
+    const cDesa = segDist(-16.0, 18.0, -26.0, 50.0);
+    if (cDesa.d <= 3.0) {
+      return { y: quantizeTier(6.0 - smoothstep(0.55, 1.0, cDesa.t) * 1.0, 0.35), surface: 'road' };
+    }
+    const cPasar = segDist(-20.0, 12.0, -58.0, 21.0);
+    if (cPasar.d <= 3.0) {
+      return { y: quantizeTier(6.0 - smoothstep(0.55, 1.0, cPasar.t) * 1.0, 0.35), surface: 'road' };
+    }
+    const cSatwaA = segDist(6.0, 18.0, 32.0, 22.0);
+    const cSatwaB = segDist(32.0, 22.0, 46.0, 33.0);
+    if (cSatwaA.d <= 3.0 || cSatwaB.d <= 3.0) {
+      const drop = cSatwaB.d <= 3.0 ? smoothstep(0.25, 1.0, cSatwaB.t) * 1.0 : 0;
+      return { y: quantizeTier(6.0 - drop, 0.35), surface: 'road' };
+    }
+    const cGerbangA = segDist(-20.0, 10.0, -50.0, 10.0);
+    const cGerbangB = segDist(-50.0, 10.0, -57.0, -14.0);
+    if (cGerbangA.d <= 3.0 || cGerbangB.d <= 3.0) {
+      const climb = cGerbangB.d <= 3.0 ? smoothstep(0.35, 1.0, cGerbangB.t) * 0.5 : 0;
+      return { y: quantizeTier(6.0 + climb, 0.35), surface: 'road' };
+    }
+    const cMenaraA = segDist(6.0, 12.0, 38.0, 4.0);
+    const cMenaraB = segDist(38.0, 4.0, 50.0, -32.0);
+    if (cMenaraA.d <= 3.0 || cMenaraB.d <= 3.0) {
+      const climb = cMenaraB.d <= 3.0 ? smoothstep(0.35, 1.0, cMenaraB.t) * 0.5 : 0;
+      return { y: quantizeTier(6.0 + climb, 0.35), surface: 'road' };
+    }
+    const cPortalA = segDist(-46.0, 9.0, -45.0, -28.0);
+    const cPortalB = segDist(-45.0, -28.0, -18.0, -56.0);
+    if (cPortalA.d <= 3.2 || cPortalB.d <= 3.2) {
+      const drop = cPortalB.d <= 3.2 ? smoothstep(0.35, 1.0, cPortalB.t) * 1.0 : 0;
+      return { y: quantizeTier(6.0 - drop, 0.35), surface: 'road' };
+    }
+
+    // 7. Deep Coastal Cove underneath the Floating 4m x 4m Chain Obby (hx < -42.5, hz ∈ [-10, +2])
+    if (hx < -42.5 && hz >= -10.5 && hz <= 2.5) {
+      return { y: 1.8, surface: 'beach' };
+    }
+
+    // 8. Sculpted Volcanic Basalt Crater Rim, Terraced Mountain Peaks & Mossy Citadel Ridges
+    let h = 6.0 + hillWave(wx * 0.42, wz * 0.42) * 1.35;
+
+    // Towering North-Center Mountain Backdrop supporting the 34m Obelisk Plateau (rises behind to 38..40m!)
+    const mountainCore = Math.exp(-((hx - 0.0) ** 2 / 460 + (hz + 41.0) ** 2 / 360)) * 31.5;
+    const mountainNorth = Math.exp(-((hx - 2.0) ** 2 / 640 + (hz + 51.0) ** 2 / 190)) * 34.0;
+    const mountainWest = Math.exp(-((hx + 22.0) ** 2 / 260 + (hz + 32.0) ** 2 / 320)) * 18.0;
+    const mountainEast = Math.exp(-((hx - 26.0) ** 2 / 310 + (hz + 26.0) ** 2 / 340)) * 16.5;
+    h += mountainCore + mountainNorth + mountainWest + mountainEast;
+
+    // Dark Volcanic Basalt Outer Crater Rim framing Kawah Lava Utama (35m x 25m)
+    const rimDistX = Math.max(0, Math.abs(hx - 4.0) - 17.5);
+    const rimDistZ = Math.max(0, Math.abs(hz - 39.5) - 12.5);
+    const craterRimDist = Math.hypot(rimDistX, rimDistZ);
+    if (craterRimDist > 0.01 && craterRimDist < 5.5) {
+      const rimPeak = (1.0 - smoothstep(0.0, 5.5, craterRimDist)) * 3.8;
+      h = Math.max(h, 6.2 + rimPeak);
+    }
+
+    // Smooth bridge arrival pads
+    h = padBlend(hx, hz, -26.0, 50.0, 3.8, 7.0, 5.0, h);
+    h = padBlend(hx, hz, -58.0, 21.0, 3.8, 7.0, 5.0, h);
+    h = padBlend(hx, hz, 46.0, 33.0, 3.8, 7.0, 5.0, h);
+    h = padBlend(hx, hz, -57.0, -14.0, 3.8, 7.0, 6.5, h);
+    h = padBlend(hx, hz, 50.0, -32.0, 3.8, 7.0, 6.5, h);
+    h = padBlend(hx, hz, -18.0, -56.0, 3.8, 7.0, 5.0, h);
+
+    // Gentle sandy/pebble beaches along West/East outer flanks (except volcanic front caldera cliff)
+    if (dist > effR - 5.2 && !(hx >= -16.0 && hx <= 24.0 && hz >= 48.0)) {
+      const beachY = 0.32 + rimSlope * 3.4;
+      return { y: Math.max(0.32, quantizeTier(Math.min(Math.max(0.55, h), beachY), 0.45)), surface: 'beach' };
+    }
+    return { y: Math.max(0.65, Math.min(40.0, quantizeTier(h, 0.7))), surface: 'land' };
   }
 
   if (isl.id === 'desa_sapaan') {
@@ -1675,12 +1762,12 @@ export function createArchipelagoWorld(
     }
   > = {
     hub: {
-      lowColors: [0x64748b, 0x78716c, 0x4d7c0f, 0x57534e],
-      highColors: [0x94a3b8, 0x64748b, 0x65a30d, 0x475569],
+      lowColors: [0x65a30d, 0x4d7c0f, 0x78716c, 0x64748b],
+      highColors: [0x65a30d, 0x4d7c0f, 0x71bd3d, 0x78716c],
       pathColors: [0x94a3b8, 0x78716c],
       stairColors: [0xcbd5e1, 0x94a3b8],
       beachColors: [0x94a3b8, 0xcbd5e1],
-      cliffColors: [0x475569, 0x334155, 0x57534e],
+      cliffColors: [0x57534e, 0x475569, 0x64748b],
       foamColors: [0x38bdf8, 0x7dd3fc],
     },
     desa_sapaan: {
@@ -1759,13 +1846,19 @@ export function createArchipelagoWorld(
 
         if (dist <= effR) {
           const inner = sampleIslandInterior(isl, wx, wz, dist, effR);
+          const isHubBasaltZone =
+            isl.id === 'hub' && wx >= -18.5 && wx <= 26.5 && wz + 17.0 >= 22.0;
           const colList =
             inner.surface === 'stairs'
               ? theme.stairColors
               : inner.surface === 'road'
               ? theme.pathColors
+              : isHubBasaltZone
+              ? [0x1c1917, 0x292524, 0x3f3f46]
               : inner.surface === 'beach'
               ? theme.beachColors
+              : isl.id === 'hub' && inner.y >= 26.0
+              ? [0x64748b, 0x78716c, 0x65a30d]
               : isl.id === 'gerbang_kota' && Math.abs(inner.y - 20.0) < 0.2
               ? [0x65a30d, 0x589e2e, 0x71bd3d]
               : isl.id === 'gerbang_kota' && Math.abs(inner.y - 12.0) < 0.2
@@ -1808,7 +1901,10 @@ export function createArchipelagoWorld(
             const bottomY = isOuterRim ? SEABED_Y - 0.15 : Math.max(SEABED_Y - 0.15, minNeighborY - topThickness);
             const topColumnY = inner.y - topThickness;
             const colH = Math.max(0.38, topColumnY - bottomY);
-            const cliffHex = theme.cliffColors[Math.abs(gx * 3 + gz * 5 + tierBias) % theme.cliffColors.length];
+            const hubBasaltCliff = [0x1c1917, 0x292524, 0x3f3f46];
+            const isHubBasalt = isl.id === 'hub' && wx >= -18.5 && wx <= 26.5 && wz + 17.0 >= 22.0;
+            const cliffPalette = isHubBasalt ? hubBasaltCliff : theme.cliffColors;
+            const cliffHex = cliffPalette[Math.abs(gx * 3 + gz * 5 + tierBias) % cliffPalette.length];
             cliffBlocks.push({
               x: wx,
               y: bottomY + colH * 0.5,
@@ -2107,6 +2203,17 @@ export function createArchipelagoWorld(
                 sz: stepLen * 1.95,
                 color: 0xb88a4c,
               });
+            } else if (br.style === 'rope') {
+              const ropeSag = Math.sin(tm * Math.PI) * 0.24;
+              cliffBlocks.push({
+                x: mx + perpX * side,
+                y: my + railH + 0.06 - ropeSag,
+                z: mz + perpZ * side,
+                sx: 0.2,
+                sy: 0.16,
+                sz: stepLen * 2.05,
+                color: 0xd4a373,
+              });
             }
           });
           if (isRailBridge && s % 6 === 0) {
@@ -2162,15 +2269,19 @@ export function createArchipelagoWorld(
     });
 
     if (pad.chained) {
-      for (let c = 0; c < 5; c++) {
-        const link = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.55, 0.24), chainMat);
-        link.position.set(pad.x, pad.y + 0.55 + c * 0.78, pad.z);
+      const linkCount = pad.id === 'hub_chain_2' ? 11 : 7;
+      for (let c = 0; c < linkCount; c++) {
+        const link = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.62, 0.28), chainMat);
+        link.position.set(pad.x, pad.y + 0.55 + c * 0.82, pad.z);
         link.rotation.y = c * 0.78;
         group.add(link);
       }
-      const anchorBar = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.35, 0.85), cobbleMat);
-      anchorBar.position.set(pad.x, pad.y + 4.4, pad.z);
-      group.add(anchorBar);
+      const anchorBar = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.1, 2.1), cobbleMat);
+      anchorBar.position.set(pad.x, pad.y + 0.55 + linkCount * 0.82 + 0.5, pad.z);
+      anchorBar.castShadow = true;
+      const anchorMoss = new THREE.Mesh(new THREE.BoxGeometry(2.16, 0.26, 2.16), palette.getMat(0x65a30d, 'matte'));
+      anchorMoss.position.set(pad.x, pad.y + 0.55 + linkCount * 0.82 + 1.1, pad.z);
+      group.add(anchorBar, anchorMoss);
     } else if (pad.style === 'dock') {
       [-pad.halfW + 0.24, pad.halfW - 0.24].forEach((ox) => {
         [-pad.halfD + 0.24, pad.halfD - 0.24].forEach((oz) => {
@@ -2199,19 +2310,47 @@ export function createArchipelagoWorld(
   }
 
   // ============================================================================
-  // 0. HUB TENGAH (0, 0) — Rune Obelisk Summit + Cascading Molten Lava Fall
+  // 0. CITADEL RERUNTUHAN / CENTRAL HUB (0, -17, Panjang 125m)
+  //    - Puncak Obelisk Rune: Tinggi 54m (34m Summit Plateau + 20m Plinth & Monolith!)
+  //    - Kawah Lava Utama: 35m x 25m + Air Terjun Lava Kembar ke Laut
+  //    - Tangga Batu Kuno: Lebar 6m + Menara Penjaga Runtuh + Lengkungan Bata
   // ============================================================================
   {
-    const hubLava = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.28, 6.2), magmaCoreMat);
-    hubLava.position.set(9.2, 2.74, 9.2);
-    lavaMeshes.push(hubLava);
-    group.add(hubLava);
+    const mossMat = palette.getMat(0x65a30d, 'matte');
+    const stoneWeatheredMat = palette.getMat(0x94a3b8, 'matte');
+    const stoneDarkMat = palette.getMat(0x475569, 'matte');
+    const brickRuinsMat = palette.getMat(0xb45309, 'matte');
+    const basaltMat = palette.getMat(0x292524, 'matte');
+    const ruinVoxels: VoxelSpec[] = [];
 
-    // Molten Lava Waterfall pouring down SE basalt terraces into steaming sea
+    // 1. Kawah Lava Utama (35m x 25m) centered at (hx=+4.0, hz=+39.5 -> wx=+4.0, wz=+22.5)
+    const craterCx = 4.0;
+    const craterCz = 22.5;
+    const lavaLake = new THREE.Mesh(new THREE.BoxGeometry(35.0, 0.55, 25.0), magmaCoreMat);
+    lavaLake.position.set(craterCx, 2.38, craterCz);
+    lavaMeshes.push(lavaLake);
+    group.add(lavaLake);
+    // Cooled black basalt crust islands floating atop the 35m x 25m molten basin
     [
-      [11.8, 2.1, 11.8, 2.6, 0.9, 2.6],
-      [14.2, 1.35, 14.2, 2.6, 1.1, 2.6],
-      [16.5, 0.45, 16.5, 3.0, 0.95, 3.0],
+      [-7.0, 17.5, 4.2, 3.0],
+      [6.5, 20.0, 5.0, 3.4],
+      [-2.0, 26.5, 3.8, 2.8],
+      [12.5, 25.5, 3.6, 3.0],
+      [1.0, 15.5, 3.2, 2.4],
+    ].forEach(([cx, cz, sw, sd]) => {
+      const crust = new THREE.Mesh(new THREE.BoxGeometry(sw, 0.35, sd), basaltMat);
+      crust.position.set(cx, 2.68, cz);
+      group.add(crust);
+    });
+    // Safe rim obstacle covering the molten crater floor so hero patrols rim without sinking inside lava
+    obstacles.push({ x: craterCx, z: craterCz, halfW: 16.2, halfD: 11.2 });
+
+    // Upper Cliff Lava Feeder Cascade pouring into North Wall of Kawah Lava Utama
+    [
+      [6.5, 9.6, -2.0, 4.2, 1.8, 3.6],
+      [6.5, 7.2, 1.4, 4.6, 4.2, 3.2],
+      [6.5, 4.2, 5.0, 5.0, 4.4, 3.4],
+      [6.5, 2.8, 8.8, 5.2, 1.4, 3.8],
     ].forEach(([lx, ly, lz, sx, sy, sz], i) => {
       const fall = new THREE.Mesh(
         new THREE.BoxGeometry(sx, sy, sz),
@@ -2221,38 +2360,222 @@ export function createArchipelagoWorld(
       lavaMeshes.push(fall);
       group.add(fall);
     });
-    obstacles.push({ x: 9.2, z: 9.2, halfW: 3.5, halfD: 3.2 });
 
-    const obY = getArchipelagoGroundY(10.5, -18.5);
-    const obPlinth = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.1, 4.4), cobbleMat);
-    obPlinth.position.set(10.5, obY + 0.55, -18.5);
-    obPlinth.castShadow = true;
-    const obShaft = new THREE.Mesh(new THREE.BoxGeometry(2.3, 6.0, 2.3), palette.getMat(0x334155, 'matte'));
-    obShaft.position.set(10.5, obY + 4.1, -18.5);
-    obShaft.castShadow = true;
-    const obRune = new THREE.Mesh(new THREE.BoxGeometry(0.95, 2.4, 2.45), magmaHotMat);
-    obRune.position.set(10.5, obY + 4.5, -18.5);
-    const obCrown = new THREE.Mesh(new THREE.OctahedronGeometry(1.1, 0), crystalMat);
-    obCrown.position.set(10.5, obY + 8.0, -18.5);
-    crystalMeshes.push(obCrown);
-    group.add(obPlinth, obShaft, obRune, obCrown);
-    obstacles.push({ x: 10.5, z: -18.5, halfW: 2.3, halfD: 2.3 });
+    // Twin Front Sea-Cliff Lava Waterfalls pouring from Kawah Lava Utama front lip down into the ocean!
+    [-7.5, 13.5].forEach((fx) => {
+      [
+        [fx, 2.3, 35.5, 4.4, 1.2, 3.2],
+        [fx, 1.25, 38.2, 4.6, 2.2, 2.8],
+        [fx, 0.32, 41.2, 5.2, 0.65, 3.8],
+      ].forEach(([lx, ly, lz, sx, sy, sz], i) => {
+        const wfall = new THREE.Mesh(
+          new THREE.BoxGeometry(sx, sy, sz),
+          i % 2 === 0 ? magmaHotMat : magmaCoreMat,
+        );
+        wfall.position.set(lx, ly, lz);
+        lavaMeshes.push(wfall);
+        group.add(wfall);
+      });
+    });
 
+    // Jagged Dark Basalt Caldera Front Bastion Pier framing the twin waterfalls
     [
-      [7.2, -16.8],
-      [13.8, -16.8],
-      [-5.2, 5.2],
-      [5.2, -5.2],
-    ].forEach(([tx, tz]) => {
-      const ty = getArchipelagoGroundY(tx, tz);
-      const brazier = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.25, 0.9), cobbleMat);
-      brazier.position.set(tx, ty + 0.62, tz);
-      const flame = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.72, 0.62), magmaHotMat);
-      flame.position.set(tx, ty + 1.55, tz);
+      [-15.5, 35.5, 3.4, 6.2, 3.4],
+      [3.0, 36.0, 6.2, 6.8, 3.8],
+      [22.5, 35.5, 3.4, 6.2, 3.4],
+    ].forEach(([bx, bz, sw, sh, sd]) => {
+      ruinVoxels.push({ x: bx, y: sh * 0.5, z: bz, sx: sw, sy: sh, sz: sd, color: 0x1c1917 });
+    });
+
+    // 2. Colossal Summit Rune Obelisk reaching exact Puncak 54.0m! (Base plateau = 34.0m at wx=0, wz=-59)
+    const obX = 0.0;
+    const obZ = -60.5;
+    const obBaseY = 34.0;
+    const obPlinth = new THREE.Mesh(new THREE.BoxGeometry(8.2, 2.0, 7.2), cobbleMat);
+    obPlinth.position.set(obX, obBaseY + 1.0, obZ);
+    obPlinth.castShadow = true;
+    obPlinth.receiveShadow = true;
+    const obLowerShaft = new THREE.Mesh(new THREE.BoxGeometry(5.6, 9.2, 4.4), stoneDarkMat);
+    obLowerShaft.position.set(obX, obBaseY + 6.6, obZ);
+    obLowerShaft.castShadow = true;
+    const obUpperShaft = new THREE.Mesh(new THREE.BoxGeometry(4.8, 7.3, 3.8), stoneWeatheredMat);
+    obUpperShaft.position.set(obX, obBaseY + 14.85, obZ);
+    obUpperShaft.castShadow = true;
+    const obCrownCap = new THREE.Mesh(new THREE.BoxGeometry(3.8, 1.5, 3.0), cobbleMat);
+    obCrownCap.position.set(obX, obBaseY + 19.25, obZ); // Top exactly y = 34.0 + 20.0 = 54.0m!
+    obCrownCap.castShadow = true;
+    // Glowing Emissive Orange-Gold Vertical Runes etched onto Obelisk front & rear faces
+    const runeGlyphLower = new THREE.Mesh(new THREE.BoxGeometry(1.1, 6.4, 4.58), magmaHotMat);
+    runeGlyphLower.position.set(obX, obBaseY + 6.8, obZ);
+    const runeGlyphUpper = new THREE.Mesh(new THREE.BoxGeometry(1.4, 3.0, 3.98), magmaCoreMat);
+    runeGlyphUpper.position.set(obX, obBaseY + 15.0, obZ);
+    const obMossCap = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.45, 2.8), mossMat);
+    obMossCap.position.set(obX + 0.5, obBaseY + 17.8, obZ + 0.5);
+    group.add(obPlinth, obLowerShaft, obUpperShaft, obCrownCap, runeGlyphLower, runeGlyphUpper, obMossCap);
+    disposables.push(
+      obPlinth.geometry,
+      obLowerShaft.geometry,
+      obUpperShaft.geometry,
+      obCrownCap.geometry,
+      runeGlyphLower.geometry,
+      runeGlyphUpper.geometry,
+      obMossCap.geometry,
+    );
+    obstacles.push({ x: obX, z: obZ, halfW: 4.1, halfD: 3.6 });
+
+    // Twin Giant Flaming Brazier Pedestals flanking the Obelisk + Lower Courtyard Braziers
+    [
+      [-6.5, obZ + 2.5, obBaseY, 3.2, 1.5],
+      [6.5, obZ + 2.5, obBaseY, 3.2, 1.5],
+      [-5.8, -12.0, 6.0, 1.4, 0.85],
+      [0.2, -12.0, 6.0, 1.4, 0.85],
+    ].forEach(([tx, tz, baseH, pedH, flameScale]) => {
+      const brazier = new THREE.Mesh(
+        new THREE.BoxGeometry(1.35 * flameScale, pedH, 1.35 * flameScale),
+        cobbleMat,
+      );
+      brazier.position.set(tx, baseH + pedH * 0.5, tz);
+      brazier.castShadow = true;
+      const flame = new THREE.Mesh(
+        new THREE.BoxGeometry(0.95 * flameScale, 1.15 * flameScale, 0.95 * flameScale),
+        magmaHotMat,
+      );
+      flame.position.set(tx, baseH + pedH + 0.65 * flameScale, tz);
       flame.userData.isFlame = true;
       torchesFlame.push(flame);
       group.add(brazier, flame);
+      disposables.push(brazier.geometry, flame.geometry);
     });
+
+    // 3. Low Ruined Stone Parapets flanking the 6m-wide Tangga Batu Kuno
+    for (let s = 0; s < 10; s++) {
+      const zStep = -11.5 - s * 1.95;
+      const yStep = 6.5 + (s / 9) * 13.0;
+      [-6.45, 0.45].forEach((px) => {
+        ruinVoxels.push({ x: px, y: yStep + 0.45, z: zStep, sx: 0.75, sy: 1.0, sz: 1.55, color: 0x78716c });
+      });
+    }
+    for (let s = 0; s < 9; s++) {
+      const zStep = -35.5 - s * 2.0;
+      const yStep = 20.5 + (s / 8) * 13.0;
+      [-3.45, 3.45].forEach((px) => {
+        ruinVoxels.push({ x: px, y: yStep + 0.45, z: zStep, sx: 0.75, sy: 1.0, sz: 1.55, color: 0x94a3b8 });
+      });
+    }
+
+    // 4. Ruined East Citadel Watchtower Keep (wx=+25.0, wz=-34.0, ground y=14.0m -> top 36.0m)
+    const wtX = 25.0;
+    const wtZ = -34.0;
+    const wtY = 14.0;
+    // Open Arch Lower Keep Pillars (3.4m wide clear passage + stone tower above)
+    [
+      [-3.1, -3.1],
+      [3.1, -3.1],
+      [-3.1, 3.1],
+      [3.1, 3.1],
+    ].forEach(([ox, oz]) => {
+      const pier = new THREE.Mesh(new THREE.BoxGeometry(2.2, 5.2, 2.2), stoneDarkMat);
+      pier.position.set(wtX + ox, wtY + 2.6, wtZ + oz);
+      pier.castShadow = true;
+      group.add(pier);
+      obstacles.push({ x: wtX + ox, z: wtZ + oz, halfW: 1.15, halfD: 1.15 });
+    });
+    const wtBody = new THREE.Mesh(new THREE.BoxGeometry(7.6, 11.5, 7.6), cobbleMat);
+    wtBody.position.set(wtX, wtY + 10.95, wtZ);
+    wtBody.castShadow = true;
+    const wtGallery = new THREE.Mesh(new THREE.BoxGeometry(9.0, 2.2, 9.0), stoneWeatheredMat);
+    wtGallery.position.set(wtX, wtY + 17.6, wtZ);
+    wtGallery.castShadow = true;
+    const wtRoof = new THREE.Mesh(new THREE.BoxGeometry(6.8, 2.2, 6.8), stoneDarkMat);
+    wtRoof.position.set(wtX, wtY + 19.8, wtZ);
+    const wtCrown = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.4, 4.4), mossMat);
+    wtCrown.position.set(wtX, wtY + 21.5, wtZ);
+    group.add(wtBody, wtGallery, wtRoof, wtCrown);
+    // Watchtower Crenellations & Mossy Overgrowth
+    [-3.6, 0, 3.6].forEach((ox) => {
+      [-3.6, 3.6].forEach((oz) => {
+        ruinVoxels.push({ x: wtX + ox, y: wtY + 19.3, z: wtZ + oz, sx: 1.4, sy: 1.2, sz: 1.4, color: 0x94a3b8 });
+      });
+    });
+
+    // 5. Ruined Terracotta-Brick Gateway Archways (West Obby Bastion & Mid-Cliff Overlook)
+    const buildRuinedArch = (ax: number, ay: number, az: number, yaw: number, halfSpan: number, h: number) => {
+      const archGrp = new THREE.Group();
+      archGrp.position.set(ax, ay, az);
+      archGrp.rotation.y = yaw;
+      const pL = new THREE.Mesh(new THREE.BoxGeometry(1.9, h, 2.4), brickRuinsMat);
+      pL.position.set(-halfSpan, h * 0.5, 0);
+      pL.castShadow = true;
+      const pR = new THREE.Mesh(new THREE.BoxGeometry(1.9, h - 0.6, 2.4), brickRuinsMat);
+      pR.position.set(halfSpan, (h - 0.6) * 0.5, 0);
+      pR.castShadow = true;
+      const lintel = new THREE.Mesh(new THREE.BoxGeometry(halfSpan * 2 + 2.4, 1.8, 2.5), stoneWeatheredMat);
+      lintel.position.set(0, h + 0.5, 0);
+      lintel.castShadow = true;
+      const mossTop = new THREE.Mesh(new THREE.BoxGeometry(halfSpan * 1.4, 0.7, 2.6), mossMat);
+      mossTop.position.set(-halfSpan * 0.2, h + 1.6, 0);
+      archGrp.add(pL, pR, lintel, mossTop);
+      group.add(archGrp);
+      const cosA = Math.cos(yaw);
+      const sinA = Math.sin(yaw);
+      obstacles.push(
+        { x: ax - cosA * halfSpan, z: az + sinA * halfSpan, halfW: 1.05, halfD: 1.05 },
+        { x: ax + cosA * halfSpan, z: az - sinA * halfSpan, halfW: 1.05, halfD: 1.05 },
+      );
+    };
+    // West Bastion Brick Archway framing the entrance to the 4m x 4m Floating Chain Obby
+    buildRuinedArch(-34.0, 12.0, -20.0, Math.PI / 2, 3.2, 6.2);
+    // Mid-Citadel Red Brick Ruin Arch beside Lower Courtyard Stairs
+    buildRuinedArch(8.5, 6.0, -8.5, 0.25, 3.0, 5.8);
+
+    // 6. Hanging Green Vines draping down Citadel Cliffs, Watchtower & Arches
+    [
+      [wtX - 4.4, wtY + 13.5, wtZ + 3.2, 6.5],
+      [wtX + 4.4, wtY + 12.0, wtZ - 2.0, 7.2],
+      [wtX - 2.0, wtY + 15.0, wtZ + 4.4, 5.8],
+      [-32.5, 17.5, -23.0, 4.2],
+      [11.0, 14.0, -10.5, 5.5],
+      [-11.5, 29.0, -52.0, 6.0],
+      [11.5, 29.0, -52.0, 6.0],
+      [-4.0, 18.0, -32.0, 4.8],
+    ].forEach(([vx, vy, vz, vh], i) => {
+      ruinVoxels.push({
+        x: vx,
+        y: vy,
+        z: vz,
+        sx: 0.72,
+        sy: vh,
+        sz: 0.72,
+        color: i % 2 === 0 ? 0x65a30d : 0x4d7c0f,
+      });
+    });
+
+    // Timber Bridgehead Pylons flanking the 4m-wide Suspension Bridges (bridge_desa & bridge_satwa)
+    [
+      [-26.0, 33.0, 5.0, 0.26],
+      [46.0, 16.0, 5.0, 0.74],
+    ].forEach(([px, pz, py, pyaw]) => {
+      const cosP = Math.cos(pyaw);
+      const sinP = Math.sin(pyaw);
+      [-2.25, 2.25].forEach((side) => {
+        ruinVoxels.push({
+          x: px + cosP * side,
+          y: py + 1.4,
+          z: pz - sinP * side,
+          sx: 0.55,
+          sy: 2.8,
+          sz: 0.55,
+          color: 0x78350f,
+        });
+      });
+    });
+
+    if (ruinVoxels.length > 0) {
+      const ruinWhiteMat = palette.createSurfaceMat({ color: 0xffffff, roughness: 0.9 });
+      const ruinBatch = buildVoxelBatch(ruinVoxels, ruinWhiteMat, true, true);
+      group.add(ruinBatch);
+      disposables.push(ruinBatch.geometry, ruinWhiteMat);
+    }
   }
 
   // ============================================================================
