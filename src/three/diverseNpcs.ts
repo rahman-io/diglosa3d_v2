@@ -682,10 +682,20 @@ export interface DiverseNpcRigResult {
   archetype: NpcArchetypeId;
 }
 
+export interface NpcAppearanceVariant {
+  skinHex?: number;
+  hairHex?: number;
+  shirtHex?: number;
+  pantsHex?: number;
+  shoeHex?: number;
+  accentHex?: number;
+}
+
 export function buildDiverseNpcRig(
   archetypeId: NpcArchetypeId,
   palette: MaterialPalette,
   withContactShadow = true,
+  variant?: NpcAppearanceVariant,
 ): DiverseNpcRigResult {
   const spec = NPC_ARCHETYPES[archetypeId];
   const root = new THREE.Group();
@@ -704,13 +714,20 @@ export function buildDiverseNpcRig(
   bodyPivot.scale.set(spec.scaleXZ, spec.scaleY, spec.scaleXZ);
   root.add(bodyPivot);
 
-  const skinMat = palette.getMat(spec.skinHex, 'matte');
-  const hairMat = palette.getMat(spec.hairHex, 'matte');
-  const shirtMat = palette.getMat(spec.shirtHex, archetypeId === 'temple_guardian' ? 'metal' : 'matte');
-  const pantsMat = palette.getMat(spec.pantsHex, 'matte');
-  const shoeMat = palette.getMat(spec.shoeHex, 'matte');
+  const skinHex = variant?.skinHex ?? spec.skinHex;
+  const hairHex = variant?.hairHex ?? spec.hairHex;
+  const shirtHex = variant?.shirtHex ?? spec.shirtHex;
+  const pantsHex = variant?.pantsHex ?? spec.pantsHex;
+  const shoeHex = variant?.shoeHex ?? spec.shoeHex;
+  const accentHex = variant?.accentHex ?? spec.accentHex;
+
+  const skinMat = palette.getMat(skinHex, 'matte');
+  const hairMat = palette.getMat(hairHex, 'matte');
+  const shirtMat = palette.getMat(shirtHex, archetypeId === 'temple_guardian' ? 'metal' : 'matte');
+  const pantsMat = palette.getMat(pantsHex, 'matte');
+  const shoeMat = palette.getMat(shoeHex, 'matte');
   const accentMat = palette.getMat(
-    spec.accentHex,
+    accentHex,
     archetypeId === 'clockmaker' ||
       archetypeId === 'crystal_scholar' ||
       archetypeId === 'ielts_dean' ||

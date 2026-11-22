@@ -20,6 +20,7 @@ import {
   VOCAB_CATALOG,
 } from './vocabCatalog';
 import { OVERWORLD_ANCHORS } from '../three/archipelagoWorld';
+import type { NpcAppearanceVariant, NpcArchetypeId } from '../three/diverseNpcs';
 
 export const SAVE_KEY = 'hoot-a1-v1';
 export const DAILY_GOAL = 20;
@@ -1226,6 +1227,118 @@ export const ACADEMY_NPCS: NpcDefinition[] = [
     archetypeId: 'temple_guardian',
     demographicLabel: 'Tua · Laki-laki · Penjaga Gerbang',
     stats: { hp: 220, atk: 50, nrg: 180 },
+  },
+];
+
+export interface AcademyInhabitantDef {
+  id: string;
+  name: string;
+  archetypeId: NpcArchetypeId;
+  x: number;
+  z: number;
+  rotationY: number;
+  message: string;
+  variant?: NpcAppearanceVariant;
+}
+
+export const ACADEMY_INHABITANTS: AcademyInhabitantDef[] = [
+  {
+    id: 'acad_guard_nw',
+    name: 'Pengawal Singgasana Barat',
+    archetypeId: 'temple_guardian',
+    x: -5.5,
+    z: -15.5,
+    rotationY: 0.2,
+    message: 'Pengawal Singgasana Barat (Tua · Laki-laki): "Kehadiranmu membawa cahaya baru ke Aula Istana IELTS, Pahlawan Hoot!"',
+  },
+  {
+    id: 'acad_guard_ne',
+    name: 'Pengawal Singgasana Timur',
+    archetypeId: 'temple_guardian',
+    x: 5.5,
+    z: -15.5,
+    rotationY: -0.2,
+    variant: { accentHex: 0x0284c7 },
+    message: 'Pengawal Singgasana Timur (Tua · Laki-laki): "Raja Aksara menanti hasil gemilangmu di keempat ujian istana!"',
+  },
+  {
+    id: 'acad_scholar_w1',
+    name: 'Peneliti Arsip Barat',
+    archetypeId: 'crystal_scholar',
+    x: -15.5,
+    z: -12.0,
+    rotationY: 1.0,
+    variant: { shirtHex: 0x4338ca, hairHex: 0x6366f1 },
+    message: 'Peneliti Arsip Barat (Dewasa · Perempuan Berhijab): "Gulungan Listening dan Reading tersusun rapi menanti untuk kamu taklukkan."',
+  },
+  {
+    id: 'acad_scholar_e1',
+    name: 'Dekan Pustaka Timur',
+    archetypeId: 'ielts_dean',
+    x: 15.5,
+    z: -12.0,
+    rotationY: -1.0,
+    variant: { shirtHex: 0x881337, hairHex: 0x4c0519 },
+    message: 'Dekan Pustaka Timur (Tua · Perempuan Berhijab): "Kuasai kata penghubung seperti However dan Therefore untuk nilai Writing tinggi!"',
+  },
+  {
+    id: 'acad_student_w2',
+    name: 'Siswi Beasiswa Salma',
+    archetypeId: 'schoolgirl',
+    x: -15.5,
+    z: 0.0,
+    rotationY: 1.3,
+    variant: { hairHex: 0x38bdf8, pantsHex: 0x1e40af },
+    message: 'Siswi Beasiswa Salma (Anak-anak · Perempuan Berhijab): "Aku juga belajar keras setiap hari agar bisa lolos Ujian Istana seperti Kak Hoot!"',
+  },
+  {
+    id: 'acad_student_e2',
+    name: 'Pelajar Muda Tobi',
+    archetypeId: 'village_kid',
+    x: 15.5,
+    z: 0.0,
+    rotationY: -1.3,
+    variant: { shirtHex: 0xeab308, accentHex: 0x0284c7 },
+    message: 'Pelajar Muda Tobi (Anak-anak · Laki-laki): "Penguji Rangga ramah sekali saat latihan Speaking, jangan gugup ya!"',
+  },
+  {
+    id: 'acad_student_w3',
+    name: 'Mahasiswi Seni Nada',
+    archetypeId: 'florist_girl',
+    x: -15.5,
+    z: 13.0,
+    rotationY: 2.0,
+    variant: { pantsHex: 0x059669, shirtHex: 0xfef3c7 },
+    message: 'Mahasiswi Seni Nada (Muda · Perempuan Non-Hijab): "Taman istana kini mekar indah setelah keenam pulau terbebas!"',
+  },
+  {
+    id: 'acad_scholar_e3',
+    name: 'Dosen Tata Bahasa Farah',
+    archetypeId: 'school_teacher',
+    x: 15.5,
+    z: 13.0,
+    rotationY: -2.0,
+    variant: { hairHex: 0x7e22ce, shirtHex: 0x1e293b },
+    message: 'Dosen Farah (Dewasa · Perempuan Berhijab): "Fokus pada kata kunci pertanyaan sebelum memilih True, False, atau Not Given."',
+  },
+  {
+    id: 'acad_elder_mid',
+    name: 'Sesepuh Arsip Kerajaan',
+    archetypeId: 'village_elder',
+    x: -6.5,
+    z: -10.5,
+    rotationY: 0.4,
+    message: 'Sesepuh Arsip (Tua · Laki-laki): "Semua ilmu enam pulau bermuara di aula marmer megah ini."',
+  },
+  {
+    id: 'acad_clock_mid',
+    name: 'Pengatur Waktu Ujian',
+    archetypeId: 'clockmaker',
+    x: 6.5,
+    z: 13.5,
+    rotationY: -2.4,
+    variant: { accentHex: 0x475569 },
+    message: 'Pengatur Waktu Ujian (Tua · Laki-laki): "Detik ujian berjalan tenang — atur waktumu dengan bijak dan percaya diri!"',
   },
 ];
 

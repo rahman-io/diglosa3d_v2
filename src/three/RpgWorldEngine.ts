@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { soundEngine } from '../audio/soundEngine';
 import {
+  ACADEMY_INHABITANTS,
   ACADEMY_NPCS,
   ACADEMY_SHADOWS,
   AMMO_COST,
@@ -615,6 +616,7 @@ export class RpgWorldEngine {
   private nightMonsterSeq = 0;
   private sunburnFxTimer = 0;
   private academyNpcs: Map<string, { mesh: THREE.Group; x: number; z: number }> = new Map();
+  private academyCitizens: Array<{ id: string; mesh: THREE.Group; x: number; z: number; message: string }> = [];
   private monsters: RoamingMonster[] = [];
   private dungeonMonsters: RoamingMonster[] = [];
   private dungeonTotalSpawned = 0;
@@ -3114,6 +3116,7 @@ export class RpgWorldEngine {
     this.dungeonClickables = [];
     this.academyClickables = [];
     this.academyNpcs.clear();
+    this.academyCitizens = [];
     this.dungeonState = null;
     this.nearDungeonExit = false;
     this.nearbyDoorIndex = null;
@@ -3657,6 +3660,16 @@ export class RpgWorldEngine {
       rig.group.add(mesh);
       this.academyClickables.push(mesh);
       this.academyNpcs.set(def.id, { mesh, x: def.x, z: def.z });
+    }
+
+    for (const st of ACADEMY_INHABITANTS) {
+      const mesh = createZoneNpc(st.archetypeId, this.palette, st.variant);
+      mesh.position.set(st.x, 0, st.z);
+      mesh.rotation.y = st.rotationY;
+      mesh.userData.academyTip = st.message;
+      rig.group.add(mesh);
+      this.academyClickables.push(mesh);
+      this.academyCitizens.push({ id: st.id, mesh, x: st.x, z: st.z, message: st.message });
     }
 
     for (const s of ACADEMY_SHADOWS) {
@@ -4766,6 +4779,23 @@ export class RpgWorldEngine {
       const m = pool.find((item) => item.id === this.nearbyMonsterId && item.alive);
       if (m) {
         this.engageMonster(m);
+        return;
+      }
+    }
+
+    if (this.worldMode === 'academy' && this.academyCitizens.length > 0) {
+      let nearestCit: (typeof this.academyCitizens)[number] | null = null;
+      let nearestDist = 3.6;
+      for (const cit of this.academyCitizens) {
+        const d = Math.hypot(cit.x - this.heroPos.x, cit.z - this.heroPos.z);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearestCit = cit;
+        }
+      }
+      if (nearestCit) {
+        soundEngine.playPick();
+        this.showBanner(nearestCit.message, 5.2);
         return;
       }
     }
@@ -6632,6 +6662,11 @@ export class RpgWorldEngine {
           this.showBanner('Menuju ke Senjata Pertamamu...', 2.0);
           return;
         }
+        if (obj.userData.academyTip && this.worldMode === 'academy') {
+          this.showBanner(obj.userData.academyTip as string, 4.8);
+          soundEngine.playPick();
+          return;
+        }
         if (obj.userData.villageId && this.worldMode === 'overworld') {
           const vItem = this.villageRig.interactables.find(
             (item) => item.id === obj!.userData.villageId,
@@ -7095,6 +7130,11 @@ export class RpgWorldEngine {
         for (const npc of this.academyNpcs.values()) {
           const isNear = Math.hypot(this.heroPos.x - npc.x, this.heroPos.z - npc.z) < 4.2;
           animateZoneNpc(npc.mesh, this.elapsed, acIdx * 1.15, isNear, dt);
+          acIdx++;
+        }
+        for (const cit of this.academyCitizens) {
+          const isNear = Math.hypot(this.heroPos.x - cit.x, this.heroPos.z - cit.z) < 3.6;
+          animateZoneNpc(cit.mesh, this.elapsed, acIdx * 0.95, isNear, dt);
           acIdx++;
         }
       }

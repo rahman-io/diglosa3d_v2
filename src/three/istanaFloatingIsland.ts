@@ -1,5 +1,11 @@
 import * as THREE from 'three';
 import { MaterialPalette } from './materials';
+import {
+  buildDiverseNpcRig,
+  DiverseNpcRigResult,
+  NpcAppearanceVariant,
+  NpcArchetypeId,
+} from './diverseNpcs';
 
 export interface IstanaVoxelSpec {
   x: number;
@@ -11,12 +17,19 @@ export interface IstanaVoxelSpec {
   color: number;
 }
 
+export interface IstanaCourtyardNpc {
+  rig: DiverseNpcRigResult;
+  baseYaw: number;
+  phase: number;
+}
+
 export interface IstanaFloatingRig {
   istanaGroup: THREE.Group;
   istanaDome: THREE.Mesh;
   domeUniforms: { uTime: { value: number } };
   bridgeUniforms: { uTime: { value: number } };
   skyBridgeGroup: THREE.Group;
+  courtyardNpcs: IstanaCourtyardNpc[];
   disposables: Array<{ dispose: () => void }>;
 }
 
@@ -1039,12 +1052,93 @@ export function buildIstanaFloatingIsland(
     ropeGeo,
   );
 
+  // ============================================================================
+  // 7. ISTANA COURTYARD INHABITANTS (8 Royal Guards, Scholars, Students & Gardener)
+  // ============================================================================
+  const courtyardNpcs: IstanaCourtyardNpc[] = [];
+  const istanaNpcSpecs: Array<{
+    archetype: NpcArchetypeId;
+    x: number;
+    y: number;
+    z: number;
+    yaw: number;
+    variant?: NpcAppearanceVariant;
+  }> = [
+    { archetype: 'temple_guardian', x: -5.8, y: 3.5, z: 24.4, yaw: 0.12 },
+    {
+      archetype: 'temple_guardian',
+      x: 5.8,
+      y: 3.5,
+      z: 24.4,
+      yaw: -0.12,
+      variant: { accentHex: 0x0284c7 },
+    },
+    { archetype: 'ielts_dean', x: 0.0, y: 3.5, z: 22.8, yaw: 0.0 },
+    {
+      archetype: 'crystal_scholar',
+      x: -2.8,
+      y: 0.1,
+      z: 38.5,
+      yaw: 0.35,
+      variant: { shirtHex: 0x4f46e5, hairHex: 0x6366f1 },
+    },
+    {
+      archetype: 'school_teacher',
+      x: 2.8,
+      y: 0.1,
+      z: 40.0,
+      yaw: -0.35,
+      variant: { shirtHex: 0x0f766e, hairHex: 0x14b8a6 },
+    },
+    {
+      archetype: 'schoolgirl',
+      x: -2.4,
+      y: 0.1,
+      z: 46.5,
+      yaw: 0.5,
+      variant: { hairHex: 0xf472b6, pantsHex: 0x1d4ed8 },
+    },
+    {
+      archetype: 'village_kid',
+      x: 2.4,
+      y: 0.1,
+      z: 47.5,
+      yaw: -0.5,
+      variant: { shirtHex: 0x2563eb, accentHex: 0xfacc15 },
+    },
+    {
+      archetype: 'florist_girl',
+      x: -15.5,
+      y: 0.0,
+      z: 30.5,
+      yaw: 0.3,
+      variant: { pantsHex: 0x059669, shirtHex: 0xfef3c7 },
+    },
+  ];
+  istanaNpcSpecs.forEach((spec, idx) => {
+    const npcRig = buildDiverseNpcRig(spec.archetype, palette, true, spec.variant);
+    npcRig.root.position.set(spec.x, spec.y, spec.z);
+    npcRig.root.rotation.y = spec.yaw;
+    npcRig.root.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.geometry) {
+        disposables.push(obj.geometry);
+      }
+    });
+    istanaGroup.add(npcRig.root);
+    courtyardNpcs.push({
+      rig: npcRig,
+      baseYaw: spec.yaw,
+      phase: idx * 0.95,
+    });
+  });
+
   return {
     istanaGroup,
     istanaDome,
     domeUniforms,
     bridgeUniforms,
     skyBridgeGroup,
+    courtyardNpcs,
     disposables,
   };
 }
@@ -1057,4 +1151,19 @@ export function updateIstanaFloatingIsland(
   rig.istanaGroup.position.y = anchorY + Math.sin(elapsed * 0.75) * 0.28;
   rig.domeUniforms.uTime.value = elapsed;
   rig.bridgeUniforms.uTime.value = elapsed;
+
+  for (let i = 0; i < rig.courtyardNpcs.length; i++) {
+    const npc = rig.courtyardNpcs[i];
+    const r = npc.rig;
+    const breath = Math.sin(elapsed * 2.3 + npc.phase);
+    const sy = 1 + breath * 0.032;
+    const sxz = 1 / Math.sqrt(sy);
+    r.bodyPivot.scale.set(r.baseScaleXZ * sxz, r.baseScaleY * sy, r.baseScaleXZ * sxz);
+    r.headGroup.rotation.y = Math.sin(elapsed * 1.1 + npc.phase) * 0.22;
+    r.rightArm.rotation.x = r.baseRightArmX + Math.sin(elapsed * 1.9 + npc.phase) * 0.07;
+    r.leftArm.rotation.x = r.baseLeftArmX - Math.sin(elapsed * 1.9 + npc.phase) * 0.05;
+    if (r.propSpin) {
+      r.propSpin.rotation.y = elapsed * 1.6 + npc.phase;
+    }
+  }
 }

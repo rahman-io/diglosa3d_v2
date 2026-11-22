@@ -8,7 +8,12 @@ import {
   sampleArchipelagoTerrain,
 } from './archipelagoWorld';
 import { MaterialPalette } from './materials';
-import { buildDiverseNpcRig, NPC_ARCHETYPES, NpcArchetypeId } from './diverseNpcs';
+import {
+  buildDiverseNpcRig,
+  NPC_ARCHETYPES,
+  NpcAppearanceVariant,
+  NpcArchetypeId,
+} from './diverseNpcs';
 
 export interface VillageObstacle {
   x: number;
@@ -70,6 +75,7 @@ interface VillagerActor {
   walkPhase: number;
   stuckTimer: number;
   avoidSign: number;
+  interactable?: VillageInteractable;
 }
 
 interface GolemActor {
@@ -577,8 +583,9 @@ function createLanternPost(palette: MaterialPalette, x: number, z: number): THRE
 function createVillagerMesh(
   palette: MaterialPalette,
   archetype: NpcArchetypeId,
+  variant?: NpcAppearanceVariant,
 ): VillagerActor {
-  const rig = buildDiverseNpcRig(archetype, palette, true);
+  const rig = buildDiverseNpcRig(archetype, palette, true, variant);
   return {
     root: rig.root,
     bodyPivot: rig.bodyPivot,
@@ -1076,60 +1083,587 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     waypoints: Array<[number, number]>;
     homeDoor: [number, number];
     speed: number;
+    variant?: NpcAppearanceVariant;
+    label?: string;
+    dialogue?: string;
   }> = [
-    // #1 Village Kid (Desa Sapaan Well Plaza)
+    // =========================================================================
+    // 1. DESA SAPAAN (10 Citizens: Kids, Youth, Adults, Elderly)
+    // =========================================================================
     { archetype: 'village_kid', waypoints: [[-2.5, 118.0], [-5.0, 115.0], [-8.0, 118.0], [-5.0, 121.0]], homeDoor: [-14.0, 118.0], speed: 2.35 },
-    // #2 Schoolgirl (Hijab, Desa Sapaan South Lane)
     { archetype: 'schoolgirl', waypoints: [[-8.5, 123.0], [-3.5, 124.5], [-2.0, 129.0], [-7.5, 129.0]], homeDoor: [-14.0, 118.0], speed: 2.15 },
-    // #3 Farmer Boy (Desa Sapaan Wheat Farm Perimeter)
     { archetype: 'farmer_boy', waypoints: [[0.2, 130.5], [0.2, 137.8], [8.8, 137.8], [8.8, 130.5]], homeDoor: [-13.5, 90.0], speed: 1.9 },
-    // #4 Florist Girl (Non-Hijab, Desa Sapaan East Flower Meadow)
     { archetype: 'florist_girl', waypoints: [[9.0, 114.5], [14.5, 116.5], [14.5, 121.5], [9.0, 121.5]], homeDoor: [11.5, 109.0], speed: 1.85 },
-    // #5 Street Vendor (Pasar Rasa Food Street next to Satay Grill)
+    {
+      archetype: 'village_kid',
+      waypoints: [[-7.0, 102.0], [0.0, 102.0], [0.0, 106.5], [-7.0, 106.5]],
+      homeDoor: [-13.5, 90.0],
+      speed: 2.4,
+      variant: { shirtHex: 0xeab308, accentHex: 0x2563eb, pantsHex: 0x1e293b },
+      label: 'Bocah Desa Dani (Anak-anak · Laki-laki)',
+      dialogue: 'Main petak umpet di halaman utara seru sekali! Ayo ucapkan "Good afternoon!"',
+    },
+    {
+      archetype: 'schoolgirl',
+      waypoints: [[-11.0, 103.5], [-5.5, 103.5], [-5.5, 107.5], [-11.0, 107.5]],
+      homeDoor: [-14.0, 118.0],
+      speed: 2.1,
+      variant: { hairHex: 0x14b8a6, pantsHex: 0x1e3a8a, accentHex: 0x0ea5e9 },
+      label: 'Siswi Desa Sinta (Anak-anak · Perempuan Berhijab)',
+      dialogue: 'Aku mencatat semua sapaan baru di buku catatanku setiap pagi!',
+    },
+    {
+      archetype: 'farmer_boy',
+      waypoints: [[9.8, 128.0], [15.5, 128.0], [15.5, 134.5], [9.8, 134.5]],
+      homeDoor: [11.5, 109.0],
+      speed: 1.85,
+      variant: { shirtHex: 0x22c55e, pantsHex: 0x1e40af },
+      label: 'Pemuda Tani Bagas (Muda · Laki-laki)',
+      dialogue: 'Gandum emas kami butuh air bersih dan semangat belajar yang tekun!',
+    },
+    {
+      archetype: 'florist_girl',
+      waypoints: [[-16.0, 114.0], [-11.0, 114.0], [-11.0, 120.0], [-16.0, 120.0]],
+      homeDoor: [-14.0, 118.0],
+      speed: 1.8,
+      variant: { hairHex: 0xd97706, pantsHex: 0x7c3aed, shirtHex: 0xfef9c3 },
+      label: 'Perangkai Bunga Rina (Muda · Perempuan Non-Hijab)',
+      dialogue: 'Bunga aster ungu di kebun barat harum sekali saat pagi cerah!',
+    },
+    {
+      archetype: 'grandma_herbalist',
+      waypoints: [[-9.5, 131.5], [-2.0, 131.5], [-2.0, 136.0], [-9.5, 136.0]],
+      homeDoor: [-14.0, 118.0],
+      speed: 1.4,
+      variant: { hairHex: 0xfef3c7, shirtHex: 0x4d7c0f, pantsHex: 0x365314 },
+      label: 'Nenek Jamu Desa (Tua · Perempuan Berhijab)',
+      dialogue: 'Minumlah ramuan daun hangat sebelum menyeberang jembatan menuju Citadel, Cucu!',
+    },
+    {
+      archetype: 'village_elder',
+      waypoints: [[-10.0, 95.5], [-3.5, 95.5], [-3.5, 99.5], [-10.0, 99.5]],
+      homeDoor: [-13.5, 90.0],
+      speed: 1.45,
+      variant: { shirtHex: 0x78350f, pantsHex: 0x451a03 },
+      label: 'Sesepuh Gerbang Utara (Tua · Laki-laki)',
+      dialogue: 'Setiap pahlawan besar selalu mulai dari sopan santun dan sapaan sederhana.',
+    },
+
+    // =========================================================================
+    // 2. PASAR RASA (10 Citizens: Vendors, Chefs, Merchants, Shoppers)
+    // =========================================================================
     { archetype: 'street_vendor', waypoints: [[-87.0, 48.0], [-92.5, 48.0], [-92.5, 55.0], [-87.0, 54.0]], homeDoor: [-89.5, 45.0], speed: 1.85 },
-    // #12 Spice Merchant (Hijab, Pasar Rasa West Sand Market)
     { archetype: 'spice_merchant', waypoints: [[-113.0, 44.0], [-117.5, 50.0], [-114.0, 58.5], [-111.0, 51.0]], homeDoor: [-110.0, 46.0], speed: 1.75 },
-    // #7 Zoo Keeper (Non-Hijab, Hutan Satwa Safari Trail)
+    {
+      archetype: 'pastry_chef',
+      waypoints: [[-97.0, 42.0], [-91.0, 42.0], [-91.0, 45.5], [-97.0, 45.5]],
+      homeDoor: [-89.5, 45.0],
+      speed: 1.8,
+      variant: { hairHex: 0x2dd4bf, shirtHex: 0x0f766e, accentHex: 0xf43f5e },
+      label: 'Pembuat Kue Tari (Muda · Perempuan Berhijab)',
+      dialogue: 'Kue bolu dan roti panggang manis ini cocok menemani latihan kata makanan!',
+    },
+    {
+      archetype: 'street_vendor',
+      waypoints: [[-105.0, 60.0], [-98.0, 60.0], [-98.0, 64.0], [-105.0, 64.0]],
+      homeDoor: [-89.5, 45.0],
+      speed: 1.85,
+      variant: { shirtHex: 0x0d9488, pantsHex: 0x1e293b },
+      label: 'Penjual Minuman Segar (Muda · Laki-laki)',
+      dialogue: 'Es jeruk manis, air kelapa, dan teh hangat siap menyegarkan para pejuang kata!',
+    },
+    {
+      archetype: 'spice_merchant',
+      waypoints: [[-115.0, 60.5], [-107.0, 60.5], [-107.0, 64.5], [-115.0, 64.5]],
+      homeDoor: [-110.0, 46.0],
+      speed: 1.7,
+      variant: { hairHex: 0x9f1239, shirtHex: 0xb45309, accentHex: 0xf59e0b },
+      label: 'Saudagar Bumbu Wati (Dewasa · Perempuan Berhijab)',
+      dialogue: 'Tahu bedanya Sweet, Spicy, Sour, dan Salty? Coba cicipi rempah Pasar Rasa!',
+    },
+    {
+      archetype: 'farmer_boy',
+      waypoints: [[-83.0, 39.0], [-88.5, 39.0], [-88.5, 44.0], [-83.0, 44.0]],
+      homeDoor: [-89.5, 45.0],
+      speed: 1.9,
+      variant: { shirtHex: 0xd97706, pantsHex: 0x334155 },
+      label: 'Pengantar Sayur Pasar (Muda · Laki-laki)',
+      dialogue: 'Baru mengantar gandum dan buah segar dari ladang untuk dapur Koki Mimi!',
+    },
+    {
+      archetype: 'florist_girl',
+      waypoints: [[-95.0, 35.0], [-89.0, 35.0], [-89.0, 39.5], [-95.0, 39.5]],
+      homeDoor: [-89.5, 45.0],
+      speed: 1.8,
+      variant: { pantsHex: 0xdb2777, shirtHex: 0xfdf2f8 },
+      label: 'Penjual Bunga Meja (Muda · Perempuan Non-Hijab)',
+      dialogue: 'Bunga hias meja membuat gerai Pasar Rasa tampak cerah dan wangi!',
+    },
+    {
+      archetype: 'schoolgirl',
+      waypoints: [[-112.0, 37.0], [-106.0, 37.0], [-106.0, 41.0], [-112.0, 41.0]],
+      homeDoor: [-110.0, 46.0],
+      speed: 2.15,
+      variant: { hairHex: 0x38bdf8, pantsHex: 0x1d4ed8 },
+      label: 'Pembeli Cilik Naya (Anak-anak · Perempuan Berhijab)',
+      dialogue: 'Ibu menyuruhku beli roti dan buah! Untung aku sudah hafal namanya dalam Bahasa Inggris.',
+    },
+    {
+      archetype: 'village_kid',
+      waypoints: [[-91.5, 58.0], [-86.0, 58.0], [-86.0, 62.0], [-91.5, 62.0]],
+      homeDoor: [-89.5, 45.0],
+      speed: 2.3,
+      variant: { shirtHex: 0x10b981, accentHex: 0xf59e0b },
+      label: 'Bocah Jajan Bimo (Anak-anak · Laki-laki)',
+      dialogue: 'Bau sate bakarnya bikin lapar terus! Cepat kalahkan Lendir Liar ya Kak!',
+    },
+    {
+      archetype: 'bus_driver',
+      waypoints: [[-79.0, 42.0], [-83.5, 42.0], [-83.5, 48.5], [-79.0, 48.5]],
+      homeDoor: [-89.5, 45.0],
+      speed: 1.8,
+      variant: { shirtHex: 0xe2e8f0, pantsHex: 0x1e293b },
+      label: 'Kurir Logistik Pasar (Dewasa · Laki-laki)',
+      dialogue: 'Kargo buah dan rempah dari pelabuhan tiba tepat waktu di gerbang Pasar Rasa!',
+    },
+
+    // =========================================================================
+    // 3. HUTAN SATWA (10 Citizens: Keepers, Herbalists, Rangers, Visitors)
+    // =========================================================================
     { archetype: 'zoo_keeper', waypoints: [[94.0, 49.0], [104.0, 49.0], [104.0, 52.5], [94.0, 52.5]], homeDoor: [83.5, 36.5], speed: 1.9 },
-    // #16 Grandma Herbalist (Hijab, Hutan Satwa East Herb Garden)
     { archetype: 'grandma_herbalist', waypoints: [[114.0, 46.5], [123.0, 46.5], [123.0, 51.5], [114.0, 51.5]], homeDoor: [83.5, 36.5], speed: 1.45 },
-    // #9 School Teacher (Hijab, Gerbang Kota Sekolah Bata Merah Courtyard)
+    {
+      archetype: 'ranger_guide',
+      waypoints: [[126.0, 44.0], [134.0, 44.0], [134.0, 50.0], [126.0, 50.0]],
+      homeDoor: [83.5, 36.5],
+      speed: 1.9,
+      variant: { shirtHex: 0x365314, pantsHex: 0x713f12 },
+      label: 'Ranger Patroli Harimau (Dewasa · Laki-laki)',
+      dialogue: 'Pagar kandang macan dan beruang aman terkendali. Hati-hati saat malam di rimba!',
+    },
+    {
+      archetype: 'zoo_keeper',
+      waypoints: [[109.0, 74.0], [119.0, 74.0], [119.0, 78.0], [109.0, 78.0]],
+      homeDoor: [83.5, 36.5],
+      speed: 1.85,
+      variant: { hairHex: 0xd97706, shirtHex: 0x65a30d, pantsHex: 0x854d0e },
+      label: 'Perawat Panda Maya (Dewasa · Perempuan Non-Hijab)',
+      dialogue: 'Para panda sedang asyik mengunyah bambu segar di taman sebelah!',
+    },
+    {
+      archetype: 'florist_girl',
+      waypoints: [[109.0, 58.0], [117.0, 58.0], [117.0, 65.0], [109.0, 65.0]],
+      homeDoor: [83.5, 36.5],
+      speed: 1.75,
+      variant: { pantsHex: 0x15803d, shirtHex: 0xfef3c7 },
+      label: 'Botanis Rimba Tia (Muda · Perempuan Non-Hijab)',
+      dialogue: 'Banyak pakis liar dan anggrek langka tumbuh subur di Hutan Satwa!',
+    },
+    {
+      archetype: 'village_kid',
+      waypoints: [[98.0, 51.0], [106.5, 51.0], [106.5, 53.8], [98.0, 53.8]],
+      homeDoor: [83.5, 36.5],
+      speed: 2.3,
+      variant: { shirtHex: 0xea580c, pantsHex: 0x334155 },
+      label: 'Pengunjung Cilik Aldo (Anak-anak · Laki-laki)',
+      dialogue: 'Wah lihat leher jerapah itu tinggi sekali! Giraffe dalam Bahasa Inggris!',
+    },
+    {
+      archetype: 'schoolgirl',
+      waypoints: [[88.0, 48.0], [95.0, 48.0], [95.0, 53.0], [88.0, 53.0]],
+      homeDoor: [83.5, 36.5],
+      speed: 2.1,
+      variant: { hairHex: 0xfb7185, pantsHex: 0x0f766e },
+      label: 'Siswi Wisata Kiki (Anak-anak · Perempuan Berhijab)',
+      dialogue: 'Kami sedang karyawisata mengenal nama-nama satwa liar!',
+    },
+    {
+      archetype: 'school_teacher',
+      waypoints: [[90.0, 44.5], [97.5, 44.5], [97.5, 47.5], [90.0, 47.5]],
+      homeDoor: [83.5, 36.5],
+      speed: 1.65,
+      variant: { hairHex: 0x3f6212, shirtHex: 0x1e293b, accentHex: 0x16a34a },
+      label: 'Guru Pendamping Rimba (Dewasa · Perempuan Berhijab)',
+      dialogue: 'Anak-anak bersemangat sekali mempelajari kata Tiger, Zebra, dan Elephant!',
+    },
+    {
+      archetype: 'farmer_boy',
+      waypoints: [[121.0, 54.0], [129.0, 54.0], [129.0, 62.0], [121.0, 62.0]],
+      homeDoor: [83.5, 36.5],
+      speed: 1.85,
+      variant: { shirtHex: 0x65a30d, pantsHex: 0x3f3f46 },
+      label: 'Pemasok Pakan Satwa (Muda · Laki-laki)',
+      dialogue: 'Rumput segar dan buah hutan siap diantarkan untuk makan siang para hewan.',
+    },
+    {
+      archetype: 'village_elder',
+      waypoints: [[84.0, 39.0], [90.0, 39.0], [90.0, 43.0], [84.0, 43.0]],
+      homeDoor: [83.5, 36.5],
+      speed: 1.4,
+      variant: { shirtHex: 0xe7e5e4, pantsHex: 0x78716c },
+      label: 'Sesepuh Suaka Rimba (Tua · Laki-laki)',
+      dialogue: 'Hutan Satwa telah berdiri puluhan tahun menjaga harmoni manusia dan alam.',
+    },
+
+    // =========================================================================
+    // 4. GERBANG KOTA (10 Citizens: Teachers, Students, Officers, Commuters)
+    // =========================================================================
     { archetype: 'school_teacher', waypoints: [[-125.0, -113.5], [-114.0, -113.5], [-114.0, -108.5], [-125.0, -108.5]], homeDoor: [-121.0, -115.0], speed: 1.7 },
-    // #11 Bus Driver (Gerbang Kota Highway Route)
     { archetype: 'bus_driver', waypoints: [[-100.0, -83.0], [-108.0, -83.0], [-108.0, -88.0], [-100.0, -88.0]], homeDoor: [-102.0, -95.5], speed: 1.95 },
-    // #13 Blacksmith (Central Hub West Anvil)
-    { archetype: 'blacksmith', waypoints: [[-20.2, -10.5], [-16.6, -10.5], [-16.6, -4.8], [-20.2, -4.8]], homeDoor: [-12.5, -2.5], speed: 1.75 },
-    // #19 Temple Guardian (Central Hub East Citadel)
-    { archetype: 'temple_guardian', waypoints: [[-2.0, -11.0], [4.0, -11.0], [4.0, -5.0], [-2.0, -5.0]], homeDoor: [2.0, -12.0], speed: 1.65 },
-    // #20 IELTS Dean (Hijab, Central Hub Front Plaza)
-    { archetype: 'ielts_dean', waypoints: [[-11.0, 1.0], [-4.5, 1.0], [-4.5, 3.5], [-11.0, 3.5]], homeDoor: [-6.0, 2.0], speed: 1.5 },
-    // #18 Mine Engineer (Gua Portal Quarry Shelf)
+    {
+      archetype: 'schoolgirl',
+      waypoints: [[-111.0, -113.0], [-103.0, -113.0], [-103.0, -108.0], [-111.0, -108.0]],
+      homeDoor: [-121.0, -115.0],
+      speed: 2.15,
+      variant: { hairHex: 0x9f1239, pantsHex: 0x1e293b },
+      label: 'Siswi Sekolah Bata Dewi (Anak-anak · Perempuan Berhijab)',
+      dialogue: 'Terima kasih sudah membebaskan Gerbang Kota! Sekolah jadi ramai lagi!',
+    },
+    {
+      archetype: 'village_kid',
+      waypoints: [[-128.0, -116.0], [-122.0, -116.0], [-122.0, -112.0], [-128.0, -112.0]],
+      homeDoor: [-121.0, -115.0],
+      speed: 2.35,
+      variant: { shirtHex: 0x2563eb, accentHex: 0xfacc15 },
+      label: 'Murid Sekolah Kota Arif (Anak-anak · Laki-laki)',
+      dialogue: 'Bel sekolah sebentar lagi berbunyi! Jangan sampai terlambat masuk kelas!',
+    },
+    {
+      archetype: 'city_policeman',
+      waypoints: [[-114.0, -87.0], [-107.0, -87.0], [-107.0, -82.0], [-114.0, -82.0]],
+      homeDoor: [-102.0, -95.5],
+      speed: 1.85,
+      variant: { shirtHex: 0x0284c7, pantsHex: 0x0f172a },
+      label: 'Petugas Lalu Lintas Kota (Dewasa · Laki-laki)',
+      dialogue: 'Jalur layang kota bersih dari kabut! Tetap patuhi rambu dan jaga ketertiban.',
+    },
+    {
+      archetype: 'street_vendor',
+      waypoints: [[-128.0, -98.0], [-122.0, -98.0], [-122.0, -94.0], [-128.0, -94.0]],
+      homeDoor: [-102.0, -95.5],
+      speed: 1.85,
+      variant: { shirtHex: 0xb91c1c, pantsHex: 0x334155 },
+      label: 'Pedagang Kaki Lima Stasiun (Muda · Laki-laki)',
+      dialogue: 'Sate hangat dan jajanan cepat untuk para pekerja kantoran Gerbang Kota!',
+    },
+    {
+      archetype: 'clockmaker',
+      waypoints: [[-97.0, -99.0], [-91.0, -99.0], [-91.0, -94.0], [-97.0, -94.0]],
+      homeDoor: [-102.0, -95.5],
+      speed: 1.55,
+      variant: { accentHex: 0x475569, pantsHex: 0x1e293b },
+      label: 'Tukang Reparasi Arloji Kota (Tua · Laki-laki)',
+      dialogue: 'Warga kota sangat menghargai ketepatan waktu saat berangkat kerja.',
+    },
+    {
+      archetype: 'spice_merchant',
+      waypoints: [[-136.0, -91.0], [-129.0, -91.0], [-129.0, -85.0], [-136.0, -85.0]],
+      homeDoor: [-102.0, -95.5],
+      speed: 1.7,
+      variant: { hairHex: 0x059669, shirtHex: 0x047857, accentHex: 0xfbbf24 },
+      label: 'Penjaga Kios Trotoar (Dewasa · Perempuan Berhijab)',
+      dialogue: 'Dari terowongan barat sampai terminal timur, seluruh distrik kini lancar!',
+    },
+    {
+      archetype: 'pastry_chef',
+      waypoints: [[-100.0, -98.0], [-94.0, -98.0], [-94.0, -94.5], [-100.0, -94.5]],
+      homeDoor: [-102.0, -95.5],
+      speed: 1.75,
+      variant: { hairHex: 0xfb923c, shirtHex: 0x9a3412, accentHex: 0xfef3c7 },
+      label: 'Koki Bekal Sekolah (Muda · Perempuan Berhijab)',
+      dialogue: 'Roti lapis hangat siap untuk anak-anak Sekolah Bata Merah!',
+    },
+    {
+      archetype: 'ielts_dean',
+      waypoints: [[-104.0, -118.0], [-97.0, -118.0], [-97.0, -112.0], [-104.0, -112.0]],
+      homeDoor: [-121.0, -115.0],
+      speed: 1.5,
+      variant: { shirtHex: 0x3730a3, hairHex: 0x312e81 },
+      label: 'Kepala Sekolah Gerbang Kota (Tua · Perempuan Berhijab)',
+      dialogue: 'Pendidikan bahasa di kota ini semakin maju sejak kabut kelabu tersibak!',
+    },
+
+    // =========================================================================
+    // 5. MENARA WAKTU (8 Citizens: Clocksmiths, Scholars, Mechanics, Observers)
+    // =========================================================================
+    {
+      archetype: 'clockmaker',
+      waypoints: [[115.0, -83.0], [121.0, -83.0], [121.0, -78.0], [115.0, -78.0]],
+      homeDoor: [117.5, -80.5],
+      speed: 1.6,
+      variant: { accentHex: 0x64748b, pantsHex: 0x334155 },
+      label: 'Magang Pembuat Jam (Tua · Laki-laki)',
+      dialogue: 'Kami menyetel jarum jam paviliun agar selaras dengan Menara Utama!',
+    },
+    {
+      archetype: 'school_teacher',
+      waypoints: [[96.0, -74.0], [105.0, -74.0], [105.0, -68.0], [96.0, -68.0]],
+      homeDoor: [117.5, -80.5],
+      speed: 1.7,
+      variant: { hairHex: 0x7e22ce, shirtHex: 0x3b0764 },
+      label: 'Pengajar Sejarah Waktu (Dewasa · Perempuan Berhijab)',
+      dialogue: 'Ingat cara menyebut waktu: Seven o’clock, Half past eight, Quarter to ten!',
+    },
+    {
+      archetype: 'crystal_scholar',
+      waypoints: [[122.0, -74.0], [128.0, -74.0], [128.0, -69.0], [122.0, -69.0]],
+      homeDoor: [117.5, -80.5],
+      speed: 1.75,
+      variant: { shirtHex: 0x0f766e, hairHex: 0x14b8a6 },
+      label: 'Peneliti Bintang Menara (Dewasa · Perempuan Berhijab)',
+      dialogue: 'Bayangan jarum matahari tepat menunjuk jalur jembatan cahaya di timur laut.',
+    },
+    {
+      archetype: 'mine_engineer',
+      waypoints: [[131.0, -67.5], [142.0, -67.5], [142.0, -64.5], [131.0, -64.5]],
+      homeDoor: [117.5, -80.5],
+      speed: 1.8,
+      variant: { shirtHex: 0x475569, accentHex: 0xeab308 },
+      label: 'Teknisi Roda Gigi (Dewasa · Laki-laki)',
+      dialogue: 'Roda gigi emas menara jam sudah kuolesi minyak agar berputar mulus!',
+    },
+    {
+      archetype: 'temple_guardian',
+      waypoints: [[148.0, -98.0], [159.0, -98.0], [159.0, -95.0], [148.0, -95.0]],
+      homeDoor: [152.0, -97.0],
+      speed: 1.55,
+      label: 'Penjaga Teras Puncak Jam (Tua · Laki-laki)',
+      dialogue: 'Dari teras atas Menara Waktu, Istana IELTS tampak megah di atas awan!',
+    },
+    {
+      archetype: 'ielts_dean',
+      waypoints: [[147.0, -102.0], [147.0, -96.0], [151.0, -96.0], [151.0, -102.0]],
+      homeDoor: [152.0, -97.0],
+      speed: 1.45,
+      variant: { shirtHex: 0x881337, hairHex: 0x4c0519 },
+      label: 'Pengamat Istana Langit (Tua · Perempuan Berhijab)',
+      dialogue: 'Saat keenam mahkota utuh, Jembatan Cahaya menuju Istana IELTS dapat dilalui!',
+    },
+    {
+      archetype: 'ranger_guide',
+      waypoints: [[170.0, -66.0], [180.0, -66.0], [180.0, -56.0], [170.0, -56.0]],
+      homeDoor: [172.0, -58.0],
+      speed: 1.85,
+      variant: { shirtHex: 0x047857, pantsHex: 0x78350f },
+      label: 'Pengamat Jembatan Cahaya (Dewasa · Laki-laki)',
+      dialogue: 'Ujung jembatan cahaya masih terputus oleh perisai energi "COMING SOON"!',
+    },
+    {
+      archetype: 'village_kid',
+      waypoints: [[108.0, -75.0], [116.0, -75.0], [116.0, -70.0], [108.0, -70.0]],
+      homeDoor: [117.5, -80.5],
+      speed: 2.3,
+      variant: { shirtHex: 0x0284c7, accentHex: 0xfef08a },
+      label: 'Pengagum Jam Rafa (Anak-anak · Laki-laki)',
+      dialogue: 'Lonceng menara jam terdengar sampai ke seberang laut saat siang hari!',
+    },
+
+    // =========================================================================
+    // 6. GUA PORTAL (8 Citizens: Quarry Engineers, Sentries, Crystal Scholars)
+    // =========================================================================
     { archetype: 'mine_engineer', waypoints: [[-16.0, -178.0], [-11.0, -178.0], [-11.0, -171.0], [-16.0, -171.0]], homeDoor: [-1.0, -172.0], speed: 1.8 },
+    {
+      archetype: 'mine_engineer',
+      waypoints: [[-22.0, -166.0], [-14.0, -166.0], [-14.0, -158.0], [-22.0, -158.0]],
+      homeDoor: [-1.0, -172.0],
+      speed: 1.8,
+      variant: { shirtHex: 0x475569, pantsHex: 0x1e293b, accentHex: 0xfacc15 },
+      label: 'Mandor Tambang Selatan (Dewasa · Laki-laki)',
+      dialogue: 'Batu kristal ungu di ngarai ini beresonansi dengan kekuatan kata tanya!',
+    },
+    {
+      archetype: 'blacksmith',
+      waypoints: [[-22.0, -182.0], [-17.0, -182.0], [-17.0, -175.0], [-22.0, -175.0]],
+      homeDoor: [-1.0, -172.0],
+      speed: 1.7,
+      variant: { pantsHex: 0x1c1917, accentHex: 0x9a3412 },
+      label: 'Pandai Rel Tambang (Dewasa · Laki-laki)',
+      dialogue: 'Rel lori besi di ngarai ini kuperbaiki setiap minggu agar tetap kokoh!',
+    },
+    {
+      archetype: 'crystal_scholar',
+      waypoints: [[-4.0, -178.0], [3.0, -178.0], [3.0, -170.0], [-4.0, -170.0]],
+      homeDoor: [-1.0, -172.0],
+      speed: 1.7,
+      variant: { shirtHex: 0x4338ca, hairHex: 0x4f46e5 },
+      label: 'Peneliti Prasasti Portal (Dewasa · Perempuan Berhijab)',
+      dialogue: 'Who, What, Where, When, Why—kelima kunci itu membuka Portal Agung!',
+    },
+    {
+      archetype: 'temple_guardian',
+      waypoints: [[11.0, -183.0], [18.0, -183.0], [18.0, -176.0], [11.0, -176.0]],
+      homeDoor: [-1.0, -172.0],
+      speed: 1.6,
+      variant: { shirtHex: 0x64748b, accentHex: 0x0ea5e9 },
+      label: 'Pengawal Gerbang Portal (Tua · Laki-laki)',
+      dialogue: 'Portal di puncak ngarai hanya terbuka bagi pemilik 6 Pecahan Mahkota!',
+    },
+    {
+      archetype: 'temple_guardian',
+      waypoints: [[12.0, -172.0], [19.0, -172.0], [19.0, -165.0], [12.0, -165.0]],
+      homeDoor: [-1.0, -172.0],
+      speed: 1.6,
+      label: 'Penjaga Teras Ngarai (Tua · Laki-laki)',
+      dialogue: 'Lentera kuilku menjaga jalur kristal tetap aman dari bayangan gua.',
+    },
+    {
+      archetype: 'ranger_guide',
+      waypoints: [[2.0, -168.0], [10.0, -168.0], [10.0, -163.0], [2.0, -163.0]],
+      homeDoor: [-1.0, -172.0],
+      speed: 1.9,
+      variant: { shirtHex: 0x3f6212, pantsHex: 0x57534e },
+      label: 'Pemandu Jalur Ngarai (Dewasa · Laki-laki)',
+      dialogue: 'Tebing Ngarai Kristal curam di sisi selatan, tetaplah ikuti jalan setapak!',
+    },
+    {
+      archetype: 'grandma_herbalist',
+      waypoints: [[-5.0, -167.0], [1.0, -167.0], [1.0, -163.0], [-5.0, -163.0]],
+      homeDoor: [-1.0, -172.0],
+      speed: 1.4,
+      variant: { hairHex: 0xc084fc, shirtHex: 0x6b21a8 },
+      label: 'Tabib Ngarai Kristal (Tua · Perempuan Berhijab)',
+      dialogue: 'Lumut gua bercahaya ini bahan ramuan pemulih energi para penjelajah.',
+    },
+
+    // =========================================================================
+    // 7. CENTRAL HUB / CITADEL RERUNTUHAN (14 Citizens across Plaza, Causeways & Bastions)
+    // =========================================================================
+    { archetype: 'blacksmith', waypoints: [[-20.2, -10.5], [-16.6, -10.5], [-16.6, -4.8], [-20.2, -4.8]], homeDoor: [-12.5, -2.5], speed: 1.75 },
+    { archetype: 'temple_guardian', waypoints: [[-2.0, -11.0], [4.0, -11.0], [4.0, -5.0], [-2.0, -5.0]], homeDoor: [2.0, -12.0], speed: 1.65 },
+    { archetype: 'ielts_dean', waypoints: [[-11.0, 1.0], [-4.5, 1.0], [-4.5, 3.5], [-11.0, 3.5]], homeDoor: [-6.0, 2.0], speed: 1.5 },
+    {
+      archetype: 'city_policeman',
+      waypoints: [[-14.5, -3.5], [-8.5, -3.5], [-8.5, 0.5], [-14.5, 0.5]],
+      homeDoor: [-12.5, -2.5],
+      speed: 1.85,
+      variant: { shirtHex: 0x0284c7, pantsHex: 0x1e3a8a },
+      label: 'Petugas Patroli Citadel (Dewasa · Laki-laki)',
+      dialogue: 'Menjaga keamanan persimpangan 6 pulau agar para pahlawan bebas melintas!',
+    },
+    {
+      archetype: 'street_vendor',
+      waypoints: [[-21.5, -2.0], [-16.0, -2.0], [-16.0, 3.5], [-21.5, 3.5]],
+      homeDoor: [-12.5, -2.5],
+      speed: 1.8,
+      variant: { shirtHex: 0x1d4ed8, pantsHex: 0x334155 },
+      label: 'Penjual Bekal Citadel (Muda · Laki-laki)',
+      dialogue: 'Sate hangat bekal perjalanan jauh melintasi jembatan batu Citadel!',
+    },
+    {
+      archetype: 'pastry_chef',
+      waypoints: [[10.0, -12.0], [16.5, -12.0], [16.5, -6.0], [10.0, -6.0]],
+      homeDoor: [2.0, -12.0],
+      speed: 1.75,
+      variant: { hairHex: 0xc084fc, shirtHex: 0x6d28d9, accentHex: 0xf472b6 },
+      label: 'Juru Roti Halaman Timur (Muda · Perempuan Berhijab)',
+      dialogue: 'Aroma kue manis Citadel menyambut siapa saja yang pulang dari ekspedisi!',
+    },
+    {
+      archetype: 'florist_girl',
+      waypoints: [[18.0, -11.0], [25.0, -11.0], [25.0, -5.0], [18.0, -5.0]],
+      homeDoor: [2.0, -12.0],
+      speed: 1.8,
+      variant: { hairHex: 0x5c3a1e, pantsHex: 0x0284c7, shirtHex: 0xf0f9ff },
+      label: 'Perangkai Bunga Citadel (Muda · Perempuan Non-Hijab)',
+      dialogue: 'Bunga-bunga liar tumbuh indah di sela batu reruntuhan kuno ini!',
+    },
+    {
+      archetype: 'village_elder',
+      waypoints: [[-6.5, -12.0], [-1.0, -12.0], [-1.0, -8.5], [-6.5, -8.5]],
+      homeDoor: [2.0, -12.0],
+      speed: 1.4,
+      label: 'Sejarawan Reruntuhan (Tua · Laki-laki)',
+      dialogue: 'Citadel Reruntuhan adalah jantung kerajaan sebelum Istana IELTS terangkat ke langit.',
+    },
+    {
+      archetype: 'schoolgirl',
+      waypoints: [[-23.5, 6.0], [-19.5, 14.0], [-22.5, 22.0], [-18.5, 12.0]],
+      homeDoor: [-12.5, -2.5],
+      speed: 2.1,
+      variant: { hairHex: 0x0f766e, pantsHex: 0x134e4a },
+      label: 'Pelajar Pelintas Jembatan (Anak-anak · Perempuan Berhijab)',
+      dialogue: 'Jembatan batu dari Desa Sapaan ke Citadel pemandangan lautnya indah sekali!',
+    },
+    {
+      archetype: 'village_kid',
+      waypoints: [[-36.0, -5.0], [-26.0, -5.0], [-26.0, -2.0], [-36.0, -2.0]],
+      homeDoor: [-12.5, -2.5],
+      speed: 2.35,
+      variant: { shirtHex: 0x16a34a, accentHex: 0xef4444 },
+      label: 'Pelari Cilik Jembatan Barat (Anak-anak · Laki-laki)',
+      dialogue: 'Dari ujung barat Citadel kamu bisa menyeberang ke Pasar Rasa dan Gerbang Kota!',
+    },
+    {
+      archetype: 'ranger_guide',
+      waypoints: [[24.0, 2.0], [34.0, 4.0], [34.0, 7.0], [24.0, 4.0]],
+      homeDoor: [2.0, -12.0],
+      speed: 1.9,
+      variant: { shirtHex: 0x15803d, pantsHex: 0x78350f },
+      label: 'Pemandu Jalan Timur (Dewasa · Laki-laki)',
+      dialogue: 'Jalur timur menghubungkan Citadel menuju Hutan Satwa dan Menara Waktu!',
+    },
+    {
+      archetype: 'crystal_scholar',
+      waypoints: [[-38.0, -24.0], [-28.0, -24.0], [-28.0, -18.0], [-38.0, -18.0]],
+      homeDoor: [-31.0, -20.0],
+      speed: 1.65,
+      variant: { shirtHex: 0x7c3aed, hairHex: 0xa855f7 },
+      label: 'Cendekiawan Bastion Barat (Dewasa · Perempuan Berhijab)',
+      dialogue: 'Menara bastion barat menyimpan catatan rute rahasia ke Gua Portal.',
+    },
+    {
+      archetype: 'mine_engineer',
+      waypoints: [[20.0, -28.0], [30.0, -28.0], [30.0, -23.0], [20.0, -23.0]],
+      homeDoor: [25.0, -25.0],
+      speed: 1.75,
+      variant: { shirtHex: 0xb45309, pantsHex: 0x334155 },
+      label: 'Insinyur Menara Pengawas (Dewasa · Laki-laki)',
+      dialogue: 'Pondasi menara timur dibangun kokoh dari batu granit tua Citadel!',
+    },
+    {
+      archetype: 'temple_guardian',
+      waypoints: [[-7.0, -64.5], [-4.5, -56.5], [4.5, -56.5], [7.0, -64.5]],
+      homeDoor: [0.0, -56.5],
+      speed: 1.55,
+      variant: { shirtHex: 0xf59e0b, accentHex: 0x1d4ed8 },
+      label: 'Penjaga Puncak Obelisk (Tua · Laki-laki)',
+      dialogue: 'Puncak Obelisk Citadel memancarkan sinyal menuju Portal Istana IELTS!',
+    },
   ];
 
+  const _spawnScratch = { x: 0, z: 0 };
   citizenPlans.forEach((cp, idx) => {
     const spec = NPC_ARCHETYPES[cp.archetype];
-    const v = createVillagerMesh(palette, cp.archetype);
+    const v = createVillagerMesh(palette, cp.archetype, cp.variant);
     v.waypoints = cp.waypoints;
     v.homeDoor = cp.homeDoor;
     v.isInsideHouse = false;
-    v.x = cp.waypoints[0][0];
-    v.z = cp.waypoints[0][1];
+    _spawnScratch.x = cp.waypoints[0][0];
+    _spawnScratch.z = cp.waypoints[0][1];
+    pushOutFromBoxes(_spawnScratch, 0.56, obstacles);
+    v.x = _spawnScratch.x;
+    v.z = _spawnScratch.z;
     v.wpIdx = 1;
     v.speed = cp.speed;
     v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z), v.z);
-    v.root.userData.villageId = `villager_${cp.archetype}_${idx}`;
+    const id = `villager_${cp.archetype}_${idx}`;
+    v.root.userData.villageId = id;
     group.add(v.root);
     clickables.push(v.root);
-    villagers.push(v);
-    interactables.push({
-      id: `villager_${cp.archetype}_${idx}`,
+    const msg = cp.dialogue
+      ? `${cp.label ?? spec.displayNameId}: "${cp.dialogue}" [${spec.professionId} · HP ${spec.stats.hp} / ATK ${spec.stats.atk} / NRG ${spec.stats.nrg}]`
+      : `${spec.socialMessageId} [${spec.professionId} · HP ${spec.stats.hp} / ATK ${spec.stats.atk} / NRG ${spec.stats.nrg}]`;
+    const inter: VillageInteractable = {
+      id,
       x: v.x,
       z: v.z,
       radius: 2.8,
-      message: `${spec.socialMessageId} [${spec.professionId} · HP ${spec.stats.hp} / ATK ${spec.stats.atk} / NRG ${spec.stats.nrg}]`,
+      message: msg,
       mesh: v.root,
-    });
+    };
+    v.interactable = inter;
+    villagers.push(v);
+    interactables.push(inter);
   });
 
   const llama1 = createLlamaMesh(palette, -92.5, 56.5, -0.7, 0x1d4ed8);
@@ -1652,7 +2186,7 @@ export function updateMinecraftVillage(
 ): void {
   _villageAnimCounter = (_villageAnimCounter + 1) & 0xffff;
   const hasHeroDist = heroX !== undefined && heroZ !== undefined;
-  const animDistSqLimit = lowDetail ? 34 * 34 : 44 * 44;
+  const animDistSqLimit = lowDetail ? 40 * 40 : 54 * 54;
 
   rig.windUniforms.uTime.value = elapsed;
 
@@ -1691,10 +2225,10 @@ export function updateMinecraftVillage(
 
   const shouldGoHome = dayPhase === 'sore' || dayPhase === 'malam';
 
-  // 1. Villagers & Wandering Trader: patrol pagi-siang, segera pulang ke rumah saat sore/malam
+  // 1. Villagers & Citizens: 60fps nearby animation + 8x distance-throttled movement on outer islands
   for (let i = 0; i < rig.villagers.length; i++) {
     const v = rig.villagers[i];
-    const inter = rig.interactables.find((it) => it.id === v.root.userData.villageId);
+    const inter = v.interactable;
 
     if (!shouldGoHome && v.isInsideHouse) {
       // Pagi tiba -> keluar dari pintu rumah kembali beraktivitas
@@ -1715,10 +2249,42 @@ export function updateMinecraftVillage(
       continue;
     }
 
+    const distSq = hasHeroDist
+      ? (v.x - heroX!) * (v.x - heroX!) + (v.z - heroZ!) * (v.z - heroZ!)
+      : 0;
+    const isNearAnim = !hasHeroDist || distSq <= animDistSqLimit;
+
+    if (!isNearAnim && !shouldGoHome) {
+      // Distant island citizens: step position cheaply every 8th frame, skip bone math
+      if (((i + _villageAnimCounter) & 7) !== 0) continue;
+      const stepDt = Math.min(0.24, dt * 8);
+      if (v.pauseTimer > 0) {
+        v.pauseTimer -= stepDt;
+        continue;
+      }
+      const [tx, tz] = v.waypoints[v.wpIdx];
+      const dx = tx - v.x;
+      const dz = tz - v.z;
+      const dist = Math.hypot(dx, dz);
+      if (dist < 0.55) {
+        v.wpIdx = (v.wpIdx + 1) % v.waypoints.length;
+        v.pauseTimer = 1.25 + (i % 3) * 0.7;
+      } else {
+        const step = Math.min(dist, v.speed * stepDt);
+        v.x += (dx / dist) * step;
+        v.z += (dz / dist) * step;
+        v.yaw = Math.atan2(dx, dz);
+        v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z), v.z);
+        v.root.rotation.y = v.yaw;
+        if (inter) {
+          inter.x = v.x;
+          inter.z = v.z;
+        }
+      }
+      continue;
+    }
+
     const breath = Math.sin(elapsed * 2.6 + i * 1.1);
-    const isNearAnim =
-      !hasHeroDist ||
-      (v.x - heroX!) * (v.x - heroX!) + (v.z - heroZ!) * (v.z - heroZ!) <= animDistSqLimit;
     if (isNearAnim) {
       const vBlink = computeVillageBlink(elapsed, i * 1.37);
       v.leftEye.scale.y = vBlink;
@@ -1876,13 +2442,15 @@ export function updateMinecraftVillage(
     pushOutFromBoxes(_moveScratch, vRad, rig.obstacles);
     pushOutFromBoxes(_moveScratch, vRad, extraObstacles);
 
-    // Keep distance from other visible villagers & golems
+    // Keep distance from other visible villagers & golems (fast AABB reject)
     for (let j = 0; j < rig.villagers.length; j++) {
       if (j === i) continue;
       const ov = rig.villagers[j];
       if (ov.isInsideHouse) continue;
       const vx = _moveScratch.x - ov.x;
+      if (vx > 1.25 || vx < -1.25) continue;
       const vz = _moveScratch.z - ov.z;
+      if (vz > 1.25 || vz < -1.25) continue;
       const vd = Math.hypot(vx, vz);
       if (vd > 0.001 && vd < 1.05) {
         _moveScratch.x += (vx / vd) * (1.05 - vd) * 0.5;

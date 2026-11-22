@@ -8,7 +8,12 @@ import {
 } from './archipelagoWorld';
 import { createMinecraftHouse } from './minecraftVillage';
 import { createEnemyBlasterMesh, createWeaponMesh } from './weaponModels';
-import { buildDiverseNpcRig, NpcArchetypeId, resolveNpcArchetype } from './diverseNpcs';
+import {
+  buildDiverseNpcRig,
+  NpcAppearanceVariant,
+  NpcArchetypeId,
+  resolveNpcArchetype,
+} from './diverseNpcs';
 
 export interface HeroAvatarRig {
   root: THREE.Group;
@@ -1022,9 +1027,13 @@ export interface CaptiveAnimRig {
 }
 
 // 4. All Distinct Zone, Story, and Academy Examiner 3D NPCs (20 Diverse World NPCs Sheet)
-export function createZoneNpc(npcId: string, palette: MaterialPalette): THREE.Group {
+export function createZoneNpc(
+  npcId: string,
+  palette: MaterialPalette,
+  variant?: NpcAppearanceVariant,
+): THREE.Group {
   const archetype = resolveNpcArchetype(npcId);
-  const rig = buildDiverseNpcRig(archetype, palette, false);
+  const rig = buildDiverseNpcRig(archetype, palette, false, variant);
   addShadow(rig.root, palette, rig.baseScaleXZ);
 
   const npcRig: ZoneNpcRig = {
