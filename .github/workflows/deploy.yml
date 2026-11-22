@@ -24,13 +24,18 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24'
+          node-version: '22'
 
       - name: Install dependencies
         run: npm install --legacy-peer-deps --no-audit --no-fund
 
       - name: Build production bundle
         run: npm run build
+
+      - name: Prepare GitHub Pages SPA fallback
+        run: |
+          cp dist/index.html dist/404.html
+          touch dist/.nojekyll
 
       - name: Setup GitHub Pages
         uses: actions/configure-pages@v5
