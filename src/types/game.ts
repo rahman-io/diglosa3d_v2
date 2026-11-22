@@ -466,6 +466,7 @@ export interface RpgHudSnapshot {
   crosshairOnEnemy: boolean;
   crosshairSpread: number;
   pointerLocked: boolean;
+  isSwimming?: boolean;
   worldTime: WorldTimeState;
 }
 

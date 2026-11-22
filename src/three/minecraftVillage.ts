@@ -382,15 +382,16 @@ export function createMinecraftHouse(
   base.receiveShadow = true;
   group.add(base);
 
-  // Wooden plank walls
-  const walls = new THREE.Mesh(new THREE.BoxGeometry(w - 0.1, h - 0.8, d - 0.1), plankMat);
+  // Wooden plank or warm cream-plaster walls (large 12m x 10m village houses use crisp cream-plaster with oak beams!)
+  const wallMat = w >= 10 ? palette.getMat(0xf8fafc, 'matte') : plankMat;
+  const walls = new THREE.Mesh(new THREE.BoxGeometry(w - 0.1, h - 0.8, d - 0.1), wallMat);
   walls.position.y = 1.0 + (h - 0.8) * 0.5;
   walls.castShadow = true;
   walls.receiveShadow = true;
   group.add(walls);
 
   // 4 Corner Oak Log Pillars
-  const pillarGeo = new THREE.BoxGeometry(0.62, h + 0.2, 0.62);
+  const pillarGeo = new THREE.BoxGeometry(w >= 10 ? 0.85 : 0.62, h + 0.2, w >= 10 ? 0.85 : 0.62);
   const halfW = w * 0.5 - 0.08;
   const halfD = d * 0.5 - 0.08;
   const corners: Array<[number, number]> = [
@@ -406,13 +407,14 @@ export function createMinecraftHouse(
     group.add(p);
   });
 
-  // Stepped Minecraft Pitched Plank Roof (3 tiers + gable fill)
-  const tiers = 4;
+  // Stepped Minecraft Pitched Plank Roof (scales adaptively for 12m x 10m village houses!)
+  const tiers = Math.max(4, Math.ceil(w * 0.52));
+  const stepW = (w + 0.4) / tiers;
   for (let i = 0; i < tiers; i++) {
-    const tW = w + 1.1 - i * 1.1;
-    const tD = d + 1.0;
-    const tier = new THREE.Mesh(new THREE.BoxGeometry(Math.max(1.2, tW), 0.55, tD), roofMat);
-    tier.position.y = h + 0.25 + i * 0.52;
+    const tW = Math.max(1.4, w + 1.2 - i * stepW);
+    const tD = d + 1.1;
+    const tier = new THREE.Mesh(new THREE.BoxGeometry(tW, 0.58, tD), roofMat);
+    tier.position.y = h + 0.25 + i * 0.54;
     tier.castShadow = true;
     tier.receiveShadow = true;
     group.add(tier);
@@ -961,13 +963,13 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     return mat;
   };
 
-  // 1. Classic Minecraft Square Sun, Moon & Night Starfield in sky dome
+  // 1. Classic Minecraft Square Sun, Moon & Night Starfield in sky dome (scaled past expanded archipelago)
   const sunGroup = new THREE.Group();
   sunGroup.userData.isMapHidden = true;
-  sunGroup.position.set(68, 58, -86);
+  sunGroup.position.set(105, 84, -145);
   sunGroup.lookAt(0, 0, 0);
   const sunCoreMat = new THREE.MeshBasicMaterial({ color: 0xfef9c3, fog: false });
-  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(16, 16), sunCoreMat);
+  const sunCore = new THREE.Mesh(new THREE.PlaneGeometry(18, 18), sunCoreMat);
   const sunHaloMat = new THREE.MeshBasicMaterial({
     color: 0xfde047,
     transparent: true,
@@ -975,17 +977,17 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     depthWrite: false,
     fog: false,
   });
-  const sunHalo = new THREE.Mesh(new THREE.PlaneGeometry(25, 25), sunHaloMat);
+  const sunHalo = new THREE.Mesh(new THREE.PlaneGeometry(28, 28), sunHaloMat);
   sunHalo.position.z = -0.2;
   sunGroup.add(sunCore, sunHalo);
   group.add(sunGroup);
 
   const moonGroup = new THREE.Group();
   moonGroup.userData.isMapHidden = true;
-  moonGroup.position.set(-68, -32, 46);
+  moonGroup.position.set(-105, -48, 95);
   moonGroup.lookAt(0, 0, 0);
   const moonCoreMat = new THREE.MeshBasicMaterial({ color: 0xe2e8f0, fog: false });
-  const moonCore = new THREE.Mesh(new THREE.PlaneGeometry(13, 13), moonCoreMat);
+  const moonCore = new THREE.Mesh(new THREE.PlaneGeometry(15, 15), moonCoreMat);
   const moonHaloMat = new THREE.MeshBasicMaterial({
     color: 0x93c5fd,
     transparent: true,
@@ -993,20 +995,20 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     depthWrite: false,
     fog: false,
   });
-  const moonHalo = new THREE.Mesh(new THREE.PlaneGeometry(21, 21), moonHaloMat);
+  const moonHalo = new THREE.Mesh(new THREE.PlaneGeometry(24, 24), moonHaloMat);
   moonHalo.position.z = -0.2;
   moonGroup.add(moonCore, moonHalo);
   moonGroup.visible = false;
   group.add(moonGroup);
 
-  const starCount = 180;
+  const starCount = 220;
   const starPos = new Float32Array(starCount * 3);
   for (let i = 0; i < starCount; i++) {
     const theta = ((i * 137.5) % 360) * (Math.PI / 180);
     const phi = 0.22 + ((i * 29) % 100) / 100 * 1.18;
-    const rad = 148;
+    const rad = 215;
     starPos[i * 3 + 0] = Math.cos(phi) * Math.cos(theta) * rad;
-    starPos[i * 3 + 1] = Math.sin(phi) * rad + 10;
+    starPos[i * 3 + 1] = Math.sin(phi) * rad + 12;
     starPos[i * 3 + 2] = Math.cos(phi) * Math.sin(theta) * rad;
   }
   const starGeo = new THREE.BufferGeometry();
@@ -1024,28 +1026,28 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
   group.add(starPoints);
   disposables.push(sunCoreMat, sunHaloMat, moonCoreMat, moonHaloMat, starGeo, starMat);
 
-  // 2. Cobblestone Village Well inside Desa Sapaan (-2.4, 52.2, y=1.6)
-  const wellY = getArchipelagoGroundY(-2.4, 52.2);
-  const well = createCobblestoneWell(palette, -2.4, 52.2);
+  // 2. Cobblestone Village Well inside Desa Sapaan (-6.5, 111.5)
+  const wellY = getArchipelagoGroundY(-6.5, 111.5);
+  const well = createCobblestoneWell(palette, -6.5, 111.5);
   well.position.y = wellY;
   well.userData.villageId = 'village_well';
   group.add(well);
   clickables.push(well);
-  obstacles.push({ x: -2.4, z: 52.2, halfW: 1.55, halfD: 1.55 });
+  obstacles.push({ x: -6.5, z: 111.5, halfW: 1.55, halfD: 1.55 });
   interactables.push({
     id: 'village_well',
-    x: -2.4,
-    z: 52.2,
+    x: -6.5,
+    z: 111.5,
     radius: 3.4,
     message: 'Sumur Batu Desa Sapaan: Warga berkumpul di sini mengisi air sebelum berangkat bekerja!',
     mesh: well,
   });
 
-  // 3. Irrigated Wheat Farm + Hay Bales + Beehives on Desa Sapaan South-East meadow (x: 4..10, z: 60..66)
+  // 3. Irrigated Wheat Farm + Hay Bales + Beehives on Desa Sapaan meadow (x: 4.5, z: 134.0)
   const farmGroup = new THREE.Group();
-  const farmY = 1.6;
-  const farmCx = 6.2;
-  const farmCz = 63.0;
+  const farmCx = 4.5;
+  const farmCz = 134.0;
+  const farmY = getArchipelagoGroundY(farmCx, farmCz);
   const farmlandMat = palette.getPixelMat('farmland');
   const hayMat = palette.getPixelMat('hay');
   const woodFenceMat = palette.getPixelMat('oak_plank');
@@ -1106,25 +1108,32 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
   group.add(farmGroup);
   obstacles.push({ x: farmCx, z: farmCz, halfW: 3.3, halfD: 2.7 });
 
-  // Outdoor Furnace & Crafting Bench beside Desa Sapaan cottage
-  const benchY = getArchipelagoGroundY(-8.2, 60.2);
+  // Outdoor Furnace & Crafting Bench beside Desa Sapaan Rumah 2 (-12.8, 110.5)
+  const benchY = getArchipelagoGroundY(-12.8, 110.5);
   const furnace = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.0, 1.0), palette.getPixelMat('furnace'));
-  furnace.position.set(-8.2, benchY + 0.5, 58.6);
+  furnace.position.set(-12.8, benchY + 0.5, 110.0);
   const craftBench = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.0, 1.0), palette.getPixelMat('crafting'));
-  craftBench.position.set(-8.2, benchY + 0.5, 59.7);
+  craftBench.position.set(-12.8, benchY + 0.5, 111.1);
   group.add(furnace, craftBench);
-  obstacles.push({ x: -8.2, z: 59.15, halfW: 0.65, halfD: 1.25 });
+  obstacles.push({ x: -12.8, z: 110.55, halfW: 0.65, halfD: 1.25 });
 
-  // Island Lantern Posts along Desa Sapaan, Central Hub, & bridges
+  // Island Lantern Posts along Desa Sapaan, Central Hub, & outer island plazas
   const lanternCoords: Array<[number, number]> = [
-    [-3.2, 63.2],
-    [3.2, 56.8],
-    [-4.2, 41.2],
-    [4.2, 41.2],
+    [-4.5, 128.0],
+    [4.5, 122.0],
+    [-15.5, 65.0],
+    [-6.0, 96.0],
     [-8.5, 4.2],
     [8.5, -2.2],
-    [-43.5, 29.0],
-    [44.5, 27.5],
+    [-58.5, 34.5], // bridge approach lantern
+    [-81.5, 42.5], // Pasar Rasa East plaza lantern
+    [-113.5, 58.0], // Pasar Rasa West plaza lantern
+    [85.5, 44.5],
+    [134.5, 43.0],
+    [-56.5, -32.5],
+    [57.5, -32.5],
+    [-5.5, -72.5],
+    [5.5, -72.5],
   ];
   lanternCoords.forEach(([lx, lz]) => {
     const post = createLanternPost(palette, lx, lz);
@@ -1140,11 +1149,11 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     homeDoor: [number, number];
     speed: number;
   }> = [
-    { style: 'farmer', waypoints: [[1.5, 58], [-3.8, 56], [-4.5, 49.5], [2.2, 50]], homeDoor: [-6.5, 47.6], speed: 1.9 },
-    { style: 'librarian', waypoints: [[-6.5, 54], [-1.5, 54.5], [-2.5, 62.5], [-7.2, 60]], homeDoor: [-9.2, 59.5], speed: 2.0 },
-    { style: 'shepherd', waypoints: [[4.5, 56.5], [1.2, 62.5], [-4.5, 63.5], [0.5, 55.5]], homeDoor: [-9.2, 59.5], speed: 1.85 },
+    { style: 'farmer', waypoints: [[0.5, 122], [-3.8, 118], [-3.5, 108], [4.0, 114]], homeDoor: [-13.5, 90.0], speed: 1.9 },
+    { style: 'librarian', waypoints: [[-9.5, 116], [-3.5, 115], [-2.5, 124], [-9.2, 124]], homeDoor: [-14.0, 118.0], speed: 2.0 },
+    { style: 'shepherd', waypoints: [[6.5, 120], [1.2, 128], [-4.5, 130], [1.5, 118]], homeDoor: [-14.0, 118.0], speed: 1.85 },
     { style: 'cleric', waypoints: [[-4.5, 5.5], [3.5, 4.5], [2.5, -2.5], [-4.8, -2.0]], homeDoor: [-4.5, 5.5], speed: 1.9 },
-    { style: 'fletcher', waypoints: [[-45.0, 29.5], [-48.2, 24.5], [-53.5, 27.2], [-49.5, 34.8]], homeDoor: [-46.5, 22.5], speed: 1.95 },
+    { style: 'fletcher', waypoints: [[-91.0, 48.0], [-94.0, 58.0], [-110.0, 56.0], [-108.0, 43.0]], homeDoor: [-89.5, 45.0], speed: 1.95 },
   ];
 
   villagerPlans.forEach((vp, idx) => {
@@ -1176,15 +1185,15 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     });
   });
 
-  // Wandering Trader & 2 Llamas at Pasar Rasa Plaza (-49.. -54, y=1.4, z=27..35)
+  // Wandering Trader & 2 Llamas at Pasar Rasa Alun-Alun (-93..-113, z=43..60)
   const trader = createVillagerMesh(palette, 'trader');
   trader.waypoints = [
-    [-48.0, 32.5],
-    [-53.5, 33.8],
-    [-54.5, 28.0],
-    [-48.5, 27.5],
+    [-93.5, 52.0],
+    [-97.5, 61.5],
+    [-112.5, 54.0],
+    [-106.0, 42.5],
   ];
-  trader.homeDoor = [-46.5, 22.5];
+  trader.homeDoor = [-89.5, 45.0];
   trader.isInsideHouse = false;
   trader.x = trader.waypoints[0][0];
   trader.z = trader.waypoints[0][1];
@@ -1205,15 +1214,15 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     mesh: trader.root,
   });
 
-  const llama1 = createLlamaMesh(palette, -47.2, 33.2, -0.7, 0x1d4ed8);
-  llama1.root.position.y = getArchipelagoGroundY(-47.2, 33.2);
-  const llama2 = createLlamaMesh(palette, -54.0, 34.6, 0.5, 0x0284c7);
-  llama2.root.position.y = getArchipelagoGroundY(-54.0, 34.6);
+  const llama1 = createLlamaMesh(palette, -92.5, 56.5, -0.7, 0x1d4ed8);
+  llama1.root.position.y = getArchipelagoGroundY(-92.5, 56.5);
+  const llama2 = createLlamaMesh(palette, -112.5, 48.0, 0.5, 0x0284c7);
+  llama2.root.position.y = getArchipelagoGroundY(-112.5, 48.0);
   group.add(llama1.root, llama2.root);
   llamas.push(llama1, llama2);
   obstacles.push(
-    { x: -47.2, z: 33.2, halfW: 0.55, halfD: 0.65 },
-    { x: -54.0, z: 34.6, halfW: 0.55, halfD: 0.65 },
+    { x: -92.5, z: 56.5, halfW: 0.55, halfD: 0.65 },
+    { x: -112.5, z: 48.0, halfW: 0.55, halfD: 0.65 },
   );
 
   // Hutan Satwa Critters: Voxel Fox + 2 Fluffy Sheep grazing peacefully in Zoo Island
@@ -1285,17 +1294,17 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     group.add(r);
     critters.push({ root: r, head, leftEye: eL, rightEye: eR, baseX: sx, baseZ: sz, baseYaw: yaw, phase });
   };
-  buildFox(55.5, 29.5, -0.9);
-  buildSheep(58.5, 16.5, -2.1, 1.8);
-  buildSheep(52.2, 18.2, -0.4, 3.2);
+  buildFox(96.0, 46.5, -0.9);
+  buildSheep(84.0, 52.5, -2.1, 1.8);
+  buildSheep(125.0, 68.0, -0.4, 3.2);
 
   // 2 Iron Golems: Desa Sapaan flower-holder & Central Hub Guardian
   const golem1 = createIronGolemMesh(palette, true);
   golem1.waypoints = [
-    [-4.2, 48.0],
-    [2.5, 48.5],
-    [2.5, 57.5],
-    [-4.5, 57.5],
+    [-4.5, 108.0],
+    [4.5, 110.0],
+    [4.5, 122.0],
+    [-4.5, 122.0],
   ];
   golem1.x = golem1.waypoints[0][0];
   golem1.z = golem1.waypoints[0][1];
@@ -1330,15 +1339,16 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
   clickables.push(golem2.root);
   golems.push(golem2);
 
-  // 5 Buzzing Voxel Bees around Desa Sapaan Farm & Flowers
-  const beeCenters: Array<[number, number, number]> = [
-    [6.0, 3.8, 62.5],
-    [-1.5, 3.6, 54.0],
-    [-7.5, 3.8, 52.0],
-    [49.5, 3.7, 29.0],
-    [-2.5, 4.4, 2.0],
+  // 5 Buzzing Voxel Bees around Desa Sapaan Farm & Flowers + Hutan Satwa
+  const beeCenters: Array<[number, number]> = [
+    [4.5, 134.0],
+    [-3.5, 114.0],
+    [-11.5, 122.0],
+    [106.0, 74.0],
+    [-2.5, 2.0],
   ];
-  beeCenters.forEach(([bx, by, bz], idx) => {
+  beeCenters.forEach(([bx, bz], idx) => {
+    const by = getArchipelagoGroundY(bx, bz) + 2.2;
     const b = createBeeMesh(palette);
     b.root.position.set(bx, by, bz);
     group.add(b.root);
@@ -1356,42 +1366,69 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     });
   });
 
-  // 5. Island Oak & Birch Trees (sampled cleanly onto walkable island rims, never in ocean!)
+  // 5. Island Oak & Birch Trees (sampled cleanly onto walkable island hills & sea islets!)
   const oakSpecs: Array<[number, number, number]> = [];
   const birchSpecs: Array<[number, number, number]> = [];
   const islandTreeSpots: Array<[number, number, boolean]> = [
-    // Desa Sapaan grove
-    [-15.5, 59.5, false],
-    [-14.5, 44.5, true],
-    [-1.5, 68.5, false],
-    [13.5, 62.5, true],
-    [14.2, 43.8, false],
-    // Hutan Satwa jungle perimeter
-    [36.5, 39.5, false],
-    [43.5, 16.5, true],
-    [55.0, 14.5, false],
-    [63.5, 29.5, true],
-    [42.5, 43.0, false],
-    [58.5, 44.5, true],
-    // Pasar Rasa palm/oasis oaks
-    [-64.5, 34.5, false],
-    [-62.5, 25.5, true],
-    [-40.5, 39.5, false],
-    // Gerbang Kota park trees
-    [-43.0, -34.5, true],
-    [-62.5, -35.5, false],
-    [-55.5, -42.5, true],
-    // Menara Waktu ridge trees
-    [40.5, -37.5, false],
-    [62.5, -38.5, true],
-    [47.5, -44.0, false],
+    // Desa Sapaan rolling hills & perimeter (120m Starter Village at cx=0, cz=118)
+    [-28.0, 122.0, false],
+    [-26.0, 102.0, true],
+    [-10.5, 162.0, false],
+    [10.5, 166.0, true],
+    [22.5, 76.0, false],
+    [28.5, 152.0, true],
+    // Hutan Satwa lush jungle & highland perimeter (130m Zoo District at cx=120, cz=58)
+    [66.5, 46.0, false],
+    [73.0, 60.5, true],
+    [83.5, 81.5, false],
+    [108.0, 114.5, true],
+    [150.0, 108.5, false],
+    [144.0, 62.5, true],
+    // Pasar Rasa palm/spice oasis grove (110m Festival Market at cx=-122, cz=50)
+    [-114.0, 26.0, false],
+    [-108.0, 86.0, true],
+    [-78.0, 68.0, false],
+    [-124.0, 80.0, true],
+    [-86.0, 16.0, false],
+    // Gerbang Kota fortress hills
+    [-49.5, -36.5, true],
+    [-76.5, -24.5, false],
+    [-55.5, -52.5, true],
+    [-78.5, -54.5, false],
+    // Menara Waktu autumn ridges
+    [50.5, -34.5, false],
+    [76.5, -24.5, true],
+    [52.5, -50.5, false],
+    [80.5, -44.5, true],
+    // Gua Portal outer rocky ridges
+    [-18.5, -66.5, false],
+    [18.5, -66.5, true],
+    [-20.5, -88.5, false],
+    [20.5, -88.5, true],
     // Central Hub ancient grove
-    [-10.5, -6.5, false],
-    [10.5, -6.5, true],
-    [-9.5, 9.5, true],
+    [-13.5, -9.5, false],
+    [13.5, -9.5, true],
+    [-12.5, 12.5, true],
+    [12.5, 12.5, false],
+    // Exploratory Sea Islets + Desa Sapaan & Hutan Satwa NW strait islets
+    [-68.0, 126.0, false],
+    [62.0, 168.0, true],
+    [-142.0, -20.0, false],
+    [196.0, 10.0, true],
+    [-42.0, -84.0, false],
+    [42.0, -84.0, true],
+    [-32.0, 50.0, false],
+    [-48.0, 70.0, true],
+    [-64.0, 82.0, false],
+    [52.0, 8.0, false],
+    [68.0, -4.0, true],
+    [84.0, -14.0, false],
   ];
   islandTreeSpots.forEach(([tx, tz, isBirch], i) => {
-    if (!isWalkableArchipelago(tx, tz, 1.2)) return;
+    if (!isWalkableArchipelago(tx, tz, 1.8)) return;
+    const ty = getArchipelagoGroundY(tx, tz);
+    if (ty < 0.75) return;
+    if (Math.abs(ty - getArchipelagoGroundY(tx + 1.0, tz)) > 0.78) return;
     const s = 0.92 + (i % 3) * 0.14;
     if (isBirch) birchSpecs.push([tx, tz, s]);
     else oakSpecs.push([tx, tz, s]);
@@ -1461,18 +1498,25 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
   buildTreeInstancing(oakSpecs, palette.getPixelMat('oak_log'), oakLeafMat, [0xffffff, 0xd9f99d, 0xbef264]);
   buildTreeInstancing(birchSpecs, palette.getPixelMat('birch_log'), birchLeafMat, [0xffffff, 0xecfccb, 0xd9f99d]);
 
-  // 6. Instanced Tall Grass Tufts, Poppies & Pebbles placed cleanly on Island Terraces
+  // 6. Instanced Tall Grass Tufts, Poppies & Pebbles placed cleanly across the wide Archipelago
   const grassCenters = [
     OVERWORLD_ANCHORS.zones.desa_sapaan,
+    { x: -20, z: 100 },
+    { x: 0, z: 146 },
     OVERWORLD_ANCHORS.zones.hutan_satwa,
+    { x: 126, z: 62 },
+    { x: 108, z: 92 },
+    OVERWORLD_ANCHORS.zones.pasar_rasa,
+    OVERWORLD_ANCHORS.zones.gerbang_kota,
     OVERWORLD_ANCHORS.zones.menara_waktu,
+    OVERWORLD_ANCHORS.zones.gua_portal,
     OVERWORLD_ANCHORS.hub,
   ];
   const grassSpots: Array<[number, number]> = [];
-  for (let i = 0; i < 160; i++) {
+  for (let i = 0; i < 320; i++) {
     const base = grassCenters[i % grassCenters.length];
     const a = i * 2.39996;
-    const r = 3.5 + ((i * 19) % 130) * 0.1;
+    const r = 3.5 + ((i * 19) % 190) * 0.1;
     const gx = base.x + Math.cos(a) * r;
     const gz = base.z + Math.sin(a) * r;
     if (!isWalkableArchipelago(gx, gz, 2.2)) continue;
@@ -1509,10 +1553,10 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
 
   // Flowers across islands
   const flowerSpots: Array<[number, number]> = [];
-  for (let i = 0; i < 64; i++) {
+  for (let i = 0; i < 128; i++) {
     const base = grassCenters[i % grassCenters.length];
     const a = i * 2.17 + 0.6;
-    const r = 4.2 + ((i * 23) % 115) * 0.1;
+    const r = 4.2 + ((i * 23) % 175) * 0.1;
     const fx = base.x + Math.cos(a) * r;
     const fz = base.z + Math.sin(a) * r;
     if (isWalkableArchipelago(fx, fz, 2.5)) flowerSpots.push([fx, fz]);
@@ -1561,8 +1605,8 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     disposables.push(stemGeo, petalGeo);
   }
 
-  // Drifting Sunlit Breeze Motes over the Archipelago
-  const moteCount = 56;
+  // Drifting Sunlit Breeze Motes over the expanded Archipelago
+  const moteCount = 72;
   const moteGeo = new THREE.BoxGeometry(0.16, 0.08, 0.16);
   const moteMat = new THREE.MeshBasicMaterial({
     color: 0xffffff,
@@ -1576,9 +1620,9 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
   const mc = new THREE.Color();
   const motePalette = [0xbef264, 0x86efac, 0xfef08a, 0xd9f99d];
   for (let i = 0; i < moteCount; i++) {
-    moteSeeds[i * 4 + 0] = ((i * 47) % 130) - 65; // baseX
-    moteSeeds[i * 4 + 1] = 3.2 + ((i * 19) % 46) * 0.14; // baseY
-    moteSeeds[i * 4 + 2] = ((i * 59) % 130) - 65; // baseZ
+    moteSeeds[i * 4 + 0] = ((i * 83) % 390) - 195; // baseX
+    moteSeeds[i * 4 + 1] = 3.5 + ((i * 19) % 58) * 0.15; // baseY
+    moteSeeds[i * 4 + 2] = ((i * 107) % 390) - 195; // baseZ
     moteSeeds[i * 4 + 3] = i * 0.73; // phase
     mc.setHex(motePalette[i % motePalette.length]);
     moteMesh.setColorAt(i, mc);

@@ -21,6 +21,7 @@ export interface HeroAvatarRig {
   leftArm: THREE.Group;
   rightArm: THREE.Group;
   dashRing: THREE.Mesh;
+  swimRing: THREE.Mesh;
   weaponGroup: THREE.Group;
   weaponMeshes: Record<WeaponId, THREE.Group>;
   weaponTipMat: SurfaceMaterial;
@@ -388,6 +389,22 @@ export function createHeroAvatar(palette: MaterialPalette): HeroAvatarRig {
   dashRing.position.y = 0.08;
   root.add(dashRing);
 
+  // Water surface swim ripple ring (positioned dynamically at water y=0 in engine)
+  const swimRing = new THREE.Mesh(
+    new THREE.RingGeometry(0.78, 1.12, 24),
+    new THREE.MeshBasicMaterial({
+      color: 0xe0f2fe,
+      transparent: true,
+      opacity: 0.65,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  swimRing.rotation.x = -Math.PI / 2;
+  swimRing.position.y = 0.06;
+  swimRing.visible = false;
+  root.add(swimRing);
+
   return {
     root,
     body,
@@ -400,6 +417,7 @@ export function createHeroAvatar(palette: MaterialPalette): HeroAvatarRig {
     leftArm,
     rightArm,
     dashRing,
+    swimRing,
     weaponGroup,
     weaponMeshes,
     weaponTipMat,
@@ -450,11 +468,12 @@ export interface HeroWeaponPoseInput {
   velY?: number;
   landImpulse?: number;
   idleDuration?: number;
+  isSwimming?: boolean;
 }
 
 /**
  * Smoothly animates legs, torso lean/twist, head counter-look, both arms,
- * and weapon grip angle for distinct light, medium, sniper, and heavy weapons.
+ * swimming stroke/kick, and weapon grip angle for distinct weapons.
  */
 export function applyHeroWeaponPose(
   rig: HeroAvatarRig,
@@ -474,18 +493,19 @@ export function applyHeroWeaponPose(
     velY = 0,
     landImpulse = 0,
     idleDuration = 0,
+    isSwimming = false,
   } = input;
   const clampedAimPitch = THREE.MathUtils.clamp(aimPitch, -0.58, 0.65);
   const moving = speed > 0.6;
-  const airborne = !onGround;
+  const airborne = !onGround && !isSwimming;
   const jumpRise = THREE.MathUtils.clamp(velY / 11.4, -1, 1);
   const swing = moving ? Math.sin(walkCycle) * 0.6 : 0;
-  const idleActive = !moving && !airborne && aimAlpha < 0.08 && idleDuration >= 1.8;
+  const idleActive = !moving && !airborne && !isSwimming && aimAlpha < 0.08 && idleDuration >= 1.8;
   const idleBlend = idleActive ? THREE.MathUtils.clamp((idleDuration - 1.8) / 0.55, 0, 1) : 0;
   const idle = computeIdleBehavior(elapsed, 0.25);
 
   const breathWave = Math.sin(elapsed * 2.5);
-  const deepExpand = !moving && !airborne ? idle.deepBreath * 0.038 : 0;
+  const deepExpand = !moving && !airborne && !isSwimming ? idle.deepBreath * 0.038 : 0;
   const breath = breathWave * 0.025 + deepExpand * 0.4;
   const dampRate = Math.min(28, 18);
 
@@ -779,6 +799,42 @@ export function applyHeroWeaponPose(
     }
   }
 
+  let targetBodyRotX = 0;
+  if (isSwimming) {
+    if (moving) {
+      // Lift body pivot up toward water surface so forward-pitched head, shoulders & freestyle strokes stay above waves!
+      targetBodyRotX = 1.14;
+      targetBodyY = 0.84 + Math.sin(walkCycle * 2) * 0.04;
+      targetUpperX = 0.04;
+      targetUpperZ = Math.sin(walkCycle) * 0.28;
+      targetHeadX = -0.92;
+      targetHeadY = 0;
+      targetHeadZ = -Math.sin(walkCycle) * 0.14;
+      targetRightArmX = -1.78 + Math.sin(walkCycle) * 1.18;
+      targetRightArmZ = -0.26 - Math.cos(walkCycle) * 0.24;
+      targetLeftArmX = -1.78 - Math.sin(walkCycle) * 1.18;
+      targetLeftArmZ = 0.26 + Math.cos(walkCycle) * 0.24;
+      targetLeftLegX = Math.sin(walkCycle * 1.6) * 0.62;
+      targetRightLegX = -Math.sin(walkCycle * 1.6) * 0.62;
+      targetLeftLegZ = 0.08;
+      targetRightLegZ = -0.08;
+    } else {
+      const tread = Math.sin(elapsed * 3.1);
+      targetBodyRotX = 0.14;
+      targetBodyY = 0.1 + Math.sin(elapsed * 2.6) * 0.05;
+      targetUpperX = 0.04;
+      targetHeadX = -0.06;
+      targetHeadY = Math.sin(elapsed * 0.9) * 0.14;
+      targetRightArmX = -0.78 + tread * 0.22;
+      targetRightArmZ = -0.62 - tread * 0.34;
+      targetLeftArmX = -0.78 - tread * 0.22;
+      targetLeftArmZ = 0.62 + tread * 0.34;
+      targetLeftLegX = tread * 0.32;
+      targetRightLegX = -tread * 0.32;
+    }
+  }
+
+  rig.body.rotation.x = THREE.MathUtils.damp(rig.body.rotation.x, targetBodyRotX, 14, dt);
   rig.leftLeg.rotation.x = THREE.MathUtils.damp(rig.leftLeg.rotation.x, targetLeftLegX, dampRate, dt);
   rig.rightLeg.rotation.x = THREE.MathUtils.damp(rig.rightLeg.rotation.x, targetRightLegX, dampRate, dt);
   rig.leftLeg.rotation.z = THREE.MathUtils.damp(rig.leftLeg.rotation.z, targetLeftLegZ, dampRate, dt);
@@ -2190,31 +2246,30 @@ export function createAreaMists(): Map<ZoneId, THREE.Mesh> {
 export function createZoneLandmarks(palette: MaterialPalette): THREE.Group {
   const group = new THREE.Group();
 
-  // Desa Sapaan (0, y=1.6, z=54): two cozy timber cottages matching island village layout
-  const dy = 1.6;
+  // Desa Sapaan 12m x 10m Village Houses placed cleanly on stepped terraces
   const c1 = createMinecraftHouse(palette, {
-    x: -10.5,
-    z: 61.5,
-    rotY: 2.35,
-    width: 5.8,
-    depth: 4.8,
-    wallHeight: 3.2,
+    x: -13.5,
+    z: 84.0,
+    rotY: 0.35,
+    width: 12.0,
+    depth: 10.0,
+    wallHeight: 5.2,
     roofTint: 0xd97706,
     flowerBox: true,
   });
-  c1.position.y = dy;
+  c1.position.y = getArchipelagoGroundY(-13.5, 84.0);
 
   const c2 = createMinecraftHouse(palette, {
-    x: -6.5,
-    z: 45.2,
-    rotY: 0.65,
-    width: 5.6,
-    depth: 4.6,
-    wallHeight: 3.1,
+    x: -20.0,
+    z: 118.0,
+    rotY: 1.15,
+    width: 12.0,
+    depth: 10.0,
+    wallHeight: 5.2,
     roofTint: 0xea580c,
     flowerBox: true,
   });
-  c2.position.y = dy;
+  c2.position.y = getArchipelagoGroundY(-20.0, 118.0);
 
   group.add(c1, c2);
   return group;
@@ -3954,8 +4009,8 @@ export function setFirstPersonHeldVisual(
   rig.pickaxeHeadMat.color.setHex(tierHex);
 }
 
-// 13. Blocky Minecraft-style Voxel Sky Clouds
-export function createVoxelClouds(count = 26, useLiteShader = false): THREE.InstancedMesh {
+// 13. Blocky Minecraft-style Voxel Sky Clouds (high altitude well above Title camera & mountain peaks)
+export function createVoxelClouds(count = 36, useLiteShader = false): THREE.InstancedMesh {
   const geo = new THREE.BoxGeometry(1, 1, 1);
   const mat = useLiteShader
     ? new THREE.MeshLambertMaterial({
@@ -3963,25 +4018,25 @@ export function createVoxelClouds(count = 26, useLiteShader = false): THREE.Inst
         emissive: 0xe2e8f0,
         emissiveIntensity: 0.18,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.88,
       })
     : new THREE.MeshStandardMaterial({
         color: 0xffffff,
         roughness: 0.95,
         metalness: 0.0,
         transparent: true,
-        opacity: 0.9,
+        opacity: 0.88,
       });
   const mesh = new THREE.InstancedMesh(geo, mat, count);
   const dummy = new THREE.Object3D();
   for (let i = 0; i < count; i++) {
-    const x = ((i * 37) % 190) - 95;
-    const z = ((i * 53) % 190) - 95;
-    const y = 40 + (i % 3) * 2.5;
-    const sx = 9 + (i % 4) * 5;
-    const sz = 6 + ((i * 3) % 4) * 3.5;
+    const x = ((i * 73) % 470) - 235;
+    const z = ((i * 97) % 470) - 235;
+    const y = 86 + (i % 4) * 5.0;
+    const sx = 11 + (i % 4) * 5.5;
+    const sz = 7 + ((i * 3) % 4) * 3.8;
     dummy.position.set(x, y, z);
-    dummy.scale.set(sx, 1.4, sz);
+    dummy.scale.set(sx, 1.5, sz);
     dummy.updateMatrix();
     mesh.setMatrixAt(i, dummy.matrix);
   }

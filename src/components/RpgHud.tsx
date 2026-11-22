@@ -832,6 +832,15 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         </div>
       )}
 
+      {/* Compact Swim Hint Indicator when Hero is swimming in the sea */}
+      {hud.phase === 'playing' && hud.isSwimming && (
+        <div className="pointer-events-none fixed left-1/2 top-9 z-20 -translate-x-1/2 sm:top-11">
+          <div className="max-w-[82vw] truncate rounded-full border border-cyan-400/50 bg-slate-950/90 px-3 py-0.5 text-[10px] font-extrabold text-cyan-100 shadow-lg sm:text-[11px]">
+            🏊 Berenang · Renang ke pantai/dermaga atau tekan Lompat (J / Spasi) untuk naik
+          </div>
+        </div>
+      )}
+
       {/* Dynamic Tactical Crosshair & Hit Marker in Bidik Bebas TPS & FPS Modes */}
       {hud.phase === 'playing' &&
         (hud.cameraMode === 'first_person' ||
@@ -1602,8 +1611,8 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               onJump();
             }
           }}
-          title="Lompat (J)"
-          aria-label="Lompat"
+          title={hud.isSwimming ? 'Lompat Naik dari Air (J / Spasi)' : 'Lompat (J)'}
+          aria-label={hud.isSwimming ? 'Lompat Naik dari Air' : 'Lompat'}
           className="pointer-events-auto absolute bottom-[6px] right-[88px] flex h-[58px] w-[58px] touch-none select-none items-center justify-center rounded-full shadow-[0_5px_14px_rgba(16,185,129,0.44)] transition-transform hover:scale-105 active:scale-90 sm:bottom-[8px] sm:right-[102px] sm:h-[66px] sm:w-[66px]"
         >
           <img

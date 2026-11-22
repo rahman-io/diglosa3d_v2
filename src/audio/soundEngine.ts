@@ -402,6 +402,13 @@ class SoundEngine {
     this.beep(520, 0.14, 'sine', 0.07, 880, 0.02);
   }
 
+  public playSplash(intensity = 1.0): void {
+    const scale = Math.max(0.35, Math.min(1.4, intensity));
+    this.noise(0.18, 0.09 * scale, 0, 520);
+    this.beep(360, 0.12, 'sine', 0.065 * scale, 125);
+    this.beep(230, 0.14, 'triangle', 0.045 * scale, 90, 0.04);
+  }
+
   public playSurgeAlert(): void {
     this.playBoss();
   }

@@ -73,12 +73,14 @@ import {
 } from './minecraftVillage';
 import {
   ArchipelagoRig,
+  constrainHeroToWorldBounds,
   constrainToWalkableArchipelago,
   createArchipelagoWorld,
   getArchipelagoGroundY,
   IELTS_TEMPORARILY_LOCKED,
   isWalkableArchipelago,
   OVERWORLD_ANCHORS,
+  sampleArchipelagoTerrain,
   updateArchipelagoWorld,
 } from './archipelagoWorld';
 import {
@@ -338,7 +340,7 @@ interface SavedStatePayload {
   defeatedAcademyEnemyIds?: string[];
 }
 
-const MAX_COLLECTIBLES = 22;
+const MAX_COLLECTIBLES = 28;
 const MAX_PARTICLES = 110;
 const MAX_PROJECTILES = 36;
 const TICKS_PER_DAY = 24000;
@@ -354,19 +356,19 @@ const NIGHT_SURFACE_ZONES: Array<{
   x: number;
   z: number;
 }> = [
-  { zoneId: 'desa_sapaan', name: 'Bayangan Desa Malam', type: 'gumpal_salam', x: 4.5, z: 59.5 },
-  { zoneId: 'desa_sapaan', name: 'Peronda Sapaan Malam', type: 'bayangan_kata', x: -5.2, z: 48.0 },
-  { zoneId: 'pasar_rasa', name: 'Pencuri Pasar Malam', type: 'bayangan_kata', x: -43.0, z: 23.0 },
-  { zoneId: 'pasar_rasa', name: 'Creeper Lapar Malam', type: 'creeper_kata', x: -54.5, z: 36.5 },
-  { zoneId: 'hutan_satwa', name: 'Monster Rimba Malam', type: 'semak_rimba', x: 43.5, z: 34.5 },
-  { zoneId: 'hutan_satwa', name: 'Bayangan Satwa Malam', type: 'bayangan_kata', x: 45.0, z: 19.5 },
-  { zoneId: 'gerbang_kota', name: 'Ksatria Gelap Malam', type: 'ksatria_ielts', x: -43.5, z: -20.5 },
-  { zoneId: 'gerbang_kota', name: 'Gumpal Gerbang Malam', type: 'gumpal_salam', x: -53.5, z: -21.0 },
-  { zoneId: 'menara_waktu', name: 'Bayangan Waktu Malam', type: 'jam_pasir', x: 42.5, z: -22.5 },
-  { zoneId: 'menara_waktu', name: 'Creeper Menara Malam', type: 'creeper_kata', x: 46.5, z: -38.5 },
-  { zoneId: 'gua_portal', name: 'Penyerbu Portal Malam', type: 'ksatria_ielts', x: 7.0, z: -54.5 },
-  { zoneId: 'gua_portal', name: 'Jam Gelap Pelataran', type: 'jam_pasir', x: -6.5, z: -52.5 },
-  { zoneId: 'desa_sapaan', name: 'Peronda Alun-Alun Tengah', type: 'semak_rimba', x: 5.5, z: 7.5 },
+  { zoneId: 'desa_sapaan', name: 'Bayangan Desa Malam', type: 'gumpal_salam', x: 4.5, z: 122.0 },
+  { zoneId: 'desa_sapaan', name: 'Peronda Sapaan Malam', type: 'bayangan_kata', x: -8.0, z: 106.0 },
+  { zoneId: 'pasar_rasa', name: 'Pencuri Pasar Malam', type: 'bayangan_kata', x: -88.0, z: 48.0 },
+  { zoneId: 'pasar_rasa', name: 'Creeper Lapar Malam', type: 'creeper_kata', x: -115.0, z: 42.0 },
+  { zoneId: 'hutan_satwa', name: 'Monster Rimba Malam', type: 'semak_rimba', x: 96.0, z: 50.0 },
+  { zoneId: 'hutan_satwa', name: 'Bayangan Satwa Malam', type: 'bayangan_kata', x: 132.0, z: 45.0 },
+  { zoneId: 'gerbang_kota', name: 'Ksatria Gelap Malam', type: 'ksatria_ielts', x: -53.5, z: -31.5 },
+  { zoneId: 'gerbang_kota', name: 'Gumpal Gerbang Malam', type: 'gumpal_salam', x: -72.0, z: -31.5 },
+  { zoneId: 'menara_waktu', name: 'Bayangan Waktu Malam', type: 'jam_pasir', x: 54.0, z: -31.5 },
+  { zoneId: 'menara_waktu', name: 'Creeper Menara Malam', type: 'creeper_kata', x: 70.0, z: -36.5 },
+  { zoneId: 'gua_portal', name: 'Penyerbu Portal Malam', type: 'ksatria_ielts', x: 8.5, z: -69.5 },
+  { zoneId: 'gua_portal', name: 'Jam Gelap Pelataran', type: 'jam_pasir', x: -8.5, z: -68.5 },
+  { zoneId: 'desa_sapaan', name: 'Peronda Alun-Alun Tengah', type: 'semak_rimba', x: -8.0, z: 6.5 },
 ];
 
 const _v1 = new THREE.Vector3();
@@ -473,15 +475,15 @@ export class RpgWorldEngine {
     worldMode: 'overworld',
     centerX: OVERWORLD_ANCHORS.desaSpawn.x,
     centerZ: OVERWORLD_ANCHORS.desaSpawn.z,
-    halfW: 28,
-    halfH: 28,
+    halfW: 36,
+    halfH: 36,
   };
   private lastFullMapBounds: LiveMapBounds = {
     worldMode: 'overworld',
-    centerX: 4,
-    centerZ: -4,
-    halfW: 108,
-    halfH: 67.5,
+    centerX: 8,
+    centerZ: 34,
+    halfW: 240,
+    halfH: 150,
   };
 
   private frameId = 0;
@@ -648,6 +650,10 @@ export class RpgWorldEngine {
   private heroVel = new THREE.Vector3(0, 0, 0);
   private heroVelY = 0;
   private heroOnGround = true;
+  private isSwimming = false;
+  private swimFxTimer = 0;
+  private swimLeapTimer = 0;
+  private coyoteTimer = 0;
   private jumpBufferTimer = 0;
   private jumpLandTimer = 0;
   private heroYaw = OVERWORLD_ANCHORS.desaSpawn.yaw;
@@ -939,11 +945,11 @@ export class RpgWorldEngine {
     this.overworldGroup.add(this.starterPickupMesh);
     this.overworldClickables.push(this.starterPickupMesh);
 
-    this.cloudsMesh = createVoxelClouds(26, this.preferLiteShader);
+    this.cloudsMesh = createVoxelClouds(36, this.preferLiteShader);
     this.cloudsMesh.userData.isMapHidden = true;
     this.overworldGroup.add(this.cloudsMesh);
 
-    this.mapCamera = new THREE.OrthographicCamera(-24, 24, 24, -24, 0.5, 80);
+    this.mapCamera = new THREE.OrthographicCamera(-36, 36, 36, -36, 0.5, 250);
     this.mapCamera.up.set(0, 0, -1);
     this.mapRtMinimap = new THREE.WebGLRenderTarget(MAP_MINI_SIZE, MAP_MINI_SIZE, {
       minFilter: THREE.LinearFilter,
@@ -1391,9 +1397,9 @@ export class RpgWorldEngine {
     const px = OVERWORLD_ANCHORS.portal.x;
     const pz = OVERWORLD_ANCHORS.portal.z;
     this.villageRig.obstacles.push(
-      // Desa Sapaan cottages (left courtyard)
-      { x: -10.5, z: 61.5, halfW: 3.3, halfD: 3.0 },
-      { x: -6.5, z: 45.2, halfW: 3.2, halfD: 2.9 },
+      // Desa Sapaan 12m x 10m Village Houses (left stepped terraces)
+      { x: -13.5, z: 84.0, halfW: 6.0, halfD: 5.0 },
+      { x: -20.0, z: 118.0, halfW: 5.5, halfD: 6.2 },
       // Portal Arch stone piers in Gua Portal (center doorway stays passable)
       { x: px - 3.9, z: pz, halfW: 1.15, halfD: 1.25 },
       { x: px + 3.9, z: pz, halfW: 1.15, halfD: 1.25 },
@@ -1923,22 +1929,33 @@ export class RpgWorldEngine {
   private spawnCollectibles(): void {
     this.collectibles = [];
     const spots: Array<[number, number, 'diamond' | 'heart']> = [
-      [-3.2, 62.0, 'diamond'],
-      [4.8, 56.5, 'heart'],
-      [0.0, 26.0, 'diamond'],
-      [5.5, 6.0, 'diamond'],
-      [-6.5, -5.0, 'heart'],
-      [-24.0, 14.0, 'diamond'],
-      [-45.0, 35.5, 'diamond'],
-      [24.0, 14.0, 'diamond'],
-      [45.0, 22.0, 'heart'],
-      [-24.0, -14.8, 'diamond'],
-      [-46.0, -20.5, 'diamond'],
-      [24.0, -14.8, 'heart'],
-      [45.0, -35.0, 'diamond'],
-      [0.0, -30.0, 'diamond'],
-      [-4.5, -52.5, 'diamond'],
-      [6.0, -56.0, 'heart'],
+      [-5.0, 91.0, 'heart'],
+      [-3.0, 114.0, 'diamond'],
+      [19.0, 118.0, 'diamond'],
+      [-4.0, 148.0, 'heart'],
+      [-10.0, 44.0, 'diamond'],
+      [0.0, -14.0, 'diamond'],
+      [-7.5, -5.0, 'heart'],
+      [-29.8, -4.8, 'diamond'],
+      [-37.5, 18.2, 'diamond'],
+      [-92.0, 52.0, 'diamond'],
+      [-93.0, -12.0, 'diamond'],
+      [42.0, 24.0, 'diamond'],
+      [83.0, 44.0, 'heart'],
+      [106.0, 92.0, 'diamond'],
+      [125.0, 68.5, 'heart'],
+      [140.5, 42.5, 'diamond'],
+      [94.0, -11.0, 'heart'],
+      [-38.0, -17.5, 'diamond'],
+      [-58.5, -34.0, 'diamond'],
+      [-66.0, -49.0, 'diamond'],
+      [58.0, -34.0, 'heart'],
+      [70.0, -49.5, 'diamond'],
+      [0.0, -35.0, 'diamond'],
+      [-8.0, -76.5, 'diamond'],
+      [6.0, -77.5, 'heart'],
+      [-68.0, 126.0, 'diamond'],
+      [62.0, 168.0, 'heart'],
     ];
 
     for (let i = 0; i < MAX_COLLECTIBLES; i++) {
@@ -1972,10 +1989,12 @@ export class RpgWorldEngine {
 
   private refreshWeaponVisual(): void {
     const hasEquippedWeapon =
-      this.activeHotbarSlot <= 7 && this.ownedWeapons.has(this.activeWeapon);
+      this.activeHotbarSlot <= 7 && this.ownedWeapons.has(this.activeWeapon) && !this.isSwimming;
     setHeroWeaponVisual(this.hero, this.activeWeapon, hasEquippedWeapon);
 
-    if (this.activeHotbarSlot === 8) {
+    if (this.isSwimming) {
+      setFirstPersonHeldVisual(this.fpViewRig, 'bare', this.activeWeapon, this.pickaxeTier);
+    } else if (this.activeHotbarSlot === 8) {
       setFirstPersonHeldVisual(this.fpViewRig, 'pickaxe', this.activeWeapon, this.pickaxeTier);
     } else if (this.activeHotbarSlot === 9) {
       setFirstPersonHeldVisual(this.fpViewRig, 'torch', this.activeWeapon, this.pickaxeTier);
@@ -2070,8 +2089,17 @@ export class RpgWorldEngine {
   ): number {
     let safeDist = desiredDist;
 
-    // Prevent camera from dipping below the floor
-    const minCamY = 0.78;
+    let minCamY = 0.78;
+    if (this.worldMode === 'overworld') {
+      for (const frac of [0.55, 0.85, 1.0]) {
+        const sx = originX + dirX * safeDist * frac;
+        const sz = originZ + dirZ * safeDist * frac;
+        const tSamp = sampleArchipelagoTerrain(sx, sz);
+        if (tSamp.isLandOrBridge) {
+          minCamY = Math.max(minCamY, tSamp.groundY + 0.85);
+        }
+      }
+    }
     if (dirY < -0.01 && originY + dirY * safeDist < minCamY) {
       safeDist = Math.min(safeDist, Math.max(1.2, (minCamY - originY) / dirY));
     }
@@ -2277,6 +2305,8 @@ export class RpgWorldEngine {
     this.heroVel.set(0, 0, 0);
     this.heroVelY = 0;
     this.heroOnGround = true;
+    this.isSwimming = false;
+    this.refreshWeaponVisual();
     this.tapMoveTarget = null;
     this.encounterGraceTimer = 2.0;
 
@@ -2400,6 +2430,7 @@ export class RpgWorldEngine {
     this.heroVel.set(0, 0, 0);
     this.heroVelY = 0;
     this.heroOnGround = true;
+    this.isSwimming = false;
     this.tapMoveTarget = null;
     this.heroYaw = sp.yaw;
     this.encounterGraceTimer = 3.0;
@@ -2420,7 +2451,7 @@ export class RpgWorldEngine {
     this.owlState = 'fly';
     this.owlRig.root.visible = true;
     this.owlRig.envelope.visible = true;
-    this.owlRig.root.position.set(-22, 16, 62);
+    this.owlRig.root.position.set(-28, 18, 120);
     this.storyDialog = {
       kind: 'opening',
       step: 0,
@@ -3108,6 +3139,8 @@ export class RpgWorldEngine {
     this.overworldGroup.visible = false;
     this.worldMode = 'dungeon';
     this.phase = 'playing';
+    this.isSwimming = false;
+    this.refreshWeaponVisual();
     this.heldKeys.clear();
     this.shooterGemsThisArea = 0;
     this.bossBoulderTimer = 0;
@@ -3576,6 +3609,8 @@ export class RpgWorldEngine {
     this.overworldGroup.visible = false;
     this.worldMode = 'academy';
     this.phase = 'playing';
+    this.isSwimming = false;
+    this.refreshWeaponVisual();
     this.heldKeys.clear();
     this.shooterGemsThisArea = 0;
 
@@ -3685,6 +3720,8 @@ export class RpgWorldEngine {
     this.heroVel.set(0, 0, 0);
     this.heroVelY = 0;
     this.heroOnGround = true;
+    this.isSwimming = false;
+    this.refreshWeaponVisual();
     this.hero.root.position.copy(this.heroPos);
     this.encounterGraceTimer = 2.0;
 
@@ -3712,6 +3749,8 @@ export class RpgWorldEngine {
     this.heroVel.set(0, 0, 0);
     this.heroVelY = 0;
     this.heroOnGround = true;
+    this.isSwimming = false;
+    this.refreshWeaponVisual();
     this.hero.root.position.copy(this.heroPos);
     this.hp = Math.ceil(this.maxHp / 2);
     this.encounterGraceTimer = 6.0;
@@ -4248,6 +4287,8 @@ export class RpgWorldEngine {
     this.heroVel.set(0, 0, 0);
     this.heroVelY = 0;
     this.heroOnGround = true;
+    this.isSwimming = false;
+    this.refreshWeaponVisual();
     this.tapMoveTarget = null;
     this.hero.root.position.copy(this.heroPos);
     this.applyCameraVisibilityAndControls();
@@ -5386,13 +5427,29 @@ export class RpgWorldEngine {
   public jumpHero(): void {
     this.lastInputActivityMs = performance.now();
     if (this.phase !== 'playing') return;
-    if (!this.heroOnGround) {
-      this.jumpBufferTimer = 0.14;
+    if (this.isSwimming) {
+      this.jumpBufferTimer = 0;
+      this.jumpLandTimer = 0;
+      this.coyoteTimer = 0;
+      this.swimLeapTimer = 0.54;
+      this.heroVelY = 13.8;
+      _forward.set(Math.sin(this.heroYaw), 0, Math.cos(this.heroYaw));
+      this.heroVel.addScaledVector(_forward, 5.8);
+      this.isSwimming = false;
+      this.heroOnGround = false;
+      this.refreshWeaponVisual();
+      soundEngine.playSplash(0.95);
+      this.spawnBurst(this.heroPos.x, 0.16, this.heroPos.z, 0xbae6fd, 14);
       return;
     }
+    if (!this.heroOnGround && this.coyoteTimer <= 0) {
+      this.jumpBufferTimer = 0.16;
+      return;
+    }
+    this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
     this.jumpLandTimer = 0;
-    this.heroVelY = 11.4;
+    this.heroVelY = 11.8;
     this.heroOnGround = false;
     soundEngine.playDash();
   }
@@ -5764,6 +5821,13 @@ export class RpgWorldEngine {
 
   public fireActiveWeapon(fromHold = false, skipTurnWait = false): void {
     if (this.phase !== 'playing') return;
+    if (this.isSwimming) {
+      if (!fromHold) {
+        this.showBanner('🏊 Tidak bisa menyerang saat berenang! Naik ke pantai atau dermaga dulu.', 2.2);
+        soundEngine.playNo();
+      }
+      return;
+    }
     this.lastInputActivityMs = performance.now();
 
     if (this.activeHotbarSlot === 8) {
@@ -6195,7 +6259,9 @@ export class RpgWorldEngine {
         this.triggerPrimaryAction();
       } else if (e.code === 'Space') {
         e.preventDefault();
-        if (this.activeHotbarSlot >= 8 || this.ownedWeapons.size > 0) {
+        if (this.isSwimming) {
+          this.jumpHero();
+        } else if (this.activeHotbarSlot >= 8 || this.ownedWeapons.size > 0) {
           this.fireActiveWeapon(false);
         } else {
           this.triggerPrimaryAction();
@@ -6562,20 +6628,22 @@ export class RpgWorldEngine {
       const groundHits = this.raycaster.intersectObjects(this.archipelagoRig.walkableTargets, false);
       if (groundHits.length > 0) {
         const pt = groundHits[0].point.clone();
-        constrainToWalkableArchipelago(pt, 0.72);
-        pt.y = getArchipelagoGroundY(pt.x, pt.z);
+        constrainHeroToWorldBounds(pt, 1.0);
+        const s = sampleArchipelagoTerrain(pt.x, pt.z);
+        pt.y = s.isLandOrBridge ? s.groundY : 0;
         this.tapMoveTarget = pt;
-        this.spawnBurst(pt.x, pt.y + 0.3, pt.z, 0x38bdf8, 6);
+        this.spawnBurst(pt.x, pt.y + 0.3, pt.z, s.isLandOrBridge ? 0x38bdf8 : 0xbae6fd, 6);
         return;
       }
     }
 
     const groundHit = new THREE.Vector3();
-    this.groundPlane.constant = this.worldMode === 'overworld' ? -this.heroPos.y : 0;
+    this.groundPlane.constant = this.worldMode === 'overworld' ? -Math.max(0, this.heroPos.y) : 0;
     if (this.raycaster.ray.intersectPlane(this.groundPlane, groundHit)) {
       if (this.worldMode === 'overworld') {
-        constrainToWalkableArchipelago(groundHit, 0.72);
-        groundHit.y = getArchipelagoGroundY(groundHit.x, groundHit.z);
+        constrainHeroToWorldBounds(groundHit, 1.0);
+        const s = sampleArchipelagoTerrain(groundHit.x, groundHit.z);
+        groundHit.y = s.isLandOrBridge ? s.groundY : 0;
       }
       this.tapMoveTarget = groundHit;
       this.spawnBurst(groundHit.x, groundHit.y + 0.3, groundHit.z, 0x38bdf8, 6);
@@ -6688,10 +6756,10 @@ export class RpgWorldEngine {
     this.forceRenderNextFrame = false;
     this.updateWorldAnimations(dt);
     if (this.phase === 'title') {
-      const a = this.elapsed * 0.11;
-      _v1.set(Math.cos(a) * 94 + 6, 46 + Math.sin(this.elapsed * 0.35) * 3.0, Math.sin(a) * 94 - 4);
+      const a = this.elapsed * 0.1;
+      _v1.set(Math.cos(a) * 175 + 20, 78 + Math.sin(this.elapsed * 0.35) * 3.5, Math.sin(a) * 175 + 32);
       this.camera.position.lerp(_v1, 1 - Math.exp(-3 * dt));
-      this.controls.target.set(6, 7, -4);
+      this.controls.target.set(20, 10, 32);
       this.controls.update();
     } else if (this.phase === 'story') {
       this.updateStoryAnimations(dt);
@@ -7634,7 +7702,7 @@ export class RpgWorldEngine {
         this.cloudsMesh.getMatrixAt(i, _cloudMat);
         _cloudMat.decompose(_cloudPos, _cloudQuat, _cloudScale);
         _cloudPos.x += cloudStep;
-        if (_cloudPos.x > 105) _cloudPos.x = -105;
+        if (_cloudPos.x > 240) _cloudPos.x = -240;
         _cloudMat.compose(_cloudPos, _cloudQuat, _cloudScale);
         this.cloudsMesh.setMatrixAt(i, _cloudMat);
       }
@@ -7967,13 +8035,18 @@ export class RpgWorldEngine {
         _right.set(Math.cos(this.cameraYaw), 0, -Math.sin(this.cameraYaw));
       }
 
-      const sprint =
+      const isSprinting =
         (this.heldKeys.has('ShiftLeft') || this.heldKeys.has('ShiftRight') || this.voiceSprint) &&
-        !wantAds
-          ? 1.35
-          : wantAds
-          ? 0.78
-          : 1.0;
+        !wantAds;
+      const sprint = this.isSwimming
+        ? isSprinting
+          ? 1.02
+          : 0.72
+        : isSprinting
+        ? 1.35
+        : wantAds
+        ? 0.78
+        : 1.0;
       _v3.set(0, 0, 0).addScaledVector(_forward, mz).addScaledVector(_right, mx);
       if (_v3.lengthSq() > 1) _v3.normalize();
       this.heroVel.addScaledVector(_v3, 76 * sprint * dt);
@@ -7997,7 +8070,8 @@ export class RpgWorldEngine {
         this.tapMoveTarget = null;
       } else {
         _v3.set(dx / dist, 0, dz / dist);
-        this.heroVel.addScaledVector(_v3, 72 * dt);
+        const tapAccel = this.isSwimming ? 54 : 72;
+        this.heroVel.addScaledVector(_v3, tapAccel * dt);
         if (
           this.cameraMode !== 'first_person' &&
           !wantAds &&
@@ -8038,13 +8112,24 @@ export class RpgWorldEngine {
     }
 
     this.heroVel.multiplyScalar(Math.exp(-7.5 * dt));
+    const prevHeroX = this.heroPos.x;
     const prevHeroY = this.heroPos.y;
-    this.heroVelY -= 28 * dt;
+    const prevHeroZ = this.heroPos.z;
+    const wasAirborne = !this.heroOnGround;
+    const wasSwimming = this.isSwimming;
+
+    this.swimLeapTimer = Math.max(0, this.swimLeapTimer - dt);
+    this.coyoteTimer = this.heroOnGround && !this.isSwimming ? 0.14 : Math.max(0, this.coyoteTimer - dt);
+
+    if (!this.isSwimming) {
+      this.heroVelY -= 28 * dt;
+    }
     this.heroPos.addScaledVector(this.heroVel, dt);
     this.heroPos.y += this.heroVelY * dt;
-    const wasAirborne = !this.heroOnGround;
 
     if (this.worldMode !== 'overworld') {
+      this.isSwimming = false;
+      this.swimLeapTimer = 0;
       this.heroPos.x = THREE.MathUtils.clamp(this.heroPos.x, -18.5, 18.5);
       this.heroPos.z = THREE.MathUtils.clamp(this.heroPos.z, -18.5, 18.5);
       if (this.worldMode === 'dungeon' && this.dungeonRig) {
@@ -8059,8 +8144,37 @@ export class RpgWorldEngine {
         this.heroOnGround = false;
       }
     } else {
-      constrainToWalkableArchipelago(this.heroPos, 0.72);
-      // Resolve smooth collisions against cottages, rocks, cliffs, fences, towers & walls
+      constrainHeroToWorldBounds(this.heroPos, 0.85);
+
+      // 3D Step-Up vs Cliff-Wall Sliding: allow beaches/docks (<=0.95m) from water, swim-leaps to mantle ledges, and stairs on land!
+      const climbLimit =
+        wasSwimming || this.swimLeapTimer > 0
+          ? Math.max(0.95, Math.max(prevHeroY, this.heroPos.y) + 1.15)
+          : prevHeroY + 1.02;
+      const isUnderElevatedDeck = (s: ReturnType<typeof sampleArchipelagoTerrain>): boolean =>
+        s.isLandOrBridge && !s.isDryLand && prevHeroY < s.groundY - 1.35 && this.heroVelY <= 1.5;
+
+      const trySample = sampleArchipelagoTerrain(this.heroPos.x, this.heroPos.z);
+      if (trySample.isLandOrBridge && !isUnderElevatedDeck(trySample) && trySample.groundY > climbLimit) {
+        const sX = sampleArchipelagoTerrain(this.heroPos.x, prevHeroZ);
+        const sZ = sampleArchipelagoTerrain(prevHeroX, this.heroPos.z);
+        const canX = !sX.isLandOrBridge || isUnderElevatedDeck(sX) || sX.groundY <= climbLimit;
+        const canZ = !sZ.isLandOrBridge || isUnderElevatedDeck(sZ) || sZ.groundY <= climbLimit;
+        if (canX && (!canZ || Math.abs(this.heroPos.x - prevHeroX) >= Math.abs(this.heroPos.z - prevHeroZ))) {
+          this.heroPos.z = prevHeroZ;
+          this.heroVel.z = 0;
+        } else if (canZ) {
+          this.heroPos.x = prevHeroX;
+          this.heroVel.x = 0;
+        } else {
+          this.heroPos.x = prevHeroX;
+          this.heroPos.z = prevHeroZ;
+          this.heroVel.x = 0;
+          this.heroVel.z = 0;
+        }
+      }
+
+      // Resolve smooth collisions against cottages, rocks, fences, towers & walls
       const heroRad = 0.72;
       for (const obs of this.villageRig.obstacles) {
         const cx = THREE.MathUtils.clamp(this.heroPos.x, obs.x - obs.halfW, obs.x + obs.halfW);
@@ -8078,7 +8192,7 @@ export class RpgWorldEngine {
           }
         }
       }
-      // Also prevent Hero from walking straight through Quest NPCs
+      // Prevent Hero from walking straight through Quest NPCs
       for (const npc of this.npcs.values()) {
         const dx = this.heroPos.x - npc.x;
         const dz = this.heroPos.z - npc.z;
@@ -8090,18 +8204,94 @@ export class RpgWorldEngine {
           this.heroPos.z += (dz / d) * (minD - d);
         }
       }
-      constrainToWalkableArchipelago(this.heroPos, 0.72);
-      const groundY = getArchipelagoGroundY(this.heroPos.x, this.heroPos.z);
-      if (this.heroPos.y <= groundY) {
-        this.heroPos.y = groundY;
-        this.heroVelY = 0;
-        this.heroOnGround = true;
-      } else if (!wasAirborne && groundY < prevHeroY && prevHeroY - groundY <= 0.55 && this.heroVelY <= 0.2) {
-        this.heroPos.y = groundY;
-        this.heroVelY = 0;
-        this.heroOnGround = true;
-      } else {
+
+      // Ensure obstacle/NPC push never shoves hero inside an unclimbable steep cliff wall
+      const postPushSample = sampleArchipelagoTerrain(this.heroPos.x, this.heroPos.z);
+      if (
+        postPushSample.isLandOrBridge &&
+        !isUnderElevatedDeck(postPushSample) &&
+        postPushSample.groundY > climbLimit
+      ) {
+        this.heroPos.x = prevHeroX;
+        this.heroPos.z = prevHeroZ;
+        this.heroVel.x = 0;
+        this.heroVel.z = 0;
+      }
+
+      const curSample = sampleArchipelagoTerrain(this.heroPos.x, this.heroPos.z);
+      const underDeckNow =
+        curSample.isLandOrBridge &&
+        !curSample.isDryLand &&
+        prevHeroY < curSample.groundY - 1.35 &&
+        !(this.swimLeapTimer > 0 && this.heroVelY > 0.5);
+      const inWaterZone = !curSample.isLandOrBridge || curSample.groundY < -0.15 || underDeckNow;
+      // Lower pivot so standing/freestyle swimmer's chest, arms & head stay cleanly above water surface y=0!
+      const SWIM_FLOAT_Y = -1.16;
+
+      if (
+        inWaterZone &&
+        this.heroPos.y <= 0.14 &&
+        !(this.swimLeapTimer > 0.18 && this.heroVelY > 1.8)
+      ) {
+        this.isSwimming = true;
         this.heroOnGround = false;
+        this.swimLeapTimer = 0;
+        if (!wasSwimming) {
+          soundEngine.playSplash(Math.min(1.3, 0.72 + Math.abs(this.heroVelY) * 0.06));
+          this.spawnBurst(this.heroPos.x, 0.12, this.heroPos.z, 0xbae6fd, 14);
+          this.heroVelY *= 0.25;
+        }
+        const waveBobY = SWIM_FLOAT_Y + Math.sin(this.elapsed * 3.1 + this.heroPos.x * 0.2) * 0.07;
+        this.heroVelY += (waveBobY - this.heroPos.y) * 20 * dt;
+        this.heroVelY *= Math.exp(-6.5 * dt);
+        this.heroPos.y += this.heroVelY * dt;
+      } else {
+        const shoreOrLeap = wasSwimming || this.swimLeapTimer > 0;
+        const bridgeLedgeCatch =
+          (curSample.surface === 'bridge' || curSample.surface === 'parkour') &&
+          this.heroVelY <= 2.0
+            ? 0.42
+            : 0.12;
+        const aboveCatch = shoreOrLeap && curSample.groundY <= 2.9 ? 1.15 : bridgeLedgeCatch;
+        const belowCatch = shoreOrLeap && curSample.groundY <= 2.9 ? 1.45 : 1.05;
+        const canStandOnSolid =
+          !inWaterZone &&
+          this.heroPos.y <= curSample.groundY + aboveCatch &&
+          (this.heroPos.y >= curSample.groundY - belowCatch ||
+            (curSample.isDryLand && (!wasSwimming || curSample.groundY <= climbLimit)));
+        if (canStandOnSolid) {
+          this.heroPos.y = curSample.groundY;
+          this.heroVelY = 0;
+          this.heroOnGround = true;
+          this.isSwimming = false;
+          this.swimLeapTimer = 0;
+        } else if (
+          !inWaterZone &&
+          !wasAirborne &&
+          !wasSwimming &&
+          curSample.groundY < prevHeroY &&
+          prevHeroY - curSample.groundY <= 0.85 &&
+          this.heroVelY <= 0.25
+        ) {
+          this.heroPos.y = curSample.groundY;
+          this.heroVelY = 0;
+          this.heroOnGround = true;
+          this.isSwimming = false;
+        } else {
+          this.heroOnGround = false;
+          this.isSwimming = false;
+        }
+      }
+
+      if (this.isSwimming !== wasSwimming) {
+        this.refreshWeaponVisual();
+      }
+      if (this.isSwimming && Math.hypot(this.heroVel.x, this.heroVel.z) > 1.2) {
+        this.swimFxTimer -= dt;
+        if (this.swimFxTimer <= 0) {
+          this.swimFxTimer = 0.15;
+          this.spawnBurst(this.heroPos.x, 0.06, this.heroPos.z, 0xe0f2fe, 3);
+        }
       }
     }
 
@@ -8109,11 +8299,8 @@ export class RpgWorldEngine {
       this.jumpLandTimer = 0.16;
     }
 
-    if (this.heroOnGround && this.jumpBufferTimer > 0) {
-      this.jumpBufferTimer = 0;
-      this.jumpLandTimer = 0;
-      this.heroVelY = 11.4;
-      this.heroOnGround = false;
+    if ((this.heroOnGround || this.coyoteTimer > 0 || this.isSwimming) && this.jumpBufferTimer > 0) {
+      this.jumpHero();
     }
 
     if (this.shootAimTimer > 0) {
@@ -8127,10 +8314,15 @@ export class RpgWorldEngine {
     }
 
     const speed = Math.hypot(this.heroVel.x, this.heroVel.z);
-    if (speed > 0.6 && this.heroOnGround) {
+    if (this.isSwimming) {
+      this.walkCycle += dt * (speed > 0.6 ? 6.5 + speed * 0.55 : 2.8);
+    } else if (speed > 0.6 && this.heroOnGround) {
       this.walkCycle += dt * (8 + speed * 0.45);
     }
-    soundEngine.setWalking(speed > 0.8 && this.heroOnGround, speed > 10.5 ? 1.2 : 1.0);
+    soundEngine.setWalking(
+      speed > 0.8 && this.heroOnGround && !this.isSwimming,
+      speed > 10.5 ? 1.2 : 1.0,
+    );
 
     // Track Hero idle state: any joystick/key/tap move, jump, aim, or shoot immediately cancels idle pose & thought bubble
     const hasMoveInput =
@@ -8139,6 +8331,7 @@ export class RpgWorldEngine {
       speed > 0.45;
     const isBusyAction =
       !this.heroOnGround ||
+      this.isSwimming ||
       this.jumpBufferTimer > 0 ||
       continuousHold ||
       this.isAiming ||
@@ -8181,7 +8374,7 @@ export class RpgWorldEngine {
     const landImpulse =
       this.jumpLandTimer > 0 ? Math.sin((this.jumpLandTimer / 0.16) * Math.PI) : 0;
 
-    applyHeroWeaponPose(this.hero, this.activeWeapon, hasEquippedWeapon, {
+    applyHeroWeaponPose(this.hero, this.activeWeapon, hasEquippedWeapon && !this.isSwimming, {
       speed,
       walkCycle: this.walkCycle,
       aimAlpha,
@@ -8196,9 +8389,16 @@ export class RpgWorldEngine {
       velY: this.heroVelY,
       landImpulse,
       idleDuration: this.heroIdleTime,
+      isSwimming: this.isSwimming,
     });
 
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
+    this.hero.swimRing.visible = this.isSwimming;
+    if (this.isSwimming) {
+      this.hero.swimRing.position.y = Math.max(0.05, -this.heroPos.y + 0.05);
+      const rScale = (speed > 0.6 ? 1.08 : 0.92) + Math.sin(this.elapsed * 5.2) * 0.08;
+      this.hero.swimRing.scale.setScalar(rScale);
+    }
     if (this.pulseRingTimer > 0) {
       this.pulseRingTimer = Math.max(0, this.pulseRingTimer - dt);
       const prog = 1 - this.pulseRingTimer / 0.4;
@@ -8351,7 +8551,11 @@ export class RpgWorldEngine {
       // Starter Weapon Pickup in Desa Sapaan
       const sw = OVERWORLD_ANCHORS.starterWeapon;
       const swY = getArchipelagoGroundY(sw.x, sw.z);
-      if (!this.starterWeaponPicked && Math.hypot(this.heroPos.x - sw.x, this.heroPos.z - sw.z) < 2.6) {
+      if (
+        !this.starterWeaponPicked &&
+        Math.hypot(this.heroPos.x - sw.x, this.heroPos.z - sw.z) < 2.6 &&
+        Math.abs(this.heroPos.y - swY) < 3.2
+      ) {
         this.starterWeaponPicked = true;
         this.ownedWeapons.add('ketapel');
         this.activeWeapon = 'ketapel';
@@ -8369,10 +8573,13 @@ export class RpgWorldEngine {
 
       for (const c of this.collectibles) {
         if (!c.active) continue;
-        if (Math.hypot(this.heroPos.x - c.x, this.heroPos.z - c.z) < 2.2) {
+        const cy = getArchipelagoGroundY(c.x, c.z);
+        if (
+          Math.hypot(this.heroPos.x - c.x, this.heroPos.z - c.z) < 2.2 &&
+          Math.abs(this.heroPos.y - cy) < 3.2
+        ) {
           c.active = false;
           c.respawnTimer = TUNE.itemBackSec;
-          const cy = getArchipelagoGroundY(c.x, c.z);
           if (c.kind === 'diamond') {
             this.diamonds += 1;
             this.addScore(80);
@@ -8395,6 +8602,8 @@ export class RpgWorldEngine {
         const live = this.npcs.get(npc.id);
         const nx = live?.x ?? npc.x;
         const nz = live?.z ?? npc.z;
+        const ny = getArchipelagoGroundY(nx, nz);
+        if (Math.abs(this.heroPos.y - ny) > 3.5) continue;
         const d = Math.hypot(this.heroPos.x - nx, this.heroPos.z - nz);
         if (d < bestNpcDist) {
           bestNpcDist = d;
@@ -8407,7 +8616,9 @@ export class RpgWorldEngine {
       this.nearPrisonKey = false;
       this.nearHiddenPrison = false;
       const pp = OVERWORLD_ANCHORS.portal;
-      this.nearPortal = Math.hypot(this.heroPos.x - pp.x, this.heroPos.z - (pp.z + 2.5)) < 6.4;
+      this.nearPortal =
+        Math.hypot(this.heroPos.x - pp.x, this.heroPos.z - (pp.z + 2.5)) < 6.4 &&
+        Math.abs(this.heroPos.y - getArchipelagoGroundY(pp.x, pp.z)) < 3.6;
       this.nearDungeonExit = false;
     } else if (this.worldMode === 'dungeon' && this.dungeonState) {
       this.nearbyNpcId = null;
@@ -9932,17 +10143,17 @@ export class RpgWorldEngine {
         ? isMini
           ? {
               worldMode: 'overworld',
-              centerX: THREE.MathUtils.clamp(this.heroPos.x, -80, 80),
-              centerZ: THREE.MathUtils.clamp(this.heroPos.z, -76, 70),
-              halfW: 28,
-              halfH: 28,
+              centerX: THREE.MathUtils.clamp(this.heroPos.x, -175, 175),
+              centerZ: THREE.MathUtils.clamp(this.heroPos.z, -110, 175),
+              halfW: 36,
+              halfH: 36,
             }
           : {
               worldMode: 'overworld',
-              centerX: 4,
-              centerZ: -4,
-              halfW: 108,
-              halfH: 67.5,
+              centerX: 8,
+              centerZ: 34,
+              halfW: 240,
+              halfH: 150,
             }
         : isMini
         ? {
@@ -10012,9 +10223,9 @@ export class RpgWorldEngine {
     this.mapCamera.top = bounds.halfH;
     this.mapCamera.bottom = -bounds.halfH;
     this.mapCamera.near = 0.5;
-    this.mapCamera.far = 160;
+    this.mapCamera.far = 250;
     this.mapCamera.updateProjectionMatrix();
-    this.mapCamera.position.set(bounds.centerX, 68, bounds.centerZ);
+    this.mapCamera.position.set(bounds.centerX, 115, bounds.centerZ);
     this.mapCamera.up.set(0, 0, -1);
     this.mapCamera.lookAt(bounds.centerX, 0, bounds.centerZ);
 
@@ -10254,6 +10465,7 @@ export class RpgWorldEngine {
         this.crosshairSpread + (Math.hypot(this.heroVel.x, this.heroVel.z) > 1.2 ? 0.24 : 0),
       ),
       pointerLocked: this.pointerLocked,
+      isSwimming: this.isSwimming,
       worldTime: this.getWorldTimeState(),
     });
   }
