@@ -9,7 +9,7 @@ export const OVERWORLD_ANCHORS = {
   hub: { x: 0, y: 2.8, z: 0 },
   desaSpawn: { x: -6.0, y: 2.6, z: 126.0, yaw: Math.PI * 0.85 },
   starterWeapon: { x: -12.5, y: 2.6, z: 123.0 },
-  portal: { x: 8.5, y: 2.6, z: -80.5 },
+  portal: { x: 2.0, y: 14.0, z: -185.0 },
   istanaFloating: { x: 122, y: 38, z: -108 },
   zones: {
     desa_sapaan: { x: -2.0, y: 2.6, z: 112.0 },
@@ -17,7 +17,7 @@ export const OVERWORLD_ANCHORS = {
     hutan_satwa: { x: 102, y: 3.4, z: 52 },
     gerbang_kota: { x: -119.0, y: 12.0, z: -86.0 },
     menara_waktu: { x: 66, y: 6.2, z: -42 },
-    gua_portal: { x: 0, y: 2.6, z: -78 },
+    gua_portal: { x: 9.0, y: 14.0, z: -171.0 },
   } as Record<ZoneId, { x: number; y: number; z: number }>,
   npcs: {
     npc_tetua: { x: 20.0, z: 118.0, rotY: -1.57 },
@@ -25,7 +25,7 @@ export const OVERWORLD_ANCHORS = {
     npc_rubah: { x: 87.5, z: 42.5, rotY: -1.1 },
     npc_penjaga: { x: -110.5, z: -92.5, rotY: 0.45 },
     npc_penyihir: { x: 59.5, z: -34.2, rotY: -0.65 },
-    npc_portal: { x: -4.8, z: -76.5, rotY: 0.45 },
+    npc_portal: { x: 5.0, z: -177.0, rotY: 0.52 },
   } as Record<string, { x: number; z: number; rotY: number }>,
   guardPosts: {
     npc_tetua: { x: 11.5, z: 109.0, rotY: -0.9, bedTint: 0xf59e0b },
@@ -33,7 +33,7 @@ export const OVERWORLD_ANCHORS = {
     npc_rubah: { x: 83.5, z: 36.5, rotY: 0.75, bedTint: 0x10b981 },
     npc_penjaga: { x: -102.0, z: -95.5, rotY: -0.95, bedTint: 0x3b82f6 },
     npc_penyihir: { x: 56.2, z: -39.2, rotY: 1.1, bedTint: 0x8b5cf6 },
-    npc_portal: { x: -10.5, z: -75.0, rotY: 0.7, bedTint: 0xa855f7 },
+    npc_portal: { x: -1.0, z: -172.0, rotY: 0.78, bedTint: 0xa855f7 },
   } as Record<string, { x: number; z: number; rotY: number; bedTint: number }>,
 } as const;
 
@@ -115,7 +115,8 @@ export const ISLAND_DISKS: IslandDisk[] = [
   // 140m (radius 70m) Full-Scale Fortress City ("Gerbang Kota") matching level design overview!
   { id: 'gerbang_kota', cx: -118, cz: -98, radius: 70.0, groundY: 12.0 },
   { id: 'menara_waktu', cx: 66, cz: -42, radius: 28.0, groundY: 3.6 },
-  { id: 'gua_portal', cx: 0, cz: -82, radius: 29.0, groundY: 2.6 },
+  // 135m (radius 67.5m) Full-Scale Crystal Canyon ("Gua Portal") matching level design overview!
+  { id: 'gua_portal', cx: 20, cz: -174, radius: 67.5, groundY: 14.0 },
 ];
 
 export const SEA_ISLETS: SeaIslet[] = [
@@ -137,6 +138,9 @@ export const SEA_ISLETS: SeaIslet[] = [
   { id: 'islet_gerbang_nw1', cx: -206, cz: -148, radius: 6.4, peakY: 4.0, theme: 'sand_green' },
   { id: 'islet_gerbang_nw2', cx: -196, cz: -168, radius: 4.8, peakY: 3.0, theme: 'sand_green' },
   { id: 'islet_gerbang_nw3', cx: -182, cz: -180, radius: 4.2, peakY: 2.8, theme: 'sand_green' },
+  // Scenic stone/foam sea islets off Gua Portal NW (matching level design overview!)
+  { id: 'islet_portal_nw1', cx: -56, cz: -224, radius: 5.4, peakY: 3.2, theme: 'basalt' },
+  { id: 'islet_portal_nw2', cx: -42, cz: -238, radius: 4.2, peakY: 2.6, theme: 'rock_sand' },
 ];
 
 export const BRIDGE_SPANS: BridgeSpan[] = [
@@ -224,13 +228,13 @@ export const BRIDGE_SPANS: BridgeSpan[] = [
     ax: 0,
     az: -22.5,
     ay: 2.8,
-    bx: 0,
-    bz: -56.0,
-    by: 2.6,
-    halfWidth: 3.0,
-    archHeight: 0.7,
+    bx: -12.0,
+    bz: -118.0,
+    by: 4.0,
+    halfWidth: 3.2,
+    archHeight: 0.85,
     style: 'stone',
-    gaps: [{ t0: 0.45, t1: 0.54 }],
+    gaps: [{ t0: 0.46, t1: 0.525 }],
   },
   {
     // Exact 14m-wide (halfWidth 7.0) Highway Bridge exiting West out of the 14m x 12m Underground Tunnel!
@@ -284,8 +288,9 @@ export const PARKOUR_PLATFORMS: ParkourPad[] = [
   { id: 'dock_hub_east', x: 25.2, y: 0.32, z: 0, halfW: 2.4, halfD: 2.8, style: 'dock' },
   { id: 'dock_gerbang_south', x: -126.5, y: 0.32, z: -27.5, halfW: 3.0, halfD: 2.6, style: 'dock' },
   { id: 'dock_menara_south', x: 66.0, y: 0.32, z: -14.2, halfW: 2.8, halfD: 2.5, style: 'dock' },
-  { id: 'dock_portal_west', x: -29.2, y: 0.3, z: -80.0, halfW: 2.5, halfD: 2.8, style: 'dock' },
-  { id: 'dock_portal_east', x: 29.2, y: 0.3, z: -80.0, halfW: 2.5, halfD: 2.8, style: 'dock' },
+  { id: 'dock_portal_west', x: -48.0, y: 0.3, z: -174.0, halfW: 2.8, halfD: 3.0, style: 'dock' },
+  { id: 'dock_portal_east', x: 88.0, y: 0.3, z: -174.0, halfW: 2.8, halfD: 3.0, style: 'dock' },
+  { id: 'dock_portal_south', x: 14.0, y: 0.3, z: -106.0, halfW: 3.0, halfD: 2.8, style: 'dock' },
 ];
 
 function hash2(gx: number, gz: number): number {
@@ -768,33 +773,88 @@ function sampleIslandInterior(
     return { y: Math.max(0.6, quantizeTier(h, 0.55)), surface: 'land' };
   }
 
-  // gua_portal (0, -82) — Deep Amphitheater + Colossal Jagged Crystal Mountains (up to 17.5m!)
-  if (Math.abs(wx) >= 20.0 && wz >= -84.0 && wz <= -76.0) {
-    const t = THREE.MathUtils.clamp((Math.abs(wx) - 20.0) / 8.5, 0, 1);
-    return { y: Math.max(0.3, quantizeTier(2.6 - t * 2.25, 0.48)), surface: 'stairs' };
+  // gua_portal (cx=20, cz=-174, radius=67.5) — Full 135m Crystal Canyon!
+  // Local coords lx = wx - 20, lz = wz + 174
+  const lx = wx - 20.0;
+  const lz = wz + 174.0;
+
+  // 1. Sea-Dock Cliff Staircases (West, East & South cove -> effortless swim entry/exit!)
+  if (lx <= -44.0 && Math.abs(lz) <= 4.0) {
+    const t = THREE.MathUtils.clamp((-44.0 - lx) / 20.8, 0, 1);
+    return { y: Math.max(0.3, quantizeTier(11.5 - t * 11.2, 0.48)), surface: 'stairs' };
   }
-  if (Math.abs(wx) <= 3.2 && wz >= -76.0 && wz <= -54.0) {
-    return { y: 2.6, surface: 'road' };
+  if (lx >= 42.0 && Math.abs(lz) <= 4.0) {
+    const t = THREE.MathUtils.clamp((lx - 42.0) / 25.0, 0, 1);
+    return { y: Math.max(0.3, quantizeTier(10.5 - t * 10.2, 0.48)), surface: 'stairs' };
   }
-  // Twin climbable quarry staircases climbing crystal ridge on W & E flanks
-  if (Math.abs(wx) >= 11.0 && Math.abs(wx) <= 17.5 && wz <= -80.0 && wz >= -94.0) {
-    const prog = THREE.MathUtils.clamp((-80.0 - wz) / 13.5, 0, 1);
-    return { y: quantizeTier(2.6 + prog * 8.4, 0.56), surface: 'stairs' };
+  if (lx >= -10.5 && lx <= -2.5 && lz >= 32.0) {
+    const t = THREE.MathUtils.clamp((lz - 32.0) / 35.0, 0, 1);
+    return { y: Math.max(0.3, quantizeTier(5.5 - t * 5.2, 0.46)), surface: 'stairs' };
   }
 
-  let h = 2.6 + hillWave(wx * 0.9, wz * 0.9) * 1.3;
-  const crystalMainPeak = Math.exp(-(wx * wx * 0.7 + (wz + 97.5) ** 2) / 130) * 15.0;
-  const crystalWestPeak = Math.exp(-((wx + 15.5) ** 2 + (wz + 94.0) ** 2) / 90) * 10.2;
-  const crystalEastPeak = Math.exp(-((wx - 15.5) ** 2 + (wz + 94.0) ** 2) / 90) * 10.6;
-  h += crystalMainPeak + crystalWestPeak + crystalEastPeak;
-
-  h = rectBlend(wx, wz, -12.5, 11.5, -83.5, -72.5, 3.2, 2.6, h); // courtyard, portal, npc, guardPost
-
-  if (dist > effR - 4.8 && dz > -10.0) {
-    const beachY = 0.28 + rimSlope * 2.1;
-    return { y: Math.max(0.28, quantizeTier(Math.min(Math.max(0.5, h), beachY), 0.35)), surface: 'beach' };
+  // 2. SW Bridge Quarry Ascent: Bridge Landing (lx=-32, lz=56, y=4.0m) -> Ruined Stone Arch (lx=-34, lz=14, y=12.0m) -> Courtyard (lx=-18, lz=8, y=14.0m)!
+  if (lx >= -38.5 && lx <= -29.5 && lz >= 14.0 && lz <= 56.0) {
+    const prog = THREE.MathUtils.clamp((56.0 - lz) / 42.0, 0, 1);
+    return { y: quantizeTier(4.0 + prog * 8.0, 0.45), surface: 'stairs' };
   }
-  return { y: Math.max(0.5, quantizeTier(h, 0.55)), surface: 'land' };
+  if (lx >= -34.0 && lx <= -18.0 && lz >= 6.0 && lz <= 16.0) {
+    const prog = THREE.MathUtils.clamp((lx - -34.0) / 16.0, 0, 1);
+    return { y: quantizeTier(12.0 + prog * 2.0, 0.44), surface: 'stairs' };
+  }
+
+  // 3. Front Canyon Gorge Stairs connecting South Cove (lx=-12, lz=32, y=5.5m) up to Crystal Courtyard (lx=-14, lz=12, y=14.0m)!
+  if (lx >= -19.0 && lx <= -11.0 && lz >= 12.0 && lz <= 32.0) {
+    const prog = THREE.MathUtils.clamp((32.0 - lz) / 20.0, 0, 1);
+    return { y: quantizeTier(5.5 + prog * 8.5, 0.48), surface: 'stairs' };
+  }
+
+  // 4. Ramp climbing from Crystal Courtyard (y=14.0m) straight into Mulut Gua Portal (T:16m / L:14m at lx=+2, lz=-14, y=18.0m)!
+  if (lx >= -6.5 && lx <= 8.5 && lz >= -20.0 && lz <= -5.0) {
+    const prog = THREE.MathUtils.clamp((-5.0 - lz) / 10.0, 0, 1);
+    return { y: Math.min(18.0, quantizeTier(14.0 + prog * 4.0, 0.45)), surface: 'stairs' };
+  }
+
+  // 5. Flat Central Crystal Courtyard Terrace (y=14.0m) hosting Purple Portal Arch, NPC Portal, Guard Post & Zone Beacon
+  if (lx >= -26.5 && lx <= 2.5 && lz >= -15.0 && lz <= 13.0) {
+    return { y: 14.0, surface: 'road' };
+  }
+  // West Quarry Shelf under Ruined Stone Arch & Wooden Scaffolding (y=12.0m)
+  if (lx >= -45.0 && lx <= -26.5 && lz >= -12.0 && lz <= 22.0) {
+    return { y: 12.0, surface: 'land' };
+  }
+
+  // 6. Sculpted 52m Crystal Canyon Mountain Massif ("Tinggi Puncak Ngarai: 52m") & Lower Misty Gorge!
+  let h = 6.2 + hillWave(wx * 0.42, wz * 0.42) * 1.4;
+
+  // Sunken Front-Center/South Misty Gorge beneath the Elevated Minecart Trestle (y=3.2..5.5m)
+  const gorgePit = Math.exp(-((lx - 8.0) ** 2 / 360 + (lz - 30.0) ** 2 / 210));
+  h -= gorgePit * 3.0;
+
+  // Towering Central-North Dark Obsidian Peak directly behind/above Mulut Gua Portal (rises to 36..42m!)
+  const obsidianPeak = Math.exp(-((lx - 2.0) ** 2 / 340 + (lz + 28.0) ** 2 / 230)) * 31.5;
+  // Colossal 52m North-East Grey Granite Canyon Summit ("Tinggi Puncak Ngarai: 52m"!)
+  const neCanyonPeak = Math.exp(-((lx - 32.0) ** 2 / 360 + (lz + 32.0) ** 2 / 320)) * 46.2;
+  // North-West Shoulder Cliff behind Obsidian Portal
+  const nwShoulder = Math.exp(-((lx + 24.0) ** 2 / 240 + (lz + 26.0) ** 2 / 240)) * 22.5;
+  // East Crystal Rim Wall flanking the Minecart Hairpin
+  const eastRim = Math.exp(-((lx - 46.0) ** 2 / 220 + (lz + 4.0) ** 2 / 280)) * 18.5;
+
+  h += obsidianPeak + neCanyonPeak + nwShoulder + eastRim;
+
+  // Keep bridge arrival landing at (-12, -118) smooth at y=4.0m
+  h = padBlend(wx, wz, -12.0, -118.0, 5.2, 10.5, 4.0, h);
+  // Keep dock/courtyard anchors crisp
+  h = padBlend(wx, wz, 2.0, -185.0, 4.5, 8.0, 14.0, h);
+  h = padBlend(wx, wz, 9.0, -171.0, 4.5, 8.0, 14.0, h);
+  h = padBlend(wx, wz, 5.0, -177.0, 3.5, 6.5, 14.0, h);
+  h = padBlend(wx, wz, -1.0, -172.0, 3.5, 6.5, 14.0, h);
+
+  // Sandy coastal rim strips along Front-South / SW / SE edge (matching beach edge in overview image!)
+  if (dist > effR - 6.8 && lz > -6.0) {
+    const beachY = 0.28 + rimSlope * 2.2;
+    return { y: Math.max(0.28, quantizeTier(Math.min(Math.max(0.45, h), beachY), 0.36)), surface: 'beach' };
+  }
+  return { y: Math.max(0.75, Math.min(52.0, quantizeTier(h, 0.75))), surface: 'land' };
 }
 
 function evalBridgeSample(
@@ -1092,6 +1152,7 @@ export interface ArchipelagoRig {
   clockHands: THREE.Group[];
   cars: Array<{ mesh: THREE.Group; baseX: number; rangeX: number; speed: number; phase: number }>;
   minecart: THREE.Group;
+  minecartCurve: THREE.CatmullRomCurve3;
   crystalMeshes: THREE.Mesh[];
   lavaMeshes: THREE.Mesh[];
   istanaGroup: THREE.Group;
@@ -1099,6 +1160,9 @@ export interface ArchipelagoRig {
   zooCritters: Array<{ root: THREE.Group; head: THREE.Group; phase: number }>;
   disposables: Array<{ dispose: () => void }>;
 }
+
+const _cartPosScratch = new THREE.Vector3();
+const _cartTanScratch = new THREE.Vector3();
 
 function createToothedGear(
   radius: number,
@@ -1592,12 +1656,12 @@ export function createArchipelagoWorld(
       foamColors: [0x38bdf8, 0xbae6fd],
     },
     gua_portal: {
-      lowColors: [0x334155, 0x475569, 0x1e293b],
-      highColors: [0x475569, 0x64748b, 0x312e81, 0x1e293b],
-      pathColors: [0x64748b, 0x475569],
+      lowColors: [0x475569, 0x334155, 0x1e1b4b],
+      highColors: [0x64748b, 0x475569, 0x78716c, 0x312e81],
+      pathColors: [0x64748b, 0x94a3b8],
       stairColors: [0x94a3b8, 0x64748b],
-      beachColors: [0x64748b, 0x94a3b8],
-      cliffColors: [0x1e293b, 0x0f172a, 0x312e81],
+      beachColors: [0xfde68a, 0x94a3b8],
+      cliffColors: [0x1e1b4b, 0x2e1065, 0x334155, 0x475569],
       foamColors: [0x60a5fa, 0x93c5fd],
     },
   };
@@ -1637,6 +1701,12 @@ export function createArchipelagoWorld(
               ? [0x65a30d, 0x4d7c0f, 0x64748b]
               : isl.id === 'pasar_rasa' && inner.y >= 26.5
               ? [0x65a30d, 0x84cc16, 0x4d7c0f]
+              : isl.id === 'gua_portal' && inner.y >= 34.0 && wx - 20.0 > 12.0
+              ? [0x64748b, 0x475569, 0x78716c]
+              : isl.id === 'gua_portal' && inner.y >= 19.0
+              ? [0x1e1b4b, 0x2e1065, 0x0f172a, 0x3b0764]
+              : isl.id === 'gua_portal' && Math.abs(inner.y - 12.0) < 1.2
+              ? [0x64748b, 0x475569, 0x94a3b8]
               : inner.y > isl.groundY + 3.2
               ? theme.highColors
               : theme.lowColors;
@@ -1896,6 +1966,34 @@ export function createArchipelagoWorld(
           });
         }
       } else {
+        const isRailBridge = br.id === 'bridge_portal';
+        if (isRailBridge) {
+          // 3m-wide wooden railway ties & twin steel rails running across bridge_portal (matching blueprint!)
+          const tiePerpX = Math.cos(yaw) * 1.45;
+          const tiePerpZ = -Math.sin(yaw) * 1.45;
+          const railPerpX = Math.cos(yaw) * 1.05;
+          const railPerpZ = -Math.sin(yaw) * 1.05;
+          cliffBlocks.push({
+            x: mx,
+            y: my + 0.08,
+            z: mz,
+            sx: Math.abs(tiePerpX) * 2 + 0.45,
+            sy: 0.14,
+            sz: Math.abs(tiePerpZ) * 2 + 0.45,
+            color: 0x78350f,
+          });
+          [-1, 1].forEach((side) => {
+            cliffBlocks.push({
+              x: mx + railPerpX * side,
+              y: my + 0.18,
+              z: mz + railPerpZ * side,
+              sx: 0.22,
+              sy: 0.16,
+              sz: stepLen * 0.95,
+              color: 0xcbd5e1,
+            });
+          });
+        }
         if (isJumpEdge) {
           const perpX = Math.cos(yaw) * (br.halfWidth - 0.24);
           const perpZ = -Math.sin(yaw) * (br.halfWidth - 0.24);
@@ -1914,18 +2012,30 @@ export function createArchipelagoWorld(
           const perpX = Math.cos(yaw) * (br.halfWidth - 0.16);
           const perpZ = -Math.sin(yaw) * (br.halfWidth - 0.16);
           const railColor = br.style === 'stone' ? 0x64748b : 0x78350f;
-          const railH = br.style === 'rope' ? 1.1 : 0.78;
+          const railH = br.style === 'rope' ? 1.1 : isRailBridge && s % 6 === 0 ? 3.2 : 0.78;
           [-1, 1].forEach((side) => {
             cliffBlocks.push({
               x: mx + perpX * side,
               y: my + railH * 0.5,
               z: mz + perpZ * side,
-              sx: 0.28,
+              sx: isRailBridge && s % 6 === 0 ? 0.52 : 0.28,
               sy: railH,
-              sz: 0.28,
+              sz: isRailBridge && s % 6 === 0 ? 0.52 : 0.28,
               color: railColor,
             });
           });
+          if (isRailBridge && s % 6 === 0) {
+            // Stone overhead cross-lintel frame matching the bottom-left bridge in Gua Portal overview
+            cliffBlocks.push({
+              x: mx,
+              y: my + 3.45,
+              z: mz,
+              sx: width * 0.98,
+              sy: 0.58,
+              sz: 0.68,
+              color: 0x94a3b8,
+            });
+          }
         }
 
         if (s % 5 === 2 || isJumpEdge) {
@@ -1933,9 +2043,9 @@ export function createArchipelagoWorld(
             x: mx,
             y: (my + SEABED_Y) * 0.5 - 0.2,
             z: mz,
-            sx: 1.65,
+            sx: isRailBridge ? 2.2 : 1.65,
             sy: my - SEABED_Y + 0.2,
-            sz: 1.65,
+            sz: isRailBridge ? 2.2 : 1.65,
             color: br.style === 'stone' ? 0x475569 : 0x5c3a1e,
           });
         }
@@ -3251,63 +3361,354 @@ export function createArchipelagoWorld(
   }
 
   // ============================================================================
-  // 6. GUA PORTAL ISLAND (0, z=-82) — Jagged Amethyst Crystal Mountains + Minecart
+  // 6. GUA PORTAL ISLAND (cx=20, cz=-174, Panjang 135m!)
+  //    - Tinggi Puncak Ngarai: 52m
+  //    - Mulut Gua Portal: T: 16m / L: 14m (glowing magenta cavern!)
+  //    - Jalur Rel Tambang: Lebar 3m (elevated curved timber trestle + spur)
+  //    - Human-Proportional Minecart (2.2m x 3.4m x 2.4m) riding on 2.2m steel gauge
+  //    - Kristal Ungu Raksasa (T: 12m - 18m) + Ruined Stone Arch + Timber Scaffolding
   // ============================================================================
   const minecart = new THREE.Group();
+  const minecartCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(20.5, 18.0, -193.0),
+    new THREE.Vector3(24.5, 17.6, -184.0),
+    new THREE.Vector3(33.5, 16.0, -172.0),
+    new THREE.Vector3(46.0, 14.0, -161.0),
+    new THREE.Vector3(55.5, 12.2, -152.0),
+    new THREE.Vector3(52.0, 10.6, -141.0),
+    new THREE.Vector3(38.0, 9.2, -138.0),
+    new THREE.Vector3(24.0, 8.2, -144.0),
+    new THREE.Vector3(18.5, 7.6, -152.0),
+  ]);
   {
-    const gy = getArchipelagoGroundY(-2.2, -83.0);
-    const crystalCavernDark = new THREE.Mesh(new THREE.BoxGeometry(6.4, 5.2, 4.0), palette.getMat(0x090d16, 'matte'));
-    crystalCavernDark.position.set(-2.2, gy + 2.6, -89.5);
-    const crystalCavernGlow = new THREE.Mesh(new THREE.BoxGeometry(5.0, 0.4, 3.6), crystalMat);
-    crystalCavernGlow.position.set(-2.2, gy + 0.2, -89.2);
-    group.add(crystalCavernDark, crystalCavernGlow);
+    const gCx = 20.0;
+    const gCz = -174.0;
+    const courtY = 14.0;
 
+    // 6a. Mulut Gua Portal (T: 16m / L: 14m!) carved into the obsidian cliff face at (22, -188)
+    const caveYaw = 0.34;
+    const cosC = Math.cos(caveYaw);
+    const sinC = Math.sin(caveYaw);
+    const caveFloorY = 17.6;
+    const pushCaveBox = (
+      lx: number,
+      ly: number,
+      lz: number,
+      sx: number,
+      sy: number,
+      sz: number,
+      color: number,
+    ) => {
+      const wx = 22.0 + lx * cosC + lz * sinC;
+      const wz = -188.0 - lx * sinC + lz * cosC;
+      cliffBlocks.push({ x: wx, y: caveFloorY + ly, z: wz, sx, sy, sz, color });
+    };
+
+    const obsDark = 0x0f172a;
+    const obsMid = 0x1e1b4b;
+    const obsPurple = 0x2e1065;
+    // Left & Right Obsidian Portal Pillars flanking the clear 14m-wide bore (lx = ±8.5 -> 14m open inside!)
+    [-8.5, 8.5].forEach((px) => {
+      pushCaveBox(px, 6.5, 0, 3.4, 13.0, 5.2, obsMid);
+      pushCaveBox(px + (px < 0 ? 1.2 : -1.2), 12.5, 0.2, 2.2, 3.2, 4.8, obsPurple);
+    });
+    // Stepped Arch Crown rising cleanly to T = 16.0m above cave floor!
+    pushCaveBox(-5.2, 14.2, 0.2, 5.4, 2.8, 5.4, obsMid);
+    pushCaveBox(5.2, 14.2, 0.2, 5.4, 2.8, 5.4, obsMid);
+    pushCaveBox(0, 15.6, 0.2, 11.5, 2.6, 5.8, obsDark);
+    pushCaveBox(0, 17.2, -1.2, 17.0, 2.4, 7.0, obsPurple);
+
+    // Brilliant Magenta-Purple Glowing Cavern Interior behind the 14m x 16m mouth
+    const glowPortalMat = palette.createSurfaceMat({
+      color: 0xe879f9,
+      emissive: 0xc026d3,
+      emissiveIntensity: 0.95,
+      roughness: 0.2,
+    });
+    const cavernShell = new THREE.Mesh(
+      new THREE.BoxGeometry(13.2, 13.5, 8.5),
+      palette.getMat(0x09061a, 'matte'),
+    );
+    cavernShell.position.set(22.0 - 4.5 * sinC, caveFloorY + 6.75, -188.0 - 4.5 * cosC);
+    cavernShell.rotation.y = caveYaw;
+    const portalGlowBack = new THREE.Mesh(new THREE.BoxGeometry(10.8, 11.4, 0.9), glowPortalMat);
+    portalGlowBack.position.set(22.0 - 3.6 * sinC, caveFloorY + 6.0, -188.0 - 3.6 * cosC);
+    portalGlowBack.rotation.y = caveYaw;
+    const portalGlowFloor = new THREE.Mesh(new THREE.BoxGeometry(11.4, 0.4, 6.2), crystalMat);
+    portalGlowFloor.position.set(22.0 - 1.5 * sinC, caveFloorY + 0.12, -188.0 - 1.5 * cosC);
+    portalGlowFloor.rotation.y = caveYaw;
+    group.add(cavernShell, portalGlowBack, portalGlowFloor);
+    disposables.push(glowPortalMat);
+    obstacles.push(
+      { x: 22.0 - 8.5 * cosC, z: -188.0 + 8.5 * sinC, halfW: 2.2, halfD: 2.6 },
+      { x: 22.0 + 8.5 * cosC, z: -188.0 - 8.5 * sinC, halfW: 2.2, halfD: 2.6 },
+      { x: 22.0 - 5.2 * sinC, z: -188.0 - 5.2 * cosC, halfW: 6.0, halfD: 2.8 },
+    );
+
+    // 6b. Secondary East Crystal Grotto carved into the 52m Grey Granite Cliff (wx=48, wz=-190)
+    const grottoDark = new THREE.Mesh(new THREE.BoxGeometry(12.5, 11.0, 9.0), palette.getMat(0x09061a, 'matte'));
+    grottoDark.position.set(49.0, 22.5, -192.0);
+    grottoDark.rotation.y = -0.38;
+    const grottoGlow = new THREE.Mesh(new THREE.BoxGeometry(9.5, 0.45, 7.2), crystalMat);
+    grottoGlow.position.set(48.5, 17.4, -190.5);
+    grottoGlow.rotation.y = -0.38;
+    group.add(grottoDark, grottoGlow);
+
+    // 6c. Jalur Rel Tambang: Exact 3m-Wide Curved Elevated Wooden Trestle + East Grotto Spur!
+    const buildTrestleFromSpline = (curve: THREE.CatmullRomCurve3, segs: number, withPillars: boolean) => {
+      const steelMat = palette.getMat(0xcbd5e1, 'metal');
+      const tieMat = palette.getPixelMat('spruce_plank');
+      const beamMat = palette.getMat(0x78350f, 'matte');
+      const pA = new THREE.Vector3();
+      const pB = new THREE.Vector3();
+      const mid = new THREE.Vector3();
+      const dir = new THREE.Vector3();
+      const right = new THREE.Vector3();
+
+      for (let i = 0; i < segs; i++) {
+        const t0 = i / segs;
+        const t1 = (i + 1) / segs;
+        curve.getPointAt(t0, pA);
+        curve.getPointAt(t1, pB);
+        mid.addVectors(pA, pB).multiplyScalar(0.5);
+        dir.subVectors(pB, pA);
+        const segLen = dir.length();
+        const yaw = Math.atan2(dir.x, dir.z);
+        const horiz = Math.hypot(dir.x, dir.z) || 1;
+        const pitch = Math.atan2(dir.y, horiz);
+        right.set(Math.cos(yaw), 0, -Math.sin(yaw));
+
+        // 3.0m-wide wooden railway cross-tie + twin side stringer beams
+        const tie = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.24, 0.56), tieMat);
+        tie.position.copy(mid);
+        tie.rotation.order = 'YXZ';
+        tie.rotation.y = yaw;
+        tie.rotation.x = -pitch;
+        tie.castShadow = true;
+        tie.receiveShadow = true;
+        group.add(tie);
+
+        // Twin Steel Rails (2.2m rail gauge) + Outer Wooden Deck Guard Beams (at ±1.4m)
+        [-1.08, 1.08].forEach((rOff) => {
+          const rail = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, segLen + 0.14), steelMat);
+          rail.position.set(mid.x + right.x * rOff, mid.y + 0.18, mid.z + right.z * rOff);
+          rail.rotation.order = 'YXZ';
+          rail.rotation.y = yaw;
+          rail.rotation.x = -pitch;
+          group.add(rail);
+        });
+        [-1.38, 1.38].forEach((bOff) => {
+          const beam = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.44, segLen + 0.16), beamMat);
+          beam.position.set(mid.x + right.x * bOff, mid.y - 0.18, mid.z + right.z * bOff);
+          beam.rotation.order = 'YXZ';
+          beam.rotation.y = yaw;
+          beam.rotation.x = -pitch;
+          beam.castShadow = true;
+          group.add(beam);
+        });
+
+        // Heavy Timber Trestle Bents (every 3rd segment) resting solidly on canyon terrain below!
+        if (withPillars && (i % 3 === 1 || i === segs - 1)) {
+          const gL = getArchipelagoGroundY(mid.x - right.x * 1.25, mid.z - right.z * 1.25);
+          const gR = getArchipelagoGroundY(mid.x + right.x * 1.25, mid.z + right.z * 1.25);
+          const baseGround = Math.max(2.0, Math.min(gL, gR) - 0.4);
+          const colH = mid.y - baseGround;
+          if (colH > 0.6) {
+            [-1.25, 1.25].forEach((pOff) => {
+              cliffBlocks.push({
+                x: mid.x + right.x * pOff,
+                y: baseGround + colH * 0.5,
+                z: mid.z + right.z * pOff,
+                sx: 0.68,
+                sy: colH,
+                sz: 0.68,
+                color: 0x5c3a1e,
+              });
+            });
+            // Horizontal trestle cross-brace at mid-height
+            const brace = new THREE.Mesh(new THREE.BoxGeometry(3.1, 0.42, 0.42), beamMat);
+            brace.position.set(mid.x, baseGround + colH * 0.55, mid.z);
+            brace.rotation.y = yaw;
+            group.add(brace);
+          }
+        }
+      }
+    };
+
+    buildTrestleFromSpline(minecartCurve, 34, true);
+    // Secondary curving rail spur feeding into East Crystal Grotto (matching overview right alcove!)
+    const eastSpurCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(33.5, 16.0, -172.0),
+      new THREE.Vector3(41.5, 16.5, -179.0),
+      new THREE.Vector3(47.0, 17.2, -187.5),
+    ]);
+    buildTrestleFromSpline(eastSpurCurve, 11, true);
+
+    // Track end wooden bumper stop at P8 (18.5, 7.6, -152.0)
+    const endCap = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.1, 0.55), spruceMat);
+    endCap.position.set(18.5, 8.1, -152.0);
+    endCap.rotation.y = 0.65;
+    group.add(endCap);
+
+    // 6d. Human-Proportional Minecart (2.2m wide x 3.4m long x 2.4m tall on the 2.2m rail gauge!)
+    const cartIronMat = palette.getMat(0x64748b, 'metal');
+    const cartRimMat = palette.getMat(0x334155, 'metal');
+    const cartWheelMat = palette.getMat(0x0f172a, 'metal');
+    // Heavy Undercarriage & 4 Flanged Steel Wheels aligned to 2.2m rail gauge
+    const chassis = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.36, 3.1), cartRimMat);
+    chassis.position.y = 0.62;
+    const hopperLower = new THREE.Mesh(new THREE.BoxGeometry(2.15, 0.95, 3.25), cartIronMat);
+    hopperLower.position.y = 1.25;
+    hopperLower.castShadow = true;
+    const hopperRim = new THREE.Mesh(new THREE.BoxGeometry(2.32, 0.28, 3.42), cartRimMat);
+    hopperRim.position.y = 1.82;
+    hopperRim.castShadow = true;
+    const bumperF = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.34, 0.24), cartRimMat);
+    bumperF.position.set(0, 0.62, 1.72);
+    const bumperB = bumperF.clone();
+    bumperB.position.set(0, 0.62, -1.72);
+    minecart.add(chassis, hopperLower, hopperRim, bumperF, bumperB);
+
+    [[-1.08, -1.0], [1.08, -1.0], [-1.08, 1.0], [1.08, 1.0]].forEach(([wx, wz]) => {
+      const wheel = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.68, 0.68), cartWheelMat);
+      wheel.position.set(wx, 0.52, wz);
+      const hub = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.28, 0.28), cartIronMat);
+      hub.position.set(wx, 0.52, wz);
+      minecart.add(wheel, hub);
+    });
+    // Glowing Purple Crystal Ore Cargo piled inside the hopper!
     [
-      [-10.5, 15.2, -94.0, 2.8, 0.22],
-      [10.2, 15.8, -94.5, 3.0, -0.24],
-      [-1.5, 19.6, -98.0, 3.4, 0.08],
-      [-6.5, 7.6, -88.0, 1.6, 0.35],
-      [3.5, 7.2, -88.5, 1.5, -0.32],
-      [-14.5, 11.2, -92.5, 2.1, 0.28],
-      [14.0, 11.6, -92.0, 2.2, -0.26],
-    ].forEach(([cx, cy, cz, sc, tilt]) => {
-      const shard = new THREE.Mesh(new THREE.OctahedronGeometry(1.1 * sc, 0), crystalMat);
-      shard.position.set(cx, cy, cz);
-      shard.scale.set(0.7, 1.9, 0.7);
-      shard.rotation.z = tilt;
-      group.add(shard);
-      crystalMeshes.push(shard);
+      [-0.35, 2.05, -0.45, 0.68, 0.2],
+      [0.32, 2.15, 0.2, 0.82, -0.25],
+      [0.0, 2.0, 0.65, 0.62, 0.15],
+    ].forEach(([ox, oy, oz, os, tilt]) => {
+      const ore = new THREE.Mesh(new THREE.OctahedronGeometry(os, 0), crystalMat);
+      ore.position.set(ox, oy, oz);
+      ore.scale.set(0.85, 1.25, 0.85);
+      ore.rotation.z = tilt;
+      minecart.add(ore);
+      crystalMeshes.push(ore);
+    });
+    minecart.position.set(33.5, 16.15, -172.0);
+    group.add(minecart);
+
+    // 6e. Kristal Ungu Raksasa (T: 12m - 18m!) — Faceted Multi-Spire Amethyst Crystal Clusters
+    const crystalCoreMat = palette.createSurfaceMat({
+      color: 0xc084fc,
+      emissive: 0x9333ea,
+      emissiveIntensity: 0.78,
+      roughness: 0.12,
+      metalness: 0.22,
+    });
+    disposables.push(crystalCoreMat);
+    const buildGiantCrystalCluster = (cx: number, baseY: number, cz: number, totalH: number, baseR: number, yaw = 0) => {
+      const cluster = new THREE.Group();
+      cluster.position.set(cx, baseY, cz);
+      cluster.rotation.y = yaw;
+      const spires: Array<[number, number, number, number, number, number, number]> = [
+        // [ox, oz, heightFrac, radiusScale, tiltX, tiltZ, rotY]
+        [0, 0, 1.0, 1.0, 0.04, -0.06, 0.2],
+        [-baseR * 0.95, baseR * 0.4, 0.72, 0.74, 0.18, 0.32, 1.0],
+        [baseR * 1.05, -baseR * 0.35, 0.66, 0.68, -0.15, -0.34, 2.1],
+        [baseR * 0.35, baseR * 0.95, 0.54, 0.56, 0.32, -0.14, 0.7],
+        [-baseR * 0.45, -baseR * 0.85, 0.48, 0.52, -0.3, 0.18, 1.6],
+      ];
+      spires.forEach(([ox, oz, hFrac, rSc, tx, tz, ry], si) => {
+        const sH = totalH * hFrac;
+        const shaftH = sH * 0.68;
+        const tipH = sH * 0.32;
+        const rBot = baseR * rSc;
+        const rTop = rBot * 0.86;
+        const spirePivot = new THREE.Group();
+        spirePivot.position.set(ox, -0.8, oz);
+        spirePivot.rotation.set(tx, ry, tz);
+        const sMat = si === 0 ? crystalCoreMat : crystalMat;
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, shaftH, 6), sMat);
+        shaft.position.y = shaftH * 0.5;
+        shaft.castShadow = true;
+        const tip = new THREE.Mesh(new THREE.ConeGeometry(rTop, tipH, 6), crystalCoreMat);
+        tip.position.y = shaftH + tipH * 0.5;
+        tip.castShadow = true;
+        spirePivot.add(shaft, tip);
+        cluster.add(spirePivot);
+        crystalMeshes.push(shaft, tip);
+      });
+      group.add(cluster);
+      obstacles.push({ x: cx, z: cz, halfW: baseR * 1.35, halfD: baseR * 1.35 });
+    };
+
+    // Exact 6 giant amethyst clusters matching overview blueprint (ALL T: 12m - 18m!):
+    buildGiantCrystalCluster(gCx + 2.0, 36.5, gCz - 26.0, 18.0, 2.6, 0.25); // Summit Peak Crown (18m!)
+    buildGiantCrystalCluster(gCx + 36.0, 41.5, gCz - 34.0, 12.5, 2.0, -0.4); // 52m NE Peak Crystal (12.5m)
+    buildGiantCrystalCluster(gCx + 46.0, 18.5, gCz - 6.0, 17.5, 2.5, 0.85); // East Canyon Rim Giant (17.5m!)
+    buildGiantCrystalCluster(gCx - 8.0, 5.2, gCz + 28.0, 14.5, 2.2, -0.35); // Front-Center-Left Gorge Giant (14.5m!)
+    buildGiantCrystalCluster(gCx + 22.0, 3.6, gCz + 44.0, 13.0, 2.1, 0.55); // Front-Bottom Trestle Giant (13.0m!)
+    buildGiantCrystalCluster(gCx - 16.0, 22.0, gCz - 20.0, 12.0, 1.85, 0.15); // West Obsidian Peak Flank (12.0m)
+    buildGiantCrystalCluster(gCx + 28.0, 17.5, gCz - 16.0, 12.2, 1.9, -0.6); // East Crystal Grotto Cluster (12.2m)
+
+    // 6f. Ruined Weathered Stone Archway + 3-Tier Wooden Mining Scaffolding on West Quarry Bluff!
+    const archCx = gCx - 34.0; // -14.0
+    const archCz = gCz + 16.0; // -158.0
+    const archBaseY = getArchipelagoGroundY(archCx, archCz);
+    const ruinStoneL = 0x94a3b8;
+    const ruinStoneM = 0x64748b;
+    const ruinStoneD = 0x475569;
+    // Twin crumbling piers (10m outer span -> clear walkable passage underneath!)
+    cliffBlocks.push({ x: archCx - 4.4, y: archBaseY + 4.5, z: archCz, sx: 2.8, sy: 9.0, sz: 3.0, color: ruinStoneM });
+    cliffBlocks.push({ x: archCx + 4.4, y: archBaseY + 3.8, z: archCz, sx: 2.8, sy: 7.6, sz: 3.0, color: ruinStoneM });
+    // Stepped broken stone arch blocks & mossy crown stones up to +13.2m
+    cliffBlocks.push({ x: archCx - 2.6, y: archBaseY + 9.8, z: archCz, sx: 2.6, sy: 2.4, sz: 2.8, color: ruinStoneL });
+    cliffBlocks.push({ x: archCx + 2.6, y: archBaseY + 8.9, z: archCz, sx: 2.4, sy: 2.2, sz: 2.8, color: ruinStoneL });
+    cliffBlocks.push({ x: archCx - 0.6, y: archBaseY + 11.4, z: archCz, sx: 3.4, sy: 2.2, sz: 2.8, color: ruinStoneD });
+    cliffBlocks.push({ x: archCx - 3.8, y: archBaseY + 11.6, z: archCz, sx: 1.8, sy: 1.8, sz: 2.2, color: 0x4d7c0f }); // mossy ruin cap
+    obstacles.push(
+      { x: archCx - 4.4, z: archCz, halfW: 1.5, halfD: 1.6 },
+      { x: archCx + 4.4, z: archCz, halfW: 1.5, halfD: 1.6 },
+    );
+
+    // 3-Tier Timber Mining Scaffolding Tower beside the West Archway (-5, -148), clear of both staircases
+    const scafX = gCx - 25.0; // -5.0
+    const scafZ = gCz + 26.0; // -148.0
+    const scafY = getArchipelagoGroundY(scafX, scafZ);
+    [[-1.6, -1.6], [1.6, -1.6], [-1.6, 1.6], [1.6, 1.6]].forEach(([px, pz]) => {
+      cliffBlocks.push({ x: scafX + px, y: scafY + 4.4, z: scafZ + pz, sx: 0.42, sy: 8.8, sz: 0.42, color: 0x5c3a1e });
+    });
+    [2.6, 5.4, 8.2].forEach((ty) => {
+      walkableTopBlocks.push({ x: scafX, y: scafY + ty, z: scafZ, sx: 3.6, sy: 0.32, sz: 3.6, color: 0xb88a4c });
+    });
+    obstacles.push({ x: scafX, z: scafZ, halfW: 1.9, halfD: 1.9 });
+
+    // Human-proportional wooden mining crates & glowing courtyard crystal bollards (1.1m..1.6m)
+    [
+      [gCx - 16.0, gCz + 8.0, 1.2],
+      [gCx - 14.5, gCz + 9.2, 0.95],
+      [gCx + 2.0, gCz + 2.0, 1.15],
+      [gCx + 14.0, gCz + 28.0, 1.3],
+    ].forEach(([bx, bz, bs]) => {
+      const by = getArchipelagoGroundY(bx, bz);
+      cliffBlocks.push({ x: bx, y: by + bs * 0.5, z: bz, sx: bs, sy: bs, sz: bs, color: 0xb45309 });
+      obstacles.push({ x: bx, z: bz, halfW: bs * 0.55, halfD: bs * 0.55 });
     });
 
-    for (let r = 0; r < 9; r++) {
-      const t = r / 8;
-      const rx = -2.2 + Math.sin(t * 2.1) * 4.5;
-      const rz = -89.0 + t * 12.2;
-      const ry = gy + 0.28 + (1 - t) * 1.2;
-      const tie = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.18, 0.48), spruceMat);
-      tie.position.set(rx, ry, rz);
-      group.add(tie);
-      cliffBlocks.push({
-        x: rx,
-        y: (ry - gy) * 0.5 + gy - 0.1,
-        z: rz,
-        sx: 0.48,
-        sy: Math.max(0.2, ry - gy + 0.2),
-        sz: 0.48,
-        color: 0x5c3a1e,
-      });
-    }
-    const cartBody = new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.85, 1.65), palette.getMat(0x64748b, 'metal'));
-    cartBody.position.y = 0.55;
-    const oreGem = new THREE.Mesh(new THREE.OctahedronGeometry(0.45, 0), crystalMat);
-    oreGem.position.set(0, 1.05, 0);
-    minecart.add(cartBody, oreGem);
-    minecart.position.set(-1.5, gy + 0.72, -82.5);
-    group.add(minecart);
-    obstacles.push(
-      { x: -1.5, z: -96.8, halfW: 4.8, halfD: 2.5 },
-      { x: -1.8, z: -84.0, halfW: 1.7, halfD: 4.8 },
-    );
+    // 6g. Soft Atmospheric Canyon Mist Puffs drifting inside the Lower Front Gorge
+    const mistMat = new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0,
+      transparent: true,
+      opacity: 0.24,
+      roughness: 0.95,
+      depthWrite: false,
+    });
+    disposables.push(mistMat);
+    [
+      [gCx - 4.0, 6.4, gCz + 32.0, 11.0, 2.2, 8.5],
+      [gCx + 8.0, 5.8, gCz + 36.0, 13.0, 2.4, 9.5],
+      [gCx + 18.0, 6.2, gCz + 30.0, 10.5, 2.0, 8.0],
+      [gCx - 14.0, 6.8, gCz + 36.0, 9.5, 2.0, 7.5],
+    ].forEach(([mx, my, mz, sx, sy, sz]) => {
+      const puff = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mistMat);
+      puff.position.set(mx, my, mz);
+      group.add(puff);
+    });
   }
 
   // ============================================================================
@@ -3397,6 +3798,8 @@ export function createArchipelagoWorld(
     [136, 3.2, 152],
     [154, 4.0, 172],
     [-226, 4.5, -182],
+    [-58, 4.0, -248],
+    [98, 4.2, -242],
     [158, 4.0, -16],
   ];
   outerCloudSpots.forEach(([ox, oy, oz]) => {
@@ -3426,6 +3829,7 @@ export function createArchipelagoWorld(
     clockHands,
     cars,
     minecart,
+    minecartCurve,
     crystalMeshes,
     lavaMeshes,
     istanaGroup,
@@ -3457,10 +3861,14 @@ export function updateArchipelagoWorld(
     c.mesh.rotation.y = Math.cos(elapsed * c.speed + c.phase) >= 0 ? 0 : Math.PI;
   }
 
-  const cartT = (Math.sin(elapsed * 0.65) + 1) * 0.5;
-  rig.minecart.position.x = -2.2 + Math.sin(cartT * 2.1) * 3.4;
-  rig.minecart.position.z = -88.0 + cartT * 10.5;
-  rig.minecart.position.y = 2.6 + 0.72 + (1 - cartT) * 1.0;
+  const cartT = 0.08 + ((Math.sin(elapsed * 0.42) + 1) * 0.5) * 0.84;
+  rig.minecartCurve.getPointAt(cartT, _cartPosScratch);
+  rig.minecartCurve.getTangentAt(cartT, _cartTanScratch);
+  rig.minecart.position.set(_cartPosScratch.x, _cartPosScratch.y + 0.14, _cartPosScratch.z);
+  rig.minecart.rotation.order = 'YXZ';
+  rig.minecart.rotation.y = Math.atan2(_cartTanScratch.x, _cartTanScratch.z);
+  const tanHoriz = Math.hypot(_cartTanScratch.x, _cartTanScratch.z) || 1;
+  rig.minecart.rotation.x = -Math.atan2(_cartTanScratch.y, tanHoriz);
 
   rig.istanaGroup.position.y = OVERWORLD_ANCHORS.istanaFloating.y + Math.sin(elapsed * 0.85) * 0.65;
   const domeMat = rig.istanaDome.material as THREE.MeshStandardMaterial;

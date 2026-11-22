@@ -366,8 +366,8 @@ const NIGHT_SURFACE_ZONES: Array<{
   { zoneId: 'gerbang_kota', name: 'Gumpal Gerbang Malam', type: 'gumpal_salam', x: -120.0, z: -112.0 },
   { zoneId: 'menara_waktu', name: 'Bayangan Waktu Malam', type: 'jam_pasir', x: 54.0, z: -31.5 },
   { zoneId: 'menara_waktu', name: 'Creeper Menara Malam', type: 'creeper_kata', x: 70.0, z: -36.5 },
-  { zoneId: 'gua_portal', name: 'Penyerbu Portal Malam', type: 'ksatria_ielts', x: 8.5, z: -69.5 },
-  { zoneId: 'gua_portal', name: 'Jam Gelap Pelataran', type: 'jam_pasir', x: -8.5, z: -68.5 },
+  { zoneId: 'gua_portal', name: 'Penyerbu Portal Malam', type: 'ksatria_ielts', x: 14.0, z: -165.0 },
+  { zoneId: 'gua_portal', name: 'Jam Gelap Pelataran', type: 'jam_pasir', x: -2.0, z: -166.0 },
   { zoneId: 'desa_sapaan', name: 'Peronda Alun-Alun Tengah', type: 'semak_rimba', x: -8.0, z: 6.5 },
 ];
 
@@ -481,9 +481,9 @@ export class RpgWorldEngine {
   private lastFullMapBounds: LiveMapBounds = {
     worldMode: 'overworld',
     centerX: -6,
-    centerZ: 6,
-    halfW: 296,
-    halfH: 185,
+    centerZ: -26,
+    halfW: 368,
+    halfH: 230,
   };
 
   private frameId = 0;
@@ -931,6 +931,7 @@ export class RpgWorldEngine {
     this.portalRig = createPortalArch(this.palette);
     const pp = OVERWORLD_ANCHORS.portal;
     this.portalRig.root.position.set(pp.x, getArchipelagoGroundY(pp.x, pp.z), pp.z);
+    this.portalRig.root.rotation.y = 0.34;
     this.portalRig.root.userData.portal = true;
     this.overworldGroup.add(this.portalRig.root);
     this.overworldClickables.push(this.portalRig.root);
@@ -1951,9 +1952,10 @@ export class RpgWorldEngine {
       [-121.0, -112.0, 'diamond'],
       [58.0, -34.0, 'heart'],
       [70.0, -49.5, 'diamond'],
-      [0.0, -35.0, 'diamond'],
-      [-8.0, -76.5, 'diamond'],
-      [6.0, -77.5, 'heart'],
+      [-3.8, -53.0, 'diamond'],
+      [-14.0, -158.0, 'diamond'],
+      [10.0, -168.0, 'diamond'],
+      [20.0, -184.0, 'heart'],
       [-68.0, 126.0, 'diamond'],
       [62.0, 168.0, 'heart'],
     ];
@@ -10157,16 +10159,16 @@ export class RpgWorldEngine {
           ? {
               worldMode: 'overworld',
               centerX: THREE.MathUtils.clamp(this.heroPos.x, -210, 195),
-              centerZ: THREE.MathUtils.clamp(this.heroPos.z, -165, 175),
+              centerZ: THREE.MathUtils.clamp(this.heroPos.z, -215, 175),
               halfW: 36,
               halfH: 36,
             }
           : {
               worldMode: 'overworld',
               centerX: -6,
-              centerZ: 6,
-              halfW: 296,
-              halfH: 185,
+              centerZ: -26,
+              halfW: 368,
+              halfH: 230,
             }
         : isMini
         ? {

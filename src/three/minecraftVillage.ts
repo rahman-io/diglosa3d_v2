@@ -1135,8 +1135,10 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     [-125.0, -108.0],
     [-114.0, -108.0],
     [57.5, -32.5],
-    [-5.5, -72.5],
-    [5.5, -72.5],
+    [1.5, -168.5],
+    [14.5, -172.0],
+    [18.5, -181.5],
+    [-10.0, -122.0],
   ];
   lanternCoords.forEach(([lx, lz]) => {
     const post = createLanternPost(palette, lx, lz);
@@ -1403,11 +1405,6 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     [76.5, -24.5, true],
     [52.5, -50.5, false],
     [80.5, -44.5, true],
-    // Gua Portal outer rocky ridges
-    [-18.5, -66.5, false],
-    [18.5, -66.5, true],
-    [-20.5, -88.5, false],
-    [20.5, -88.5, true],
     // Central Hub ancient grove
     [-13.5, -9.5, false],
     [13.5, -9.5, true],
@@ -1515,7 +1512,6 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     OVERWORLD_ANCHORS.zones.pasar_rasa,
     OVERWORLD_ANCHORS.zones.gerbang_kota,
     OVERWORLD_ANCHORS.zones.menara_waktu,
-    OVERWORLD_ANCHORS.zones.gua_portal,
     OVERWORLD_ANCHORS.hub,
   ];
   const grassSpots: Array<[number, number]> = [];

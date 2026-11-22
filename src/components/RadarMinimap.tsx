@@ -857,10 +857,10 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
       radar.worldMode === 'overworld'
         ? {
             worldMode: 'overworld',
-            centerX: Math.max(-80, Math.min(80, radar.heroX)),
-            centerZ: Math.max(-76, Math.min(70, radar.heroZ)),
-            halfW: 28,
-            halfH: 28,
+            centerX: Math.max(-210, Math.min(195, radar.heroX)),
+            centerZ: Math.max(-215, Math.min(175, radar.heroZ)),
+            halfW: 36,
+            halfH: 36,
           }
         : {
             worldMode: radar.worldMode,
@@ -1152,7 +1152,7 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
 
       const fallbackBounds: LiveMapBounds =
         worldMode === 'overworld'
-          ? { worldMode: 'overworld', centerX: -6, centerZ: 6, halfW: 296, halfH: 185 }
+          ? { worldMode: 'overworld', centerX: -6, centerZ: -26, halfW: 368, halfH: 230 }
           : { worldMode, centerX: 0, centerZ: 0, halfW: 36.8, halfH: 23 };
       const bounds = snap ? snap.bounds : fallbackBounds;
 
