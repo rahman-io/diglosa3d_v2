@@ -28,7 +28,17 @@ export type MonsterType =
   | 'iron_juggernaut'
   | 'ancient_treant'
   | 'obsidian_hydra'
-  | 'titan_colossus';
+  | 'titan_colossus'
+  | 'goring_shark'
+  | 'abyssal_kraken'
+  | 'electric_eel_drakon'
+  | 'leviathan_serpent'
+  | 'venomous_box_jelly'
+  | 'giant_bone_jaw'
+  | 'toxic_sea_viper'
+  | 'shadow_angler'
+  | 'spiny_mega_stingray'
+  | 'charybdis_maw';
 
 export type PickaxeTier = 1 | 2 | 3;
 
@@ -360,6 +370,7 @@ export type RadarBlipKind =
   | 'portal'
   | 'monster_quiz'
   | 'monster_brawl'
+  | 'sea_monster'
   | 'boss'
   | 'craft'
   | 'chest'

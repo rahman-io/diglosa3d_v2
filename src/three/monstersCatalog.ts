@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { MonsterType, ZoneId } from '../types/game';
+import { MonsterType, WeaponId, ZoneId } from '../types/game';
 import { MaterialPalette } from './materials';
 
 export type MonsterTier = 'small' | 'medium' | 'large' | 'giant';
@@ -27,6 +27,8 @@ export interface MonsterSheetSpec {
   hitRadius: number;
   hitCenterY: number;
   hitHalfH: number;
+  isSeaMonster?: boolean;
+  effectiveWeapons?: WeaponId[];
 }
 
 export const MONSTER_SPECS: Record<MonsterType, MonsterSheetSpec> = {
@@ -510,11 +512,282 @@ export const MONSTER_SPECS: Record<MonsterType, MonsterSheetSpec> = {
     hitCenterY: 2.35,
     hitHalfH: 3.1,
   },
+  goring_shark: {
+    id: 'goring_shark',
+    sheetNumber: 21,
+    name: 'Goring Shark (Hiu Ganas)',
+    tier: 'large',
+    tierLabel: 'Monster Laut · Ganas',
+    stats: { hp: 520, atk: 120, nrg: 140 },
+    baseScale: 1.35,
+    arenaScale: 0.9,
+    hitHp: 6,
+    quizHp: 3,
+    stanceHp: 3,
+    atkDamageHearts: 1,
+    rewardXp: 48,
+    rewardDiamonds: 2,
+    rewardScore: 460,
+    speedMult: 1.32,
+    aggroRange: 25.0,
+    hoverY: -0.15,
+    ranged: false,
+    hitRadius: 2.35,
+    hitCenterY: 0.75,
+    hitHalfH: 1.65,
+    isSeaMonster: true,
+    effectiveWeapons: ['emas', 'saus', 'biji', 'kertas', 'jarum', 'kristal'],
+  },
+  abyssal_kraken: {
+    id: 'abyssal_kraken',
+    sheetNumber: 22,
+    name: 'Abyssal Kraken',
+    tier: 'giant',
+    tierLabel: 'Monster Laut · Raksasa',
+    stats: { hp: 1400, atk: 240, nrg: 260 },
+    baseScale: 1.45,
+    arenaScale: 0.78,
+    hitHp: 11,
+    quizHp: 4,
+    stanceHp: 4,
+    atkDamageHearts: 2,
+    rewardXp: 85,
+    rewardDiamonds: 4,
+    rewardScore: 860,
+    speedMult: 0.76,
+    aggroRange: 24.0,
+    hoverY: 0.0,
+    ranged: true,
+    hitRadius: 2.9,
+    hitCenterY: 1.9,
+    hitHalfH: 2.8,
+    isSeaMonster: true,
+    effectiveWeapons: ['biji', 'kertas', 'jarum', 'kristal'],
+  },
+  electric_eel_drakon: {
+    id: 'electric_eel_drakon',
+    sheetNumber: 23,
+    name: 'Electric Eel-Drakon',
+    tier: 'large',
+    tierLabel: 'Monster Laut · Listrik',
+    stats: { hp: 780, atk: 155, nrg: 210 },
+    baseScale: 1.3,
+    arenaScale: 0.85,
+    hitHp: 7,
+    quizHp: 3,
+    stanceHp: 3,
+    atkDamageHearts: 1,
+    rewardXp: 58,
+    rewardDiamonds: 3,
+    rewardScore: 560,
+    speedMult: 1.24,
+    aggroRange: 25.0,
+    hoverY: 0.06,
+    ranged: true,
+    hitRadius: 2.45,
+    hitCenterY: 0.95,
+    hitHalfH: 1.75,
+    isSeaMonster: true,
+    effectiveWeapons: ['saus', 'biji', 'kertas', 'jarum', 'kristal'],
+  },
+  leviathan_serpent: {
+    id: 'leviathan_serpent',
+    sheetNumber: 24,
+    name: 'Leviathan Serpent',
+    tier: 'giant',
+    tierLabel: 'Monster Laut · Raksasa',
+    stats: { hp: 1650, atk: 260, nrg: 280 },
+    baseScale: 1.5,
+    arenaScale: 0.76,
+    hitHp: 12,
+    quizHp: 4,
+    stanceHp: 4,
+    atkDamageHearts: 2,
+    rewardXp: 95,
+    rewardDiamonds: 5,
+    rewardScore: 950,
+    speedMult: 1.08,
+    aggroRange: 27.0,
+    hoverY: -0.05,
+    ranged: true,
+    hitRadius: 2.85,
+    hitCenterY: 2.0,
+    hitHalfH: 2.85,
+    isSeaMonster: true,
+    effectiveWeapons: ['biji', 'kertas', 'jarum', 'kristal'],
+  },
+  venomous_box_jelly: {
+    id: 'venomous_box_jelly',
+    sheetNumber: 25,
+    name: 'Venomous Box Jelly (Ubur-Ubur Maut)',
+    tier: 'medium',
+    tierLabel: 'Monster Laut · Racun',
+    stats: { hp: 410, atk: 110, nrg: 180 },
+    baseScale: 1.25,
+    arenaScale: 0.92,
+    hitHp: 5,
+    quizHp: 3,
+    stanceHp: 3,
+    atkDamageHearts: 1,
+    rewardXp: 42,
+    rewardDiamonds: 2,
+    rewardScore: 410,
+    speedMult: 0.88,
+    aggroRange: 20.5,
+    hoverY: 1.15,
+    ranged: true,
+    hitRadius: 1.95,
+    hitCenterY: 1.15,
+    hitHalfH: 1.95,
+    isSeaMonster: true,
+    effectiveWeapons: ['emas', 'saus', 'biji', 'kertas', 'jarum', 'kristal'],
+  },
+  giant_bone_jaw: {
+    id: 'giant_bone_jaw',
+    sheetNumber: 26,
+    name: 'Giant Bone-Jaw (Ikan Purba)',
+    tier: 'medium',
+    tierLabel: 'Monster Laut · Zirah',
+    stats: { hp: 620, atk: 145, nrg: 130 },
+    baseScale: 1.28,
+    arenaScale: 0.9,
+    hitHp: 6,
+    quizHp: 3,
+    stanceHp: 3,
+    atkDamageHearts: 1,
+    rewardXp: 50,
+    rewardDiamonds: 2,
+    rewardScore: 480,
+    speedMult: 1.18,
+    aggroRange: 23.0,
+    hoverY: -0.1,
+    ranged: false,
+    hitRadius: 2.1,
+    hitCenterY: 0.72,
+    hitHalfH: 1.6,
+    isSeaMonster: true,
+    effectiveWeapons: ['emas', 'saus', 'biji', 'kertas', 'jarum', 'kristal'],
+  },
+  toxic_sea_viper: {
+    id: 'toxic_sea_viper',
+    sheetNumber: 27,
+    name: 'Toxic Sea Viper (Naga Laut Beracun)',
+    tier: 'large',
+    tierLabel: 'Monster Laut · Racun',
+    stats: { hp: 820, atk: 165, nrg: 200 },
+    baseScale: 1.34,
+    arenaScale: 0.84,
+    hitHp: 7,
+    quizHp: 3,
+    stanceHp: 3,
+    atkDamageHearts: 1,
+    rewardXp: 60,
+    rewardDiamonds: 3,
+    rewardScore: 580,
+    speedMult: 1.22,
+    aggroRange: 24.5,
+    hoverY: 0.0,
+    ranged: true,
+    hitRadius: 2.35,
+    hitCenterY: 1.05,
+    hitHalfH: 1.8,
+    isSeaMonster: true,
+    effectiveWeapons: ['saus', 'biji', 'kertas', 'jarum', 'kristal'],
+  },
+  shadow_angler: {
+    id: 'shadow_angler',
+    sheetNumber: 28,
+    name: 'Shadow Angler (Monster Laut Dalam)',
+    tier: 'medium',
+    tierLabel: 'Monster Laut · Abisal',
+    stats: { hp: 740, atk: 175, nrg: 170 },
+    baseScale: 1.32,
+    arenaScale: 0.88,
+    hitHp: 7,
+    quizHp: 3,
+    stanceHp: 3,
+    atkDamageHearts: 2,
+    rewardXp: 56,
+    rewardDiamonds: 3,
+    rewardScore: 540,
+    speedMult: 1.1,
+    aggroRange: 23.5,
+    hoverY: 0.0,
+    ranged: false,
+    hitRadius: 2.2,
+    hitCenterY: 0.95,
+    hitHalfH: 1.75,
+    isSeaMonster: true,
+    effectiveWeapons: ['saus', 'biji', 'kertas', 'jarum', 'kristal'],
+  },
+  spiny_mega_stingray: {
+    id: 'spiny_mega_stingray',
+    sheetNumber: 29,
+    name: 'Spiny Mega-Stingray (Pari Berduri)',
+    tier: 'large',
+    tierLabel: 'Monster Laut · Berduri',
+    stats: { hp: 640, atk: 140, nrg: 150 },
+    baseScale: 1.32,
+    arenaScale: 0.88,
+    hitHp: 6,
+    quizHp: 3,
+    stanceHp: 3,
+    atkDamageHearts: 1,
+    rewardXp: 52,
+    rewardDiamonds: 2,
+    rewardScore: 500,
+    speedMult: 1.28,
+    aggroRange: 24.0,
+    hoverY: -0.06,
+    ranged: false,
+    hitRadius: 2.55,
+    hitCenterY: 0.55,
+    hitHalfH: 1.4,
+    isSeaMonster: true,
+    effectiveWeapons: ['emas', 'saus', 'biji', 'kertas', 'jarum', 'kristal'],
+  },
+  charybdis_maw: {
+    id: 'charybdis_maw',
+    sheetNumber: 30,
+    name: 'Charybdis Maw',
+    tier: 'giant',
+    tierLabel: 'Monster Laut · Pusaran Maut',
+    stats: { hp: 1850, atk: 280, nrg: 300 },
+    baseScale: 1.55,
+    arenaScale: 0.72,
+    hitHp: 13,
+    quizHp: 4,
+    stanceHp: 4,
+    atkDamageHearts: 2,
+    rewardXp: 110,
+    rewardDiamonds: 6,
+    rewardScore: 1100,
+    speedMult: 0.42,
+    aggroRange: 23.0,
+    hoverY: 0.04,
+    ranged: false,
+    hitRadius: 3.7,
+    hitCenterY: 0.95,
+    hitHalfH: 2.0,
+    isSeaMonster: true,
+    effectiveWeapons: ['biji', 'kertas', 'jarum', 'kristal'],
+  },
 };
 
 export const ALL_MONSTER_TYPES: MonsterType[] = Object.keys(MONSTER_SPECS) as MonsterType[];
 
 export const FLYING_MONSTER_TYPES = new Set<MonsterType>(['lava_imp', 'stone_gargoyle']);
+export const SEA_MONSTER_TYPES = new Set<MonsterType>(
+  ALL_MONSTER_TYPES.filter((t) => MONSTER_SPECS[t].isSeaMonster),
+);
+export const SEA_CAPABLE_WEAPONS = new Set<WeaponId>([
+  'emas',
+  'saus',
+  'biji',
+  'kertas',
+  'jarum',
+  'kristal',
+]);
 export const RANGED_MONSTER_TYPES = new Set<MonsterType>(
   ALL_MONSTER_TYPES.filter((t) => MONSTER_SPECS[t].ranged),
 );
@@ -534,6 +807,10 @@ export interface MonsterAnimRig {
   tailPivot?: THREE.Group;
   eyes?: THREE.Mesh[];
   extraSpin?: THREE.Object3D;
+  tentacles?: THREE.Group[];
+  jawPivot?: THREE.Group;
+  vortexRing?: THREE.Object3D;
+  segments?: THREE.Group[];
 }
 
 function addBox(
@@ -588,13 +865,15 @@ export function buildMonsterRig(
 
   const shadowRadius =
     spec.tier === 'giant' ? 1.55 : spec.tier === 'large' ? 1.3 : spec.tier === 'medium' ? 1.05 : 0.85;
-  const shadow = new THREE.Mesh(
-    new THREE.PlaneGeometry(shadowRadius * 2.1, shadowRadius * 2.1),
-    palette.contactShadowMat,
-  );
-  shadow.rotation.x = -Math.PI / 2;
-  shadow.position.y = 0.04;
-  root.add(shadow);
+  if (!spec.isSeaMonster) {
+    const shadow = new THREE.Mesh(
+      new THREE.PlaneGeometry(shadowRadius * 2.1, shadowRadius * 2.1),
+      palette.contactShadowMat,
+    );
+    shadow.rotation.x = -Math.PI / 2;
+    shadow.position.y = 0.04;
+    root.add(shadow);
+  }
 
   const bodyPivot = new THREE.Group();
   root.add(bodyPivot);
@@ -1377,7 +1656,7 @@ export function buildMonsterRig(
     rig.rightWing = rightWing;
     rig.tailPivot = tail;
     rig.eyes = eyes;
-  } else {
+  } else if (type === 'titan_colossus') {
     // titan_colossus (#20) — Ancient stone + gold rune monolith colossus
     const colStone = palette.getMat(0x94a3b8, 'matte');
     const colDark = palette.getMat(0x475569, 'matte');
@@ -1417,6 +1696,565 @@ export function buildMonsterRig(
     rig.leftArm = lArm;
     rig.rightArm = rArm;
     rig.eyes = [visor];
+  } else if (type === 'goring_shark') {
+    // Sea #1: Goring Shark (Hiu Ganas) — slate-grey shark, pale belly, crimson scars, red eyes, bloody teeth
+    const sharkGrey = palette.getMat(0x334155, 'gloss');
+    const sharkDark = palette.getMat(0x1e293b, 'matte');
+    const bellyMat = palette.getMat(0xcbd5e1, 'matte');
+    const scarRed = palette.getMat(0xb91c1c, 'emissive');
+    const eyeRed = palette.getMat(0xef4444, 'emissive');
+    const toothBone = palette.getMat(0xf8fafc, 'matte');
+
+    // Main muscular torpedo torso
+    addBox(bodyPivot, 0.98, 0.88, 2.15, 0, 0.56, 0.05, sharkGrey);
+    addBox(bodyPivot, 0.86, 0.24, 1.85, 0, 0.18, 0.08, bellyMat);
+    // Battle scars on sides
+    addBox(bodyPivot, 0.06, 0.24, 0.55, -0.5, 0.62, 0.35, scarRed, false).rotation.x = 0.4;
+    addBox(bodyPivot, 0.06, 0.24, 0.5, 0.5, 0.66, 0.1, scarRed, false).rotation.x = -0.35;
+    addBox(bodyPivot, 0.06, 0.2, 0.35, 0.5, 0.52, 0.55, scarRed, false).rotation.x = 0.3;
+    // Tall menacing dorsal fin
+    const dorsal = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.95, 0.68), sharkDark);
+    dorsal.position.set(0, 1.32, -0.08);
+    dorsal.rotation.x = -0.32;
+    dorsal.castShadow = true;
+    bodyPivot.add(dorsal);
+    addBox(bodyPivot, 0.1, 0.32, 0.24, 0, 1.05, -0.82, sharkDark); // rear dorsal finlet
+
+    // Swept pectoral fins (flap slightly via wings)
+    const lFin = new THREE.Group();
+    lFin.position.set(-0.48, 0.34, 0.35);
+    const lBlade = addBox(lFin, 0.92, 0.1, 0.46, -0.44, -0.08, -0.14, sharkDark);
+    lBlade.rotation.y = 0.32;
+    lBlade.rotation.z = 0.18;
+    const rFin = new THREE.Group();
+    rFin.position.set(0.48, 0.34, 0.35);
+    const rBlade = addBox(rFin, 0.92, 0.1, 0.46, 0.44, -0.08, -0.14, sharkDark);
+    rBlade.rotation.y = -0.32;
+    rBlade.rotation.z = -0.18;
+    bodyPivot.add(lFin, rFin);
+
+    // Snout & open bloody jaw
+    const head = new THREE.Group();
+    head.position.set(0, 0.58, 1.12);
+    addBox(head, 0.88, 0.46, 0.92, 0, 0.16, 0.42, sharkGrey);
+    addBox(head, 0.68, 0.28, 0.46, 0, 0.18, 0.92, sharkGrey);
+    const eL = addBox(head, 0.12, 0.12, 0.16, -0.45, 0.22, 0.38, eyeRed, false);
+    const eR = addBox(head, 0.12, 0.12, 0.16, 0.45, 0.22, 0.38, eyeRed, false);
+    // Upper teeth
+    for (const tz of [0.28, 0.5, 0.72, 0.94]) {
+      addBox(head, 0.08, 0.14, 0.08, -0.32, -0.1, tz, toothBone, false);
+      addBox(head, 0.08, 0.14, 0.08, 0.32, -0.1, tz, toothBone, false);
+    }
+    addBox(head, 0.08, 0.16, 0.08, -0.14, -0.11, 1.0, scarRed, false);
+    addBox(head, 0.08, 0.16, 0.08, 0.14, -0.11, 1.0, toothBone, false);
+    const jaw = new THREE.Group();
+    jaw.position.set(0, -0.14, 0.04);
+    addBox(jaw, 0.72, 0.2, 0.84, 0, -0.12, 0.42, bellyMat);
+    addBox(jaw, 0.58, 0.06, 0.68, 0, -0.01, 0.42, scarRed, false);
+    for (const tz of [0.24, 0.46, 0.68]) {
+      addBox(jaw, 0.07, 0.13, 0.07, -0.26, 0.05, tz, toothBone, false);
+      addBox(jaw, 0.07, 0.13, 0.07, 0.26, 0.05, tz, toothBone, false);
+    }
+    jaw.rotation.x = 0.28;
+    head.add(jaw);
+    bodyPivot.add(head);
+
+    // Caudal tail fin
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.56, -1.02);
+    addBox(tail, 0.56, 0.54, 0.88, 0, 0, -0.44, sharkGrey);
+    addBox(tail, 0.36, 0.36, 0.65, 0, 0.02, -1.08, sharkDark);
+    const upperTail = addBox(tail, 0.14, 1.05, 0.44, 0, 0.44, -1.42, sharkDark);
+    upperTail.rotation.x = -0.42;
+    const lowerTail = addBox(tail, 0.12, 0.62, 0.34, 0, -0.28, -1.36, sharkDark);
+    lowerTail.rotation.x = 0.42;
+    bodyPivot.add(tail);
+
+    rig.headGroup = head;
+    rig.jawPivot = jaw;
+    rig.leftWing = lFin;
+    rig.rightWing = rFin;
+    rig.tailPivot = tail;
+    rig.eyes = [eL, eR];
+  } else if (type === 'abyssal_kraken') {
+    // Sea #2: Abyssal Kraken — massive purple mantle, glowing amber eyes, 8 curled tentacle arms + water swirl base
+    const krakPurple = palette.getMat(0x4c1d95, 'gloss');
+    const krakDark = palette.getMat(0x2e1065, 'matte');
+    const suckerLilac = palette.getMat(0xc084fc, 'matte');
+    const eyeAmber = palette.getMat(0xfbbf24, 'emissive');
+    const foamCyan = palette.getMat(0x67e8f9, 'emissive');
+    const foamWhite = palette.getMat(0xe0f2fe, 'glass');
+
+    // Swirling ocean vortex ring at waterline
+    const vortex = new THREE.Group();
+    vortex.position.set(0, 0.08, 0);
+    const swirlOuter = new THREE.Mesh(new THREE.RingGeometry(1.15, 2.35, 24), foamWhite);
+    swirlOuter.rotation.x = -Math.PI / 2;
+    vortex.add(swirlOuter);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      const wave = addBox(vortex, 0.72, 0.24, 0.34, Math.cos(a) * 1.65, 0.1, Math.sin(a) * 1.65, foamCyan, false);
+      wave.rotation.y = -a + 0.45;
+    }
+    bodyPivot.add(vortex);
+
+    const head = new THREE.Group();
+    head.position.set(0, 0.65, 0);
+    addBox(head, 1.18, 1.05, 1.18, 0, 0.55, 0, krakPurple);
+    // Tall pointed cephalopod mantle tilted backward
+    const mantle = new THREE.Group();
+    mantle.position.set(0, 1.1, -0.1);
+    mantle.rotation.x = -0.26;
+    addBox(mantle, 1.12, 1.48, 1.12, 0, 0.74, 0, krakPurple);
+    addBox(mantle, 0.78, 0.72, 0.78, 0, 1.72, 0, krakDark);
+    addBox(mantle, 1.76, 0.82, 0.26, 0, 1.56, 0, krakDark); // spear fins
+    head.add(mantle);
+    const eL = addBox(head, 0.24, 0.24, 0.14, -0.48, 0.55, 0.58, eyeAmber, false);
+    const eR = addBox(head, 0.24, 0.24, 0.14, 0.48, 0.55, 0.58, eyeAmber, false);
+    bodyPivot.add(head);
+
+    // 8 radiating articulated tentacle groups
+    const tentacles: THREE.Group[] = [];
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2 + 0.2;
+      const tGrp = new THREE.Group();
+      tGrp.position.set(Math.cos(angle) * 0.72, 0.52, Math.sin(angle) * 0.72);
+      tGrp.rotation.y = -angle + Math.PI / 2;
+      addBox(tGrp, 0.32, 0.32, 0.76, 0, -0.08, 0.36, krakDark);
+      addBox(tGrp, 0.24, 0.12, 0.68, 0, -0.22, 0.36, suckerLilac, false);
+      const mid = addBox(tGrp, 0.26, 0.26, 0.74, 0, 0.12, 0.96, krakPurple);
+      mid.rotation.x = -0.45;
+      const tip = addBox(tGrp, 0.18, 0.18, 0.58, 0, 0.48, 1.42, krakDark);
+      tip.rotation.x = -0.95;
+      bodyPivot.add(tGrp);
+      tentacles.push(tGrp);
+    }
+
+    rig.headGroup = head;
+    rig.tentacles = tentacles;
+    rig.vortexRing = vortex;
+    rig.eyes = [eL, eR];
+  } else if (type === 'electric_eel_drakon') {
+    // Sea #3: Electric Eel-Drakon — S-curved aqua dragon-eel with golden belly/dorsal ridge & crackling lightning arcs
+    const eelCyan = palette.getMat(0x06b6d4, 'gloss');
+    const eelTeal = palette.getMat(0x0f766e, 'matte');
+    const goldSpine = palette.getMat(0xfacc15, 'emissive');
+    const boltNeon = palette.getMat(0x7dd3fc, 'emissive');
+    const toothWhite = palette.getMat(0xf8fafc, 'matte');
+
+    const head = new THREE.Group();
+    head.position.set(0, 0.78, 1.45);
+    addBox(head, 0.82, 0.54, 0.95, 0, 0.14, 0.25, eelTeal);
+    addBox(head, 0.68, 0.18, 0.78, 0, -0.18, 0.28, goldSpine, false);
+    // Dragon horns + whiskers
+    addBox(head, 0.1, 0.42, 0.14, -0.32, 0.5, -0.1, goldSpine, false).rotation.x = -0.5;
+    addBox(head, 0.1, 0.42, 0.14, 0.32, 0.5, -0.1, goldSpine, false).rotation.x = -0.5;
+    addBox(head, 0.38, 0.07, 0.07, -0.45, 0.04, 0.62, goldSpine, false);
+    addBox(head, 0.38, 0.07, 0.07, 0.45, 0.04, 0.62, goldSpine, false);
+    const eL = addBox(head, 0.14, 0.14, 0.1, -0.36, 0.24, 0.58, goldSpine, false);
+    const eR = addBox(head, 0.14, 0.14, 0.1, 0.36, 0.24, 0.58, goldSpine, false);
+    addBox(head, 0.08, 0.14, 0.08, -0.22, -0.08, 0.65, toothWhite, false);
+    addBox(head, 0.08, 0.14, 0.08, 0.22, -0.08, 0.65, toothWhite, false);
+    bodyPivot.add(head);
+
+    // S-curved undulating serpent body segments + electric lightning fins
+    const segments: THREE.Group[] = [];
+    for (let i = 0; i < 6; i++) {
+      const seg = new THREE.Group();
+      const zOff = 0.82 - i * 0.62;
+      const xWave = Math.sin(i * 0.95) * 0.52;
+      const size = Math.max(0.36, 0.78 - i * 0.07);
+      seg.position.set(xWave, 0.48 + (i === 1 || i === 2 ? 0.24 : 0), zOff);
+      addBox(seg, size, size * 0.88, 0.72, 0, 0, 0, i % 2 === 0 ? eelCyan : eelTeal);
+      addBox(seg, size * 0.72, 0.18, 0.66, 0, -size * 0.42, 0, goldSpine, false);
+      addBox(seg, 0.12, 0.48, 0.48, 0, size * 0.56, 0, goldSpine, false); // dorsal ridge
+      if (i % 2 === 0) {
+        addBox(seg, 0.08, 0.08, 0.62, -size * 0.68, 0.18, 0, boltNeon, false).rotation.z = 0.5;
+        addBox(seg, 0.08, 0.08, 0.62, size * 0.68, 0.18, 0, boltNeon, false).rotation.z = -0.5;
+      }
+      bodyPivot.add(seg);
+      segments.push(seg);
+    }
+
+    rig.headGroup = head;
+    rig.segments = segments;
+    rig.eyes = [eL, eR];
+  } else if (type === 'leviathan_serpent') {
+    // Sea #4: Leviathan Serpent — towering sea-green horned dragon serpent rising out of crashing water splash
+    const levGreen = palette.getMat(0x0f766e, 'gloss');
+    const levScale = palette.getMat(0x134e4a, 'matte');
+    const levBelly = palette.getMat(0x5eead4, 'matte');
+    const hornDark = palette.getMat(0x1e293b, 'matte');
+    const eyeOrange = palette.getMat(0xf59e0b, 'emissive');
+    const toothWhite = palette.getMat(0xf8fafc, 'matte');
+    const foamMat = palette.getMat(0xe0f2fe, 'glass');
+
+    // Splash collar around base
+    const vortex = new THREE.Group();
+    const splashRing = new THREE.Mesh(new THREE.RingGeometry(0.95, 2.05, 20), foamMat);
+    splashRing.rotation.x = -Math.PI / 2;
+    splashRing.position.y = 0.08;
+    vortex.add(splashRing);
+    bodyPivot.add(vortex);
+
+    // Towering arched serpent neck & ridged tail
+    const upper = new THREE.Group();
+    upper.position.set(0, 0.35, 0.1);
+    addBox(upper, 1.08, 1.15, 0.98, 0, 0.55, 0, levGreen);
+    addBox(upper, 0.88, 1.15, 0.95, 0, 1.55, 0.22, levGreen);
+    addBox(upper, 0.72, 2.05, 0.22, 0, 1.05, 0.56, levBelly);
+    for (let i = 0; i < 4; i++) {
+      addBox(upper, 0.16, 0.36, 0.34, 0, 0.45 + i * 0.48, -0.54 + i * 0.08, hornDark);
+    }
+    bodyPivot.add(upper);
+
+    const head = new THREE.Group();
+    head.position.set(0, 2.25, 0.48);
+    addBox(head, 1.08, 0.62, 1.24, 0, 0.2, 0.42, levScale);
+    addBox(head, 0.82, 0.42, 0.62, 0, 0.16, 1.15, levGreen);
+    // Swept horns
+    const hL = addBox(head, 0.18, 0.82, 0.2, -0.44, 0.68, -0.14, hornDark);
+    hL.rotation.x = -0.68;
+    hL.rotation.z = 0.25;
+    const hR = addBox(head, 0.18, 0.82, 0.2, 0.44, 0.68, -0.14, hornDark);
+    hR.rotation.x = -0.68;
+    hR.rotation.z = -0.25;
+    const eL = addBox(head, 0.18, 0.14, 0.12, -0.52, 0.24, 0.56, eyeOrange, false);
+    const eR = addBox(head, 0.18, 0.14, 0.12, 0.52, 0.24, 0.56, eyeOrange, false);
+    for (const tz of [0.65, 0.95, 1.26]) {
+      addBox(head, 0.09, 0.2, 0.09, -0.34, -0.16, tz, toothWhite, false);
+      addBox(head, 0.09, 0.2, 0.09, 0.34, -0.16, tz, toothWhite, false);
+    }
+    const jaw = new THREE.Group();
+    jaw.position.set(0, -0.14, 0.12);
+    addBox(jaw, 0.82, 0.22, 1.05, 0, -0.14, 0.62, levScale);
+    for (const tz of [0.45, 0.78, 1.05]) {
+      addBox(jaw, 0.08, 0.16, 0.08, -0.28, 0.02, tz, toothWhite, false);
+      addBox(jaw, 0.08, 0.16, 0.08, 0.28, 0.02, tz, toothWhite, false);
+    }
+    jaw.rotation.x = 0.28;
+    head.add(jaw);
+    upper.add(head);
+
+    // Trailing surging serpent coils behind splash
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.35, -0.78);
+    addBox(tail, 0.72, 0.76, 1.15, -0.26, 0.18, -0.56, levGreen);
+    addBox(tail, 0.52, 0.62, 1.05, 0.22, 0.28, -1.48, levScale);
+    bodyPivot.add(tail);
+
+    rig.upperBody = upper;
+    rig.headGroup = head;
+    rig.jawPivot = jaw;
+    rig.tailPivot = tail;
+    rig.vortexRing = vortex;
+    rig.eyes = [eL, eR];
+  } else if (type === 'venomous_box_jelly') {
+    // Sea #5: Venomous Box Jelly (Ubur-Ubur Maut) — translucent glowing ice-cyan cube bell + neon magenta inner core & tentacles
+    const bellGlass = palette.getMat(0x38bdf8, 'glass');
+    const bellEdge = palette.getMat(0x67e8f9, 'emissive');
+    const coreMagenta = palette.getMat(0xe879f9, 'emissive');
+    const tentaclePurple = palette.getMat(0xc026d3, 'emissive');
+
+    const bell = new THREE.Group();
+    bell.position.set(0, 0.95, 0);
+    addBox(bell, 1.38, 1.24, 1.38, 0, 0.32, 0, bellGlass, false);
+    addBox(bell, 0.72, 0.88, 0.72, 0, 0.36, 0, coreMagenta, false);
+    // Glowing box corners/ribs
+    for (const sx of [-0.66, 0.66]) {
+      for (const sz of [-0.66, 0.66]) {
+        addBox(bell, 0.1, 1.26, 0.1, sx, 0.32, sz, bellEdge, false);
+      }
+    }
+    bodyPivot.add(bell);
+
+    // 8 long trailing neon-magenta tentacles underneath
+    const tentacles: THREE.Group[] = [];
+    const offsets = [
+      [-0.45, -0.45],
+      [0.45, -0.45],
+      [-0.45, 0.45],
+      [0.45, 0.45],
+      [0, -0.5],
+      [0, 0.5],
+      [-0.5, 0],
+      [0.5, 0],
+    ];
+    for (const [tx, tz] of offsets) {
+      const t = new THREE.Group();
+      t.position.set(tx, 0.62, tz);
+      addBox(t, 0.11, 0.82, 0.11, 0, -0.42, 0, coreMagenta, false);
+      addBox(t, 0.08, 0.85, 0.08, 0.05, -1.18, -0.04, tentaclePurple, false);
+      bodyPivot.add(t);
+      tentacles.push(t);
+    }
+
+    rig.upperBody = bell;
+    rig.tentacles = tentacles;
+  } else if (type === 'giant_bone_jaw') {
+    // Sea #6: Giant Bone-Jaw (Ikan Purba / Dunkleosteus) — dark brown-tan plated armor fish & massive bone shear jaws
+    const armorDark = palette.getMat(0x451a03, 'matte');
+    const armorPlate = palette.getMat(0x78350f, 'matte');
+    const bonePlate = palette.getMat(0xd6b88d, 'matte');
+    const eyeOrange = palette.getMat(0xf97316, 'emissive');
+
+    // Armored segmented torso
+    addBox(bodyPivot, 1.05, 0.94, 1.42, 0, 0.58, -0.15, armorDark);
+    addBox(bodyPivot, 1.12, 0.48, 0.68, 0, 0.78, 0.28, armorPlate);
+    addBox(bodyPivot, 0.96, 0.36, 0.58, 0, 0.74, -0.48, bonePlate);
+    addBox(bodyPivot, 0.16, 0.52, 0.52, 0, 1.18, -0.2, armorPlate).rotation.x = -0.35; // dorsal fin
+    addBox(bodyPivot, 0.72, 0.1, 0.42, -0.68, 0.32, 0.1, armorPlate).rotation.y = 0.28;
+    addBox(bodyPivot, 0.72, 0.1, 0.42, 0.68, 0.32, 0.1, armorPlate).rotation.y = -0.28;
+
+    // Massive prehistoric bone-shear skull
+    const head = new THREE.Group();
+    head.position.set(0, 0.62, 0.62);
+    addBox(head, 1.08, 0.68, 0.92, 0, 0.16, 0.42, bonePlate);
+    addBox(head, 0.98, 0.24, 0.86, 0, 0.48, 0.38, armorDark);
+    const eL = addBox(head, 0.16, 0.16, 0.16, -0.54, 0.22, 0.48, eyeOrange, false);
+    const eR = addBox(head, 0.16, 0.16, 0.16, 0.54, 0.22, 0.48, eyeOrange, false);
+    // Chunky bony shear fangs upper
+    addBox(head, 0.16, 0.24, 0.18, -0.34, -0.22, 0.78, bonePlate);
+    addBox(head, 0.16, 0.24, 0.18, 0.34, -0.22, 0.78, bonePlate);
+    addBox(head, 0.14, 0.2, 0.14, -0.34, -0.18, 0.45, bonePlate);
+    addBox(head, 0.14, 0.2, 0.14, 0.34, -0.18, 0.45, bonePlate);
+
+    const jaw = new THREE.Group();
+    jaw.position.set(0, -0.2, 0.08);
+    addBox(jaw, 0.86, 0.24, 0.84, 0, -0.14, 0.42, bonePlate);
+    addBox(jaw, 0.16, 0.22, 0.16, -0.28, 0.04, 0.72, bonePlate);
+    addBox(jaw, 0.16, 0.22, 0.16, 0.28, 0.04, 0.72, bonePlate);
+    jaw.rotation.x = 0.25;
+    head.add(jaw);
+    bodyPivot.add(head);
+
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.56, -0.84);
+    addBox(tail, 0.58, 0.56, 0.78, 0, 0, -0.38, armorDark);
+    addBox(tail, 0.14, 0.92, 0.42, 0, 0.28, -0.88, armorPlate).rotation.x = -0.35;
+    addBox(tail, 0.12, 0.52, 0.32, 0, -0.24, -0.82, armorPlate).rotation.x = 0.35;
+    bodyPivot.add(tail);
+
+    rig.headGroup = head;
+    rig.jawPivot = jaw;
+    rig.tailPivot = tail;
+    rig.eyes = [eL, eR];
+  } else if (type === 'toxic_sea_viper') {
+    // Sea #7: Toxic Sea Viper (Naga Laut Beracun) — violet snake body, neon lime belly scutes, fin-frill & dripping venom fangs
+    const viperPurple = palette.getMat(0x581c87, 'gloss');
+    const viperFrill = palette.getMat(0x7e22ce, 'matte');
+    const venomGreen = palette.getMat(0x4ade80, 'emissive');
+    const venomDark = palette.getMat(0x16a34a, 'matte');
+
+    const head = new THREE.Group();
+    head.position.set(0, 1.05, 1.05);
+    addBox(head, 0.86, 0.44, 0.98, 0, 0.14, 0.35, viperPurple);
+    addBox(head, 0.96, 0.26, 0.38, 0, 0.42, 0.05, viperFrill); // hood crest
+    const eL = addBox(head, 0.16, 0.12, 0.12, -0.38, 0.2, 0.58, venomGreen, false);
+    const eR = addBox(head, 0.16, 0.12, 0.12, 0.38, 0.2, 0.58, venomGreen, false);
+    // Long dripping neon-green venom fangs
+    addBox(head, 0.09, 0.32, 0.09, -0.24, -0.18, 0.76, venomGreen, false);
+    addBox(head, 0.09, 0.32, 0.09, 0.24, -0.18, 0.76, venomGreen, false);
+    const jaw = new THREE.Group();
+    jaw.position.set(0, -0.1, 0.08);
+    addBox(jaw, 0.64, 0.16, 0.82, 0, -0.1, 0.4, viperPurple);
+    addBox(jaw, 0.08, 0.18, 0.08, -0.18, -0.24, 0.72, venomGreen, false); // venom drip
+    jaw.rotation.x = 0.24;
+    head.add(jaw);
+    bodyPivot.add(head);
+
+    const segments: THREE.Group[] = [];
+    for (let i = 0; i < 6; i++) {
+      const seg = new THREE.Group();
+      const xCoil = Math.sin(i * 1.1) * 0.58;
+      const yLift = i === 0 ? 0.88 : i === 1 ? 0.58 : 0.36;
+      const zCoil = 0.45 - i * 0.58;
+      seg.position.set(xCoil, yLift, zCoil);
+      const w = Math.max(0.38, 0.72 - i * 0.05);
+      addBox(seg, w, w * 0.86, 0.72, 0, 0, 0, viperPurple);
+      addBox(seg, w * 0.74, 0.16, 0.66, 0, -w * 0.4, 0, venomDark, false);
+      addBox(seg, 0.1, 0.48, 0.56, 0, w * 0.56, 0, viperFrill); // dorsal fin ridge
+      bodyPivot.add(seg);
+      segments.push(seg);
+    }
+
+    rig.headGroup = head;
+    rig.jawPivot = jaw;
+    rig.segments = segments;
+    rig.eyes = [eL, eR];
+  } else if (type === 'shadow_angler') {
+    // Sea #8: Shadow Angler (Monster Laut Dalam) — pitch-black blocky body, giant needle teeth jaw, cyan eyes, golden lantern stalk
+    const abyssBlack = palette.getMat(0x090d16, 'gloss');
+    const abyssSlate = palette.getMat(0x1e293b, 'matte');
+    const cyanEye = palette.getMat(0x22d3ee, 'emissive');
+    const goldLure = palette.getMat(0xfbbf24, 'emissive');
+    const needleTooth = palette.getMat(0xf8fafc, 'matte');
+
+    const head = new THREE.Group();
+    head.position.set(0, 0.72, 0.15);
+    addBox(head, 1.32, 1.24, 1.48, 0, 0.24, -0.08, abyssBlack);
+    addBox(head, 1.18, 0.22, 1.25, 0, 0.92, -0.15, abyssSlate);
+    const eL = addBox(head, 0.16, 0.16, 0.14, -0.58, 0.48, 0.52, cyanEye, false);
+    const eR = addBox(head, 0.16, 0.16, 0.14, 0.58, 0.48, 0.52, cyanEye, false);
+    // Ragged side fins
+    addBox(head, 0.66, 0.44, 0.1, -0.88, 0.12, -0.25, abyssSlate).rotation.y = 0.4;
+    addBox(head, 0.66, 0.44, 0.1, 0.88, 0.12, -0.25, abyssSlate).rotation.y = -0.4;
+    // Upper fangs
+    for (const fx of [-0.46, -0.22, 0, 0.22, 0.46]) {
+      addBox(head, 0.06, 0.28, 0.06, fx, -0.18, 0.64, needleTooth, false);
+    }
+
+    // Jutting underbite jaw bristling with long upward needle teeth
+    const jaw = new THREE.Group();
+    jaw.position.set(0, -0.24, 0.06);
+    addBox(jaw, 1.24, 0.34, 1.15, 0, -0.16, 0.44, abyssBlack);
+    for (const fx of [-0.48, -0.24, 0, 0.24, 0.48]) {
+      addBox(jaw, 0.06, 0.42, 0.06, fx, 0.16, 0.94, needleTooth, false);
+    }
+    for (const fz of [0.42, 0.68]) {
+      addBox(jaw, 0.06, 0.34, 0.06, -0.54, 0.12, fz, needleTooth, false);
+      addBox(jaw, 0.06, 0.34, 0.06, 0.54, 0.12, fz, needleTooth, false);
+    }
+    jaw.rotation.x = 0.2;
+    head.add(jaw);
+
+    // Arched forehead illicium stalk + glowing amber bioluminescent lantern bulb!
+    const lurePivot = new THREE.Group();
+    lurePivot.position.set(0, 0.88, 0.48);
+    addBox(lurePivot, 0.09, 0.72, 0.09, 0, 0.34, 0.14, abyssSlate).rotation.x = 0.4;
+    addBox(lurePivot, 0.08, 0.08, 0.76, 0, 0.66, 0.62, abyssSlate);
+    addBox(lurePivot, 0.06, 0.32, 0.06, 0, 0.46, 0.98, abyssSlate);
+    const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 1), goldLure);
+    orb.position.set(0, 0.28, 0.98);
+    lurePivot.add(orb);
+    head.add(lurePivot);
+
+    bodyPivot.add(head);
+
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.65, -0.65);
+    addBox(tail, 0.56, 0.68, 0.62, 0, 0, -0.3, abyssBlack);
+    addBox(tail, 0.12, 0.88, 0.44, 0, 0, -0.78, abyssSlate);
+    bodyPivot.add(tail);
+
+    rig.headGroup = head;
+    rig.jawPivot = jaw;
+    rig.tailPivot = tail;
+    rig.weaponGroup = lurePivot;
+    rig.eyes = [eL, eR];
+  } else if (type === 'spiny_mega_stingray') {
+    // Sea #9: Spiny Mega-Stingray (Pari Berduri) — wide navy diamond wings w/ cyan glowing spots, steel dorsal spines & barbed whip tail
+    const rayNavy = palette.getMat(0x1e3a5f, 'gloss');
+    const rayDark = palette.getMat(0x0f172a, 'matte');
+    const spotCyan = palette.getMat(0x38bdf8, 'emissive');
+    const spineGrey = palette.getMat(0x94a3b8, 'metal');
+    const eyeYellow = palette.getMat(0xfacc15, 'emissive');
+
+    // Central ridge + armor spine row
+    addBox(bodyPivot, 0.96, 0.46, 1.95, 0, 0.34, 0, rayDark);
+    for (const sz of [0.55, 0.18, -0.18, -0.55]) {
+      const sp = new THREE.Mesh(new THREE.ConeGeometry(0.12, 0.48, 4), spineGrey);
+      sp.position.set(0, 0.72, sz);
+      sp.rotation.x = -0.25;
+      bodyPivot.add(sp);
+    }
+    const eL = addBox(bodyPivot, 0.14, 0.12, 0.16, -0.34, 0.56, 0.76, eyeYellow, false);
+    const eR = addBox(bodyPivot, 0.14, 0.12, 0.16, 0.34, 0.56, 0.76, eyeYellow, false);
+
+    // Wide undulating triangular-block wings with cyan spots
+    const lWing = new THREE.Group();
+    lWing.position.set(-0.45, 0.32, 0);
+    addBox(lWing, 0.92, 0.2, 1.48, -0.46, 0, -0.05, rayNavy);
+    addBox(lWing, 0.72, 0.12, 0.96, -1.16, 0, -0.18, rayNavy);
+    addBox(lWing, 0.22, 0.08, 0.22, -0.52, 0.11, 0.28, spotCyan, false);
+    addBox(lWing, 0.2, 0.08, 0.2, -0.98, 0.08, -0.12, spotCyan, false);
+    addBox(lWing, 0.18, 0.08, 0.18, -0.58, 0.11, -0.48, spotCyan, false);
+
+    const rWing = new THREE.Group();
+    rWing.position.set(0.45, 0.32, 0);
+    addBox(rWing, 0.92, 0.2, 1.48, 0.46, 0, -0.05, rayNavy);
+    addBox(rWing, 0.72, 0.12, 0.96, 1.16, 0, -0.18, rayNavy);
+    addBox(rWing, 0.22, 0.08, 0.22, 0.52, 0.11, 0.28, spotCyan, false);
+    addBox(rWing, 0.2, 0.08, 0.2, 0.98, 0.08, -0.12, spotCyan, false);
+    addBox(rWing, 0.18, 0.08, 0.18, 0.58, 0.11, -0.48, spotCyan, false);
+    bodyPivot.add(lWing, rWing);
+
+    // Long barbed whip tail
+    const tail = new THREE.Group();
+    tail.position.set(0, 0.32, -0.96);
+    addBox(tail, 0.24, 0.22, 0.92, 0, 0, -0.44, rayDark);
+    addBox(tail, 0.14, 0.14, 1.08, 0, 0.06, -1.35, rayNavy);
+    for (const tz of [-0.55, -0.95, -1.35, -1.72]) {
+      const barb = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.34, 4), spineGrey);
+      barb.position.set(0, 0.22, tz);
+      barb.rotation.x = -0.35;
+      tail.add(barb);
+    }
+    bodyPivot.add(tail);
+
+    rig.leftWing = lWing;
+    rig.rightWing = rWing;
+    rig.tailPivot = tail;
+    rig.eyes = [eL, eR];
+  } else if (type === 'charybdis_maw') {
+    // Sea #10: Charybdis Maw — massive rotating whirlpool ringed by coral reef crust & concentric rings of sharp fangs
+    const abyssCore = palette.getMat(0x020617, 'matte');
+    const rockRim = palette.getMat(0x475569, 'matte');
+    const coralPink = palette.getMat(0xf472b6, 'gloss');
+    const coralOrange = palette.getMat(0xfb7185, 'gloss');
+    const toothBone = palette.getMat(0xfef3c7, 'matte');
+    const foamCyan = palette.getMat(0x38bdf8, 'emissive');
+    const foamWhite = palette.getMat(0xe0f2fe, 'glass');
+
+    // Deep pitch-black abyssal throat pit
+    const pit = new THREE.Mesh(new THREE.CylinderGeometry(1.42, 0.85, 0.52, 18), abyssCore);
+    pit.position.y = 0.06;
+    bodyPivot.add(pit);
+
+    // Rotating vortex & coral-tooth crater ring
+    const vortex = new THREE.Group();
+    vortex.position.set(0, 0.12, 0);
+    const outerSwirl = new THREE.Mesh(new THREE.RingGeometry(1.75, 2.75, 24), foamWhite);
+    outerSwirl.rotation.x = -Math.PI / 2;
+    outerSwirl.position.y = -0.02;
+    vortex.add(outerSwirl);
+
+    const coralCount = 12;
+    for (let i = 0; i < coralCount; i++) {
+      const a = (i / coralCount) * Math.PI * 2;
+      const rx = Math.cos(a) * 1.56;
+      const rz = Math.sin(a) * 1.56;
+      const rock = addBox(vortex, 0.72, 0.44, 0.62, rx, 0.18, rz, rockRim);
+      rock.rotation.y = -a;
+      if (i % 2 === 0) {
+        addBox(vortex, 0.34, 0.46, 0.28, rx * 1.12, 0.46, rz * 1.12, i % 4 === 0 ? coralPink : coralOrange);
+      }
+      // Swirling ocean crest outside the coral rim
+      const foam = addBox(vortex, 0.82, 0.18, 0.28, Math.cos(a + 0.3) * 2.15, 0.06, Math.sin(a + 0.3) * 2.15, foamCyan, false);
+      foam.rotation.y = -(a + 0.3) + 0.42;
+    }
+
+    // Double concentric rings of menacing inward-curved teeth!
+    for (let i = 0; i < 16; i++) {
+      const a = (i / 16) * Math.PI * 2;
+      const tOut = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.56, 4), toothBone);
+      tOut.position.set(Math.cos(a) * 1.24, 0.34, Math.sin(a) * 1.24);
+      tOut.rotation.z = Math.cos(a) * 0.55;
+      tOut.rotation.x = -Math.sin(a) * 0.55;
+      vortex.add(tOut);
+
+      if (i % 2 === 0) {
+        const tIn = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.42, 4), toothBone);
+        tIn.position.set(Math.cos(a + 0.18) * 0.86, 0.2, Math.sin(a + 0.18) * 0.86);
+        tIn.rotation.z = Math.cos(a + 0.18) * 0.72;
+        tIn.rotation.x = -Math.sin(a + 0.18) * 0.72;
+        vortex.add(tIn);
+      }
+    }
+    bodyPivot.add(vortex);
+
+    rig.vortexRing = vortex;
+    rig.extraSpin = vortex;
   }
 
   root.userData.monsterRig = rig;
@@ -1548,4 +2386,39 @@ export const NIGHT_SURFACE_SPAWNS: OverworldSurfaceSpawnTemplate[] = [
   { zoneId: 'desa_sapaan', name: 'Frost Ogre Kata', type: 'frost_ogre', x: 2, z: -56, combatOnly: false },
   { zoneId: 'gua_portal', name: 'Obsidian Hydra Kata', type: 'obsidian_hydra', x: -14, z: -48, combatOnly: false },
   { zoneId: 'menara_waktu', name: 'Titan Colossus Kata', type: 'titan_colossus', x: 18, z: -18, combatOnly: false },
+];
+
+export interface SeaMonsterSpawnTemplate {
+  zoneId: ZoneId;
+  name: string;
+  type: MonsterType;
+  x: number;
+  z: number;
+}
+
+// 12 Predator Laut Ganas (semua 10 jenis monster laut dari lembar desain) tersebar di selat & lautan antar pulau!
+export const SEA_MONSTER_SPAWNS: SeaMonsterSpawnTemplate[] = [
+  // Selat Desa Sapaan <-> Pasar Rasa & Teluk Selatan
+  { zoneId: 'desa_sapaan', name: 'Goring Shark (Hiu Ganas)', type: 'goring_shark', x: -82, z: 100 },
+  { zoneId: 'desa_sapaan', name: 'Venomous Box Jelly (Ubur-Ubur Maut)', type: 'venomous_box_jelly', x: 36, z: 48 },
+  { zoneId: 'desa_sapaan', name: 'Goring Shark (Hiu Ganas)', type: 'goring_shark', x: 68, z: 134 },
+
+  // Selat Pasar Rasa <-> Hub & Laut Barat
+  { zoneId: 'pasar_rasa', name: 'Giant Bone-Jaw (Ikan Purba)', type: 'giant_bone_jaw', x: -94, z: -4 },
+  { zoneId: 'pasar_rasa', name: 'Venomous Box Jelly (Ubur-Ubur Maut)', type: 'venomous_box_jelly', x: -78, z: 156 },
+  { zoneId: 'pasar_rasa', name: 'Shadow Angler (Monster Laut Dalam)', type: 'shadow_angler', x: -178, z: 18 },
+
+  // Selat Hutan Satwa <-> Menara Waktu
+  { zoneId: 'hutan_satwa', name: 'Spiny Mega-Stingray (Pari Berduri)', type: 'spiny_mega_stingray', x: 116, z: -24 },
+
+  // Selat Gerbang Kota <-> Gua Portal
+  { zoneId: 'gerbang_kota', name: 'Toxic Sea Viper (Naga Laut Beracun)', type: 'toxic_sea_viper', x: -46, z: -124 },
+
+  // Selat Menara Waktu <-> Gua Portal & Laut Timur
+  { zoneId: 'menara_waktu', name: 'Electric Eel-Drakon', type: 'electric_eel_drakon', x: 88, z: -138 },
+  { zoneId: 'menara_waktu', name: 'Charybdis Maw', type: 'charybdis_maw', x: 66, z: -98 },
+  { zoneId: 'menara_waktu', name: 'Abyssal Kraken', type: 'abyssal_kraken', x: 212, z: -22 },
+
+  // Samudra Utara Gua Portal
+  { zoneId: 'gua_portal', name: 'Leviathan Serpent', type: 'leviathan_serpent', x: 106, z: -218 },
 ];

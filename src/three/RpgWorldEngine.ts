@@ -83,6 +83,7 @@ import {
   OVERWORLD_ANCHORS,
   sampleArchipelagoTerrain,
   updateArchipelagoWorld,
+  WORLD_OCEAN_LIMIT,
 } from './archipelagoWorld';
 import {
   AcademyHallRig,
@@ -130,6 +131,8 @@ import {
   FLYING_MONSTER_TYPES,
   MONSTER_SPECS,
   NIGHT_SURFACE_SPAWNS,
+  SEA_CAPABLE_WEAPONS,
+  SEA_MONSTER_SPAWNS,
 } from './monstersCatalog';
 
 interface CollectibleItem {
@@ -159,6 +162,7 @@ interface RoamingMonster {
   isAmbush?: boolean;
   isCaveMob?: boolean;
   isNightMonster?: boolean;
+  isSeaMonster?: boolean;
   sunburnTimer?: number;
   combatOnly?: boolean;
   fuseTimer?: number;
@@ -230,6 +234,7 @@ interface EnemyShooter {
 interface Projectile3D {
   active: boolean;
   fromPlayer: boolean;
+  weaponId?: WeaponId;
   x: number;
   y?: number;
   z: number;
@@ -612,6 +617,7 @@ export class RpgWorldEngine {
   private academyNpcs: Map<string, { mesh: THREE.Group; x: number; z: number }> = new Map();
   private academyCitizens: Array<{ id: string; mesh: THREE.Group; x: number; z: number; message: string }> = [];
   private monsters: RoamingMonster[] = [];
+  private seaMonsters: RoamingMonster[] = [];
   private dungeonMonsters: RoamingMonster[] = [];
   private dungeonTotalSpawned = 0;
   private academyMonsters: RoamingMonster[] = [];
@@ -1472,8 +1478,134 @@ export class RpgWorldEngine {
     }
   }
 
+  private isOpenSeaPoint(x: number, z: number, clearance = 3.0): boolean {
+    const limit = WORLD_OCEAN_LIMIT - 12;
+    if (Math.abs(x) > limit || Math.abs(z) > limit) return false;
+    if (sampleArchipelagoTerrain(x, z).isLandOrBridge) return false;
+    if (
+      sampleArchipelagoTerrain(x + clearance, z).isLandOrBridge ||
+      sampleArchipelagoTerrain(x - clearance, z).isLandOrBridge ||
+      sampleArchipelagoTerrain(x, z + clearance).isLandOrBridge ||
+      sampleArchipelagoTerrain(x, z - clearance).isLandOrBridge
+    ) {
+      return false;
+    }
+    return true;
+  }
+
+  private resolveSafeSeaSpawnPos(rawX: number, rawZ: number): { x: number; z: number } {
+    if (this.isOpenSeaPoint(rawX, rawZ, 3.2)) {
+      return { x: rawX, z: rawZ };
+    }
+    for (let r = 4; r <= 38; r += 4) {
+      for (let k = 0; k < 12; k++) {
+        const ang = (k / 12) * Math.PI * 2;
+        const tx = rawX + Math.cos(ang) * r;
+        const tz = rawZ + Math.sin(ang) * r;
+        if (this.isOpenSeaPoint(tx, tz, 3.0)) {
+          return { x: tx, z: tz };
+        }
+      }
+    }
+    return { x: rawX, z: rawZ };
+  }
+
+  private constrainSeaMonsterToWater(
+    pt: { x: number; z: number },
+    fallbackX: number,
+    fallbackZ: number,
+    clearance = 2.4,
+  ): void {
+    const limit = WORLD_OCEAN_LIMIT - 12;
+    pt.x = THREE.MathUtils.clamp(pt.x, -limit, limit);
+    pt.z = THREE.MathUtils.clamp(pt.z, -limit, limit);
+    if (this.isOpenSeaPoint(pt.x, pt.z, clearance)) return;
+    if (this.isOpenSeaPoint(pt.x, fallbackZ, clearance)) {
+      pt.z = fallbackZ;
+      return;
+    }
+    if (this.isOpenSeaPoint(fallbackX, pt.z, clearance)) {
+      pt.x = fallbackX;
+      return;
+    }
+    pt.x = fallbackX;
+    pt.z = fallbackZ;
+  }
+
+  private initSeaMonsters(): void {
+    for (const sm of this.seaMonsters) {
+      if (sm.mesh.parent) sm.mesh.parent.remove(sm.mesh);
+      const clickIdx = this.overworldClickables.indexOf(sm.mesh);
+      if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
+    }
+    this.seaMonsters = [];
+
+    const diff = this.settings.difficulty;
+    const diffHpMult = diff === 'santai' ? 0.8 : diff === 'pendekar' ? 1.25 : 1.0;
+
+    for (let i = 0; i < SEA_MONSTER_SPAWNS.length; i++) {
+      const tpl = SEA_MONSTER_SPAWNS[i];
+      const spec = MONSTER_SPECS[tpl.type];
+      const safe = this.resolveSafeSeaSpawnPos(tpl.x, tpl.z);
+      const mesh = createMonsterMesh(tpl.type, this.palette);
+      mesh.position.set(safe.x, spec.hoverY, safe.z);
+
+      const ringRadius = Math.max(1.2, spec.hitRadius * 0.85);
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(ringRadius, ringRadius + 0.45, 24),
+        new THREE.MeshBasicMaterial({
+          color: 0x06b6d4,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.72,
+        }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.08 - spec.hoverY;
+      mesh.add(ring);
+      mesh.userData.combatRing = ring;
+
+      const mId = `sea_mob_${i}_${tpl.type}`;
+      mesh.userData.monsterId = mId;
+      this.overworldGroup.add(mesh);
+      this.overworldClickables.push(mesh);
+
+      const maxMobHp = Math.max(3, Math.round(spec.hitHp * diffHpMult));
+      this.seaMonsters.push({
+        id: mId,
+        type: tpl.type,
+        name: tpl.name,
+        zoneId: tpl.zoneId,
+        homeX: safe.x,
+        homeZ: safe.z,
+        x: safe.x,
+        y: spec.hoverY,
+        z: safe.z,
+        maxHp: spec.quizHp,
+        mobHp: maxMobHp,
+        maxMobHp,
+        rewardXp: spec.rewardXp + (diff === 'pendekar' ? 10 : 0),
+        rewardDiamonds: spec.rewardDiamonds,
+        rewardScore: spec.rewardScore,
+        combatOnly: true,
+        isSeaMonster: true,
+        aggroActive: false,
+        attackCooldown: 1.0 + Math.random() * 0.8,
+        windupTimer: -1,
+        lungeTimer: 0,
+        hitFlashTimer: 0,
+        mesh,
+        alive: true,
+        respawnTimer: 0,
+        patrolPhase: Math.random() * Math.PI * 2,
+        angryTimer: 0,
+      });
+    }
+  }
+
   private initOverworldMonsters(): void {
     this.monsters = [];
+    this.initSeaMonsters();
   }
 
   private pickRandomWorldTimeTick(): number {
@@ -2055,12 +2187,19 @@ export class RpgWorldEngine {
   }
 
   private refreshWeaponVisual(): void {
-    const hasEquippedWeapon =
-      this.activeHotbarSlot <= 7 && this.ownedWeapons.has(this.activeWeapon) && !this.isSwimming;
-    setHeroWeaponVisual(this.hero, this.activeWeapon, hasEquippedWeapon);
+    const canHoldWeapon =
+      this.activeHotbarSlot <= 7 &&
+      this.ownedWeapons.has(this.activeWeapon) &&
+      (!this.isSwimming || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
+    setHeroWeaponVisual(this.hero, this.activeWeapon, canHoldWeapon);
 
     if (this.isSwimming) {
-      setFirstPersonHeldVisual(this.fpViewRig, 'bare', this.activeWeapon, this.pickaxeTier);
+      setFirstPersonHeldVisual(
+        this.fpViewRig,
+        canHoldWeapon ? 'weapon' : 'bare',
+        this.activeWeapon,
+        this.pickaxeTier,
+      );
     } else if (this.activeHotbarSlot === 8) {
       setFirstPersonHeldVisual(this.fpViewRig, 'pickaxe', this.activeWeapon, this.pickaxeTier);
     } else if (this.activeHotbarSlot === 9) {
@@ -2069,7 +2208,7 @@ export class RpgWorldEngine {
       setFirstPersonHeldVisual(this.fpViewRig, 'shield_block', this.activeWeapon, this.pickaxeTier);
     } else if (this.activeHotbarSlot === 11) {
       setFirstPersonHeldVisual(this.fpViewRig, 'tnt', this.activeWeapon, this.pickaxeTier);
-    } else if (hasEquippedWeapon) {
+    } else if (canHoldWeapon) {
       setFirstPersonHeldVisual(this.fpViewRig, 'weapon', this.activeWeapon, this.pickaxeTier);
     } else {
       setFirstPersonHeldVisual(this.fpViewRig, 'bare', this.activeWeapon, this.pickaxeTier);
@@ -2372,6 +2511,7 @@ export class RpgWorldEngine {
 
     this.syncShootersForDifficulty();
     this.syncOverworldMonstersByDiff();
+    this.initSeaMonsters();
 
     const sp = OVERWORLD_ANCHORS.desaSpawn;
     if (
@@ -2516,6 +2656,7 @@ export class RpgWorldEngine {
     this.refreshWeaponVisual();
     this.syncShootersForDifficulty(true);
     this.syncOverworldMonstersByDiff();
+    this.initSeaMonsters();
     this.updateOverworldDayNightAtmosphere(0, false);
 
     const sp = OVERWORLD_ANCHORS.desaSpawn;
@@ -5310,7 +5451,15 @@ export class RpgWorldEngine {
     }
 
     const len = Math.max(0.25, Math.hypot(dirX, dirZ));
-    if (this.worldMode === 'overworld') {
+    if (m.isSeaMonster && this.worldMode === 'overworld') {
+      const knockPt = {
+        x: m.x + (dirX / len) * 1.35,
+        z: m.z + (dirZ / len) * 1.35,
+      };
+      this.constrainSeaMonsterToWater(knockPt, m.x, m.z, 2.2);
+      m.x = knockPt.x;
+      m.z = knockPt.z;
+    } else if (this.worldMode === 'overworld') {
       const knockPt = {
         x: m.x + (dirX / len) * 1.15,
         z: m.z + (dirZ / len) * 1.15,
@@ -5323,7 +5472,7 @@ export class RpgWorldEngine {
       m.z = THREE.MathUtils.clamp(m.z + (dirZ / len) * 1.15, -18, 18);
     }
     soundEngine.playHit();
-    this.spawnBurst(m.x, (m.y ?? 0) + 1.3, m.z, m.combatOnly ? 0xef4444 : 0x22c55e, 12);
+    this.spawnBurst(m.x, (m.y ?? 0) + 1.3, m.z, m.isSeaMonster ? 0x06b6d4 : m.combatOnly ? 0xef4444 : 0x22c55e, 12);
     this.triggerHitMarker(m.mobHp <= 0);
 
     if (m.mobHp <= 0) {
@@ -5340,15 +5489,18 @@ export class RpgWorldEngine {
 
   private handleRealTimeMonsterDefeated(m: RoamingMonster): void {
     m.alive = false;
-    m.respawnTimer = 0;
+    m.respawnTimer = m.isSeaMonster ? 45 : 0;
+    m.aggroActive = false;
+    m.windupTimer = -1;
+    m.lungeTimer = 0;
     m.mesh.visible = false;
-    if (this.worldMode === 'overworld') {
+    if (this.worldMode === 'overworld' && !m.isSeaMonster) {
       if (m.mesh.parent) m.mesh.parent.remove(m.mesh);
       const clickIdx = this.overworldClickables.indexOf(m.mesh);
       if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
     }
     soundEngine.playBoom();
-    this.spawnBurst(m.x, (m.y ?? 0) + 1.5, m.z, 0xfacc15, 26);
+    this.spawnBurst(m.x, (m.y ?? 0) + 1.5, m.z, m.isSeaMonster ? 0x22d3ee : 0xfacc15, 26);
 
     if (m.isCaveMob) {
       if (this.worldMode === 'dungeon' && this.dungeonState) {
@@ -5378,7 +5530,7 @@ export class RpgWorldEngine {
       return;
     }
 
-    // Combat-only Surface Monster, Cave Guardian, or Combat Ambush!
+    // Combat-only Surface Monster, Sea Monster, Cave Guardian, or Combat Ambush!
     if (this.worldMode === 'dungeon' && this.dungeonState) {
       this.markDungeonEnemyDefeated(this.dungeonState.zoneId, m.id);
     }
@@ -5399,7 +5551,12 @@ export class RpgWorldEngine {
       this.hp += 1;
     }
 
-    if (this.dungeonState && !m.isAmbush) {
+    if (m.isSeaMonster) {
+      this.showBanner(
+        `🌊 ${m.name} ditaklukkan! Laut aman sementara · +${m.rewardXp} XP · +${diamondDrop} 💎 · +${ammoDrop} Peluru${healed ? ' · +1 ❤️' : ''}!`,
+        3.2,
+      );
+    } else if (this.dungeonState && !m.isAmbush) {
       const remainingNonBoss = this.dungeonMonsters.filter(
         (item) => item.alive && !item.isBoss && !item.isAmbush && !item.isCaveMob,
       ).length;
@@ -5990,11 +6147,20 @@ export class RpgWorldEngine {
   public fireActiveWeapon(fromHold = false, skipTurnWait = false): void {
     if (this.phase !== 'playing') return;
     if (this.isSwimming) {
-      if (!fromHold) {
-        this.showBanner('🏊 Tidak bisa menyerang saat berenang! Naik ke pantai atau dermaga dulu.', 2.2);
-        soundEngine.playNo();
+      const slotWpn = this.activeHotbarSlot <= 7 ? WEAPON_ORDER[this.activeHotbarSlot] : undefined;
+      const canShootWater = Boolean(
+        slotWpn && this.ownedWeapons.has(slotWpn) && SEA_CAPABLE_WEAPONS.has(slotWpn),
+      );
+      if (!canShootWater) {
+        if (!fromHold) {
+          this.showBanner(
+            '🏊 Senjata awal tidak bisa ditembakkan saat berenang! Pakai Senjata Wilayah (Emas/Cepat/Hijau/Langit/Berat/Kristal) atau naik ke pantai.',
+            2.6,
+          );
+          soundEngine.playNo();
+        }
+        return;
       }
-      return;
     }
     this.lastInputActivityMs = performance.now();
 
@@ -6227,6 +6393,7 @@ export class RpgWorldEngine {
       const rz = -dirX * sinO + dirZ * cosO;
       this.spawnProjectile({
         fromPlayer: true,
+        weaponId: this.activeWeapon,
         x: muzzleX,
         y: muzzleY,
         z: muzzleZ,
@@ -6244,6 +6411,7 @@ export class RpgWorldEngine {
 
   private spawnProjectile(opts: {
     fromPlayer: boolean;
+    weaponId?: WeaponId;
     x: number;
     y?: number;
     z: number;
@@ -6259,6 +6427,7 @@ export class RpgWorldEngine {
     if (!slot) return;
     slot.active = true;
     slot.fromPlayer = opts.fromPlayer;
+    slot.weaponId = opts.weaponId;
     slot.x = opts.x;
     slot.y = opts.y ?? 1.35;
     slot.z = opts.z;
@@ -6279,7 +6448,7 @@ export class RpgWorldEngine {
   private getActiveMonsters(): RoamingMonster[] {
     if (this.worldMode === 'dungeon') return this.dungeonMonsters;
     if (this.worldMode === 'academy') return this.academyMonsters;
-    return this.monsters;
+    return [...this.monsters, ...this.seaMonsters];
   }
 
   private engageMonster(m: RoamingMonster): void {
@@ -7255,9 +7424,21 @@ export class RpgWorldEngine {
               m.fuseTimer = m.type === 'cave_spider' ? -1 : undefined;
               m.y = FLYING_MONSTER_TYPES.has(m.type) ? 3.4 : 0;
               m.mesh.scale.setScalar(spec.baseScale);
+            } else if (m.isSeaMonster) {
+              m.mobHp = m.maxMobHp ?? spec.hitHp;
+              m.aggroActive = false;
+              m.windupTimer = -1;
+              m.lungeTimer = 0;
+              m.y = spec.hoverY;
+              m.mesh.position.set(m.x, m.y, m.z);
+              m.mesh.scale.setScalar(spec.baseScale);
             }
           }
         }
+        continue;
+      }
+      if (m.isSeaMonster && this.worldMode === 'overworld') {
+        this.updateSeaMonster(m, dt, baseSpeedMult);
         continue;
       }
       if (m.sunburnTimer !== undefined) {
@@ -8627,7 +8808,9 @@ export class RpgWorldEngine {
     const landImpulse =
       this.jumpLandTimer > 0 ? Math.sin((this.jumpLandTimer / 0.16) * Math.PI) : 0;
 
-    applyHeroWeaponPose(this.hero, this.activeWeapon, hasEquippedWeapon && !this.isSwimming, {
+    const canHoldInCurrentEnv =
+      hasEquippedWeapon && (!this.isSwimming || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
+    applyHeroWeaponPose(this.hero, this.activeWeapon, canHoldInCurrentEnv, {
       speed,
       walkCycle: this.walkCycle,
       aimAlpha,
@@ -9840,6 +10023,25 @@ export class RpgWorldEngine {
             p.active = false;
             p.mesh.visible = false;
 
+            if (m.isSeaMonster) {
+              const eff = spec.effectiveWeapons;
+              if (eff && (!p.weaponId || !eff.includes(p.weaponId))) {
+                soundEngine.playNo();
+                this.spawnBurst(m.x, mBaseY + 1.5, m.z, 0x38bdf8, 10);
+                const usedName = p.weaponId ? WEAPONS[p.weaponId].name : 'Senjata ini';
+                const minReq =
+                  eff[0] === 'emas'
+                    ? 'Emas / Cepat / Hijau / Langit / Berat / Kristal'
+                    : eff[0] === 'saus'
+                    ? 'Cepat / Hijau / Langit / Berat / Kristal'
+                    : 'Hijau / Langit / Berat / Kristal';
+                this.showBanner(
+                  `🛡️ ${usedName} memantul dari kulit ${m.name}! Pakai senjata laut: ${minReq}!`,
+                  2.6,
+                );
+                break;
+              }
+            }
             if (m.isCaveMob || m.combatOnly) {
               this.damageRealTimeMonster(m, p.damage, p.vx, p.vz);
               break;
@@ -10102,7 +10304,250 @@ export class RpgWorldEngine {
       });
     }
 
+    for (const m of this.seaMonsters) {
+      if (!m.alive) continue;
+      const distSq = (m.x - this.heroPos.x) ** 2 + (m.z - this.heroPos.z) ** 2;
+      if (distSq > 26 * 26) continue;
+      const spec = MONSTER_SPECS[m.type];
+      const pos = projectPoint(
+        m.x,
+        (m.y ?? spec.hoverY) + Math.max(2.6, spec.hitHalfH * 1.9),
+        m.z,
+      );
+      if (pos) {
+        const canHurt =
+          this.ownedWeapons.has(this.activeWeapon) &&
+          (!spec.effectiveWeapons || spec.effectiveWeapons.includes(this.activeWeapon));
+        const minReq =
+          spec.effectiveWeapons?.[0] === 'emas'
+            ? 'Emas+'
+            : spec.effectiveWeapons?.[0] === 'saus'
+            ? 'Cepat+'
+            : 'Hijau+';
+        labels.push({
+          id: `sea_${m.id}`,
+          x: pos.x,
+          y: pos.y,
+          title: `🌊 ${m.name} (${m.mobHp ?? spec.hitHp}/${m.maxMobHp ?? spec.hitHp})`,
+          subtext: canHurt ? 'Senjata cocok untuk berburu' : `Butuh Senjata ${minReq}`,
+          kind: 'monster',
+        });
+      }
+    }
+
     return labels;
+  }
+
+  private updateSeaMonster(m: RoamingMonster, dt: number, baseSpeedMult: number): void {
+    const spec = MONSTER_SPECS[m.type];
+    const dxHero = this.heroPos.x - m.x;
+    const dzHero = this.heroPos.z - m.z;
+    const distSqHero = dxHero * dxHero + dzHero * dzHero;
+    if (distSqHero > 82 * 82 && !m.aggroActive) {
+      return;
+    }
+
+    const distH = Math.sqrt(distSqHero);
+    if (m.hitFlashTimer && m.hitFlashTimer > 0) {
+      m.hitFlashTimer = Math.max(0, m.hitFlashTimer - dt);
+    }
+    if (m.attackCooldown && m.attackCooldown > 0) {
+      m.attackCooldown = Math.max(0, m.attackCooldown - dt);
+    }
+    if (m.attackAnimTimer && m.attackAnimTimer > 0) {
+      m.attackAnimTimer = Math.max(0, m.attackAnimTimer - dt);
+    }
+
+    const ring = m.mesh.userData.combatRing as THREE.Object3D | undefined;
+    if (ring) {
+      ring.rotation.z += dt * 1.9;
+    }
+
+    // Swimmers trigger predators from far away; on dry land, beasts only lock on if hero stands close to shore
+    const effectiveAggro = this.isSwimming
+      ? spec.aggroRange
+      : Math.min(11.5, spec.aggroRange * 0.48);
+
+    if (this.phase === 'playing' && distH < effectiveAggro) {
+      if (!m.aggroActive && this.isSwimming) {
+        soundEngine.playMonster();
+      }
+      m.aggroActive = true;
+    } else if (distH > spec.aggroRange + 10) {
+      m.aggroActive = false;
+    }
+
+    // Charybdis Maw & Abyssal Kraken whirlpool suction current when hero is swimming nearby!
+    if (
+      this.phase === 'playing' &&
+      this.isSwimming &&
+      (m.type === 'charybdis_maw' || m.type === 'abyssal_kraken')
+    ) {
+      const pullRad = m.type === 'charybdis_maw' ? 14.0 : 9.5;
+      if (distH < pullRad && distH > 1.2) {
+        const pullStrength = (m.type === 'charybdis_maw' ? 3.8 : 2.3) * (1 - distH / pullRad);
+        const pullPtX = this.heroPos.x - (dxHero / distH) * pullStrength * dt;
+        const pullPtZ = this.heroPos.z - (dzHero / distH) * pullStrength * dt;
+        if (!sampleArchipelagoTerrain(pullPtX, pullPtZ).isLandOrBridge) {
+          this.heroPos.x = pullPtX;
+          this.heroPos.z = pullPtZ;
+        }
+      }
+    }
+
+    let nextMx = m.x;
+    let nextMz = m.z;
+    const isCharybdis = m.type === 'charybdis_maw';
+    let monMode: 'idle' | 'patrol' | 'windup' | 'attack' | 'shoot' | 'hit' = 'patrol';
+    let monAttackProg = 0;
+    const meleeReach = 2.2 + spec.hitRadius * 0.55;
+
+    if (m.lungeTimer && m.lungeTimer > 0) {
+      m.lungeTimer = Math.max(0, m.lungeTimer - dt);
+      if (!isCharybdis && this.phase === 'playing' && distH > 0.2) {
+        const spd = 10.2 * spec.speedMult * dt;
+        nextMx += (dxHero / distH) * spd;
+        nextMz += (dzHero / distH) * spd;
+      }
+      m.mesh.rotation.y = Math.atan2(dxHero, dzHero);
+      monMode = 'attack';
+      monAttackProg = 1 - m.lungeTimer / 0.32;
+
+      if (
+        this.phase === 'playing' &&
+        this.encounterGraceTimer <= 0 &&
+        distH < meleeReach &&
+        this.heroPos.y < 2.2
+      ) {
+        const dmg = spec.atkDamageHearts;
+        this.hp = Math.max(0, this.hp - dmg);
+        this.encounterGraceTimer = 1.5;
+        soundEngine.playHurt();
+        const len = Math.max(0.2, distH);
+        this.heroVel.set((dxHero / len) * 16, 0, (dzHero / len) * 16);
+        this.heroVelY = 4.2;
+        this.spawnBurst(this.heroPos.x, Math.max(0.4, this.heroPos.y + 1.1), this.heroPos.z, 0x22d3ee, 16);
+        this.showBanner(
+          `🌊 Diserang ${m.name}! Pakai senjata wilayah untuk membunuhnya (-${dmg} ❤️)`,
+          2.6,
+        );
+        if (this.hp <= 0) {
+          this.phase = 'gameover';
+          soundEngine.playLose();
+          this.pushHud(true);
+          return;
+        }
+      }
+    } else if (m.windupTimer !== undefined && m.windupTimer > 0) {
+      m.windupTimer -= dt;
+      m.mesh.rotation.y = Math.atan2(dxHero, dzHero);
+      monMode = 'windup';
+      if (m.windupTimer <= 0) {
+        m.windupTimer = -1;
+        m.lungeTimer = 0.32;
+        soundEngine.playHit();
+      }
+    } else if (this.phase === 'playing' && m.aggroActive && distH > 0.2) {
+      m.mesh.rotation.y = Math.atan2(dxHero, dzHero);
+      if (distH < meleeReach + 0.6 && (m.attackCooldown ?? 0) <= 0 && this.heroPos.y < 2.4) {
+        m.windupTimer = 0.48;
+        m.attackCooldown = this.settings.difficulty === 'pendekar' ? 1.7 : 2.2;
+        soundEngine.playMonster();
+      } else {
+        if (!isCharybdis && this.isSwimming && distH > 1.8) {
+          const spd = 4.0 * spec.speedMult * baseSpeedMult;
+          nextMx += (dxHero / distH) * spd * dt;
+          nextMz += (dzHero / distH) * spd * dt;
+        } else if (!isCharybdis && !this.isSwimming && distH > 3.2) {
+          // Hover menacingly near coastal water if hero fights from shore
+          const spd = 2.4 * spec.speedMult * baseSpeedMult;
+          nextMx += (dxHero / distH) * spd * dt;
+          nextMz += (dzHero / distH) * spd * dt;
+        }
+
+        if (
+          spec.ranged &&
+          distH >= 4.2 &&
+          distH < 20.5 &&
+          (m.attackCooldown ?? 0) <= 0 &&
+          (this.isSwimming || this.heroPos.y < 4.5)
+        ) {
+          const pSpeed = this.settings.difficulty === 'pendekar' ? 11.2 : 9.2;
+          const mFireY = (m.y ?? spec.hoverY) + spec.hitCenterY;
+          const aimY = this.heroPos.y + 1.25 - mFireY;
+          const dist3D = Math.max(0.5, Math.hypot(dxHero, aimY, dzHero));
+          const spitColor =
+            m.type === 'electric_eel_drakon'
+              ? 0xfacc15
+              : m.type === 'toxic_sea_viper'
+              ? 0x4ade80
+              : m.type === 'venomous_box_jelly'
+              ? 0xe879f9
+              : m.type === 'abyssal_kraken'
+              ? 0xa855f7
+              : 0x2dd4bf;
+          this.spawnProjectile({
+            fromPlayer: false,
+            x: m.x + (dxHero / distH) * (0.9 * spec.baseScale),
+            y: mFireY,
+            z: m.z + (dzHero / distH) * (0.9 * spec.baseScale),
+            vx: (dxHero / dist3D) * pSpeed,
+            vy: (aimY / dist3D) * pSpeed,
+            vz: (dzHero / dist3D) * pSpeed,
+            damage: 1,
+            shieldDamage: 1,
+            pierceLeft: 0,
+            colorHex: spitColor,
+          });
+          m.attackCooldown = this.settings.difficulty === 'pendekar' ? 2.4 : 3.2;
+          m.attackAnimTimer = 0.32;
+        }
+      }
+    } else {
+      m.patrolClock = (m.patrolClock ?? m.patrolPhase) + dt * 0.62 * spec.speedMult * baseSpeedMult;
+      if (!isCharybdis) {
+        const p = m.patrolClock;
+        const patrolRad = spec.tier === 'giant' ? 8.5 : 10.5;
+        nextMx = m.homeX + Math.cos(p) * patrolRad;
+        nextMz = m.homeZ + Math.sin(p * 0.78) * (patrolRad * 0.78);
+        m.mesh.rotation.y = Math.atan2(
+          -Math.sin(p) * patrolRad,
+          Math.cos(p * 0.78) * (patrolRad * 0.78) * 0.78,
+        );
+      }
+    }
+
+    if (m.hitFlashTimer && m.hitFlashTimer > 0) {
+      monMode = 'hit';
+    } else if ((m.attackAnimTimer ?? 0) > 0 && monMode === 'patrol') {
+      monMode = 'shoot';
+      monAttackProg = 1 - (m.attackAnimTimer ?? 0) / 0.32;
+    }
+
+    const prevX = m.x;
+    const prevZ = m.z;
+    const seaPt = { x: nextMx, z: nextMz };
+    this.constrainSeaMonsterToWater(seaPt, prevX, prevZ, 2.6);
+    m.x = seaPt.x;
+    m.z = seaPt.z;
+
+    const seaSpd = Math.hypot(m.x - prevX, m.z - prevZ) / Math.max(0.001, dt);
+    m.walkPhase = (m.walkPhase ?? m.patrolPhase) + dt * (2.6 + seaSpd * 0.8);
+    m.y = spec.hoverY + Math.sin(this.elapsed * 2.4 + m.patrolPhase) * 0.14;
+    m.mesh.position.set(m.x, m.y, m.z);
+    m.mesh.scale.setScalar(spec.baseScale);
+
+    if (distSqHero <= 66 * 66) {
+      animateMonsterRig(m.mesh, {
+        mode: monMode,
+        speed: seaSpd,
+        walkPhase: m.walkPhase,
+        elapsed: this.elapsed,
+        phase: m.patrolPhase,
+        attackProgress: monAttackProg,
+        dt,
+      });
+    }
   }
 
   private pickHeroIdleThought(): string {
@@ -10262,6 +10707,17 @@ export class RpgWorldEngine {
           z: m.z,
           kind: m.combatOnly ? 'monster_brawl' : 'monster_quiz',
           color: m.combatOnly ? '#ef4444' : '#a855f7',
+          label: m.name,
+        });
+      }
+      for (const m of this.seaMonsters) {
+        if (!m.alive) continue;
+        blips.push({
+          id: `sea_${m.id}`,
+          x: m.x,
+          z: m.z,
+          kind: 'sea_monster',
+          color: '#06b6d4',
           label: m.name,
         });
       }

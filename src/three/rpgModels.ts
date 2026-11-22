@@ -812,7 +812,13 @@ export function applyHeroWeaponPose(
 
   let targetBodyRotX = 0;
   if (isSwimming) {
-    if (moving) {
+    if (hasWeapon && aimAlpha > 0.12) {
+      const tread = Math.sin(elapsed * 3.8);
+      targetBodyRotX = 0.08;
+      targetBodyY = 0.08 + Math.sin(elapsed * 2.6) * 0.05;
+      targetLeftLegX = tread * 0.42;
+      targetRightLegX = -tread * 0.42;
+    } else if (moving) {
       // Lift body pivot up toward water surface so forward-pitched head, shoulders & freestyle strokes stay above waves!
       targetBodyRotX = 1.14;
       targetBodyY = 0.84 + Math.sin(walkCycle * 2) * 0.04;
@@ -1417,12 +1423,46 @@ export function animateMonsterRig(mesh: THREE.Object3D, input: MonsterAnimInput)
     });
   }
   if (rig.leftWing && rig.rightWing) {
-    const flapSpeed = rig.type === 'obsidian_hydra' ? 9 : 15;
-    const flap = Math.sin(elapsed * flapSpeed + phase) * (rig.type === 'obsidian_hydra' ? 0.42 : 0.6);
+    const isRay = rig.type === 'spiny_mega_stingray';
+    const flapSpeed = isRay ? 4.2 : rig.type === 'obsidian_hydra' ? 9 : 15;
+    const flapAmp = isRay ? 0.26 : rig.type === 'obsidian_hydra' ? 0.42 : 0.6;
+    const flap = Math.sin(elapsed * flapSpeed + phase) * flapAmp;
     rig.leftWing.rotation.z = flap;
     rig.rightWing.rotation.z = -flap;
   }
-  if (rig.extraSpin) {
+  if (rig.jawPivot) {
+    const snapCycle =
+      mode === 'attack' || mode === 'shoot'
+        ? 0.06 + Math.sin(Math.min(1, attackProgress) * Math.PI) * 0.56
+        : mode === 'windup'
+        ? 0.48 + Math.sin(elapsed * 18) * 0.08
+        : 0.16 + Math.sin(elapsed * 3.2 + phase) * 0.11;
+    rig.jawPivot.rotation.x = THREE.MathUtils.damp(rig.jawPivot.rotation.x, snapCycle, 16, dt);
+  }
+  if (rig.tentacles) {
+    const tSpd = mode === 'attack' || mode === 'shoot' ? 6.4 : 3.2;
+    rig.tentacles.forEach((tent, idx) => {
+      const wave = Math.sin(elapsed * tSpd + phase + idx * 0.85);
+      tent.rotation.x = wave * (rig.type === 'venomous_box_jelly' ? 0.22 : 0.28);
+      tent.rotation.z = Math.cos(elapsed * (tSpd * 0.82) + idx * 1.1) * 0.18;
+    });
+  }
+  if (rig.segments) {
+    const sSpd = speed > 0.25 ? 7.2 : 3.6;
+    rig.segments.forEach((seg, idx) => {
+      const sWave = Math.sin(elapsed * sSpd + phase - idx * 0.65);
+      seg.rotation.y = sWave * 0.26;
+      seg.position.y += Math.sin(elapsed * 2.4 + idx) * 0.0015;
+    });
+  }
+  if (rig.vortexRing) {
+    rig.vortexRing.rotation.y += dt * (mode === 'windup' || mode === 'attack' ? 3.8 : 1.75);
+  }
+  if (rig.type === 'shadow_angler' && rig.weaponGroup) {
+    rig.weaponGroup.rotation.x = Math.sin(elapsed * 3.4 + phase) * 0.16;
+    rig.weaponGroup.rotation.z = Math.cos(elapsed * 2.3 + phase) * 0.14;
+  }
+  if (rig.extraSpin && rig.extraSpin !== rig.vortexRing) {
     rig.extraSpin.rotation.y += dt * 2.4;
   }
   if (rig.eyes) {
