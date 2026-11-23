@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
+  Heart,
   HelpCircle,
   Lock,
   Mic,
@@ -94,6 +95,7 @@ interface RpgHudProps {
   voiceLastAction?: string;
   onToggleVoice?: () => void;
   multiplayerActive?: boolean;
+  onHelpTeammate?: () => void;
 }
 
 export const RpgHud: React.FC<RpgHudProps> = ({
@@ -136,6 +138,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   voiceLastAction = '',
   onToggleVoice,
   multiplayerActive = false,
+  onHelpTeammate,
 }) => {
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [touchUsed, setTouchUsed] = useState(false);
@@ -1989,6 +1992,30 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               className="pointer-events-none h-full w-full select-none object-contain"
               draggable={false}
             />
+          </button>
+        )}
+
+        {multiplayerActive && hud.nearbyInjuredPeer && onHelpTeammate && (
+          <button
+            type="button"
+            onClick={onHelpTeammate}
+            title={`Bantu ${hud.nearbyInjuredPeer.displayName} (+1 ❤️) [R]`}
+            aria-label={`Bantu ${hud.nearbyInjuredPeer.displayName}`}
+            className={`relative flex items-center gap-1.5 rounded-full border px-3 py-2 text-[11px] font-black shadow-lg transition-transform hover:scale-105 active:scale-95 ${
+              (hud.allyHelpCooldownSec ?? 0) > 0
+                ? 'border-slate-400/50 bg-slate-900/90 text-slate-300'
+                : 'border-emerald-300/80 bg-gradient-to-r from-emerald-500 to-teal-600 text-white shadow-[0_5px_16px_rgba(16,185,129,0.5)]'
+            }`}
+          >
+            <Heart className="h-4 w-4 shrink-0 fill-current" />
+            <span className="max-w-[96px] truncate">
+              {(hud.allyHelpCooldownSec ?? 0) > 0
+                ? `${Math.ceil(hud.allyHelpCooldownSec ?? 0)}d`
+                : `Bantu ${hud.nearbyInjuredPeer.displayName}`}
+            </span>
+            <span className="rounded bg-slate-950/60 px-1 py-0.5 font-mono-nums text-[9px] text-emerald-100">
+              R
+            </span>
           </button>
         )}
 

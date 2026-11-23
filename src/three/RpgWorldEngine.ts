@@ -35,6 +35,7 @@ import {
 } from '../data/vocabCatalog';
 import {
   getCharacterPreset,
+  getMultiplayerGroupSpawnPoint,
   loadSavedCharacterId,
   loadSavedPlayerName,
   RANDOM_SPAWN_POINTS,
@@ -58,8 +59,10 @@ import {
   LiveMapSnapshot,
   LocalPlayerSyncPacket,
   MonsterType,
+  NearbyInjuredPeer,
   OceanMaterials,
   OceanSurvivalState,
+  P2pReliableMessage,
   PickaxeTier,
   ProjectedLabel,
   RadarBlip,
@@ -74,6 +77,8 @@ import {
   StoryDialogState,
   SwimStyleId,
   SwimStylePreference,
+  SyncMonsterSnapshot,
+  SyncShooterSnapshot,
   WeaponId,
   WordProgress,
   WorldLocationMode,
@@ -297,6 +302,7 @@ interface Projectile3D {
   hitIds: Set<string>;
   life: number;
   mesh: THREE.Mesh;
+  visualOnly?: boolean;
 }
 
 interface ParticleItem {
@@ -485,6 +491,7 @@ export interface RpgEngineCallbacks {
   onOpenAcademyExam: (skill: 'listening' | 'reading' | 'writing' | 'speaking' | 'full') => void;
   onOpenCaveSeal: (seal: CaveSealContext) => void;
   onOpenCrafting: () => void;
+  onMultiplayerPacket?: (pkt: P2pReliableMessage, targetUid?: string) => void;
 }
 
 export class RpgWorldEngine {
@@ -904,6 +911,23 @@ export class RpgWorldEngine {
   private localCharacterId: CharacterPresetId = loadSavedCharacterId();
   private localPlayerName = loadSavedPlayerName('Hoot');
   private multiplayerActive = false;
+  private localMultiplayerUid = '';
+  private isMultiplayerHost = true;
+  private hasConnectedPeers = false;
+  private allyHelpCooldown = 0;
+  private nearbyInjuredPeer: NearbyInjuredPeer | null = null;
+  private localMabarStats = {
+    kills: 0,
+    assists: 0,
+    helps: 0,
+    challenges: 0,
+    zonesCleared: 0,
+  };
+  private monsterDamageContributors = new Map<string, Set<string>>();
+  private peerMonsterTargets = new Map<
+    string,
+    { x: number; y: number; z: number; yaw: number; aggroActive?: boolean }
+  >();
   private remotePeers = new Map<
     string,
     {
@@ -1357,6 +1381,7 @@ export class RpgWorldEngine {
   }
 
   private saveProgress(): void {
+    if (this.multiplayerActive) return;
     try {
       // Sync live overworld night shooter states before saving
       if (this.worldMode === 'overworld' && this.nightShooterSaved.length > 0) {
@@ -2357,6 +2382,9 @@ export class RpgWorldEngine {
         );
       }
     }
+    if (this.multiplayerActive && this.hasConnectedPeers && this.isWorldAuthority()) {
+      this.emitMultiplayerPacket(this.buildWorldSyncPacket());
+    }
     this.pushHud(true);
   }
 
@@ -3082,14 +3110,799 @@ export class RpgWorldEngine {
     applyHeroAppearance(this.hero, getCharacterPreset(characterId).colors);
   }
 
-  public setMultiplayerActive(active: boolean): void {
+  public setMultiplayerActive(active: boolean, localUid?: string): void {
     this.multiplayerActive = active;
+    if (typeof localUid === 'string') {
+      this.localMultiplayerUid = localUid;
+    }
     if (!active) {
       for (const peer of this.remotePeers.values()) {
         this.scene.remove(peer.rig.root);
       }
       this.remotePeers.clear();
+      this.peerMonsterTargets.clear();
+      this.monsterDamageContributors.clear();
+      this.nearbyInjuredPeer = null;
+      this.allyHelpCooldown = 0;
+      this.isMultiplayerHost = true;
+      this.hasConnectedPeers = false;
+      this.localMultiplayerUid = '';
     }
+  }
+
+  public setMultiplayerRole(isHost: boolean, hasPeers: boolean): void {
+    this.isMultiplayerHost = isHost;
+    this.hasConnectedPeers = hasPeers;
+  }
+
+  private isWorldAuthority(): boolean {
+    return !this.multiplayerActive || this.isMultiplayerHost;
+  }
+
+  public isMultiplayerWorldHost(): boolean {
+    return this.multiplayerActive && this.isMultiplayerHost;
+  }
+
+  private emitMultiplayerPacket(pkt: P2pReliableMessage, targetUid?: string): void {
+    if (!this.multiplayerActive) return;
+    this.callbacks.onMultiplayerPacket?.(pkt, targetUid);
+  }
+
+  private emitProgressSync(): void {
+    if (!this.multiplayerActive || !this.hasConnectedPeers) return;
+    this.emitMultiplayerPacket(this.buildProgressSyncPacket());
+  }
+
+  public buildProgressSyncPacket(): P2pReliableMessage {
+    return {
+      t: 'prog',
+      lz: Array.from(this.liberatedZones),
+      dbz: Array.from(this.defeatedBossZones),
+      dc: {
+        desa_sapaan: [...(this.areaDoorsCleared.desa_sapaan || [])],
+        pasar_rasa: [...(this.areaDoorsCleared.pasar_rasa || [])],
+        hutan_satwa: [...(this.areaDoorsCleared.hutan_satwa || [])],
+        gerbang_kota: [...(this.areaDoorsCleared.gerbang_kota || [])],
+        menara_waktu: [...(this.areaDoorsCleared.menara_waktu || [])],
+        gua_portal: [...(this.areaDoorsCleared.gua_portal || [])],
+      },
+    };
+  }
+
+  private buildMonsterSnapshot(m: RoamingMonster): SyncMonsterSnapshot {
+    return {
+      id: m.id,
+      tp: m.type,
+      nm: m.name,
+      zn: m.zoneId,
+      x: Math.round(m.x * 100) / 100,
+      y: Math.round((m.y ?? getArchipelagoGroundY(m.x, m.z)) * 100) / 100,
+      z: Math.round(m.z * 100) / 100,
+      hx: Math.round(m.homeX * 100) / 100,
+      hz: Math.round(m.homeZ * 100) / 100,
+      yaw: Math.round(m.mesh.rotation.y * 100) / 100,
+      hp: m.mobHp ?? m.maxMobHp ?? 4,
+      mhp: m.maxMobHp ?? 4,
+      shp: m.stanceHp,
+      cmb: Boolean(m.combatOnly),
+      ngt: m.isNightMonster,
+      sea: m.isSeaMonster,
+      sky: m.isSkyMonster,
+      wids: m.wordIds,
+      rxp: m.rewardXp,
+      rdm: m.rewardDiamonds,
+      rsc: m.rewardScore,
+      al: m.alive,
+      agg: m.aggroActive,
+      sb: m.sunburnTimer !== undefined,
+    };
+  }
+
+  public buildWorldSyncPacket(): P2pReliableMessage {
+    const snapshots: SyncMonsterSnapshot[] = [
+      ...this.monsters.map((m) => this.buildMonsterSnapshot(m)),
+      ...this.seaMonsters.map((m) => this.buildMonsterSnapshot(m)),
+      ...this.skyMonsters.map((m) => this.buildMonsterSnapshot(m)),
+    ];
+    const shooterSnaps: SyncShooterSnapshot[] =
+      this.worldMode === 'overworld'
+        ? this.shooters.map((s) => ({
+            id: s.id,
+            x: Math.round(s.x * 100) / 100,
+            z: Math.round(s.z * 100) / 100,
+            hx: Math.round(s.homeX * 100) / 100,
+            hz: Math.round(s.homeZ * 100) / 100,
+            zn: s.zoneId,
+            hp: s.hp,
+            al: s.alive,
+            ngt: s.isNightShooter,
+          }))
+        : [];
+    return {
+      t: 'wsync',
+      day: this.dayCount,
+      tick: Math.round(this.worldTimeTick),
+      mode: this.surfaceWaveMode,
+      wtot: this.nightWaveTotal,
+      nseq: this.nightMonsterSeq,
+      m: snapshots,
+      s: shooterSnaps,
+      lz: Array.from(this.liberatedZones),
+      dbz: Array.from(this.defeatedBossZones),
+      dc: {
+        desa_sapaan: [...(this.areaDoorsCleared.desa_sapaan || [])],
+        pasar_rasa: [...(this.areaDoorsCleared.pasar_rasa || [])],
+        hutan_satwa: [...(this.areaDoorsCleared.hutan_satwa || [])],
+        gerbang_kota: [...(this.areaDoorsCleared.gerbang_kota || [])],
+        menara_waktu: [...(this.areaDoorsCleared.menara_waktu || [])],
+        gua_portal: [...(this.areaDoorsCleared.gua_portal || [])],
+      },
+    };
+  }
+
+  public buildMonsterMovePacket(): P2pReliableMessage {
+    const moveMonsters: Array<{
+      id: string;
+      x: number;
+      y: number;
+      z: number;
+      yaw: number;
+      hp: number;
+      al: boolean;
+      agg?: boolean;
+    }> = [];
+    for (const pool of [this.monsters, this.seaMonsters, this.skyMonsters]) {
+      for (const m of pool) {
+        if (!m.alive && m.respawnTimer <= 0) continue;
+        moveMonsters.push({
+          id: m.id,
+          x: Math.round(m.x * 100) / 100,
+          y: Math.round((m.y ?? getArchipelagoGroundY(m.x, m.z)) * 100) / 100,
+          z: Math.round(m.z * 100) / 100,
+          yaw: Math.round(m.mesh.rotation.y * 100) / 100,
+          hp: m.mobHp ?? m.maxMobHp ?? 4,
+          al: m.alive,
+          agg: m.aggroActive,
+        });
+      }
+    }
+    const moveShooters: Array<{ id: string; x: number; z: number; hp: number; al: boolean }> =
+      this.worldMode === 'overworld'
+        ? this.shooters
+            .filter((s) => s.alive)
+            .map((s) => ({
+              id: s.id,
+              x: Math.round(s.x * 100) / 100,
+              z: Math.round(s.z * 100) / 100,
+              hp: s.hp,
+              al: s.alive,
+            }))
+        : [];
+    return {
+      t: 'msync',
+      m: moveMonsters,
+      s: moveShooters,
+    };
+  }
+
+  public getLocalStatsPacket(uidOverride?: string): P2pReliableMessage {
+    const uid = uidOverride || this.localMultiplayerUid || 'local';
+    const zoneId =
+      this.worldMode === 'dungeon' && this.dungeonState
+        ? this.dungeonState.zoneId
+        : getZoneForPosition(this.heroPos.x, this.heroPos.z);
+    const zoneName =
+      this.worldMode === 'academy'
+        ? 'Istana IELTS'
+        : this.worldMode === 'ocean'
+        ? getOceanZoneInfo(this.heroPos.z, this.heroPos.y).label
+        : ZONE_INFO[zoneId]?.name || 'Kepulauan';
+    return {
+      t: 'stats',
+      st: {
+        uid,
+        displayName: this.localPlayerName,
+        characterId: this.localCharacterId,
+        kills: this.localMabarStats.kills,
+        assists: this.localMabarStats.assists,
+        helps: this.localMabarStats.helps,
+        challenges: this.localMabarStats.challenges,
+        zonesCleared: this.liberatedZones.size,
+        personalScore: this.score,
+        hp: this.hp,
+        maxHp: this.maxHp,
+        worldMode: this.worldMode,
+        zoneName,
+        inChallenge:
+          this.phase === 'battle' || this.phase === 'learning' || this.phase === 'academy',
+        updatedAtMs: Date.now(),
+      },
+    };
+  }
+
+  private applyProgressSync(
+    lz: ZoneId[],
+    dbz: ZoneId[],
+    dc: Record<ZoneId, number[]>,
+  ): void {
+    let changed = false;
+    for (const z of lz) {
+      if (!this.liberatedZones.has(z)) {
+        this.liberatedZones.add(z);
+        this.ribbons.add(z);
+        const q = this.quests.find((item) => item.zoneId === z);
+        if (q) {
+          q.accepted = true;
+          q.progress = q.target;
+          q.claimed = true;
+        }
+        changed = true;
+      }
+    }
+    for (const z of dbz) {
+      if (!this.defeatedBossZones.has(z)) {
+        this.defeatedBossZones.add(z);
+        changed = true;
+      }
+    }
+    if (dc) {
+      (Object.keys(this.areaDoorsCleared) as ZoneId[]).forEach((zId) => {
+        const incoming = dc[zId] || [];
+        const existing = new Set(this.areaDoorsCleared[zId] || []);
+        let zChanged = false;
+        for (const dIdx of incoming) {
+          if (!existing.has(dIdx)) {
+            existing.add(dIdx);
+            zChanged = true;
+          }
+        }
+        if (zChanged) {
+          this.areaDoorsCleared[zId] = Array.from(existing).sort((a, b) => a - b);
+          if (this.worldMode === 'dungeon' && this.dungeonState?.zoneId === zId) {
+            this.dungeonState.doorsCleared = [...this.areaDoorsCleared[zId]];
+            this.updateDungeonDoorVisuals();
+          }
+          changed = true;
+        }
+      });
+    }
+    this.localMabarStats.zonesCleared = this.liberatedZones.size;
+    if (changed) {
+      this.refreshAreaMists();
+      this.pushHud(true);
+    }
+  }
+
+  private findOverworldMonsterById(id: string): RoamingMonster | undefined {
+    return (
+      this.monsters.find((m) => m.id === id) ??
+      this.seaMonsters.find((m) => m.id === id) ??
+      this.skyMonsters.find((m) => m.id === id)
+    );
+  }
+
+  private spawnSyncedSurfaceMonster(snap: SyncMonsterSnapshot): RoamingMonster {
+    const mType: MonsterType = snap.tp in MONSTER_SPECS ? snap.tp : 'thorn_goblin';
+    const spec = MONSTER_SPECS[mType];
+    const mesh = createMonsterMesh(mType, this.palette);
+    mesh.position.set(snap.x, snap.y, snap.z);
+    mesh.rotation.y = snap.yaw;
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(0.85 * spec.baseScale, 1.15 * spec.baseScale, 20),
+      new THREE.MeshBasicMaterial({
+        color: snap.cmb ? 0xef4444 : 0xa855f7,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.78,
+      }),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.position.y = 0.06 - spec.hoverY;
+    mesh.add(ring);
+    mesh.userData.combatRing = ring;
+    mesh.userData.monsterId = snap.id;
+    mesh.visible = snap.al;
+    this.overworldGroup.add(mesh);
+    if (snap.al) {
+      this.overworldClickables.push(mesh);
+    }
+    this.peerMonsterTargets.set(snap.id, {
+      x: snap.x,
+      y: snap.y,
+      z: snap.z,
+      yaw: snap.yaw,
+      aggroActive: snap.agg,
+    });
+    return {
+      id: snap.id,
+      type: mType,
+      name: snap.nm || spec.name,
+      zoneId: snap.zn,
+      homeX: snap.hx,
+      homeZ: snap.hz,
+      x: snap.x,
+      y: snap.y,
+      z: snap.z,
+      maxHp: spec.quizHp,
+      mobHp: snap.hp,
+      maxMobHp: snap.mhp,
+      stanceHp: !snap.cmb ? (snap.shp ?? spec.stanceHp) : undefined,
+      rewardXp: snap.rxp,
+      rewardDiamonds: snap.rdm,
+      rewardScore: snap.rsc,
+      combatOnly: snap.cmb,
+      isNightMonster: snap.ngt,
+      wordIds: snap.wids,
+      aggroActive: snap.agg,
+      attackCooldown: 1.0,
+      windupTimer: -1,
+      lungeTimer: 0,
+      hitFlashTimer: 0,
+      mesh,
+      alive: snap.al,
+      respawnTimer: 0,
+      patrolPhase: Math.random() * Math.PI * 2,
+      angryTimer: 0,
+    };
+  }
+
+  private getNearestPlayerTarget(
+    x: number,
+    z: number,
+    worldMode: WorldLocationMode,
+  ): { x: number; y: number; z: number; dx: number; dz: number; distSq: number; dist: number; isLocal: boolean } {
+    let bestX = this.heroPos.x;
+    let bestY = this.heroPos.y;
+    let bestZ = this.heroPos.z;
+    let bestDx = bestX - x;
+    let bestDz = bestZ - z;
+    let bestDistSq = bestDx * bestDx + bestDz * bestDz;
+    let isLocal = true;
+
+    if (this.multiplayerActive && this.remotePeers.size > 0) {
+      for (const peer of this.remotePeers.values()) {
+        if (peer.state.worldMode !== worldMode) continue;
+        if (typeof peer.state.hp === 'number' && peer.state.hp <= 0) continue;
+        const dx = peer.pos.x - x;
+        const dz = peer.pos.z - z;
+        const dSq = dx * dx + dz * dz;
+        if (dSq < bestDistSq) {
+          bestDistSq = dSq;
+          bestX = peer.pos.x;
+          bestY = peer.pos.y;
+          bestZ = peer.pos.z;
+          bestDx = dx;
+          bestDz = dz;
+          isLocal = false;
+        }
+      }
+    }
+
+    return {
+      x: bestX,
+      y: bestY,
+      z: bestZ,
+      dx: bestDx,
+      dz: bestDz,
+      distSq: bestDistSq,
+      dist: Math.sqrt(bestDistSq),
+      isLocal,
+    };
+  }
+
+  private applyMonsterDefeatedRemotely(
+    m: RoamingMonster,
+    killerUid: string,
+    killerName: string,
+    assists: string[],
+    isQuiz?: boolean,
+  ): void {
+    const myUid = this.localMultiplayerUid || 'local';
+    m.alive = false;
+    m.respawnTimer = m.isSeaMonster ? 45 : m.isSkyMonster ? 50 : 0;
+    m.aggroActive = false;
+    m.windupTimer = -1;
+    m.lungeTimer = 0;
+    m.mesh.visible = false;
+    this.peerMonsterTargets.delete(m.id);
+    this.monsterDamageContributors.delete(m.id);
+    if (!m.isSeaMonster && !m.isSkyMonster) {
+      if (m.mesh.parent) m.mesh.parent.remove(m.mesh);
+      const clickIdx = this.overworldClickables.indexOf(m.mesh);
+      if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
+    }
+    this.spawnBurst(
+      m.x,
+      (m.y ?? getArchipelagoGroundY(m.x, m.z)) + 1.5,
+      m.z,
+      isQuiz ? 0xc084fc : m.isSeaMonster ? 0x22d3ee : m.isSkyMonster ? 0xf97316 : 0xfacc15,
+      24,
+    );
+
+    if (isQuiz) {
+      if (killerUid !== myUid) {
+        this.showBanner(`📘 ${killerName} menaklukkan ${m.name} lewat tantangan Inggris!`, 2.8);
+      }
+      this.pushHud(true);
+      return;
+    }
+
+    if (killerUid === myUid) {
+      this.monstersDefeated += 1;
+      this.localMabarStats.kills += 1;
+      this.gainXp(m.rewardXp);
+      this.addScore(m.rewardScore);
+      const diamondDrop = Math.max(1, m.rewardDiamonds || 1);
+      const ammoDrop = 3 + diamondDrop;
+      if (this.ownedWeapons.size > 0) {
+        this.weaponAmmo[this.activeWeapon] = Math.min(
+          MAX_AMMO,
+          this.weaponAmmo[this.activeWeapon] + ammoDrop,
+        );
+      }
+      this.diamonds += diamondDrop;
+      const healed = this.hp < this.maxHp;
+      if (healed) this.hp += 1;
+      soundEngine.playBoom();
+      this.triggerHitMarker(true);
+      this.showBanner(
+        `⚔️ ${m.name} kalah! +${m.rewardXp} XP · +${diamondDrop} 💎 · +${ammoDrop} Peluru${healed ? ' · +1 ❤️' : ''}`,
+        3.0,
+      );
+    } else if (assists.includes(myUid)) {
+      this.localMabarStats.assists += 1;
+      this.gainXp(15);
+      this.addScore(90);
+      soundEngine.playPick();
+      this.showBanner(`🤝 Assist mengalahkan ${m.name} bersama ${killerName}! +15 XP · +90 Skor`, 2.8);
+    } else {
+      soundEngine.playBoom();
+      this.showBanner(`⚔️ ${killerName} mengalahkan ${m.name}!`, 2.2);
+    }
+    this.pushHud(true);
+  }
+
+  public handleMultiplayerPacket(
+    fromUid: string,
+    pkt: P2pReliableMessage,
+    localUid?: string,
+  ): void {
+    if (localUid) {
+      this.localMultiplayerUid = localUid;
+    }
+    const myUid = this.localMultiplayerUid || localUid || 'local';
+
+    if (pkt.t === 'wsync') {
+      if (this.isWorldAuthority()) return;
+      this.dayCount = pkt.day;
+      this.worldTimeTick = pkt.tick;
+      this.surfaceWaveMode = pkt.mode;
+      this.lastOverworldDayPhase = this.getDayPhaseForTick(pkt.tick);
+      this.nightWaveTotal = pkt.wtot;
+      this.nightMonsterSeq = Math.max(this.nightMonsterSeq, pkt.nseq);
+      if (pkt.mode === 'night') {
+        this.nightWaveDaySpawned = pkt.day;
+      } else {
+        this.dayWaveDaySpawned = pkt.day;
+      }
+
+      const incomingSurface = pkt.m.filter((snap) => !snap.sea && !snap.sky);
+      const sameWave =
+        incomingSurface.length === this.monsters.length &&
+        incomingSurface.every((snap, idx) => this.monsters[idx]?.id === snap.id);
+
+      if (!sameWave) {
+        this.clearOverworldNightMonsters();
+        this.nightWaveTotal = pkt.wtot;
+        for (const snap of incomingSurface) {
+          this.monsters.push(this.spawnSyncedSurfaceMonster(snap));
+        }
+        this.rebuildOverworldMonsterPool();
+      } else {
+        for (const snap of incomingSurface) {
+          const m = this.monsters.find((item) => item.id === snap.id);
+          if (!m) continue;
+          m.mobHp = snap.hp;
+          m.alive = snap.al;
+          m.aggroActive = snap.agg;
+          m.mesh.visible = snap.al;
+          if (!snap.al) {
+            const clickIdx = this.overworldClickables.indexOf(m.mesh);
+            if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
+          }
+          this.peerMonsterTargets.set(snap.id, {
+            x: snap.x,
+            y: snap.y,
+            z: snap.z,
+            yaw: snap.yaw,
+            aggroActive: snap.agg,
+          });
+        }
+      }
+
+      for (const snap of pkt.m) {
+        if (!snap.sea && !snap.sky) continue;
+        const m = this.findOverworldMonsterById(snap.id);
+        if (!m) continue;
+        m.mobHp = snap.hp;
+        m.alive = snap.al;
+        m.aggroActive = snap.agg;
+        m.mesh.visible = snap.al;
+        this.peerMonsterTargets.set(snap.id, {
+          x: snap.x,
+          y: snap.y,
+          z: snap.z,
+          yaw: snap.yaw,
+          aggroActive: snap.agg,
+        });
+      }
+
+      if (this.worldMode === 'overworld') {
+        for (const sSnap of pkt.s) {
+          const s = this.shooters.find((item) => item.id === sSnap.id);
+          if (s) {
+            s.hp = sSnap.hp;
+            s.alive = sSnap.al;
+            s.mesh.visible = sSnap.al;
+            this.peerMonsterTargets.set(`sh_${sSnap.id}`, {
+              x: sSnap.x,
+              y: getArchipelagoGroundY(sSnap.x, sSnap.z),
+              z: sSnap.z,
+              yaw: s.mesh.rotation.y,
+            });
+          }
+        }
+      }
+
+      this.applyProgressSync(pkt.lz, pkt.dbz, pkt.dc);
+      this.updateOverworldDayNightAtmosphere(0, false);
+      this.pushHud(true);
+      return;
+    }
+
+    if (pkt.t === 'msync') {
+      if (this.isWorldAuthority()) return;
+      for (const snap of pkt.m) {
+        this.peerMonsterTargets.set(snap.id, {
+          x: snap.x,
+          y: snap.y,
+          z: snap.z,
+          yaw: snap.yaw,
+          aggroActive: snap.agg,
+        });
+        const m = this.findOverworldMonsterById(snap.id);
+        if (m) {
+          m.mobHp = snap.hp;
+          m.aggroActive = snap.agg;
+          if (m.alive !== snap.al) {
+            m.alive = snap.al;
+            m.mesh.visible = snap.al;
+            if (!snap.al && !m.isSeaMonster && !m.isSkyMonster) {
+              const clickIdx = this.overworldClickables.indexOf(m.mesh);
+              if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
+            }
+          }
+        }
+      }
+      if (this.worldMode === 'overworld') {
+        for (const sSnap of pkt.s) {
+          this.peerMonsterTargets.set(`sh_${sSnap.id}`, {
+            x: sSnap.x,
+            y: getArchipelagoGroundY(sSnap.x, sSnap.z),
+            z: sSnap.z,
+            yaw: 0,
+          });
+          const s = this.shooters.find((item) => item.id === sSnap.id);
+          if (s) {
+            s.hp = sSnap.hp;
+            s.alive = sSnap.al;
+            s.mesh.visible = sSnap.al;
+          }
+        }
+      }
+      return;
+    }
+
+    if (pkt.t === 'm_hit') {
+      if (!this.isWorldAuthority()) return;
+      if (pkt.isSh) {
+        const s = this.shooters.find((item) => item.id === pkt.id);
+        if (!s || !s.alive) return;
+        let contribs = this.monsterDamageContributors.get(`sh_${s.id}`);
+        if (!contribs) {
+          contribs = new Set();
+          this.monsterDamageContributors.set(`sh_${s.id}`, contribs);
+        }
+        contribs.add(fromUid);
+        s.hp -= pkt.dmg;
+        s.hitSquashTimer = 0.24;
+        const len = Math.max(0.25, Math.hypot(pkt.dx, pkt.dz));
+        s.x += (pkt.dx / len) * 1.4;
+        s.z += (pkt.dz / len) * 1.4;
+        if (s.hp <= 0) {
+          s.alive = false;
+          s.mesh.visible = false;
+          s.respawnTimer = 0;
+          const killerName = this.remotePeers.get(fromUid)?.state.displayName || 'Rekan Tim';
+          const assists = Array.from(contribs).filter((uid) => uid !== fromUid);
+          this.monsterDamageContributors.delete(`sh_${s.id}`);
+          this.emitMultiplayerPacket({
+            t: 'm_kill',
+            id: s.id,
+            killerUid: fromUid,
+            killerName,
+            assists,
+            isSh: true,
+            md: 'overworld',
+          });
+          if (assists.includes(myUid)) {
+            this.localMabarStats.assists += 1;
+            this.gainXp(10);
+            this.addScore(60);
+            this.showBanner(`🤝 Assist Penembak bersama ${killerName}!`, 2.2);
+          }
+          this.pushHud(true);
+        }
+        return;
+      }
+
+      const m = this.findOverworldMonsterById(pkt.id);
+      if (!m || !m.alive) return;
+      let contribs = this.monsterDamageContributors.get(m.id);
+      if (!contribs) {
+        contribs = new Set();
+        this.monsterDamageContributors.set(m.id, contribs);
+      }
+      contribs.add(fromUid);
+      m.mobHp = (m.mobHp ?? m.maxMobHp ?? 4) - pkt.dmg;
+      if (m.combatOnly) {
+        m.aggroActive = true;
+        m.hitFlashTimer = 0.22;
+      }
+      const len = Math.max(0.25, Math.hypot(pkt.dx, pkt.dz));
+      if (m.isSeaMonster && this.worldMode === 'overworld') {
+        const knockPt = { x: m.x + (pkt.dx / len) * 1.2, z: m.z + (pkt.dz / len) * 1.2 };
+        this.constrainSeaMonsterToWater(knockPt, m.x, m.z, 2.2);
+        m.x = knockPt.x;
+        m.z = knockPt.z;
+      } else if (m.isSkyMonster && this.worldMode === 'overworld') {
+        const skyLimit = WORLD_OCEAN_LIMIT - 20;
+        m.x = THREE.MathUtils.clamp(m.x + (pkt.dx / len) * 1.35, -skyLimit, skyLimit);
+        m.z = THREE.MathUtils.clamp(m.z + (pkt.dz / len) * 1.35, -skyLimit, skyLimit);
+      } else if (this.worldMode === 'overworld') {
+        const knockPt = { x: m.x + (pkt.dx / len) * 1.05, z: m.z + (pkt.dz / len) * 1.05 };
+        constrainToWalkableArchipelago(knockPt, 0.95);
+        m.x = knockPt.x;
+        m.z = knockPt.z;
+      }
+      if (m.mobHp <= 0) {
+        const killerName = this.remotePeers.get(fromUid)?.state.displayName || 'Rekan Tim';
+        const assists = Array.from(contribs).filter((uid) => uid !== fromUid);
+        this.emitMultiplayerPacket({
+          t: 'm_kill',
+          id: m.id,
+          killerUid: fromUid,
+          killerName,
+          assists,
+          md: 'overworld',
+          zn: m.zoneId,
+        });
+        this.applyMonsterDefeatedRemotely(m, fromUid, killerName, assists, false);
+      }
+      return;
+    }
+
+    if (pkt.t === 'm_kill') {
+      if (pkt.isSh) {
+        const s = this.shooters.find((item) => item.id === pkt.id);
+        if (s) {
+          s.alive = false;
+          s.mesh.visible = false;
+          s.respawnTimer = 0;
+          this.peerMonsterTargets.delete(`sh_${s.id}`);
+          this.monsterDamageContributors.delete(`sh_${s.id}`);
+          this.spawnBurst(s.x, getArchipelagoGroundY(s.x, s.z) + 1.5, s.z, 0xfbbf24, 20);
+        }
+        if (pkt.killerUid === myUid) {
+          this.monstersDefeated += 1;
+          this.localMabarStats.kills += 1;
+          this.gainXp(5);
+          this.addScore(120);
+          soundEngine.playBoom();
+          this.triggerHitMarker(true);
+          this.showBanner('Penembak Kalah! +5 XP', 2.4);
+        } else if (pkt.assists.includes(myUid)) {
+          this.localMabarStats.assists += 1;
+          this.gainXp(5);
+          this.addScore(60);
+          this.showBanner(`🤝 Assist Penembak bersama ${pkt.killerName}!`, 2.2);
+        }
+        this.pushHud(true);
+        return;
+      }
+
+      const m = this.findOverworldMonsterById(pkt.id);
+      if (m) {
+        this.applyMonsterDefeatedRemotely(m, pkt.killerUid, pkt.killerName, pkt.assists, pkt.isQuiz);
+      }
+      return;
+    }
+
+    if (pkt.t === 'shot') {
+      if (this.worldMode !== pkt.md) return;
+      const fromPlayer = pkt.fp !== false;
+      this.spawnProjectile({
+        fromPlayer,
+        weaponId: pkt.wid,
+        x: pkt.x,
+        y: pkt.y,
+        z: pkt.z,
+        vx: pkt.vx,
+        vy: pkt.vy,
+        vz: pkt.vz,
+        damage: pkt.dmg,
+        shieldDamage: 1,
+        pierceLeft: 0,
+        colorHex: pkt.col,
+        visualOnly: fromPlayer,
+      });
+      return;
+    }
+
+    if (pkt.t === 'heal') {
+      if (pkt.toUid !== myUid) return;
+      if (this.hp > 0 && this.hp < this.maxHp) {
+        this.hp = Math.min(this.maxHp, this.hp + pkt.amt);
+      }
+      soundEngine.playPick();
+      this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.8, this.heroPos.z, 0x34d399, 20);
+      this.showBanner(`❤️ ${pkt.fromName} membantumu pulih (+${pkt.amt} ❤️)!`, 3.2);
+      this.pushHud(true);
+      return;
+    }
+
+    if (pkt.t === 'prog') {
+      this.applyProgressSync(pkt.lz, pkt.dbz, pkt.dc);
+    }
+  }
+
+  public helpNearbyTeammate(): void {
+    if (!this.multiplayerActive || this.phase !== 'playing') return;
+    if (this.allyHelpCooldown > 0) {
+      this.showBanner(
+        `⏳ Bantu Teman siap lagi dalam ${Math.ceil(this.allyHelpCooldown)} detik.`,
+        1.8,
+      );
+      return;
+    }
+    const target = this.nearbyInjuredPeer;
+    if (!target) {
+      this.showBanner('Dekati teman tim yang terluka (< 6.5m) untuk membantunya.', 2.2);
+      return;
+    }
+    this.allyHelpCooldown = 15;
+    this.localMabarStats.helps += 1;
+    this.gainXp(25);
+    this.addScore(80);
+    soundEngine.playPick();
+    const peerEntry = this.remotePeers.get(target.uid);
+    if (peerEntry) {
+      this.spawnBurst(peerEntry.pos.x, peerEntry.pos.y + 1.8, peerEntry.pos.z, 0x34d399, 20);
+      if (typeof peerEntry.state.hp === 'number' && typeof peerEntry.state.maxHp === 'number') {
+        peerEntry.state.hp = Math.min(peerEntry.state.maxHp, peerEntry.state.hp + 1);
+      }
+    }
+    this.emitMultiplayerPacket({
+      t: 'heal',
+      toUid: target.uid,
+      amt: 1,
+      fromName: this.localPlayerName,
+    });
+    this.showBanner(
+      `💚 Berhasil membantu ${target.displayName} (+1 ❤️)! +25 XP · +80 Skor`,
+      3.0,
+    );
+    this.pushHud(true);
   }
 
   public upsertRemotePlayers(players: RemotePlayerState[]): void {
@@ -3141,6 +3954,16 @@ export class RpgWorldEngine {
 
   public getLocalSyncPacket(): LocalPlayerSyncPacket {
     const spd = Math.hypot(this.heroVel.x, this.heroVel.z);
+    const zoneId =
+      this.worldMode === 'dungeon' && this.dungeonState
+        ? this.dungeonState.zoneId
+        : getZoneForPosition(this.heroPos.x, this.heroPos.z);
+    const zoneName =
+      this.worldMode === 'academy'
+        ? 'Istana IELTS'
+        : this.worldMode === 'ocean'
+        ? getOceanZoneInfo(this.heroPos.z, this.heroPos.y).label
+        : ZONE_INFO[zoneId]?.name || 'Kepulauan';
     return {
       t: 'state',
       w: this.worldMode,
@@ -3157,11 +3980,31 @@ export class RpgWorldEngine {
       ap: Math.round(this.shootAimPitch * 100) / 100,
       ch: this.localCharacterId,
       nm: this.localPlayerName,
+      hp: this.hp,
+      mhp: this.maxHp,
+      ic: this.phase === 'battle' || this.phase === 'learning' || this.phase === 'academy',
+      zn: zoneName,
     };
   }
 
   private pickSafeSpawnPoint(spawnMode?: SpawnPreference, spawnIndex?: number): { x: number; y: number; z: number; yaw: number; label?: string } {
     const def = OVERWORLD_ANCHORS.desaSpawn;
+    if (this.multiplayerActive) {
+      const chosen = getMultiplayerGroupSpawnPoint(spawnIndex ?? 0);
+      const pt = new THREE.Vector3(chosen.x, getArchipelagoGroundY(chosen.x, chosen.z), chosen.z);
+      constrainToWalkableArchipelago(pt, 0.85);
+      if (this.villageRig?.obstacles) {
+        resolveObstacleBoxes(pt, 0.85, this.villageRig.obstacles);
+      }
+      pt.y = getArchipelagoGroundY(pt.x, pt.z);
+      return {
+        x: pt.x,
+        y: pt.y,
+        z: pt.z,
+        yaw: chosen.yaw,
+        label: chosen.label,
+      };
+    }
     if (spawnMode !== 'random' && typeof spawnIndex !== 'number') {
       return {
         x: def.x,
@@ -3315,7 +4158,7 @@ export class RpgWorldEngine {
     this.restoredNightMonsters = [];
     this.restoredNightShooters = [];
     this.restoredCollectibles = null;
-    this.worldTimeTick = this.pickRandomWorldTimeTick();
+    this.worldTimeTick = this.multiplayerActive ? 23200 : this.pickRandomWorldTimeTick();
     this.dayCount = 1;
     this.lastOverworldDayPhase = this.getDayPhaseForTick(this.worldTimeTick);
     this.nightWaveDaySpawned = 0;
@@ -3326,6 +4169,17 @@ export class RpgWorldEngine {
     this.nightZoneTotals = {};
     this.nightShooterSaved = [];
     this.nightMonsterSeq = 0;
+    this.allyHelpCooldown = 0;
+    this.nearbyInjuredPeer = null;
+    this.localMabarStats = {
+      kills: 0,
+      assists: 0,
+      helps: 0,
+      challenges: 0,
+      zonesCleared: 0,
+    };
+    this.monsterDamageContributors.clear();
+    this.peerMonsterTargets.clear();
     this.autoSaveTimer = 0;
 
     this.initDefaultQuests();
@@ -3690,6 +4544,8 @@ export class RpgWorldEngine {
       this.checkAreaTrophy(zoneId);
       this.refreshWeaponVisual();
       this.refreshAreaMists();
+      this.localMabarStats.zonesCleared = this.liberatedZones.size;
+      this.emitProgressSync();
     }
 
     if (this.dungeonState && this.dungeonState.zoneId === zoneId) {
@@ -3774,6 +4630,7 @@ export class RpgWorldEngine {
   }
 
   private syncOverworldMonstersByDiff(): void {
+    if (this.multiplayerActive && !this.isWorldAuthority()) return;
     const phase = this.getCurrentDayPhase();
     if (phase === 'malam') {
       if (this.nightWaveDaySpawned !== this.dayCount) {
@@ -3785,14 +4642,14 @@ export class RpgWorldEngine {
   }
 
   private updateOverworldDayNightAtmosphere(dt: number, advanceClock: boolean): void {
-    if (advanceClock && this.phase === 'playing') {
+    if (advanceClock && (this.phase === 'playing' || (this.multiplayerActive && this.isWorldAuthority()))) {
       const prevPhase = this.getCurrentDayPhase();
       this.worldTimeTick += TICKS_PER_SEC * dt;
       if (this.worldTimeTick >= TICKS_PER_DAY) {
         this.worldTimeTick -= TICKS_PER_DAY;
         this.dayCount += 1;
       }
-      const nextPhase = this.getCurrentDayPhase();
+      const nextPhase = this.getDayPhaseForTick(this.worldTimeTick);
       this.lastOverworldDayPhase = nextPhase;
 
       if (prevPhase !== nextPhase) {
@@ -3802,17 +4659,26 @@ export class RpgWorldEngine {
             4.5,
           );
         } else if (nextPhase === 'malam') {
-          this.spawnNightSurfaceWave();
+          if (this.isWorldAuthority()) {
+            this.spawnNightSurfaceWave();
+          }
         } else if (nextPhase === 'pagi') {
-          this.triggerMorningSunlightDestruction();
-          this.syncShootersForDifficulty();
+          if (this.isWorldAuthority()) {
+            this.triggerMorningSunlightDestruction();
+            this.syncShootersForDifficulty();
+          }
           this.showBanner(
             '🌅 Fajar menyingsing! Panas matahari menghancurkan monster malam & warga keluar kembali!',
             5.0,
           );
         } else if (nextPhase === 'siang') {
-          this.clearOverworldNightMonsters();
-          this.syncShootersForDifficulty();
+          if (this.isWorldAuthority()) {
+            this.clearOverworldNightMonsters();
+            this.syncShootersForDifficulty();
+          }
+        }
+        if (this.isWorldAuthority() && this.multiplayerActive && this.hasConnectedPeers) {
+          this.emitMultiplayerPacket(this.buildWorldSyncPacket());
         }
         this.pushHud(true);
       }
@@ -5687,6 +6553,7 @@ export class RpgWorldEngine {
     cekCepatPassed?: boolean,
   ): void {
     this.phase = 'playing';
+    this.localMabarStats.challenges += 1;
     if (xpEarned > 0) {
       this.gainXp(xpEarned);
       this.addScore(xpEarned * 12);
@@ -5744,6 +6611,7 @@ export class RpgWorldEngine {
           this.spawnDungeonBoss(ctx.zoneId);
         }
         this.updateDungeonDoorVisuals();
+        this.emitProgressSync();
       } else {
         soundEngine.playNo();
         this.showBanner(`Butuh minimal ${ctx.minPct}% untuk membuka pintu ini (Skor: ${pct}%).`, 3.4);
@@ -5856,6 +6724,7 @@ export class RpgWorldEngine {
     pct: number,
   ): void {
     this.ieltsScores[skill] = Math.max(this.ieltsScores[skill] || 0, pct);
+    this.localMabarStats.challenges += 1;
     const xpGain = skill === 'full' ? Math.round(pct / 5) + 30 : Math.round(pct / 5);
     this.gainXp(xpGain);
     this.addScore(xpGain * 20);
@@ -6057,6 +6926,7 @@ export class RpgWorldEngine {
     // Victory!
     this.phase = 'playing';
     this.monstersDefeated += 1;
+    this.localMabarStats.challenges += 1;
 
     // Door 1 Mini-Monster Duel Clear
     if (battle.doorIndex === 1 && this.worldMode === 'dungeon' && this.dungeonState) {
@@ -6069,6 +6939,7 @@ export class RpgWorldEngine {
       this.gainXp(25);
       this.addScore(320);
       this.updateDungeonDoorVisuals();
+      this.emitProgressSync();
       soundEngine.playWin();
       const duelLine = DOOR_RESTORED_STORY[zId]?.[1];
       this.showBanner(
@@ -6119,6 +6990,7 @@ export class RpgWorldEngine {
         const boss = BOSSES[zId];
         const caveStory = ZONE_CAVE_STORIES[zId];
         this.defeatedBossZones.add(zId);
+        this.emitProgressSync();
         this.dungeonState.bossDefeated = true;
         this.dungeonState.prisonKeySpawned = true;
         this.dungeonState.monstersRemaining = 0;
@@ -6193,6 +7065,21 @@ export class RpgWorldEngine {
           if (m.mesh.parent) m.mesh.parent.remove(m.mesh);
           const clickIdx = this.overworldClickables.indexOf(m.mesh);
           if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
+        }
+        this.localMabarStats.kills += 1;
+        this.peerMonsterTargets.delete(m.id);
+        this.monsterDamageContributors.delete(m.id);
+        if (this.multiplayerActive && this.hasConnectedPeers) {
+          this.emitMultiplayerPacket({
+            t: 'm_kill',
+            id: m.id,
+            killerUid: this.localMultiplayerUid || 'local',
+            killerName: this.localPlayerName,
+            assists: [],
+            isQuiz: true,
+            md: 'overworld',
+            zn: m.zoneId,
+          });
         }
         this.gainXp(m.rewardXp);
         this.diamonds += m.rewardDiamonds;
@@ -6548,6 +7435,7 @@ export class RpgWorldEngine {
     this.applyCameraVisibilityAndControls();
 
     if (correct) {
+      this.localMabarStats.challenges += 1;
       const blk = this.dungeonRig?.caveBlocks.find((b) => b.id === blockId && b.alive);
       if (blk) {
         this.shatterCaveBlock(blk, true);
@@ -6840,6 +7728,43 @@ export class RpgWorldEngine {
     dirX: number,
     dirZ: number,
   ): void {
+    if (this.worldMode === 'overworld' && this.multiplayerActive && this.hasConnectedPeers) {
+      if (!this.isWorldAuthority()) {
+        soundEngine.playHit();
+        this.spawnBurst(
+          m.x,
+          (m.y ?? 0) + 1.3,
+          m.z,
+          m.isSeaMonster ? 0x06b6d4 : m.isSkyMonster ? 0xf97316 : m.combatOnly ? 0xef4444 : 0x22c55e,
+          12,
+        );
+        this.triggerHitMarker(false);
+        const visHp = Math.max(1, (m.mobHp ?? m.maxMobHp ?? 4) - damage);
+        m.mobHp = visHp;
+        if (m.combatOnly) {
+          m.hitFlashTimer = 0.22;
+        }
+        this.emitMultiplayerPacket({
+          t: 'm_hit',
+          id: m.id,
+          dmg: damage,
+          dx: dirX,
+          dz: dirZ,
+          md: this.worldMode,
+          zn: m.zoneId,
+        });
+        this.showBanner(`⚔️ Kena ${m.name}! (${visHp}/${m.maxMobHp ?? 4})`, 1.2);
+        return;
+      }
+
+      let contribs = this.monsterDamageContributors.get(m.id);
+      if (!contribs) {
+        contribs = new Set();
+        this.monsterDamageContributors.set(m.id, contribs);
+      }
+      contribs.add(this.localMultiplayerUid || 'host');
+    }
+
     m.mobHp = (m.mobHp ?? m.maxMobHp ?? 4) - damage;
     if (m.isCaveMob && m.type === 'cave_spider') {
       m.fuseTimer = -1;
@@ -6911,6 +7836,24 @@ export class RpgWorldEngine {
       if (m.mesh.parent) m.mesh.parent.remove(m.mesh);
       const clickIdx = this.overworldClickables.indexOf(m.mesh);
       if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
+    }
+    this.localMabarStats.kills += 1;
+    if (this.worldMode === 'overworld' && this.multiplayerActive && this.hasConnectedPeers && this.isWorldAuthority()) {
+      const hostUid = this.localMultiplayerUid || 'host';
+      const contribs = this.monsterDamageContributors.get(m.id);
+      const assists = contribs ? Array.from(contribs).filter((uid) => uid !== hostUid) : [];
+      this.monsterDamageContributors.delete(m.id);
+      this.peerMonsterTargets.delete(m.id);
+      this.emitMultiplayerPacket({
+        t: 'm_kill',
+        id: m.id,
+        killerUid: hostUid,
+        killerName: this.localPlayerName,
+        assists,
+        isQuiz: false,
+        md: 'overworld',
+        zn: m.zoneId,
+      });
     }
     soundEngine.playBoom();
     this.spawnBurst(
@@ -7912,6 +8855,22 @@ export class RpgWorldEngine {
         pierceLeft: wDef.pierce || 0,
         colorHex: wDef.colorHex,
       });
+      if (this.multiplayerActive && this.hasConnectedPeers) {
+        this.emitMultiplayerPacket({
+          t: 'shot',
+          fp: true,
+          wid: this.activeWeapon,
+          x: Math.round(muzzleX * 100) / 100,
+          y: Math.round(muzzleY * 100) / 100,
+          z: Math.round(muzzleZ * 100) / 100,
+          vx: Math.round(rx * wDef.speed * 100) / 100,
+          vy: Math.round(dirY * wDef.speed * 100) / 100,
+          vz: Math.round(rz * wDef.speed * 100) / 100,
+          col: wDef.colorHex,
+          dmg: wDef.damage,
+          md: this.worldMode,
+        });
+      }
     }
     this.pushHud(true);
   }
@@ -7929,12 +8888,14 @@ export class RpgWorldEngine {
     shieldDamage: number;
     pierceLeft: number;
     colorHex: number;
+    visualOnly?: boolean;
   }): void {
     const slot = this.projectiles.find((p) => !p.active);
     if (!slot) return;
     slot.active = true;
     slot.fromPlayer = opts.fromPlayer;
     slot.weaponId = opts.weaponId;
+    slot.visualOnly = Boolean(opts.visualOnly);
     slot.x = opts.x;
     slot.y = opts.y ?? 1.35;
     slot.z = opts.z;
@@ -8124,6 +9085,9 @@ export class RpgWorldEngine {
           this.heroVel.addScaledVector(_forward, 22);
           soundEngine.playDash();
         }
+      } else if (e.code === 'KeyR' && this.multiplayerActive) {
+        e.preventDefault();
+        this.helpNearbyTeammate();
       } else if (e.code === 'KeyG' && this.isSwimming) {
         e.preventDefault();
         this.cycleSwimStyle();
@@ -8869,7 +9833,10 @@ export class RpgWorldEngine {
 
   private updateWorldAnimations(dt: number): void {
     this.waterUniforms.uTime.value = this.elapsed;
-    this.updateOverworldDayNightAtmosphere(dt, this.worldMode === 'overworld');
+    const shouldAdvanceClock =
+      this.worldMode === 'overworld' ||
+      (this.multiplayerActive && this.isWorldAuthority() && this.phase === 'playing');
+    this.updateOverworldDayNightAtmosphere(dt, shouldAdvanceClock);
     this.sunburnFxTimer += dt;
     const ambientMode =
       this.phase === 'title' || this.phase === 'paused' || this.phase === 'gameover'
@@ -8994,10 +9961,13 @@ export class RpgWorldEngine {
     const camX = this.camera.position.x;
     const camZ = this.camera.position.z;
     let sunburnRemoved = false;
+    const isOverworldGuest =
+      this.worldMode === 'overworld' && this.multiplayerActive && !this.isWorldAuthority();
+    const guestBlend = 1 - Math.exp(-10 * dt);
     for (const m of this.getActiveMonsters()) {
       const spec = MONSTER_SPECS[m.type];
       if (!m.alive) {
-        if (this.phase === 'playing' && m.respawnTimer > 0) {
+        if (this.phase === 'playing' && m.respawnTimer > 0 && !isOverworldGuest) {
           m.respawnTimer -= dt;
           if (m.respawnTimer <= 0) {
             m.alive = true;
@@ -9062,6 +10032,79 @@ export class RpgWorldEngine {
           m.sunburnTimer !== undefined ||
           m.angryTimer > 0;
         m.mesh.matrixAutoUpdate = isAwake;
+      }
+      if (isOverworldGuest) {
+        if (m.angryTimer > 0) {
+          m.angryTimer -= dt;
+          m.mesh.scale.setScalar(m.isBoss ? 1.65 : spec.baseScale);
+          animateMonsterRig(m.mesh, {
+            mode: 'windup',
+            elapsed: this.elapsed,
+            phase: m.patrolPhase,
+            dt,
+          });
+          if (m.angryTimer <= 0) {
+            this.engageMonster(m);
+          }
+          continue;
+        }
+        const tgt = this.peerMonsterTargets.get(m.id);
+        let mSpd = 0;
+        if (tgt) {
+          const prevX = m.x;
+          const prevZ = m.z;
+          m.x = THREE.MathUtils.lerp(m.x, tgt.x, guestBlend);
+          m.z = THREE.MathUtils.lerp(m.z, tgt.z, guestBlend);
+          m.y = THREE.MathUtils.lerp(m.y ?? tgt.y, tgt.y, guestBlend);
+          mSpd = Math.hypot(m.x - prevX, m.z - prevZ) / Math.max(0.001, dt);
+          let yDiff = tgt.yaw - m.mesh.rotation.y;
+          while (yDiff > Math.PI) yDiff -= Math.PI * 2;
+          while (yDiff < -Math.PI) yDiff += Math.PI * 2;
+          m.mesh.rotation.y += yDiff * guestBlend;
+        }
+        if (m.hitFlashTimer && m.hitFlashTimer > 0) {
+          m.hitFlashTimer = Math.max(0, m.hitFlashTimer - dt);
+        }
+        m.walkPhase = (m.walkPhase ?? m.patrolPhase) + dt * (2.6 + mSpd * 1.1);
+        m.mesh.position.set(m.x, m.y ?? getArchipelagoGroundY(m.x, m.z) + spec.hoverY, m.z);
+        m.mesh.scale.setScalar(spec.baseScale);
+        const dxLocal = this.heroPos.x - m.x;
+        const dzLocal = this.heroPos.z - m.z;
+        const distSqLocal = dxLocal * dxLocal + dzLocal * dzLocal;
+        if (distSqLocal <= 66 * 66) {
+          animateMonsterRig(m.mesh, {
+            mode: m.hitFlashTimer && m.hitFlashTimer > 0 ? 'hit' : mSpd > 0.25 ? 'patrol' : 'idle',
+            speed: mSpd,
+            walkPhase: m.walkPhase,
+            elapsed: this.elapsed,
+            phase: m.patrolPhase,
+            dt,
+          });
+        }
+        if (
+          m.combatOnly &&
+          this.phase === 'playing' &&
+          this.encounterGraceTimer <= 0 &&
+          distSqLocal < (1.85 + spec.baseScale * 0.4) ** 2 &&
+          Math.abs((m.y ?? 0) - this.heroPos.y) < 2.2
+        ) {
+          const dmg = spec.atkDamageHearts;
+          this.hp = Math.max(0, this.hp - dmg);
+          this.encounterGraceTimer = 1.45;
+          soundEngine.playHurt();
+          const len = Math.max(0.2, Math.sqrt(distSqLocal));
+          this.heroVel.set((dxLocal / len) * 14, 0, (dzLocal / len) * 14);
+          this.heroVelY = 4.2;
+          this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.2, this.heroPos.z, 0xef4444, 14);
+          this.showBanner(`⚔️ Diserang ${m.name}! (-${dmg} ❤️)`, 2.0);
+          if (this.hp <= 0) {
+            this.phase = 'gameover';
+            soundEngine.playLose();
+            this.pushHud(true);
+            return;
+          }
+        }
+        continue;
       }
       if (m.isSeaMonster && (this.worldMode === 'overworld' || this.worldMode === 'ocean')) {
         this.updateSeaMonster(m, dt, baseSpeedMult);
@@ -9321,9 +10364,22 @@ export class RpgWorldEngine {
       }
 
       // Distance culling for far Overworld surface monsters (keeps 50-mob Night & 30-mob Day locked at 60 FPS)
-      const dxHero = this.heroPos.x - m.x;
-      const dzHero = this.heroPos.z - m.z;
-      const distSqHero = dxHero * dxHero + dzHero * dzHero;
+      const nearestBrawlerTgt =
+        this.worldMode === 'overworld' && this.multiplayerActive
+          ? this.getNearestPlayerTarget(m.x, m.z, 'overworld')
+          : {
+              x: this.heroPos.x,
+              y: this.heroPos.y,
+              z: this.heroPos.z,
+              dx: this.heroPos.x - m.x,
+              dz: this.heroPos.z - m.z,
+              distSq: (this.heroPos.x - m.x) ** 2 + (this.heroPos.z - m.z) ** 2,
+              dist: Math.hypot(this.heroPos.x - m.x, this.heroPos.z - m.z),
+              isLocal: true,
+            };
+      const dxHero = nearestBrawlerTgt.dx;
+      const dzHero = nearestBrawlerTgt.dz;
+      const distSqHero = nearestBrawlerTgt.distSq;
       if (this.worldMode === 'overworld' && distSqHero > 52 * 52 && !m.aggroActive) {
         continue;
       }
@@ -9333,7 +10389,7 @@ export class RpgWorldEngine {
         m.combatOnly &&
         ((this.worldMode === 'dungeon' && this.dungeonRig) || this.worldMode === 'overworld')
       ) {
-        const distH = Math.sqrt(distSqHero);
+        const distH = nearestBrawlerTgt.dist;
 
         if (m.hitFlashTimer && m.hitFlashTimer > 0) {
           m.hitFlashTimer = Math.max(0, m.hitFlashTimer - dt);
@@ -9406,6 +10462,7 @@ export class RpgWorldEngine {
           if (
             !shieldBlocked &&
             !jumpedOver &&
+            nearestBrawlerTgt.isLocal &&
             this.phase === 'playing' &&
             this.encounterGraceTimer <= 0 &&
             distH < meleeReach
@@ -9462,18 +10519,37 @@ export class RpgWorldEngine {
               const mGround =
                 this.worldMode === 'overworld' ? getArchipelagoGroundY(m.x, m.z) : 0;
               const mFireY = mGround + spec.hoverY + spec.hitCenterY;
+              const px = m.x + (dxHero / distH) * (0.9 * spec.baseScale);
+              const pz = m.z + (dzHero / distH) * (0.9 * spec.baseScale);
+              const pvx = (dxHero / distH) * pSpeed;
+              const pvz = (dzHero / distH) * pSpeed;
               this.spawnProjectile({
                 fromPlayer: false,
-                x: m.x + (dxHero / distH) * (0.9 * spec.baseScale),
+                x: px,
                 y: mFireY,
-                z: m.z + (dzHero / distH) * (0.9 * spec.baseScale),
-                vx: (dxHero / distH) * pSpeed,
-                vz: (dzHero / distH) * pSpeed,
+                z: pz,
+                vx: pvx,
+                vz: pvz,
                 damage: 1,
                 shieldDamage: 1,
                 pierceLeft: 0,
                 colorHex: 0xef4444,
               });
+              if (this.worldMode === 'overworld' && this.multiplayerActive && this.hasConnectedPeers && this.isWorldAuthority()) {
+                this.emitMultiplayerPacket({
+                  t: 'shot',
+                  fp: false,
+                  x: Math.round(px * 100) / 100,
+                  y: Math.round(mFireY * 100) / 100,
+                  z: Math.round(pz * 100) / 100,
+                  vx: Math.round(pvx * 100) / 100,
+                  vy: 0,
+                  vz: Math.round(pvz * 100) / 100,
+                  col: 0xef4444,
+                  dmg: 1,
+                  md: 'overworld',
+                });
+              }
               m.attackCooldown = this.settings.difficulty === 'pendekar' ? 2.5 : 3.4;
               m.attackAnimTimer = 0.3;
             }
@@ -10161,6 +11237,31 @@ export class RpgWorldEngine {
     }
 
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    this.allyHelpCooldown = Math.max(0, this.allyHelpCooldown - dt);
+    if (this.multiplayerActive && this.remotePeers.size > 0) {
+      let bestInjured: NearbyInjuredPeer | null = null;
+      let bestDist = 6.5;
+      for (const peer of this.remotePeers.values()) {
+        if (peer.state.worldMode !== this.worldMode) continue;
+        const php = peer.state.hp;
+        const pmhp = peer.state.maxHp;
+        if (typeof php !== 'number' || typeof pmhp !== 'number' || php <= 0 || php >= pmhp) continue;
+        const d = Math.hypot(peer.pos.x - this.heroPos.x, peer.pos.z - this.heroPos.z);
+        if (d < bestDist) {
+          bestDist = d;
+          bestInjured = {
+            uid: peer.state.uid,
+            displayName: peer.state.displayName,
+            hp: php,
+            maxHp: pmhp,
+            distance: Math.round(d * 10) / 10,
+          };
+        }
+      }
+      this.nearbyInjuredPeer = bestInjured;
+    } else {
+      this.nearbyInjuredPeer = null;
+    }
     if (this.jumpBufferTimer > 0) {
       this.jumpBufferTimer = Math.max(0, this.jumpBufferTimer - dt);
     }
@@ -12610,9 +13711,14 @@ export class RpgWorldEngine {
   private updateShootersAndProjectiles(dt: number): void {
     const diff = DIFF_CONFIG[this.settings.difficulty];
 
+    const isOverworldGuest =
+      this.worldMode === 'overworld' && this.multiplayerActive && !this.isWorldAuthority();
+    const guestBlend = 1 - Math.exp(-10 * dt);
+
     for (const s of this.shooters) {
       if (!s.alive) {
         if (
+          !isOverworldGuest &&
           s.respawnTimer > 0 &&
           !s.isNightShooter &&
           this.worldMode !== 'dungeon' &&
@@ -12632,6 +13738,34 @@ export class RpgWorldEngine {
             s.mesh.visible = true;
           }
         }
+        continue;
+      }
+
+      if (isOverworldGuest) {
+        s.hitSquashTimer = Math.max(0, s.hitSquashTimer - dt);
+        const tgt = this.peerMonsterTargets.get(`sh_${s.id}`);
+        let sSpd = 0;
+        if (tgt) {
+          const prevX = s.x;
+          const prevZ = s.z;
+          s.x = THREE.MathUtils.lerp(s.x, tgt.x, guestBlend);
+          s.z = THREE.MathUtils.lerp(s.z, tgt.z, guestBlend);
+          sSpd = Math.hypot(s.x - prevX, s.z - prevZ) / Math.max(0.001, dt);
+        }
+        s.walkPhase += dt * (4.2 + sSpd * 1.4);
+        const sGroundY = getArchipelagoGroundY(s.x, s.z);
+        s.mesh.position.set(s.x, sGroundY, s.z);
+        s.mesh.rotation.y = Math.atan2(this.heroPos.x - s.x, this.heroPos.z - s.z);
+        animateShooterRig(s.mesh, {
+          speed: sSpd,
+          walkPhase: s.walkPhase,
+          aimAlpha: 0.25,
+          recoil: 0,
+          hitSquash: s.hitSquashTimer > 0 ? s.hitSquashTimer / 0.24 : 0,
+          elapsed: this.elapsed,
+          phase: s.phase,
+          dt,
+        });
         continue;
       }
 
@@ -12752,11 +13886,19 @@ export class RpgWorldEngine {
 
       const sGroundY = this.worldMode === 'overworld' ? getArchipelagoGroundY(s.x, s.z) : 0;
       s.mesh.position.set(s.x, sGroundY, s.z);
-      const lookYaw = Math.atan2(this.heroPos.x - s.x, this.heroPos.z - s.z);
+      const nearestPlayer =
+        this.worldMode === 'overworld' && this.multiplayerActive
+          ? this.getNearestPlayerTarget(s.x, s.z, 'overworld')
+          : {
+              dx: this.heroPos.x - s.x,
+              dz: this.heroPos.z - s.z,
+              dist: Math.hypot(this.heroPos.x - s.x, this.heroPos.z - s.z),
+            };
+      const lookYaw = Math.atan2(nearestPlayer.dx, nearestPlayer.dz);
       s.mesh.rotation.y = lookYaw;
 
       s.cooldown -= dt;
-      const distToHero = Math.hypot(this.heroPos.x - s.x, this.heroPos.z - s.z);
+      const distToHero = nearestPlayer.dist;
       const aimAlpha =
         distToHero < 26 && s.cooldown < 0.75
           ? THREE.MathUtils.clamp(1 - s.cooldown / 0.75, 0.25, 1)
@@ -12769,19 +13911,36 @@ export class RpgWorldEngine {
         s.recoilTimer = 0.28;
         const muzzleX = s.x + Math.sin(lookYaw) * 1.15;
         const muzzleZ = s.z + Math.cos(lookYaw) * 1.15;
+        const vx = Math.sin(lookYaw) * diff.shooterBulletSpeed;
+        const vz = Math.cos(lookYaw) * diff.shooterBulletSpeed;
         this.spawnBurst(muzzleX, sGroundY + 1.48, muzzleZ, 0xf43f5e, 6);
         this.spawnProjectile({
           fromPlayer: false,
           x: muzzleX,
           y: sGroundY + 1.48,
           z: muzzleZ,
-          vx: Math.sin(lookYaw) * diff.shooterBulletSpeed,
-          vz: Math.cos(lookYaw) * diff.shooterBulletSpeed,
+          vx,
+          vz,
           damage: 1,
           shieldDamage: 1,
           pierceLeft: 0,
           colorHex: 0xf43f5e,
         });
+        if (this.worldMode === 'overworld' && this.multiplayerActive && this.hasConnectedPeers && this.isWorldAuthority()) {
+          this.emitMultiplayerPacket({
+            t: 'shot',
+            fp: false,
+            x: Math.round(muzzleX * 100) / 100,
+            y: Math.round((sGroundY + 1.48) * 100) / 100,
+            z: Math.round(muzzleZ * 100) / 100,
+            vx: Math.round(vx * 100) / 100,
+            vy: 0,
+            vz: Math.round(vz * 100) / 100,
+            col: 0xf43f5e,
+            dmg: 1,
+            md: 'overworld',
+          });
+        }
       }
 
       animateShooterRig(s.mesh, {
@@ -12932,7 +14091,7 @@ export class RpgWorldEngine {
         }
       }
 
-      if (p.fromPlayer) {
+      if (p.fromPlayer && !p.visualOnly) {
         // Check Hit on Shooters (3 HP -> kills for XP + Ammo + Gem)
         let consumed = false;
         for (const s of this.shooters) {
@@ -12940,6 +14099,36 @@ export class RpgWorldEngine {
           const sy = this.worldMode === 'overworld' ? getArchipelagoGroundY(s.x, s.z) : 0;
           if (Math.hypot(p.x - s.x, p.z - s.z) < 1.6 && Math.abs(p.y - (sy + 1.35)) < 1.75) {
             p.hitIds.add(s.id);
+            if (this.worldMode === 'overworld' && this.multiplayerActive && this.hasConnectedPeers && !this.isWorldAuthority()) {
+              s.hitSquashTimer = 0.24;
+              s.hp = Math.max(1, s.hp - p.damage);
+              soundEngine.playHit();
+              this.spawnBurst(s.x, sy + 1.4, s.z, 0xf43f5e, 10);
+              this.triggerHitMarker(false);
+              this.emitMultiplayerPacket({
+                t: 'm_hit',
+                id: s.id,
+                dmg: p.damage,
+                dx: p.vx,
+                dz: p.vz,
+                md: 'overworld',
+                isSh: true,
+              });
+              if (p.pierceLeft > 0) p.pierceLeft -= 1;
+              else {
+                consumed = true;
+                break;
+              }
+              continue;
+            }
+            if (this.worldMode === 'overworld' && this.multiplayerActive && this.hasConnectedPeers) {
+              let contribs = this.monsterDamageContributors.get(`sh_${s.id}`);
+              if (!contribs) {
+                contribs = new Set();
+                this.monsterDamageContributors.set(`sh_${s.id}`, contribs);
+              }
+              contribs.add(this.localMultiplayerUid || 'host');
+            }
             s.hp -= p.damage;
             s.hitSquashTimer = 0.24;
             s.x += (p.vx / Math.max(1, Math.hypot(p.vx, p.vz))) * 1.8;
@@ -12953,6 +14142,23 @@ export class RpgWorldEngine {
               s.mesh.visible = false;
               s.respawnTimer = 0;
               this.monstersDefeated += 1;
+              this.localMabarStats.kills += 1;
+              if (this.worldMode === 'overworld' && this.multiplayerActive && this.hasConnectedPeers && this.isWorldAuthority()) {
+                const hostUid = this.localMultiplayerUid || 'host';
+                const contribs = this.monsterDamageContributors.get(`sh_${s.id}`);
+                const assists = contribs ? Array.from(contribs).filter((uid) => uid !== hostUid) : [];
+                this.monsterDamageContributors.delete(`sh_${s.id}`);
+                this.peerMonsterTargets.delete(`sh_${s.id}`);
+                this.emitMultiplayerPacket({
+                  t: 'm_kill',
+                  id: s.id,
+                  killerUid: hostUid,
+                  killerName: this.localPlayerName,
+                  assists,
+                  isSh: true,
+                  md: 'overworld',
+                });
+              }
               if (s.isNightShooter) {
                 const savedEntry = this.nightShooterSaved.find((entry) => entry.id === s.id);
                 if (savedEntry) savedEntry.alive = false;
@@ -13084,7 +14290,7 @@ export class RpgWorldEngine {
             break;
           }
         }
-      } else {
+      } else if (!p.fromPlayer && !p.visualOnly) {
         // Enemy projectile hitting Hoot
         if (
           this.encounterGraceTimer <= 0 &&
@@ -13236,11 +14442,16 @@ export class RpgWorldEngine {
         if (dSq > 85 * 85) continue;
         const namePos = projectPoint(peer.pos.x, peer.pos.y + 3.45, peer.pos.z);
         if (namePos) {
+          const hp = peer.state.hp;
+          const mhp = peer.state.maxHp;
+          const lowHpTag = typeof hp === 'number' && hp > 0 && hp <= 2 ? ' 🆘' : '';
+          const hpText = typeof hp === 'number' && typeof mhp === 'number' ? ` · ❤️${hp}/${mhp}` : '';
+          const quizTag = peer.state.inChallenge ? ' · 📘 Kuis' : '';
           labels.push({
             id: `peer_name_${peer.state.uid}`,
             x: namePos.x,
             y: namePos.y,
-            title: `${peer.state.speaking ? '🔊 ' : ''}${peer.state.displayName}`,
+            title: `${peer.state.speaking ? '🔊 ' : ''}${peer.state.displayName}${hpText}${lowHpTag}${quizTag}`,
             kind: 'player',
           });
         }
@@ -13570,14 +14781,27 @@ export class RpgWorldEngine {
 
   private updateSeaMonster(m: RoamingMonster, dt: number, baseSpeedMult: number): void {
     const spec = MONSTER_SPECS[m.type];
-    const dxHero = this.heroPos.x - m.x;
-    const dzHero = this.heroPos.z - m.z;
-    const distSqHero = dxHero * dxHero + dzHero * dzHero;
+    const nearestSeaTgt =
+      this.worldMode === 'overworld' && this.multiplayerActive
+        ? this.getNearestPlayerTarget(m.x, m.z, 'overworld')
+        : {
+            x: this.heroPos.x,
+            y: this.heroPos.y,
+            z: this.heroPos.z,
+            dx: this.heroPos.x - m.x,
+            dz: this.heroPos.z - m.z,
+            distSq: (this.heroPos.x - m.x) ** 2 + (this.heroPos.z - m.z) ** 2,
+            dist: Math.hypot(this.heroPos.x - m.x, this.heroPos.z - m.z),
+            isLocal: true,
+          };
+    const dxHero = nearestSeaTgt.dx;
+    const dzHero = nearestSeaTgt.dz;
+    const distSqHero = nearestSeaTgt.distSq;
     if (distSqHero > 82 * 82 && !m.aggroActive) {
       return;
     }
 
-    const distH = Math.sqrt(distSqHero);
+    const distH = nearestSeaTgt.dist;
     if (m.hitFlashTimer && m.hitFlashTimer > 0) {
       m.hitFlashTimer = Math.max(0, m.hitFlashTimer - dt);
     }
@@ -13651,6 +14875,7 @@ export class RpgWorldEngine {
       monAttackProg = 1 - m.lungeTimer / 0.32;
 
       if (
+        nearestSeaTgt.isLocal &&
         this.phase === 'playing' &&
         this.encounterGraceTimer <= 0 &&
         distH < meleeReach &&
@@ -13709,11 +14934,11 @@ export class RpgWorldEngine {
           distH >= 4.2 &&
           distH < 20.5 &&
           (m.attackCooldown ?? 0) <= 0 &&
-          (this.isSwimming || this.heroPos.y < 4.5)
+          (this.isSwimming || nearestSeaTgt.y < 4.5)
         ) {
           const pSpeed = this.settings.difficulty === 'pendekar' ? 11.2 : 9.2;
           const mFireY = (m.y ?? spec.hoverY) + spec.hitCenterY;
-          const aimY = this.heroPos.y + 1.25 - mFireY;
+          const aimY = nearestSeaTgt.y + 1.25 - mFireY;
           const dist3D = Math.max(0.5, Math.hypot(dxHero, aimY, dzHero));
           const spitColor =
             m.type === 'electric_eel_drakon'
@@ -13725,19 +14950,39 @@ export class RpgWorldEngine {
               : m.type === 'abyssal_kraken'
               ? 0xa855f7
               : 0x2dd4bf;
+          const px = m.x + (dxHero / distH) * (0.9 * spec.baseScale);
+          const pz = m.z + (dzHero / distH) * (0.9 * spec.baseScale);
+          const pvx = (dxHero / dist3D) * pSpeed;
+          const pvy = (aimY / dist3D) * pSpeed;
+          const pvz = (dzHero / dist3D) * pSpeed;
           this.spawnProjectile({
             fromPlayer: false,
-            x: m.x + (dxHero / distH) * (0.9 * spec.baseScale),
+            x: px,
             y: mFireY,
-            z: m.z + (dzHero / distH) * (0.9 * spec.baseScale),
-            vx: (dxHero / dist3D) * pSpeed,
-            vy: (aimY / dist3D) * pSpeed,
-            vz: (dzHero / dist3D) * pSpeed,
+            z: pz,
+            vx: pvx,
+            vy: pvy,
+            vz: pvz,
             damage: 1,
             shieldDamage: 1,
             pierceLeft: 0,
             colorHex: spitColor,
           });
+          if (this.worldMode === 'overworld' && this.multiplayerActive && this.hasConnectedPeers && this.isWorldAuthority()) {
+            this.emitMultiplayerPacket({
+              t: 'shot',
+              fp: false,
+              x: Math.round(px * 100) / 100,
+              y: Math.round(mFireY * 100) / 100,
+              z: Math.round(pz * 100) / 100,
+              vx: Math.round(pvx * 100) / 100,
+              vy: Math.round(pvy * 100) / 100,
+              vz: Math.round(pvz * 100) / 100,
+              col: spitColor,
+              dmg: 1,
+              md: 'overworld',
+            });
+          }
           m.attackCooldown = this.settings.difficulty === 'pendekar' ? 2.4 : 3.2;
           m.attackAnimTimer = 0.32;
         }
@@ -13840,14 +15085,27 @@ export class RpgWorldEngine {
 
   private updateSkyMonster(m: RoamingMonster, dt: number, baseSpeedMult: number): void {
     const spec = MONSTER_SPECS[m.type];
-    const dxHero = this.heroPos.x - m.x;
-    const dzHero = this.heroPos.z - m.z;
-    const distSqHero = dxHero * dxHero + dzHero * dzHero;
+    const nearestSkyTgt =
+      this.worldMode === 'overworld' && this.multiplayerActive
+        ? this.getNearestPlayerTarget(m.x, m.z, 'overworld')
+        : {
+            x: this.heroPos.x,
+            y: this.heroPos.y,
+            z: this.heroPos.z,
+            dx: this.heroPos.x - m.x,
+            dz: this.heroPos.z - m.z,
+            distSq: (this.heroPos.x - m.x) ** 2 + (this.heroPos.z - m.z) ** 2,
+            dist: Math.hypot(this.heroPos.x - m.x, this.heroPos.z - m.z),
+            isLocal: true,
+          };
+    const dxHero = nearestSkyTgt.dx;
+    const dzHero = nearestSkyTgt.dz;
+    const distSqHero = nearestSkyTgt.distSq;
     if (distSqHero > 86 * 86 && !m.aggroActive) {
       return;
     }
 
-    const distH = Math.sqrt(distSqHero);
+    const distH = nearestSkyTgt.dist;
     if (m.hitFlashTimer && m.hitFlashTimer > 0) {
       m.hitFlashTimer = Math.max(0, m.hitFlashTimer - dt);
     }
@@ -13898,6 +15156,7 @@ export class RpgWorldEngine {
       monAttackProg = 1 - m.lungeTimer / 0.58;
 
       if (
+        nearestSkyTgt.isLocal &&
         this.phase === 'playing' &&
         this.encounterGraceTimer <= 0 &&
         distH < 2.4 + spec.hitRadius * 0.45 &&
@@ -13955,7 +15214,7 @@ export class RpgWorldEngine {
         if (distH >= 4.5 && distH < 30 && (m.attackCooldown ?? 0) <= 0) {
           const pSpeed = this.settings.difficulty === 'pendekar' ? 13.4 : 10.8;
           const mFireY = (m.y ?? cruiseY) + spec.hitCenterY * 0.6;
-          const aimY = this.heroPos.y + 1.35 - mFireY;
+          const aimY = nearestSkyTgt.y + 1.35 - mFireY;
           const dist3D = Math.max(0.5, Math.hypot(dxHero, aimY, dzHero));
           const skyShotColor =
             m.type === 'crimson_phoenix'
@@ -13971,19 +15230,39 @@ export class RpgWorldEngine {
               : m.type === 'acidic_sky_wyrm'
               ? 0x84cc16
               : 0xf97316;
+          const px = m.x + nx * (0.95 * spec.baseScale);
+          const pz = m.z + nz * (0.95 * spec.baseScale);
+          const pvx = (dxHero / dist3D) * pSpeed;
+          const pvy = (aimY / dist3D) * pSpeed;
+          const pvz = (dzHero / dist3D) * pSpeed;
           this.spawnProjectile({
             fromPlayer: false,
-            x: m.x + nx * (0.95 * spec.baseScale),
+            x: px,
             y: mFireY,
-            z: m.z + nz * (0.95 * spec.baseScale),
-            vx: (dxHero / dist3D) * pSpeed,
-            vy: (aimY / dist3D) * pSpeed,
-            vz: (dzHero / dist3D) * pSpeed,
+            z: pz,
+            vx: pvx,
+            vy: pvy,
+            vz: pvz,
             damage: 1,
             shieldDamage: 1,
             pierceLeft: 0,
             colorHex: skyShotColor,
           });
+          if (this.worldMode === 'overworld' && this.multiplayerActive && this.hasConnectedPeers && this.isWorldAuthority()) {
+            this.emitMultiplayerPacket({
+              t: 'shot',
+              fp: false,
+              x: Math.round(px * 100) / 100,
+              y: Math.round(mFireY * 100) / 100,
+              z: Math.round(pz * 100) / 100,
+              vx: Math.round(pvx * 100) / 100,
+              vy: Math.round(pvy * 100) / 100,
+              vz: Math.round(pvz * 100) / 100,
+              col: skyShotColor,
+              dmg: 1,
+              md: 'overworld',
+            });
+          }
           m.attackCooldown = this.settings.difficulty === 'pendekar' ? 2.2 : 2.9;
           m.attackAnimTimer = 0.34;
         }
@@ -14256,12 +15535,15 @@ export class RpgWorldEngine {
       if (this.multiplayerActive && this.remotePeers.size > 0) {
         for (const peer of this.remotePeers.values()) {
           if (peer.state.worldMode !== this.worldMode) continue;
+          const peerLowHp =
+            typeof peer.state.hp === 'number' && peer.state.hp > 0 && peer.state.hp <= 2;
           blips.push({
             id: `peer_${peer.state.uid}`,
             x: peer.pos.x,
             z: peer.pos.z,
             kind: 'hero_friend',
-            color: '#34d399',
+            color: peerLowHp ? '#fb7185' : '#34d399',
+            needsHelp: peerLowHp,
             label: peer.state.displayName,
           });
         }
@@ -14896,6 +16178,9 @@ export class RpgWorldEngine {
       activeSwimStyle: this.activeSwimStyle,
       oceanSurvival: this.buildOceanSurvivalState(),
       worldTime: this.getWorldTimeState(),
+      nearbyInjuredPeer: this.nearbyInjuredPeer,
+      allyHelpCooldownSec: Math.ceil(this.allyHelpCooldown),
+      localMabarStats: { ...this.localMabarStats },
     });
   }
 

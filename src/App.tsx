@@ -90,6 +90,7 @@ import {
   LeaderboardRecord,
   LearningSessionContext,
   MultiplayerMemberDoc,
+  MultiplayerPlayerStats,
   MultiplayerRoomDoc,
   RoomChatMessage,
   RpgHudSnapshot,
@@ -250,6 +251,7 @@ function DiglosaRpgApp() {
     connectedPeers: 0,
     totalPeers: 0,
   });
+  const [teamStatsMap, setTeamStatsMap] = useState<Record<string, MultiplayerPlayerStats>>({});
   const transportRef = useRef<P2pMeshTransport | null>(null);
   const chatSeenIdsRef = useRef<Set<string>>(new Set());
   const lastPacketSigRef = useRef<string>('');
@@ -665,6 +667,15 @@ function DiglosaRpgApp() {
         onOpenAcademyExam: (skill) => setActiveAcademySkill(skill),
         onOpenCaveSeal: (seal) => setActiveCaveSeal(seal),
         onOpenCrafting: () => setCraftingOpen(true),
+        onMultiplayerPacket: (pkt, targetUid) => {
+          const transport = transportRef.current;
+          if (!transport) return;
+          if (targetUid) {
+            transport.sendReliableToPeer(targetUid, pkt);
+          } else {
+            transport.sendReliableToAll(pkt);
+          }
+        },
       });
       engine.setLocalAppearance(characterId, playerName);
       engineRef.current = engine;
@@ -1088,12 +1099,14 @@ function DiglosaRpgApp() {
       setSideTab(null);
       setCloudSyncNote(null);
       setSyncStatus(null);
+      setTeamStatsMap({});
       setIsMultiplayerPlaying(true);
 
       const engine = engineRef.current;
       if (engine) {
         engine.setLocalAppearance(characterId, playerName);
-        engine.setMultiplayerActive(true);
+        engine.setMultiplayerActive(true, user?.uid);
+        engine.setMultiplayerRole(room.hostUid === user?.uid, false);
         engine.startNewGame(hud.settings.aimMode, room.difficulty, {
           spawnMode: 'random',
           spawnIndex: spawnIdx,
@@ -1103,7 +1116,7 @@ function DiglosaRpgApp() {
         });
       }
     },
-    [characterId, playerName, hud.settings.aimMode],
+    [characterId, playerName, hud.settings.aimMode, user?.uid],
   );
 
   const handleLeaveMultiplayerRoom = useCallback(
@@ -1113,6 +1126,7 @@ function DiglosaRpgApp() {
       transportRef.current = null;
       setActiveRoom(null);
       setRoomMembers([]);
+      setTeamStatsMap({});
       setIsMultiplayerPlaying(false);
       setMicEnabled(false);
       setMuteAllVoice(false);
@@ -1159,6 +1173,25 @@ function DiglosaRpgApp() {
       onLocalSpeakingChange: (speaking) => {
         setLocalSpeaking(speaking);
       },
+      onWorldEvent: (fromUid, pkt) => {
+        if (pkt.t === 'stats') {
+          setTeamStatsMap((prev) => ({
+            ...prev,
+            [pkt.st.uid]: pkt.st,
+          }));
+          return;
+        }
+        engineRef.current?.handleMultiplayerPacket(fromUid, pkt, activeUid);
+      },
+      onPeerChannelOpen: (peerUid) => {
+        const engine = engineRef.current;
+        if (!engine) return;
+        const statsPkt = engine.getLocalStatsPacket(activeUid);
+        transport.sendReliableToPeer(peerUid, statsPkt);
+        if (engine.isMultiplayerWorldHost()) {
+          transport.sendReliableToPeer(peerUid, engine.buildWorldSyncPacket());
+        }
+      },
     });
     transportRef.current = transport;
 
@@ -1173,6 +1206,19 @@ function DiglosaRpgApp() {
     const unsubMembers = subscribeRoomMembers(activeRoomId, (members) => {
       setRoomMembers(members);
       transport.syncMembers(members);
+      const activeSet = new Set(members.map((m) => m.uid));
+      setTeamStatsMap((prev) => {
+        let pruned = false;
+        const next: Record<string, MultiplayerPlayerStats> = {};
+        for (const [k, v] of Object.entries(prev)) {
+          if (activeSet.has(k)) {
+            next[k] = v;
+          } else {
+            pruned = true;
+          }
+        }
+        return pruned ? next : prev;
+      });
       const me = members.find((m) => m.uid === activeUid);
       if (me) {
         setMySpawnIndex(me.spawnIndex);
@@ -1233,6 +1279,58 @@ function DiglosaRpgApp() {
 
     return () => window.clearInterval(id);
   }, [isMultiplayerPlaying, activeRoomId]);
+
+  const isHostInRoom = Boolean(activeRoom && activeUid && activeRoom.hostUid === activeUid);
+
+  // Sync authoritative Host/Client role into 3D engine (supports seamless Host Migration)
+  useEffect(() => {
+    engineRef.current?.setMultiplayerRole(isHostInRoom, p2pStats.connectedPeers > 0);
+  }, [isHostInRoom, p2pStats.connectedPeers, isMultiplayerPlaying]);
+
+  // Host world clock/wave/monster sync (~4 Hz movement + 1.8s authoritative clock snapshot) & 1 Hz Team Stats
+  useEffect(() => {
+    if (!isMultiplayerPlaying || !activeRoomId || !activeUid) return;
+
+    const moveIntervalId = isHostInRoom
+      ? window.setInterval(() => {
+          const engine = engineRef.current;
+          const transport = transportRef.current;
+          if (!engine || !transport || transport.getOpenChannelCount() === 0) return;
+          transport.sendReliableToAll(engine.buildMonsterMovePacket());
+        }, 250)
+      : null;
+
+    const worldSyncIntervalId = isHostInRoom
+      ? window.setInterval(() => {
+          const engine = engineRef.current;
+          const transport = transportRef.current;
+          if (!engine || !transport || transport.getOpenChannelCount() === 0) return;
+          transport.sendReliableToAll(engine.buildWorldSyncPacket());
+        }, 1800)
+      : null;
+
+    const statsIntervalId = window.setInterval(() => {
+      const engine = engineRef.current;
+      if (!engine) return;
+      const statsPkt = engine.getLocalStatsPacket(activeUid);
+      if (statsPkt.t === 'stats') {
+        setTeamStatsMap((prev) => ({
+          ...prev,
+          [statsPkt.st.uid]: statsPkt.st,
+        }));
+      }
+      const transport = transportRef.current;
+      if (transport && transport.getOpenChannelCount() > 0) {
+        transport.sendReliableToAll(statsPkt);
+      }
+    }, 1000);
+
+    return () => {
+      if (moveIntervalId !== null) window.clearInterval(moveIntervalId);
+      if (worldSyncIntervalId !== null) window.clearInterval(worldSyncIntervalId);
+      window.clearInterval(statsIntervalId);
+    };
+  }, [isMultiplayerPlaying, activeRoomId, activeUid, isHostInRoom]);
 
   const handlePreviewCharacter = useCallback(
     (nextId: CharacterPresetId, nextName: string) => {
@@ -1507,6 +1605,7 @@ function DiglosaRpgApp() {
           voiceLastAction={voiceLastAction}
           onToggleVoice={handleToggleVoice}
           multiplayerActive={Boolean(activeRoom && isMultiplayerPlaying)}
+          onHelpTeammate={() => engineRef.current?.helpNearbyTeammate()}
         />
       )}
 
@@ -1517,6 +1616,7 @@ function DiglosaRpgApp() {
           myUid={user?.uid ?? null}
           connectedPeers={p2pStats.connectedPeers}
           messages={chatMessages}
+          teamStats={Object.values(teamStatsMap)}
           micEnabled={micEnabled}
           localSpeaking={localSpeaking}
           muteAllVoice={muteAllVoice}

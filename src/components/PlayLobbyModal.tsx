@@ -21,7 +21,7 @@ import {
 import {
   CHARACTER_PRESETS,
   getCharacterPreset,
-  RANDOM_SPAWN_POINTS,
+  getMultiplayerGroupSpawnPoint,
 } from '../data/characterPresets';
 import {
   CharacterPresetId,
@@ -382,10 +382,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {roomMembers.map((member) => {
                 const preset = getCharacterPreset(member.characterId);
-                const spawnInfo =
-                  RANDOM_SPAWN_POINTS[
-                    Math.abs(member.spawnIndex) % RANDOM_SPAWN_POINTS.length
-                  ];
+                const spawnInfo = getMultiplayerGroupSpawnPoint(member.spawnIndex);
                 const isMe = user?.uid === member.uid;
                 return (
                   <div
@@ -432,8 +429,8 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
             <div className="flex flex-col justify-between gap-2 rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2.5 sm:flex-row sm:items-center">
               <div className="text-[11px] font-medium text-slate-300">
                 <strong className="text-cyan-200">Titik Spawn Kamu:</strong>{' '}
-                {RANDOM_SPAWN_POINTS[Math.abs(mySpawnIndex) % RANDOM_SPAWN_POINTS.length].label} ·
-                Koneksi langsung WebRTC P2P (Chat & Suara aktif di dalam game).
+                {getMultiplayerGroupSpawnPoint(mySpawnIndex).label} ·
+                Waktu, progres dunia &amp; Chat P2P sinkron otomatis.
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -672,8 +669,8 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                       Buat Room Grup (Host)
                     </div>
                     <p className="mt-1 text-xs font-medium text-slate-300">
-                      Buat kode room 6 huruf lalu bagikan ke teman (maks 6 pemain, spawn acak agar
-                      tidak bertumpuk).
+                      Buat kode room 6 huruf lalu bagikan ke teman (maks 6 pemain, spawn bersama di
+                      Alun-Alun Desa Sapaan dengan jarak formasi aman).
                     </p>
                     <div className="mt-3 flex flex-wrap gap-1.5">
                       {DIFFICULTY_CARDS.map((d) => (
@@ -748,8 +745,8 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                   </h3>
                   <p className="max-w-xl text-xs font-medium text-slate-300">
                     Sistem otomatis mencari room publik yang masih kosong (maks 6 pemain) atau
-                    membuat room terbuka baru. Semua pemain muncul di titik acak aman Desa Sapaan
-                    dengan Chat Teks &amp; Suara langsung.
+                    membuat room terbuka baru. Semua pemain muncul bersama di Alun-Alun Desa Sapaan
+                    dengan waktu, progres dunia, Chat Teks &amp; Suara sinkron.
                   </p>
                   <div className="flex flex-wrap items-center gap-1.5 pt-1">
                     <span className="text-[11px] font-bold text-slate-300">

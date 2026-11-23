@@ -2,6 +2,7 @@ import {
   CharacterPresetId,
   LocalPlayerSyncPacket,
   MultiplayerMemberDoc,
+  P2pReliableMessage,
   RemotePlayerState,
   RoomChatMessage,
   WebRtcSignalDoc,
@@ -60,6 +61,7 @@ interface PeerSlot {
   uid: string;
   pc: RTCPeerConnection;
   dc: RTCDataChannel | null;
+  reliableDc: RTCDataChannel | null;
   makingOffer: boolean;
   ignoreOffer: boolean;
   audioEl: HTMLAudioElement | null;
@@ -75,6 +77,8 @@ export interface P2pTransportCallbacks {
   onChatMessage: (msg: RoomChatMessage) => void;
   onConnectionStats: (stats: { connectedPeers: number; totalPeers: number }) => void;
   onLocalSpeakingChange?: (speaking: boolean) => void;
+  onWorldEvent?: (fromUid: string, pkt: P2pReliableMessage) => void;
+  onPeerChannelOpen?: (peerUid: string) => void;
 }
 
 /**
@@ -172,7 +176,12 @@ export class P2pMeshTransport {
   public getOpenChannelCount(): number {
     let open = 0;
     for (const p of this.peers.values()) {
-      if (p.dc && p.dc.readyState === 'open') open++;
+      if (
+        (p.dc && p.dc.readyState === 'open') ||
+        (p.reliableDc && p.reliableDc.readyState === 'open')
+      ) {
+        open++;
+      }
     }
     return open;
   }
@@ -181,14 +190,50 @@ export class P2pMeshTransport {
     if (this.disposed || this.peers.size === 0) return;
     let serialized: string | null = null;
     for (const peer of this.peers.values()) {
-      if (peer.dc && peer.dc.readyState === 'open') {
+      const ch = peer.dc && peer.dc.readyState === 'open' ? peer.dc : peer.reliableDc;
+      if (ch && ch.readyState === 'open') {
         if (!serialized) serialized = JSON.stringify(packet);
         try {
-          peer.dc.send(serialized);
+          ch.send(serialized);
         } catch {
           // ignore transient buffer errors
         }
       }
+    }
+  }
+
+  public sendReliableToAll(pkt: P2pReliableMessage): number {
+    if (this.disposed || this.peers.size === 0) return 0;
+    let serialized: string | null = null;
+    let sent = 0;
+    for (const peer of this.peers.values()) {
+      const ch =
+        peer.reliableDc && peer.reliableDc.readyState === 'open' ? peer.reliableDc : peer.dc;
+      if (ch && ch.readyState === 'open') {
+        if (!serialized) serialized = JSON.stringify(pkt);
+        try {
+          ch.send(serialized);
+          sent++;
+        } catch {
+          // ignore transient buffer errors
+        }
+      }
+    }
+    return sent;
+  }
+
+  public sendReliableToPeer(toUid: string, pkt: P2pReliableMessage): boolean {
+    if (this.disposed) return false;
+    const peer = this.peers.get(toUid);
+    if (!peer) return false;
+    const ch =
+      peer.reliableDc && peer.reliableDc.readyState === 'open' ? peer.reliableDc : peer.dc;
+    if (!ch || ch.readyState !== 'open') return false;
+    try {
+      ch.send(JSON.stringify(pkt));
+      return true;
+    } catch {
+      return false;
     }
   }
 
@@ -206,9 +251,11 @@ export class P2pMeshTransport {
 
     let sent = 0;
     for (const peer of this.peers.values()) {
-      if (peer.dc && peer.dc.readyState === 'open') {
+      const ch =
+        peer.reliableDc && peer.reliableDc.readyState === 'open' ? peer.reliableDc : peer.dc;
+      if (ch && ch.readyState === 'open') {
         try {
-          peer.dc.send(wire);
+          ch.send(wire);
           sent++;
         } catch {
           // ignore
@@ -367,6 +414,7 @@ export class P2pMeshTransport {
       uid: remoteUid,
       pc,
       dc: null,
+      reliableDc: null,
       makingOffer: false,
       ignoreOffer: false,
       audioEl: null,
@@ -385,14 +433,17 @@ export class P2pMeshTransport {
       }
     }
 
-    // Impolite peer creates the initial DataChannel so both sides converge cleanly
+    // Impolite peer creates the initial DataChannels so both sides converge cleanly
     if (!this.isPoliteFor(remoteUid)) {
       const dc = pc.createDataChannel('diglosa-sync', { ordered: false, maxRetransmits: 0 });
-      this.bindDataChannel(slot, dc);
+      this.bindDataChannel(slot, dc, 'sync');
+      const rdc = pc.createDataChannel('diglosa-reliable', { ordered: true });
+      this.bindDataChannel(slot, rdc, 'reliable');
     }
 
     pc.ondatachannel = (ev) => {
-      this.bindDataChannel(slot, ev.channel);
+      const kind = ev.channel.label === 'diglosa-reliable' ? 'reliable' : 'sync';
+      this.bindDataChannel(slot, ev.channel, kind);
     };
 
     pc.onnegotiationneeded = async () => {
@@ -448,10 +499,19 @@ export class P2pMeshTransport {
     return slot;
   }
 
-  private bindDataChannel(slot: PeerSlot, dc: RTCDataChannel): void {
-    slot.dc = dc;
+  private bindDataChannel(
+    slot: PeerSlot,
+    dc: RTCDataChannel,
+    kind: 'sync' | 'reliable',
+  ): void {
+    if (kind === 'reliable') {
+      slot.reliableDc = dc;
+    } else {
+      slot.dc = dc;
+    }
     dc.onopen = () => {
       this.emitConnectionStats();
+      this.callbacks.onPeerChannelOpen?.(slot.uid);
     };
     dc.onclose = () => {
       this.emitConnectionStats();
@@ -461,7 +521,8 @@ export class P2pMeshTransport {
       try {
         const parsed = JSON.parse(ev.data) as
           | LocalPlayerSyncPacket
-          | { t: 'chat'; id?: string; nm?: string; tx?: string };
+          | { t: 'chat'; id?: string; nm?: string; tx?: string }
+          | P2pReliableMessage;
         if (parsed.t === 'state') {
           const meta = this.memberMeta.get(slot.uid);
           const prev = this.remoteStates.get(slot.uid);
@@ -481,6 +542,10 @@ export class P2pMeshTransport {
             activeWeapon: parsed.wp || 'ketapel',
             weaponOwned: Boolean(parsed.wo),
             aimPitch: Number.isFinite(parsed.ap) ? parsed.ap : 0,
+            hp: typeof parsed.hp === 'number' ? parsed.hp : prev?.hp,
+            maxHp: typeof parsed.mhp === 'number' ? parsed.mhp : prev?.maxHp,
+            inChallenge: typeof parsed.ic === 'boolean' ? parsed.ic : prev?.inChallenge,
+            zoneName: typeof parsed.zn === 'string' ? parsed.zn : prev?.zoneName,
             speaking: slot.speaking,
             lastChatText: prev?.lastChatText,
             lastChatAt: prev?.lastChatAt,
@@ -507,6 +572,17 @@ export class P2pMeshTransport {
             createdAtMs: Date.now(),
             source: 'p2p',
           });
+        } else if (
+          parsed.t === 'wsync' ||
+          parsed.t === 'msync' ||
+          parsed.t === 'm_hit' ||
+          parsed.t === 'm_kill' ||
+          parsed.t === 'shot' ||
+          parsed.t === 'heal' ||
+          parsed.t === 'prog' ||
+          parsed.t === 'stats'
+        ) {
+          this.callbacks.onWorldEvent?.(slot.uid, parsed);
         }
       } catch {
         // ignore malformed datagram
@@ -564,6 +640,11 @@ export class P2pMeshTransport {
     this.peers.delete(uid);
     try {
       slot.dc?.close();
+    } catch {
+      // ignore
+    }
+    try {
+      slot.reliableDc?.close();
     } catch {
       // ignore
     }

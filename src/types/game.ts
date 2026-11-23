@@ -603,6 +603,15 @@ export interface RpgHudSnapshot {
   activeSwimStyle?: SwimStyleId;
   oceanSurvival?: OceanSurvivalState | null;
   worldTime: WorldTimeState;
+  nearbyInjuredPeer?: NearbyInjuredPeer | null;
+  allyHelpCooldownSec?: number;
+  localMabarStats?: {
+    kills: number;
+    assists: number;
+    helps: number;
+    challenges: number;
+    zonesCleared: number;
+  };
 }
 
 export interface LeaderboardRecord {
@@ -712,6 +721,71 @@ export interface RoomChatMessage {
   source: 'p2p' | 'firestore' | 'system';
 }
 
+export interface NearbyInjuredPeer {
+  uid: string;
+  displayName: string;
+  hp: number;
+  maxHp: number;
+  distance: number;
+}
+
+export interface MultiplayerPlayerStats {
+  uid: string;
+  displayName: string;
+  characterId: CharacterPresetId;
+  kills: number;
+  assists: number;
+  helps: number;
+  challenges: number;
+  zonesCleared: number;
+  personalScore: number;
+  hp: number;
+  maxHp: number;
+  worldMode: WorldLocationMode;
+  zoneName: string;
+  inChallenge: boolean;
+  updatedAtMs: number;
+}
+
+export interface SyncMonsterSnapshot {
+  id: string;
+  tp: MonsterType;
+  nm: string;
+  zn: ZoneId;
+  x: number;
+  y: number;
+  z: number;
+  hx: number;
+  hz: number;
+  yaw: number;
+  hp: number;
+  mhp: number;
+  shp?: number;
+  cmb: boolean;
+  ngt?: boolean;
+  sea?: boolean;
+  sky?: boolean;
+  wids?: string[];
+  rxp: number;
+  rdm: number;
+  rsc: number;
+  al: boolean;
+  agg?: boolean;
+  sb?: boolean;
+}
+
+export interface SyncShooterSnapshot {
+  id: string;
+  x: number;
+  z: number;
+  hx: number;
+  hz: number;
+  zn?: ZoneId;
+  hp: number;
+  al: boolean;
+  ngt?: boolean;
+}
+
 export interface RemotePlayerState {
   uid: string;
   displayName: string;
@@ -728,6 +802,10 @@ export interface RemotePlayerState {
   activeWeapon: WeaponId;
   weaponOwned: boolean;
   aimPitch: number;
+  hp?: number;
+  maxHp?: number;
+  inChallenge?: boolean;
+  zoneName?: string;
   speaking?: boolean;
   lastChatText?: string;
   lastChatAt?: number;
@@ -750,5 +828,90 @@ export interface LocalPlayerSyncPacket {
   ap: number;
   ch: CharacterPresetId;
   nm: string;
+  hp?: number;
+  mhp?: number;
+  ic?: boolean;
+  zn?: string;
 }
+
+export type P2pReliableMessage =
+  | {
+      t: 'wsync';
+      day: number;
+      tick: number;
+      mode: 'day' | 'night';
+      wtot: number;
+      nseq: number;
+      m: SyncMonsterSnapshot[];
+      s: SyncShooterSnapshot[];
+      lz: ZoneId[];
+      dbz: ZoneId[];
+      dc: Record<ZoneId, number[]>;
+    }
+  | {
+      t: 'msync';
+      m: Array<{
+        id: string;
+        x: number;
+        y: number;
+        z: number;
+        yaw: number;
+        hp: number;
+        al: boolean;
+        agg?: boolean;
+      }>;
+      s: Array<{ id: string; x: number; z: number; hp: number; al: boolean }>;
+    }
+  | {
+      t: 'm_hit';
+      id: string;
+      dmg: number;
+      dx: number;
+      dz: number;
+      md: WorldLocationMode;
+      zn?: ZoneId;
+      isSh?: boolean;
+    }
+  | {
+      t: 'm_kill';
+      id: string;
+      killerUid: string;
+      killerName: string;
+      assists: string[];
+      isSh?: boolean;
+      isQuiz?: boolean;
+      md: WorldLocationMode;
+      zn?: ZoneId;
+    }
+  | {
+      t: 'shot';
+      fp?: boolean;
+      wid?: WeaponId;
+      x: number;
+      y: number;
+      z: number;
+      vx: number;
+      vy: number;
+      vz: number;
+      col: number;
+      dmg: number;
+      md: WorldLocationMode;
+    }
+  | {
+      t: 'heal';
+      toUid: string;
+      amt: number;
+      fromName: string;
+    }
+  | {
+      t: 'prog';
+      lz: ZoneId[];
+      dbz: ZoneId[];
+      dc: Record<ZoneId, number[]>;
+    }
+  | {
+      t: 'stats';
+      st: MultiplayerPlayerStats;
+    };
+
 

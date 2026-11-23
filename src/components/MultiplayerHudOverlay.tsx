@@ -1,20 +1,25 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   Copy,
+  Crown,
+  Heart,
   LogOut,
   MessageSquare,
   Mic,
   MicOff,
   Send,
+  Trophy,
   Users,
   Volume2,
   VolumeX,
   X,
 } from 'lucide-react';
+import { getCharacterPreset } from '../data/characterPresets';
 import { QUICK_CHAT_PHRASES } from '../services/p2pMeshTransport';
 import {
   MultiplayerMemberDoc,
+  MultiplayerPlayerStats,
   MultiplayerRoomDoc,
   RoomChatMessage,
 } from '../types/game';
@@ -25,6 +30,7 @@ interface MultiplayerHudOverlayProps {
   myUid: string | null;
   connectedPeers: number;
   messages: RoomChatMessage[];
+  teamStats: MultiplayerPlayerStats[];
   micEnabled: boolean;
   localSpeaking: boolean;
   muteAllVoice: boolean;
@@ -41,6 +47,7 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
   myUid,
   connectedPeers,
   messages,
+  teamStats,
   micEnabled,
   localSpeaking,
   muteAllVoice,
@@ -51,6 +58,7 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
   onLeaveRoom,
 }) => {
   const [chatOpen, setChatOpen] = useState(false);
+  const [teamOpen, setTeamOpen] = useState(false);
   const [draft, setDraft] = useState('');
   const [unreadCount, setUnreadCount] = useState(0);
   const [copied, setCopied] = useState(false);
@@ -83,6 +91,56 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
     const t = window.setTimeout(() => setConfirmLeave(false), 3200);
     return () => window.clearTimeout(t);
   }, [confirmLeave]);
+
+  const sortedTeamRows = useMemo(() => {
+    const byUid = new Map<string, MultiplayerPlayerStats>();
+    for (const s of teamStats) {
+      byUid.set(s.uid, s);
+    }
+    const rows: MultiplayerPlayerStats[] = members.map((m) => {
+      const existing = byUid.get(m.uid);
+      if (existing) return existing;
+      return {
+        uid: m.uid,
+        displayName: m.displayName,
+        characterId: m.characterId,
+        kills: 0,
+        assists: 0,
+        helps: 0,
+        challenges: 0,
+        zonesCleared: 0,
+        personalScore: 0,
+        hp: 5,
+        maxHp: 5,
+        worldMode: 'overworld',
+        zoneName: 'Desa Sapaan',
+        inChallenge: false,
+        updatedAtMs: 0,
+      };
+    });
+    for (const s of teamStats) {
+      if (!rows.some((r) => r.uid === s.uid)) {
+        rows.push(s);
+      }
+    }
+    const contribScore = (r: MultiplayerPlayerStats) =>
+      r.personalScore + r.kills * 50 + (r.helps + r.assists) * 40 + r.challenges * 60;
+    return rows.sort((a, b) => contribScore(b) - contribScore(a));
+  }, [members, teamStats]);
+
+  const teamTotals = useMemo(() => {
+    let totalScore = 0;
+    let totalKills = 0;
+    let totalHelps = 0;
+    let totalChallenges = 0;
+    for (const r of sortedTeamRows) {
+      totalScore += r.personalScore;
+      totalKills += r.kills;
+      totalHelps += r.helps + r.assists;
+      totalChallenges += r.challenges;
+    }
+    return { totalScore, totalKills, totalHelps, totalChallenges };
+  }, [sortedTeamRows]);
 
   const handleCopyCode = async () => {
     try {
@@ -129,11 +187,36 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
           )}
         </button>
 
+        {/* Team Scoreboard Drawer Toggle */}
+        <button
+          type="button"
+          data-no-click-sfx="true"
+          onClick={() => {
+            setTeamOpen((v) => !v);
+            setChatOpen(false);
+          }}
+          title="Buka/Tutup Nilai & Kontribusi Tim"
+          className={`flex items-center gap-1 rounded-full border px-2 py-0.5 transition ${
+            teamOpen
+              ? 'border-amber-300 bg-amber-600/80 text-white'
+              : 'border-white/15 bg-slate-900/90 text-amber-200 hover:border-amber-300/60'
+          }`}
+        >
+          <Trophy className="h-3 w-3" />
+          <span className="hidden sm:inline">Tim</span>
+          <span className="font-mono-nums text-[9.5px] text-amber-100">
+            {teamTotals.totalScore}
+          </span>
+        </button>
+
         {/* Chat Drawer Toggle */}
         <button
           type="button"
           data-no-click-sfx="true"
-          onClick={() => setChatOpen((v) => !v)}
+          onClick={() => {
+            setChatOpen((v) => !v);
+            setTeamOpen(false);
+          }}
           title="Buka/Tutup Chat Tim"
           className={`relative flex items-center gap-1 rounded-full border px-2 py-0.5 transition ${
             chatOpen
@@ -213,6 +296,108 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
       {voiceError && (
         <div className="pointer-events-none rounded-full border border-rose-400/60 bg-rose-950/90 px-3 py-0.5 text-[10px] font-bold text-rose-100 shadow-lg">
           {voiceError}
+        </div>
+      )}
+
+      {/* Collapsible Team Contribution & Leaderboard Drawer */}
+      {teamOpen && (
+        <div className="pointer-events-auto flex w-[min(365px,92vw)] flex-col gap-2 rounded-2xl border border-amber-300/40 bg-slate-950/94 p-2.5 text-white shadow-2xl backdrop-blur-md">
+          <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
+            <div className="flex items-center gap-1.5">
+              <Trophy className="h-3.5 w-3.5 text-amber-300" />
+              <span className="text-[10.5px] font-black uppercase tracking-wider text-amber-200">
+                Nilai &amp; Kontribusi Tim
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setTeamOpen(false)}
+              className="rounded-md p-0.5 text-slate-400 hover:bg-slate-800 hover:text-white"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-4 gap-1 rounded-xl border border-white/10 bg-slate-900/80 px-2 py-1.5 text-center text-[10px]">
+            <div>
+              <div className="text-[9px] font-bold text-slate-400">Skor Tim</div>
+              <div className="font-mono-nums font-black text-amber-300">{teamTotals.totalScore}</div>
+            </div>
+            <div>
+              <div className="text-[9px] font-bold text-slate-400">Musuh</div>
+              <div className="font-mono-nums font-black text-rose-300">{teamTotals.totalKills}</div>
+            </div>
+            <div>
+              <div className="text-[9px] font-bold text-slate-400">Bantu</div>
+              <div className="font-mono-nums font-black text-emerald-300">{teamTotals.totalHelps}</div>
+            </div>
+            <div>
+              <div className="text-[9px] font-bold text-slate-400">Kuis EN</div>
+              <div className="font-mono-nums font-black text-cyan-300">{teamTotals.totalChallenges}</div>
+            </div>
+          </div>
+
+          <div className="flex max-h-48 flex-col gap-1 overflow-y-auto overscroll-contain pr-0.5">
+            {sortedTeamRows.map((row, idx) => {
+              const isMine = myUid === row.uid;
+              const isMvp = idx === 0 && (row.personalScore > 0 || row.kills > 0 || row.helps > 0 || row.challenges > 0);
+              const preset = getCharacterPreset(row.characterId);
+              const lowHp = row.hp > 0 && row.hp <= 2;
+              return (
+                <div
+                  key={row.uid}
+                  className={`flex items-center justify-between gap-2 rounded-xl border px-2 py-1.5 text-[10.5px] ${
+                    isMine
+                      ? 'border-cyan-400/50 bg-cyan-950/45'
+                      : 'border-white/10 bg-slate-900/75'
+                  }`}
+                >
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-white/25 text-[10px] font-black text-white"
+                      style={{ backgroundColor: preset.badgeColor }}
+                    >
+                      {row.displayName.slice(0, 1).toUpperCase()}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1">
+                        <span className="truncate font-black text-white">
+                          {row.displayName}
+                        </span>
+                        {isMvp && (
+                          <span className="inline-flex items-center gap-0.5 rounded bg-amber-500/25 px-1 py-0.5 text-[8.5px] font-black text-amber-200">
+                            <Crown className="h-2.5 w-2.5" /> MVP
+                          </span>
+                        )}
+                        {row.inChallenge && (
+                          <span className="rounded bg-violet-500/30 px-1 py-0.5 text-[8.5px] font-bold text-violet-200">
+                            📘 Kuis
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-[9px] font-semibold text-slate-300">
+                        <span className={`inline-flex items-center gap-0.5 ${lowHp ? 'text-rose-300' : 'text-emerald-300'}`}>
+                          <Heart className="h-2.5 w-2.5 fill-current" />
+                          {row.hp}/{row.maxHp}
+                        </span>
+                        <span className="truncate text-slate-400">{row.zoneName}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-2 font-mono-nums text-[10px] font-black">
+                    <span title="Musuh Dikalahkan" className="text-rose-300">⚔️{row.kills}</span>
+                    <span title="Bantu Teman & Assist" className="text-emerald-300">🤝{row.helps + row.assists}</span>
+                    <span title="Tantangan Bahasa Inggris" className="text-cyan-300">📘{row.challenges}</span>
+                    <span title="Skor Pribadi" className="text-amber-300">{row.personalScore}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="text-center text-[9.5px] font-medium text-slate-400">
+            Kuis bahasa Inggris dikerjakan mandiri · Dekati teman terluka &amp; tekan <strong className="text-emerald-300">[R]</strong> untuk menolong!
+          </div>
         </div>
       )}
 

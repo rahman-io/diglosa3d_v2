@@ -156,3 +156,25 @@ export const RANDOM_SPAWN_POINTS: SpawnPointDef[] = [
   { id: 'padang_bunga', label: 'Padang Bunga Timur', x: 14.0, z: 114.5, yaw: -Math.PI * 0.65 },
   { id: 'gerbang_utara', label: 'Gerbang Jembatan Desa', x: -10.0, z: 91.5, yaw: 0.25 },
 ];
+
+/**
+ * Titik spawn seragam di Alun-Alun Desa Sapaan untuk seluruh 2-6 pemain dalam satu room.
+ * Setiap pemain berjarak ~2.6 meter melingkar agar langsung bertemu tanpa bertumpuk.
+ */
+export function getMultiplayerGroupSpawnPoint(spawnIndex: number): SpawnPointDef {
+  const idx = Math.abs(Math.floor(Number.isFinite(spawnIndex) ? spawnIndex : 0)) % 6;
+  const centerX = -6;
+  const centerZ = 126;
+  const radius = 2.6;
+  const angle = idx * ((Math.PI * 2) / 6);
+  const x = Math.round((centerX + Math.cos(angle) * radius) * 100) / 100;
+  const z = Math.round((centerZ + Math.sin(angle) * radius) * 100) / 100;
+  const yaw = Math.atan2(centerX - x, centerZ - z);
+  return {
+    id: `group_alun_${idx + 1}`,
+    label: `Alun-Alun Desa (Formasi #${idx + 1})`,
+    x,
+    z,
+    yaw,
+  };
+}
