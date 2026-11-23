@@ -144,11 +144,6 @@
           "minLength": 1,
           "maxLength": 40
         },
-        "groupName": {
-          "type": "string",
-          "minLength": 2,
-          "maxLength": 32
-        },
         "difficulty": {
           "type": "string",
           "enum": ["santai", "petualang", "pendekar"]
@@ -157,12 +152,6 @@
           "type": "integer"
         },
         "memberCount": {
-          "type": "integer"
-        },
-        "waveSeed": {
-          "type": "integer"
-        },
-        "waveCount": {
           "type": "integer"
         },
         "createdAt": {

@@ -77,7 +77,9 @@ import {
   joinRoomByCode,
   leaveMultiplayerRoom,
   normalizeRoomCode,
+  readLatestRoomMeta,
   rejoinRoomById,
+  RoomSquadMeta,
   sanitizeGroupName,
   sendFallbackChatMessage,
   startMultiplayerMatch,
@@ -280,6 +282,11 @@ function DiglosaRpgApp() {
   const chatSeenIdsRef = useRef<Set<string>>(new Set());
   const lastPacketSigRef = useRef<string>('');
   const lastPacketSentAtRef = useRef<number>(0);
+  const roomMetaRef = useRef<{ roomId: string; g?: string; ws?: number; wc?: number; ts: number }>({
+    roomId: '',
+    ts: 0,
+  });
+  const enteringPlayingRoomRef = useRef<string | null>(null);
 
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardRecord[]>([]);
@@ -1232,11 +1239,47 @@ function DiglosaRpgApp() {
     ],
   );
 
+  const applyMetaToRoomRef = useCallback((roomId: string, meta: RoomSquadMeta) => {
+    const prev = roomMetaRef.current;
+    const nextTs = meta.ts ?? 0;
+    if (prev.roomId !== roomId) {
+      roomMetaRef.current = {
+        roomId,
+        g: meta.g,
+        ws: meta.ws,
+        wc: meta.wc,
+        ts: nextTs,
+      };
+      return;
+    }
+    const isNewerOrEqual = nextTs >= prev.ts || prev.ts === 0;
+    roomMetaRef.current = {
+      roomId,
+      g: isNewerOrEqual ? (meta.g ?? prev.g) : (prev.g ?? meta.g),
+      ws: isNewerOrEqual ? (meta.ws ?? prev.ws) : (prev.ws ?? meta.ws),
+      wc: isNewerOrEqual ? (meta.wc ?? prev.wc) : (prev.wc ?? meta.wc),
+      ts: Math.max(prev.ts, nextTs),
+    };
+  }, []);
+
+  const mergeRoomWithCachedMeta = useCallback((room: MultiplayerRoomDoc): MultiplayerRoomDoc => {
+    const cached = roomMetaRef.current;
+    if (cached.roomId !== room.roomId) return room;
+    return {
+      ...room,
+      groupName: room.groupName ?? cached.g,
+      waveSeed: room.waveSeed ?? cached.ws,
+      waveCount: room.waveCount ?? cached.wc,
+    };
+  }, []);
+
   const handleLeaveMultiplayerRoom = useCallback(
     async (returnToTitle = true) => {
       const roomId = activeRoom?.roomId;
       transportRef.current?.dispose();
       transportRef.current = null;
+      roomMetaRef.current = { roomId: '', ts: 0 };
+      enteringPlayingRoomRef.current = null;
       setActiveRoom(null);
       setResumableRoom(null);
       setRoomMembers([]);
@@ -1337,7 +1380,7 @@ function DiglosaRpgApp() {
         void handleLeaveMultiplayerRoom(true);
         return;
       }
-      setActiveRoom(nextRoom);
+      setActiveRoom(mergeRoomWithCachedMeta(nextRoom));
     });
 
     const unsubMembers = subscribeRoomMembers(activeRoomId, (members) => {
@@ -1362,13 +1405,41 @@ function DiglosaRpgApp() {
       }
     });
 
-    const unsubFallbackChat = subscribeFallbackChatMessages(activeRoomId, (msg) => {
-      appendChatMessage(msg);
-      if (msg.senderUid !== activeUid) {
-        transport.applyRemoteChatBubble(msg.senderUid, msg.text);
-        engineRef.current?.triggerRemoteChatBubble(msg.senderUid, msg.text);
-      }
-    });
+    const unsubFallbackChat = subscribeFallbackChatMessages(
+      activeRoomId,
+      (msg) => {
+        appendChatMessage(msg);
+        if (msg.senderUid !== activeUid) {
+          transport.applyRemoteChatBubble(msg.senderUid, msg.text);
+          engineRef.current?.triggerRemoteChatBubble(msg.senderUid, msg.text);
+        }
+      },
+      (meta) => {
+        applyMetaToRoomRef(activeRoomId, meta);
+        if (meta.g) {
+          setGroupName(meta.g);
+        }
+        setActiveRoom((prev) => {
+          if (!prev || prev.roomId !== activeRoomId) return prev;
+          const nextGroupName = roomMetaRef.current.g ?? prev.groupName;
+          const nextWaveSeed = roomMetaRef.current.ws ?? prev.waveSeed;
+          const nextWaveCount = roomMetaRef.current.wc ?? prev.waveCount;
+          if (
+            nextGroupName === prev.groupName &&
+            nextWaveSeed === prev.waveSeed &&
+            nextWaveCount === prev.waveCount
+          ) {
+            return prev;
+          }
+          return {
+            ...prev,
+            groupName: nextGroupName,
+            waveSeed: nextWaveSeed,
+            waveCount: nextWaveCount,
+          };
+        });
+      },
+    );
 
     return () => {
       unsubRoom();
@@ -1379,19 +1450,71 @@ function DiglosaRpgApp() {
         transportRef.current = null;
       }
     };
-  }, [activeRoomId, activeUid, appendChatMessage, handleLeaveMultiplayerRoom]);
+  }, [
+    activeRoomId,
+    activeUid,
+    appendChatMessage,
+    applyMetaToRoomRef,
+    handleLeaveMultiplayerRoom,
+    mergeRoomWithCachedMeta,
+  ]);
 
   // Auto-enter match when Host sets room status to 'playing' while player waits in lobby
   useEffect(() => {
     if (
-      activeRoom &&
-      activeRoom.status === 'playing' &&
-      difficultyPromptOpen &&
-      !isMultiplayerPlaying
+      !activeRoom ||
+      activeRoom.status !== 'playing' ||
+      !difficultyPromptOpen ||
+      isMultiplayerPlaying
     ) {
-      enterMultiplayerMatch(activeRoom, mySpawnIndex);
+      return;
     }
-  }, [activeRoom, difficultyPromptOpen, isMultiplayerPlaying, mySpawnIndex, enterMultiplayerMatch]);
+
+    if (activeRoom.waveSeed && activeRoom.waveCount && activeRoom.groupName) {
+      enterMultiplayerMatch(activeRoom, mySpawnIndex);
+      return;
+    }
+
+    if (enteringPlayingRoomRef.current === activeRoom.roomId) return;
+    enteringPlayingRoomRef.current = activeRoom.roomId;
+    let cancelled = false;
+    void readLatestRoomMeta(activeRoom.roomId)
+      .then((meta) => {
+        if (cancelled) return;
+        applyMetaToRoomRef(activeRoom.roomId, meta);
+        const fallbackSeed = meta.ws ?? activeRoom.waveSeed ?? generateRandomWaveSeed();
+        const fallbackCount = meta.wc ?? activeRoom.waveCount ?? rollRandomWaveCount(fallbackSeed);
+        const resolvedRoom: MultiplayerRoomDoc = {
+          ...activeRoom,
+          groupName: meta.g ?? activeRoom.groupName ?? sanitizeGroupName(groupName, 'ELITE SQUAD'),
+          waveSeed: fallbackSeed,
+          waveCount: fallbackCount,
+        };
+        if (resolvedRoom.groupName) setGroupName(resolvedRoom.groupName);
+        setActiveRoom(resolvedRoom);
+        enterMultiplayerMatch(resolvedRoom, mySpawnIndex);
+      })
+      .finally(() => {
+        if (enteringPlayingRoomRef.current === activeRoom.roomId) {
+          enteringPlayingRoomRef.current = null;
+        }
+      });
+
+    return () => {
+      cancelled = true;
+      if (enteringPlayingRoomRef.current === activeRoom.roomId) {
+        enteringPlayingRoomRef.current = null;
+      }
+    };
+  }, [
+    activeRoom,
+    difficultyPromptOpen,
+    isMultiplayerPlaying,
+    mySpawnIndex,
+    groupName,
+    applyMetaToRoomRef,
+    enterMultiplayerMatch,
+  ]);
 
   // ~12 Hz P2P player state broadcast while active in multiplayer match (zero extra cost, smart idle throttling)
   useEffect(() => {
@@ -1590,11 +1713,18 @@ function DiglosaRpgApp() {
     });
     setResumableRoom(null);
     setMySpawnIndex(res.spawnIndex);
+    applyMetaToRoomRef(res.room.roomId, {
+      g: res.room.groupName,
+      ws: res.room.waveSeed,
+      wc: res.room.waveCount,
+      ts: Date.now(),
+    });
+    if (res.room.groupName) setGroupName(res.room.groupName);
     setActiveRoom(res.room);
     if (res.room.status === 'playing') {
       enterMultiplayerMatch(res.room, res.spawnIndex, true);
     }
-  }, [resumableRoom, playerName, characterId, enterMultiplayerMatch]);
+  }, [resumableRoom, playerName, characterId, applyMetaToRoomRef, enterMultiplayerMatch]);
 
   const handleDismissResumableRoom = useCallback(async () => {
     const targetRoomId = resumableRoom?.room.roomId;
@@ -1621,9 +1751,15 @@ function DiglosaRpgApp() {
         difficulty,
       });
       setMySpawnIndex(res.spawnIndex);
+      applyMetaToRoomRef(res.room.roomId, {
+        g: res.room.groupName ?? cleanGroup,
+        ws: res.room.waveSeed,
+        wc: res.room.waveCount,
+        ts: Date.now(),
+      });
       setActiveRoom(res.room);
     },
-    [playerName, groupName, characterId, resumableRoom],
+    [playerName, groupName, characterId, resumableRoom, applyMetaToRoomRef],
   );
 
   const handleJoinGroupRoom = useCallback(
@@ -1641,9 +1777,16 @@ function DiglosaRpgApp() {
       });
       setResumableRoom(null);
       setMySpawnIndex(res.spawnIndex);
+      applyMetaToRoomRef(res.room.roomId, {
+        g: res.room.groupName,
+        ws: res.room.waveSeed,
+        wc: res.room.waveCount,
+        ts: Date.now(),
+      });
+      if (res.room.groupName) setGroupName(res.room.groupName);
       setActiveRoom(res.room);
     },
-    [playerName, characterId, resumableRoom],
+    [playerName, characterId, resumableRoom, applyMetaToRoomRef],
   );
 
   const handleJoinPublicRoom = useCallback(
@@ -1663,9 +1806,16 @@ function DiglosaRpgApp() {
       });
       setResumableRoom(null);
       setMySpawnIndex(res.spawnIndex);
+      applyMetaToRoomRef(res.room.roomId, {
+        g: res.room.groupName ?? cleanGroup,
+        ws: res.room.waveSeed,
+        wc: res.room.waveCount,
+        ts: Date.now(),
+      });
+      if (res.room.groupName) setGroupName(res.room.groupName);
       setActiveRoom(res.room);
     },
-    [playerName, groupName, characterId, resumableRoom],
+    [playerName, groupName, characterId, resumableRoom, applyMetaToRoomRef],
   );
 
   const handleUpdateRoomGroupName = useCallback(
@@ -1673,32 +1823,49 @@ function DiglosaRpgApp() {
       if (!activeRoom) return;
       const cleaned = sanitizeGroupName(nextGroupName);
       setGroupName(cleaned);
+      applyMetaToRoomRef(activeRoom.roomId, { g: cleaned, ts: Date.now() });
+      setActiveRoom((prev) =>
+        prev && prev.roomId === activeRoom.roomId ? { ...prev, groupName: cleaned } : prev,
+      );
       await updateRoomGroupName(activeRoom.roomId, cleaned);
     },
-    [activeRoom],
+    [activeRoom, applyMetaToRoomRef],
   );
 
   const handleStartMultiplayerMatch = useCallback(async () => {
     if (!activeRoom) return;
-    const presetWave =
-      activeRoom.waveSeed && activeRoom.waveCount
-        ? { waveSeed: activeRoom.waveSeed, waveCount: activeRoom.waveCount }
-        : undefined;
+    const resolvedGroupName = sanitizeGroupName(
+      activeRoom.groupName || roomMetaRef.current.g || groupName,
+      'ELITE SQUAD',
+    );
+    const seed = activeRoom.waveSeed || roomMetaRef.current.ws || generateRandomWaveSeed();
+    const count = activeRoom.waveCount || roomMetaRef.current.wc || rollRandomWaveCount(seed);
+    const presetWave = {
+      waveSeed: seed,
+      waveCount: count,
+      groupName: resolvedGroupName,
+    };
     const wave = await startMultiplayerMatch(
       activeRoom.roomId,
       activeRoom.difficulty,
       presetWave,
     );
-    enterMultiplayerMatch(
-      {
-        ...activeRoom,
-        status: 'playing',
-        waveSeed: wave.waveSeed,
-        waveCount: wave.waveCount,
-      },
-      mySpawnIndex,
-    );
-  }, [activeRoom, mySpawnIndex, enterMultiplayerMatch]);
+    applyMetaToRoomRef(activeRoom.roomId, {
+      g: resolvedGroupName,
+      ws: wave.waveSeed,
+      wc: wave.waveCount,
+      ts: Date.now(),
+    });
+    const startedRoom: MultiplayerRoomDoc = {
+      ...activeRoom,
+      status: 'playing',
+      groupName: resolvedGroupName,
+      waveSeed: wave.waveSeed,
+      waveCount: wave.waveCount,
+    };
+    setActiveRoom(startedRoom);
+    enterMultiplayerMatch(startedRoom, mySpawnIndex);
+  }, [activeRoom, groupName, mySpawnIndex, applyMetaToRoomRef, enterMultiplayerMatch]);
 
   const handleSendChat = useCallback(
     (rawText: string) => {
@@ -1849,7 +2016,19 @@ function DiglosaRpgApp() {
       await startMultiplayerMatch(activeRoom.roomId, activeRoom.difficulty, {
         waveSeed,
         waveCount,
+        groupName: activeSquadName,
       });
+      applyMetaToRoomRef(activeRoom.roomId, {
+        g: activeSquadName,
+        ws: waveSeed,
+        wc: waveCount,
+        ts: Date.now(),
+      });
+      setActiveRoom((prev) =>
+        prev && prev.roomId === activeRoom.roomId
+          ? { ...prev, groupName: activeSquadName, waveSeed, waveCount }
+          : prev,
+      );
     }
     const nextWave = engine.startNewRandomMissionWave(waveSeed, waveCount, activeSquadName);
     setDismissedVictorySeed(0);
@@ -1869,6 +2048,7 @@ function DiglosaRpgApp() {
     isMultiplayerPlaying,
     isHostInRoom,
     currentSquadMembers,
+    applyMetaToRoomRef,
   ]);
 
   return (
@@ -2181,7 +2361,7 @@ function DiglosaRpgApp() {
         onJoinPublicRoom={handleJoinPublicRoom}
         onStartMultiplayerMatch={handleStartMultiplayerMatch}
         onEnterPlayingRoom={() => {
-          if (activeRoom) enterMultiplayerMatch(activeRoom, mySpawnIndex);
+          if (activeRoom) enterMultiplayerMatch(mergeRoomWithCachedMeta(activeRoom), mySpawnIndex);
         }}
         onLeaveRoom={() => handleLeaveMultiplayerRoom(false)}
         onCancel={() => setDifficultyPromptOpen(false)}

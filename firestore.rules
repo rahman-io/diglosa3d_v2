@@ -115,12 +115,9 @@ service cloud.firestore {
           'status',
           'hostUid',
           'hostName',
-          'groupName',
           'difficulty',
           'maxPlayers',
           'memberCount',
-          'waveSeed',
-          'waveCount',
           'createdAt',
           'updatedAt'
         ]) &&
@@ -130,12 +127,9 @@ service cloud.firestore {
         data.status in ['waiting', 'playing'] &&
         data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128 &&
         data.hostName is string && data.hostName.size() >= 1 && data.hostName.size() <= 40 &&
-        (!('groupName' in data) || (data.groupName is string && data.groupName.size() >= 2 && data.groupName.size() <= 32)) &&
         data.difficulty in ['santai', 'petualang', 'pendekar'] &&
         data.maxPlayers is int && data.maxPlayers >= 2 && data.maxPlayers <= 8 &&
         data.memberCount is int && data.memberCount >= 1 && data.memberCount <= data.maxPlayers &&
-        (!('waveSeed' in data) || (data.waveSeed is int && data.waveSeed >= 1 && data.waveSeed <= 2147483647)) &&
-        (!('waveCount' in data) || (data.waveCount is int && data.waveCount >= 20 && data.waveCount <= 50)) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -305,10 +299,7 @@ service cloud.firestore {
               'memberCount',
               'hostUid',
               'hostName',
-              'groupName',
               'difficulty',
-              'waveSeed',
-              'waveCount',
               'updatedAt'
             ])
           ) ||

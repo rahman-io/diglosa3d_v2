@@ -118,6 +118,139 @@ export interface JoinOrCreateRoomResult {
   isHost: boolean;
 }
 
+const ROOM_META_PREFIX = '__DIGLOSA_META__:';
+const ROOM_META_DOC_ID = 'squad_meta';
+
+export interface RoomSquadMeta {
+  g?: string;
+  ws?: number;
+  wc?: number;
+  ts?: number;
+}
+
+function encodeRoomMetaText(meta: RoomSquadMeta): string {
+  const payload: RoomSquadMeta = {};
+  if (meta.g) payload.g = sanitizeGroupName(meta.g, 'ELITE SQUAD');
+  if (typeof meta.ws === 'number' && Number.isFinite(meta.ws) && meta.ws > 0) {
+    payload.ws = Math.floor(meta.ws);
+  }
+  if (typeof meta.wc === 'number' && Number.isFinite(meta.wc) && meta.wc >= 20 && meta.wc <= 50) {
+    payload.wc = Math.floor(meta.wc);
+  }
+  payload.ts = typeof meta.ts === 'number' ? meta.ts : Date.now();
+  return `${ROOM_META_PREFIX}${JSON.stringify(payload)}`.slice(0, 160);
+}
+
+export function parseRoomMetaText(text: string): RoomSquadMeta | null {
+  if (!text.startsWith(ROOM_META_PREFIX)) return null;
+  try {
+    const raw = JSON.parse(text.slice(ROOM_META_PREFIX.length)) as RoomSquadMeta;
+    if (!raw || typeof raw !== 'object') return null;
+    return {
+      g: typeof raw.g === 'string' && raw.g.trim().length >= 2 ? raw.g.trim().slice(0, 32) : undefined,
+      ws: typeof raw.ws === 'number' && raw.ws > 0 ? Math.floor(raw.ws) : undefined,
+      wc: typeof raw.wc === 'number' && raw.wc >= 20 && raw.wc <= 50 ? Math.floor(raw.wc) : undefined,
+      ts: typeof raw.ts === 'number' ? raw.ts : 0,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function publishRoomMeta(
+  roomId: string,
+  meta: RoomSquadMeta,
+  useFixedDocOnly = false,
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+  const path = `${ROOMS_COLLECTION}/${roomId}/messages`;
+  const cleanText = encodeRoomMetaText(meta);
+
+  if (useFixedDocOnly) {
+    try {
+      await setDoc(doc(db, path, ROOM_META_DOC_ID), {
+        roomId,
+        senderUid: user.uid,
+        senderName: '__SQUAD_META__',
+        text: cleanText,
+        createdAt: serverTimestamp(),
+      });
+    } catch {
+      // Ignore if metadata doc write fails
+    }
+    return;
+  }
+
+  try {
+    await addDoc(collection(db, path), {
+      roomId,
+      senderUid: user.uid,
+      senderName: '__SQUAD_META__',
+      text: cleanText,
+      createdAt: serverTimestamp(),
+    });
+  } catch {
+    // Best-effort live meta publish
+  }
+}
+
+export async function readLatestRoomMeta(roomId: string): Promise<RoomSquadMeta> {
+  const path = `${ROOMS_COLLECTION}/${roomId}/messages`;
+  let best: RoomSquadMeta = {};
+  let bestTs = -1;
+
+  try {
+    const q = query(
+      collection(db, path),
+      where('roomId', '==', roomId),
+      orderBy('createdAt', 'desc'),
+      limit(20),
+    );
+    const snap = await getDocs(q);
+    for (const d of snap.docs) {
+      const txt = (d.data() as { text?: string }).text;
+      if (!txt) continue;
+      const parsed = parseRoomMetaText(txt);
+      if (!parsed) continue;
+      const ts = parsed.ts ?? 0;
+      if (ts >= bestTs) {
+        best = {
+          g: parsed.g ?? best.g,
+          ws: parsed.ws ?? best.ws,
+          wc: parsed.wc ?? best.wc,
+          ts,
+        };
+        bestTs = ts;
+      }
+    }
+  } catch {
+    // Fallback to fixed squad_meta doc below
+  }
+
+  if (!best.g || !best.ws || !best.wc) {
+    try {
+      const fixedSnap = await getDoc(doc(db, path, ROOM_META_DOC_ID));
+      if (fixedSnap.exists()) {
+        const txt = (fixedSnap.data() as { text?: string }).text;
+        const parsed = txt ? parseRoomMetaText(txt) : null;
+        if (parsed) {
+          best = {
+            g: best.g ?? parsed.g,
+            ws: best.ws ?? parsed.ws,
+            wc: best.wc ?? parsed.wc,
+            ts: Math.max(best.ts ?? 0, parsed.ts ?? 0),
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return best;
+}
+
 export async function createGroupRoom(params: {
   displayName: string;
   groupName?: string;
@@ -140,25 +273,22 @@ export async function createGroupRoom(params: {
   const memberPath = `${ROOMS_COLLECTION}/${roomId}/members/${user.uid}`;
   const spawnIndex = Math.floor(Math.random() * 8);
 
-  const roomDoc: MultiplayerRoomDoc = {
+  const roomDocForDb: MultiplayerRoomDoc = {
     roomId,
     code,
     mode: 'group',
     status: 'waiting',
     hostUid: user.uid,
     hostName,
-    groupName,
     difficulty: params.difficulty,
     maxPlayers: MAX_MULTIPLAYER_PLAYERS,
     memberCount: 1,
-    waveSeed,
-    waveCount,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
 
   try {
-    await setDoc(doc(db, ROOMS_COLLECTION, roomId), roomDoc);
+    await setDoc(doc(db, ROOMS_COLLECTION, roomId), roomDocForDb);
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, roomPath);
   }
@@ -181,8 +311,18 @@ export async function createGroupRoom(params: {
     handleFirestoreError(error, OperationType.CREATE, memberPath);
   }
 
+  await publishRoomMeta(
+    roomId,
+    { g: groupName, ws: waveSeed, wc: waveCount, ts: Date.now() },
+    true,
+  );
+
   saveLastActiveRoomSession(user.uid, roomId);
-  return { room: roomDoc, spawnIndex, isHost: true };
+  return {
+    room: { ...roomDocForDb, groupName, waveSeed, waveCount },
+    spawnIndex,
+    isHost: true,
+  };
 }
 
 export async function joinRoomByCode(params: {
@@ -292,9 +432,15 @@ export async function joinRoomByCode(params: {
     handleFirestoreError(error, OperationType.WRITE, memberPath);
   }
 
+  const roomMeta = await readLatestRoomMeta(roomId);
   saveLastActiveRoomSession(user.uid, roomId);
   return {
-    room: joinedRoom,
+    room: {
+      ...joinedRoom,
+      groupName: roomMeta.g ?? joinedRoom.groupName,
+      waveSeed: roomMeta.ws ?? joinedRoom.waveSeed,
+      waveCount: roomMeta.wc ?? joinedRoom.waveCount,
+    },
     spawnIndex,
     isHost: joinedRoom.hostUid === user.uid,
   };
@@ -384,9 +530,15 @@ export async function findOrCreatePublicRoom(params: {
           updatedAt: serverTimestamp(),
         });
       }
+      const roomMeta = await readLatestRoomMeta(cand.roomId);
       saveLastActiveRoomSession(user.uid, cand.roomId);
       return {
-        room: joined,
+        room: {
+          ...joined,
+          groupName: roomMeta.g ?? joined.groupName,
+          waveSeed: roomMeta.ws ?? joined.waveSeed,
+          waveCount: roomMeta.wc ?? joined.waveCount,
+        },
         spawnIndex,
         isHost: joined.hostUid === user.uid,
       };
@@ -404,25 +556,22 @@ export async function findOrCreatePublicRoom(params: {
   const waveSeed = generateRandomWaveSeed();
   const waveCount = rollRandomWaveCount(waveSeed);
 
-  const roomDoc: MultiplayerRoomDoc = {
+  const roomDocForDb: MultiplayerRoomDoc = {
     roomId,
     code,
     mode: 'public',
     status: 'waiting',
     hostUid: user.uid,
     hostName: displayName,
-    groupName,
     difficulty: params.difficulty,
     maxPlayers: MAX_MULTIPLAYER_PLAYERS,
     memberCount: 1,
-    waveSeed,
-    waveCount,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
 
   try {
-    await setDoc(doc(db, ROOMS_COLLECTION, roomId), roomDoc);
+    await setDoc(doc(db, ROOMS_COLLECTION, roomId), roomDocForDb);
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, roomPath);
   }
@@ -444,8 +593,18 @@ export async function findOrCreatePublicRoom(params: {
     handleFirestoreError(error, OperationType.CREATE, memberPath);
   }
 
+  await publishRoomMeta(
+    roomId,
+    { g: groupName, ws: waveSeed, wc: waveCount, ts: Date.now() },
+    true,
+  );
+
   saveLastActiveRoomSession(user.uid, roomId);
-  return { room: roomDoc, spawnIndex, isHost: true };
+  return {
+    room: { ...roomDocForDb, groupName, waveSeed, waveCount },
+    spawnIndex,
+    isHost: true,
+  };
 }
 
 export async function updateMyMemberProfile(params: {
@@ -471,34 +630,33 @@ export async function updateRoomGroupName(
   roomId: string,
   groupName: string,
 ): Promise<void> {
-  const user = auth.currentUser;
-  if (!user || !user.emailVerified) return;
-  const roomPath = `${ROOMS_COLLECTION}/${roomId}`;
-  try {
-    await updateDoc(doc(db, ROOMS_COLLECTION, roomId), {
-      groupName: sanitizeGroupName(groupName, 'ELITE SQUAD'),
-      updatedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.UPDATE, roomPath);
-  }
+  const cleaned = sanitizeGroupName(groupName, 'ELITE SQUAD');
+  await publishRoomMeta(roomId, { g: cleaned, ts: Date.now() }, false);
 }
 
 export async function startMultiplayerMatch(
   roomId: string,
   difficulty?: DifficultyMode,
-  presetWave?: { waveSeed: number; waveCount: number },
+  presetWave?: { waveSeed: number; waveCount: number; groupName?: string },
 ): Promise<{ waveSeed: number; waveCount: number }> {
   const waveSeed = presetWave?.waveSeed || generateRandomWaveSeed();
   const waveCount = presetWave?.waveCount || rollRandomWaveCount(waveSeed);
   const user = auth.currentUser;
   if (!user || !user.emailVerified) return { waveSeed, waveCount };
   const roomPath = `${ROOMS_COLLECTION}/${roomId}`;
+  await publishRoomMeta(
+    roomId,
+    {
+      g: presetWave?.groupName,
+      ws: waveSeed,
+      wc: waveCount,
+      ts: Date.now(),
+    },
+    false,
+  );
   try {
     const payload: Record<string, unknown> = {
       status: 'playing',
-      waveSeed,
-      waveCount,
       updatedAt: serverTimestamp(),
     };
     if (difficulty) {
@@ -529,8 +687,14 @@ export async function checkSavedRoomMembership(
       return null;
     }
     const member = memberSnap.data() as MultiplayerMemberDoc;
+    const roomMeta = await readLatestRoomMeta(savedRoomId);
     return {
-      room,
+      room: {
+        ...room,
+        groupName: roomMeta.g ?? room.groupName,
+        waveSeed: roomMeta.ws ?? room.waveSeed,
+        waveCount: roomMeta.wc ?? room.waveCount,
+      },
       spawnIndex: member.spawnIndex,
       isHost: room.hostUid === uid,
     };
@@ -641,9 +805,15 @@ export async function rejoinRoomById(params: {
     handleFirestoreError(error, OperationType.WRITE, memberPath);
   }
 
+  const roomMeta = await readLatestRoomMeta(roomId);
   saveLastActiveRoomSession(user.uid, roomId);
   return {
-    room: joinedRoom,
+    room: {
+      ...joinedRoom,
+      groupName: roomMeta.g ?? joinedRoom.groupName,
+      waveSeed: roomMeta.ws ?? joinedRoom.waveSeed,
+      waveCount: roomMeta.wc ?? joinedRoom.waveCount,
+    },
     spawnIndex,
     isHost: joinedRoom.hostUid === user.uid,
   };
@@ -853,6 +1023,7 @@ export async function sendFallbackChatMessage(params: {
 export function subscribeFallbackChatMessages(
   roomId: string,
   onMessage: (msg: RoomChatMessage) => void,
+  onRoomMeta?: (meta: RoomSquadMeta) => void,
 ): Unsubscribe {
   const path = `${ROOMS_COLLECTION}/${roomId}/messages`;
   const q = query(
@@ -867,6 +1038,7 @@ export function subscribeFallbackChatMessages(
     q,
     (snap) => {
       const additions: RoomChatMessage[] = [];
+      const metaAdditions: RoomSquadMeta[] = [];
       snap.docChanges().forEach((chg) => {
         if (chg.type !== 'added') return;
         if (seen.has(chg.doc.id)) return;
@@ -877,6 +1049,11 @@ export function subscribeFallbackChatMessages(
           senderName: string;
           text: string;
         };
+        const parsedMeta = parseRoomMetaText(d.text);
+        if (parsedMeta) {
+          metaAdditions.push(parsedMeta);
+          return;
+        }
         additions.push({
           id: chg.doc.id,
           roomId: d.roomId,
@@ -889,8 +1066,10 @@ export function subscribeFallbackChatMessages(
       });
       if (!initialized) {
         initialized = true;
+        metaAdditions.reverse().forEach((m) => onRoomMeta?.(m));
         additions.reverse().forEach(onMessage);
       } else {
+        metaAdditions.forEach((m) => onRoomMeta?.(m));
         additions.forEach(onMessage);
       }
     },
