@@ -6,8 +6,9 @@ import { AssetDownloaderScreen } from './components/AssetDownloaderScreen';
 import { BattleQuizModal } from './components/BattleQuizModal';
 import { CaveCraftingModal } from './components/CaveCraftingModal';
 import { CaveSealModal } from './components/CaveSealModal';
-import { DifficultyModeModal } from './components/DifficultyModeModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { MultiplayerHudOverlay } from './components/MultiplayerHudOverlay';
+import { PlayLobbyModal } from './components/PlayLobbyModal';
 import { GameOverModal } from './components/GameOverModal';
 import { AcademySkillMode, IeltsAcademyModal } from './components/IeltsAcademyModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
@@ -60,12 +61,39 @@ import {
   VoiceCommandController,
 } from './services/voiceCommandService';
 import {
+  loadSavedCharacterId,
+  loadSavedPlayerName,
+  saveCharacterId,
+  savePlayerName,
+} from './data/characterPresets';
+import {
+  createGroupRoom,
+  findOrCreatePublicRoom,
+  joinRoomByCode,
+  leaveMultiplayerRoom,
+  sendFallbackChatMessage,
+  startMultiplayerMatch,
+  subscribeFallbackChatMessages,
+  subscribeRoom,
+  subscribeRoomMembers,
+  updateMyMemberProfile,
+} from './services/multiplayerRoomService';
+import {
+  filterChatProfanity,
+  P2pMeshTransport,
+} from './services/p2pMeshTransport';
+import {
   BattleContext,
   CaveSealContext,
+  CharacterPresetId,
   DifficultyMode,
   LeaderboardRecord,
   LearningSessionContext,
+  MultiplayerMemberDoc,
+  MultiplayerRoomDoc,
+  RoomChatMessage,
   RpgHudSnapshot,
+  SpawnPreference,
   UserProfileRecord,
 } from './types/game';
 
@@ -206,6 +234,26 @@ function DiglosaRpgApp() {
   const [sideTab, setSideTab] = useState<SideModalTab>(null);
   const [difficultyPromptOpen, setDifficultyPromptOpen] = useState(false);
   const [pendingDifficulty, setPendingDifficulty] = useState<DifficultyMode>('petualang');
+
+  const [characterId, setCharacterId] = useState<CharacterPresetId>(() => loadSavedCharacterId());
+  const [playerName, setPlayerName] = useState<string>(() => loadSavedPlayerName());
+  const [activeRoom, setActiveRoom] = useState<MultiplayerRoomDoc | null>(null);
+  const [roomMembers, setRoomMembers] = useState<MultiplayerMemberDoc[]>([]);
+  const [mySpawnIndex, setMySpawnIndex] = useState<number>(0);
+  const [isMultiplayerPlaying, setIsMultiplayerPlaying] = useState(false);
+  const [chatMessages, setChatMessages] = useState<RoomChatMessage[]>([]);
+  const [micEnabled, setMicEnabled] = useState(false);
+  const [muteAllVoice, setMuteAllVoice] = useState(false);
+  const [localSpeaking, setLocalSpeaking] = useState(false);
+  const [voiceChatError, setVoiceChatError] = useState<string | null>(null);
+  const [p2pStats, setP2pStats] = useState<{ connectedPeers: number; totalPeers: number }>({
+    connectedPeers: 0,
+    totalPeers: 0,
+  });
+  const transportRef = useRef<P2pMeshTransport | null>(null);
+  const chatSeenIdsRef = useRef<Set<string>>(new Set());
+  const lastPacketSigRef = useRef<string>('');
+  const lastPacketSentAtRef = useRef<number>(0);
 
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardRecord[]>([]);
@@ -618,6 +666,7 @@ function DiglosaRpgApp() {
         onOpenCaveSeal: (seal) => setActiveCaveSeal(seal),
         onOpenCrafting: () => setCraftingOpen(true),
       });
+      engine.setLocalAppearance(characterId, playerName);
       engineRef.current = engine;
     });
     return () => {
@@ -628,6 +677,8 @@ function DiglosaRpgApp() {
       }
       engineRef.current = null;
     };
+    // characterId/playerName initial sync handled on mount; live updates call setLocalAppearance directly
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [worldBootReady]);
 
   // Auth & Online Leaderboard subscription
@@ -663,6 +714,16 @@ function DiglosaRpgApp() {
 
     const unsubAuth = onAuthStateChanged(auth, async (nextUser) => {
       setUser(nextUser);
+      if (nextUser?.displayName) {
+        setPlayerName((prev) => {
+          if (!prev || prev === 'Petualang') {
+            const cleaned = nextUser.displayName!.trim().slice(0, 24);
+            if (cleaned) savePlayerName(cleaned);
+            return cleaned || prev;
+          }
+          return prev;
+        });
+      }
       if (unsubLeaderboard) {
         unsubLeaderboard();
         unsubLeaderboard = null;
@@ -715,7 +776,7 @@ function DiglosaRpgApp() {
 
       if (e.code === 'Escape') {
         if (difficultyPromptOpen) {
-          setDifficultyPromptOpen(false);
+          if (!activeRoom) setDifficultyPromptOpen(false);
           return;
         }
         if (leaderboardOpen) {
@@ -773,6 +834,7 @@ function DiglosaRpgApp() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     difficultyPromptOpen,
+    activeRoom,
     hud.phase,
     leaderboardOpen,
     sideTab,
@@ -1004,27 +1066,331 @@ function DiglosaRpgApp() {
     engineRef.current?.continueGame();
   }, []);
 
+  const appendChatMessage = useCallback((msg: RoomChatMessage) => {
+    if (chatSeenIdsRef.current.has(msg.id)) return;
+    chatSeenIdsRef.current.add(msg.id);
+    setChatMessages((prev) => {
+      const next = [...prev, msg];
+      return next.length > 60 ? next.slice(next.length - 60) : next;
+    });
+  }, []);
+
+  const enterMultiplayerMatch = useCallback(
+    (room: MultiplayerRoomDoc, spawnIdx: number) => {
+      if (getAlwaysFullscreenPref()) void requestAppFullscreen();
+      setDifficultyPromptOpen(false);
+      setActiveBattle(null);
+      setActiveLearning(null);
+      setActiveAcademySkill(null);
+      setActiveCaveSeal(null);
+      setCraftingOpen(false);
+      setDialogueNpcId(null);
+      setSideTab(null);
+      setCloudSyncNote(null);
+      setSyncStatus(null);
+      setIsMultiplayerPlaying(true);
+
+      const engine = engineRef.current;
+      if (engine) {
+        engine.setLocalAppearance(characterId, playerName);
+        engine.setMultiplayerActive(true);
+        engine.startNewGame(hud.settings.aimMode, room.difficulty, {
+          spawnMode: 'random',
+          spawnIndex: spawnIdx,
+          skipStory: true,
+          characterId,
+          playerName,
+        });
+      }
+    },
+    [characterId, playerName, hud.settings.aimMode],
+  );
+
+  const handleLeaveMultiplayerRoom = useCallback(
+    async (returnToTitle = true) => {
+      const roomId = activeRoom?.roomId;
+      transportRef.current?.dispose();
+      transportRef.current = null;
+      setActiveRoom(null);
+      setRoomMembers([]);
+      setIsMultiplayerPlaying(false);
+      setMicEnabled(false);
+      setMuteAllVoice(false);
+      setLocalSpeaking(false);
+      setVoiceChatError(null);
+      setP2pStats({ connectedPeers: 0, totalPeers: 0 });
+      setChatMessages([]);
+      chatSeenIdsRef.current.clear();
+
+      engineRef.current?.setMultiplayerActive(false);
+      if (returnToTitle) {
+        engineRef.current?.setPhase('title');
+      }
+
+      if (roomId) {
+        await leaveMultiplayerRoom(roomId);
+      }
+    },
+    [activeRoom?.roomId],
+  );
+
+  const activeRoomId = activeRoom?.roomId ?? null;
+  const activeUid = user?.uid ?? null;
+
+  // Bind Firestore room + member + fallback chat listeners & WebRTC P2P Mesh when joined
+  useEffect(() => {
+    if (!activeRoomId || !activeUid) {
+      transportRef.current?.dispose();
+      transportRef.current = null;
+      return;
+    }
+
+    const transport = new P2pMeshTransport(activeRoomId, activeUid, {
+      onRemotePlayersChange: (players) => {
+        engineRef.current?.upsertRemotePlayers(players);
+      },
+      onChatMessage: (msg) => {
+        appendChatMessage(msg);
+        engineRef.current?.triggerRemoteChatBubble(msg.senderUid, msg.text);
+      },
+      onConnectionStats: (stats) => {
+        setP2pStats(stats);
+      },
+      onLocalSpeakingChange: (speaking) => {
+        setLocalSpeaking(speaking);
+      },
+    });
+    transportRef.current = transport;
+
+    const unsubRoom = subscribeRoom(activeRoomId, (nextRoom) => {
+      if (!nextRoom) {
+        void handleLeaveMultiplayerRoom(true);
+        return;
+      }
+      setActiveRoom(nextRoom);
+    });
+
+    const unsubMembers = subscribeRoomMembers(activeRoomId, (members) => {
+      setRoomMembers(members);
+      transport.syncMembers(members);
+      const me = members.find((m) => m.uid === activeUid);
+      if (me) {
+        setMySpawnIndex(me.spawnIndex);
+      }
+    });
+
+    const unsubFallbackChat = subscribeFallbackChatMessages(activeRoomId, (msg) => {
+      appendChatMessage(msg);
+      if (msg.senderUid !== activeUid) {
+        transport.applyRemoteChatBubble(msg.senderUid, msg.text);
+        engineRef.current?.triggerRemoteChatBubble(msg.senderUid, msg.text);
+      }
+    });
+
+    return () => {
+      unsubRoom();
+      unsubMembers();
+      unsubFallbackChat();
+      transport.dispose();
+      if (transportRef.current === transport) {
+        transportRef.current = null;
+      }
+    };
+  }, [activeRoomId, activeUid, appendChatMessage, handleLeaveMultiplayerRoom]);
+
+  // Auto-enter match when Host sets room status to 'playing' while player waits in lobby
+  useEffect(() => {
+    if (
+      activeRoom &&
+      activeRoom.status === 'playing' &&
+      difficultyPromptOpen &&
+      !isMultiplayerPlaying
+    ) {
+      enterMultiplayerMatch(activeRoom, mySpawnIndex);
+    }
+  }, [activeRoom, difficultyPromptOpen, isMultiplayerPlaying, mySpawnIndex, enterMultiplayerMatch]);
+
+  // ~12 Hz P2P player state broadcast while active in multiplayer match (zero extra cost, smart idle throttling)
+  useEffect(() => {
+    if (!isMultiplayerPlaying || !activeRoomId) return;
+    lastPacketSigRef.current = '';
+    lastPacketSentAtRef.current = 0;
+
+    const id = window.setInterval(() => {
+      const engine = engineRef.current;
+      const transport = transportRef.current;
+      if (!engine || !transport || transport.getOpenChannelCount() === 0) return;
+
+      const pkt = engine.getLocalSyncPacket();
+      const sig = `${pkt.w}|${Math.round(pkt.x * 20)}|${Math.round(pkt.y * 20)}|${Math.round(pkt.z * 20)}|${Math.round(pkt.yaw * 20)}|${pkt.spd.toFixed(1)}|${pkt.og ? 1 : 0}|${pkt.sw ? 1 : 0}|${pkt.wp}|${pkt.wo ? 1 : 0}|${pkt.ch}`;
+      const now = Date.now();
+      if (sig !== lastPacketSigRef.current || now - lastPacketSentAtRef.current >= 850) {
+        lastPacketSigRef.current = sig;
+        lastPacketSentAtRef.current = now;
+        transport.broadcastState(pkt);
+      }
+    }, 85);
+
+    return () => window.clearInterval(id);
+  }, [isMultiplayerPlaying, activeRoomId]);
+
+  const handlePreviewCharacter = useCallback(
+    (nextId: CharacterPresetId, nextName: string) => {
+      setCharacterId(nextId);
+      setPlayerName(nextName);
+      saveCharacterId(nextId);
+      if (nextName.trim()) savePlayerName(nextName);
+      engineRef.current?.setLocalAppearance(nextId, nextName);
+      if (activeRoom?.roomId) {
+        void updateMyMemberProfile({
+          roomId: activeRoom.roomId,
+          displayName: nextName || 'Petualang',
+          characterId: nextId,
+        }).catch(() => undefined);
+      }
+    },
+    [activeRoom?.roomId],
+  );
+
   const handleStartNew = useCallback(() => {
     if (getAlwaysFullscreenPref()) void requestAppFullscreen();
     setPendingDifficulty(hud.settings.difficulty);
     setDifficultyPromptOpen(true);
   }, [hud.settings.difficulty]);
 
-  const handleConfirmDifficulty = useCallback((difficulty: DifficultyMode) => {
-    if (getAlwaysFullscreenPref()) void requestAppFullscreen();
-    setPendingDifficulty(difficulty);
-    setDifficultyPromptOpen(false);
-    setActiveBattle(null);
-    setActiveLearning(null);
-    setActiveAcademySkill(null);
-    setActiveCaveSeal(null);
-    setCraftingOpen(false);
-    setDialogueNpcId(null);
-    setSideTab(null);
-    setCloudSyncNote(null);
-    setSyncStatus(null);
-    engineRef.current?.startNewGame(hud.settings.aimMode, difficulty);
-  }, [hud.settings.aimMode]);
+  const handleConfirmSolo = useCallback(
+    (difficulty: DifficultyMode, spawnMode: SpawnPreference) => {
+      if (getAlwaysFullscreenPref()) void requestAppFullscreen();
+      if (activeRoom) {
+        void handleLeaveMultiplayerRoom(false);
+      }
+      setIsMultiplayerPlaying(false);
+      setPendingDifficulty(difficulty);
+      setDifficultyPromptOpen(false);
+      setActiveBattle(null);
+      setActiveLearning(null);
+      setActiveAcademySkill(null);
+      setActiveCaveSeal(null);
+      setCraftingOpen(false);
+      setDialogueNpcId(null);
+      setSideTab(null);
+      setCloudSyncNote(null);
+      setSyncStatus(null);
+      engineRef.current?.setLocalAppearance(characterId, playerName);
+      engineRef.current?.setMultiplayerActive(false);
+      engineRef.current?.startNewGame(hud.settings.aimMode, difficulty, {
+        spawnMode,
+        characterId,
+        playerName,
+      });
+    },
+    [
+      activeRoom,
+      handleLeaveMultiplayerRoom,
+      characterId,
+      playerName,
+      hud.settings.aimMode,
+    ],
+  );
+
+  const handleCreateGroupRoom = useCallback(
+    async (difficulty: DifficultyMode) => {
+      const res = await createGroupRoom({
+        displayName: playerName,
+        characterId,
+        difficulty,
+      });
+      setMySpawnIndex(res.spawnIndex);
+      setActiveRoom(res.room);
+    },
+    [playerName, characterId],
+  );
+
+  const handleJoinGroupRoom = useCallback(
+    async (code: string) => {
+      const res = await joinRoomByCode({
+        code,
+        displayName: playerName,
+        characterId,
+      });
+      setMySpawnIndex(res.spawnIndex);
+      setActiveRoom(res.room);
+    },
+    [playerName, characterId],
+  );
+
+  const handleJoinPublicRoom = useCallback(
+    async (difficulty: DifficultyMode) => {
+      const res = await findOrCreatePublicRoom({
+        displayName: playerName,
+        characterId,
+        difficulty,
+      });
+      setMySpawnIndex(res.spawnIndex);
+      setActiveRoom(res.room);
+    },
+    [playerName, characterId],
+  );
+
+  const handleStartMultiplayerMatch = useCallback(async () => {
+    if (!activeRoom) return;
+    await startMultiplayerMatch(activeRoom.roomId, activeRoom.difficulty);
+    enterMultiplayerMatch(activeRoom, mySpawnIndex);
+  }, [activeRoom, mySpawnIndex, enterMultiplayerMatch]);
+
+  const handleSendChat = useCallback(
+    (rawText: string) => {
+      if (!activeRoom || !user) return;
+      const clean = filterChatProfanity(rawText);
+      if (!clean) return;
+      const senderName = (playerName || user.displayName || 'Petualang').trim().slice(0, 24);
+      const res = transportRef.current?.broadcastChat(senderName, clean);
+      const localMsg: RoomChatMessage = {
+        id: `local_${user.uid.slice(0, 6)}_${Date.now().toString(36)}`,
+        roomId: activeRoom.roomId,
+        senderUid: user.uid,
+        senderName,
+        text: clean,
+        createdAtMs: Date.now(),
+        source: res && res.sentP2pCount > 0 ? 'p2p' : 'firestore',
+      };
+      appendChatMessage(localMsg);
+      engineRef.current?.voiceShowFeedback(`💬 ${senderName}: ${clean}`);
+
+      // Firestore fallback ensures message delivery even before P2P DataChannel opens
+      if (!res || res.sentP2pCount === 0) {
+        void sendFallbackChatMessage({
+          roomId: activeRoom.roomId,
+          senderName,
+          text: clean,
+        }).catch(() => undefined);
+      }
+    },
+    [activeRoom, user, playerName, appendChatMessage],
+  );
+
+  const handleToggleMabarMic = useCallback(async () => {
+    const transport = transportRef.current;
+    if (!transport) return;
+    setVoiceChatError(null);
+    const next = !micEnabled;
+    try {
+      const actual = await transport.setMicEnabled(next);
+      setMicEnabled(actual);
+    } catch (err) {
+      setMicEnabled(false);
+      setVoiceChatError(
+        err instanceof Error ? err.message : 'Gagal mengakses mikrofon untuk Voice Chat.',
+      );
+      window.setTimeout(() => setVoiceChatError(null), 3500);
+    }
+  }, [micEnabled]);
+
+  const handleToggleMuteAllVoice = useCallback(() => {
+    const next = !muteAllVoice;
+    setMuteAllVoice(next);
+    transportRef.current?.setMuteAllPeers(next);
+  }, [muteAllVoice]);
 
   const handleSignIn = useCallback(async () => {
     await signInWithPopup(auth, googleProvider);
@@ -1140,6 +1506,25 @@ function DiglosaRpgApp() {
           voiceTranscript={voiceTranscript}
           voiceLastAction={voiceLastAction}
           onToggleVoice={handleToggleVoice}
+          multiplayerActive={Boolean(activeRoom && isMultiplayerPlaying)}
+        />
+      )}
+
+      {activeRoom && isMultiplayerPlaying && hud.phase === 'playing' && (
+        <MultiplayerHudOverlay
+          room={activeRoom}
+          members={roomMembers}
+          myUid={user?.uid ?? null}
+          connectedPeers={p2pStats.connectedPeers}
+          messages={chatMessages}
+          micEnabled={micEnabled}
+          localSpeaking={localSpeaking}
+          muteAllVoice={muteAllVoice}
+          voiceError={voiceChatError}
+          onSendChat={handleSendChat}
+          onToggleMic={() => void handleToggleMabarMic()}
+          onToggleMuteAllVoice={handleToggleMuteAllVoice}
+          onLeaveRoom={() => void handleLeaveMultiplayerRoom(true)}
         />
       )}
 
@@ -1261,15 +1646,37 @@ function DiglosaRpgApp() {
         hud={hud}
         onResume={() => engineRef.current?.setPhase('playing')}
         onRestart={handleStartNew}
-        onQuitToTitle={() => window.location.reload()}
+        onQuitToTitle={() => {
+          if (activeRoom) {
+            void handleLeaveMultiplayerRoom(true);
+          } else {
+            window.location.reload();
+          }
+        }}
         onOpenLeaderboard={() => setLeaderboardOpen(true)}
         cloudSyncNote={cloudSyncNote}
       />
 
-      <DifficultyModeModal
+      <PlayLobbyModal
         open={difficultyPromptOpen}
+        user={user}
         initialDifficulty={pendingDifficulty}
-        onConfirm={handleConfirmDifficulty}
+        characterId={characterId}
+        playerName={playerName}
+        activeRoom={activeRoom}
+        roomMembers={roomMembers}
+        mySpawnIndex={mySpawnIndex}
+        onPreviewCharacter={handlePreviewCharacter}
+        onSignIn={handleSignIn}
+        onConfirmSolo={handleConfirmSolo}
+        onCreateGroupRoom={handleCreateGroupRoom}
+        onJoinGroupRoom={handleJoinGroupRoom}
+        onJoinPublicRoom={handleJoinPublicRoom}
+        onStartMultiplayerMatch={handleStartMultiplayerMatch}
+        onEnterPlayingRoom={() => {
+          if (activeRoom) enterMultiplayerMatch(activeRoom, mySpawnIndex);
+        }}
+        onLeaveRoom={() => handleLeaveMultiplayerRoom(false)}
         onCancel={() => setDifficultyPromptOpen(false)}
       />
 

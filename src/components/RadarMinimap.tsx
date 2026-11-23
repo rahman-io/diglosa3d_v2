@@ -727,6 +727,18 @@ function drawIcon(
     ctx.lineWidth = 1.5;
     ctx.fillRect(-4.0, -4.5, 8.0, 9.0);
     ctx.strokeRect(-4.0, -4.5, 8.0, 9.0);
+  } else if (kind === 'hero_friend') {
+    ctx.beginPath();
+    ctx.arc(0, 0, 5.2, 0, Math.PI * 2);
+    ctx.fillStyle = color || '#34d399';
+    ctx.fill();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = '#ffffff';
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, 0, 2.0, 0, Math.PI * 2);
+    ctx.fillStyle = '#0f172a';
+    ctx.fill();
   } else {
     // exit
     ctx.fillStyle = '#22d3ee';
@@ -1066,7 +1078,8 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
         b.kind === 'boss' ||
         b.kind === 'exit' ||
         b.kind === 'key' ||
-        b.kind === 'prison';
+        b.kind === 'prison' ||
+        b.kind === 'hero_friend';
 
       const pt = worldToMapPx(b.x, b.z, bounds, pad, pad, viewSize, viewSize);
       const outOfBox =

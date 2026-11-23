@@ -4,6 +4,7 @@ import {
   CaveBlockKind,
   DivingGearId,
   DoorDef,
+  HeroAppearanceColors,
   JumpDiveTrick,
   MonsterType,
   SwimStyleId,
@@ -51,6 +52,14 @@ export interface HeroAvatarRig {
   weaponGroup: THREE.Group;
   weaponMeshes: Record<WeaponId, THREE.Group>;
   weaponTipMat: SurfaceMaterial;
+  appearanceMats?: {
+    skin: SurfaceMaterial;
+    tunic: SurfaceMaterial;
+    pants: SurfaceMaterial;
+    hat: SurfaceMaterial;
+    pack: SurfaceMaterial;
+    feather: SurfaceMaterial;
+  };
 }
 
 export interface OwlMessengerRig {
@@ -273,8 +282,20 @@ function addShadow(group: THREE.Group, palette: MaterialPalette, radius: number)
   group.add(s);
 }
 
+export const DEFAULT_HERO_APPEARANCE: HeroAppearanceColors = {
+  tunicHex: 0x16a34a,
+  pantsHex: 0x1e3a8a,
+  hatHex: 0x92400e,
+  skinHex: 0xfed7aa,
+  packHex: 0xb45309,
+  featherHex: 0xef4444,
+};
+
 // 1. Composite 3D Hero Explorer ("Hoot Sang Petualang Kata")
-export function createHeroAvatar(palette: MaterialPalette): HeroAvatarRig {
+export function createHeroAvatar(
+  palette: MaterialPalette,
+  appearance: HeroAppearanceColors = DEFAULT_HERO_APPEARANCE,
+): HeroAvatarRig {
   const root = new THREE.Group();
   const body = new THREE.Group();
   // Use YXZ Euler order so yaw (Y) always resolves first for 360-deg swimming & diving pitch/roll
@@ -282,12 +303,13 @@ export function createHeroAvatar(palette: MaterialPalette): HeroAvatarRig {
   root.add(body);
   addShadow(root, palette, 1.0);
 
-  const skin = palette.getMat(0xfed7aa, 'matte');
-  const tunic = palette.getMat(0x16a34a, 'matte');
-  const pants = palette.getMat(0x1e3a8a, 'matte');
+  const skin = palette.createSurfaceMat({ color: appearance.skinHex, roughness: 0.85, metalness: 0.04 });
+  const tunic = palette.createSurfaceMat({ color: appearance.tunicHex, roughness: 0.85, metalness: 0.04 });
+  const pants = palette.createSurfaceMat({ color: appearance.pantsHex, roughness: 0.85, metalness: 0.04 });
   const boot = palette.getMat(0x78350f, 'matte');
-  const pack = palette.getMat(0xb45309, 'matte');
-  const hatMat = palette.getMat(0x92400e, 'matte');
+  const pack = palette.createSurfaceMat({ color: appearance.packHex, roughness: 0.85, metalness: 0.04 });
+  const hatMat = palette.createSurfaceMat({ color: appearance.hatHex, roughness: 0.85, metalness: 0.04 });
+  const featherMat = palette.createSurfaceMat({ color: appearance.featherHex, roughness: 0.3, metalness: 0.12 });
   const gold = palette.getMat(0xfbbf24, 'metal');
 
   // Legs
@@ -359,7 +381,7 @@ export function createHeroAvatar(palette: MaterialPalette): HeroAvatarRig {
   hatCrown.position.set(0, 1.07, 0);
   const hatBand = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.12, 0.76), gold);
   hatBand.position.set(0, 0.91, 0);
-  const feather = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.42, 0.18), palette.getMat(0xef4444, 'gloss'));
+  const feather = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.42, 0.18), featherMat);
   feather.position.set(0.36, 1.17, -0.05);
   feather.rotation.z = -0.3;
   headGroup.add(hatBrim, hatCrown, hatBand, feather);
@@ -560,7 +582,26 @@ export function createHeroAvatar(palette: MaterialPalette): HeroAvatarRig {
     weaponGroup,
     weaponMeshes,
     weaponTipMat,
+    appearanceMats: {
+      skin,
+      tunic,
+      pants,
+      hat: hatMat,
+      pack,
+      feather: featherMat,
+    },
   };
+}
+
+export function applyHeroAppearance(rig: HeroAvatarRig, colors: HeroAppearanceColors): void {
+  const mats = rig.appearanceMats;
+  if (!mats) return;
+  mats.skin.color.setHex(colors.skinHex);
+  mats.tunic.color.setHex(colors.tunicHex);
+  mats.pants.color.setHex(colors.pantsHex);
+  mats.hat.color.setHex(colors.hatHex);
+  mats.pack.color.setHex(colors.packHex);
+  mats.feather.color.setHex(colors.featherHex);
 }
 
 export function setHeroWeaponVisual(

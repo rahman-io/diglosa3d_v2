@@ -34,11 +34,18 @@ import {
   VOCAB_CATALOG,
 } from '../data/vocabCatalog';
 import {
+  getCharacterPreset,
+  loadSavedCharacterId,
+  loadSavedPlayerName,
+  RANDOM_SPAWN_POINTS,
+} from '../data/characterPresets';
+import {
   AimMode,
   AreaMonsterStats,
   BattleContext,
   CameraMode,
   CaveSealContext,
+  CharacterPresetId,
   DayPhaseId,
   DifficultyMode,
   DivingGearId,
@@ -49,6 +56,7 @@ import {
   LearningSessionContext,
   LiveMapBounds,
   LiveMapSnapshot,
+  LocalPlayerSyncPacket,
   MonsterType,
   OceanMaterials,
   OceanSurvivalState,
@@ -58,9 +66,11 @@ import {
   RadarBlipKind,
   RadarState,
   RelicId,
+  RemotePlayerState,
   RpgHudSnapshot,
   RpgQuestState,
   SeaBiotaId,
+  SpawnPreference,
   StoryDialogState,
   SwimStyleId,
   SwimStylePreference,
@@ -122,6 +132,7 @@ import {
   animateMonsterRig,
   animateShooterRig,
   animateZoneNpc,
+  applyHeroAppearance,
   applyHeroWeaponPose,
   CaveBlockDef,
   computeBlinkScale,
@@ -890,6 +901,21 @@ export class RpgWorldEngine {
   private bannerTimer = 0;
   private lastHudPushMs = 0;
   private hasSave = false;
+  private localCharacterId: CharacterPresetId = loadSavedCharacterId();
+  private localPlayerName = loadSavedPlayerName('Hoot');
+  private multiplayerActive = false;
+  private remotePeers = new Map<
+    string,
+    {
+      state: RemotePlayerState;
+      rig: HeroAvatarRig;
+      pos: THREE.Vector3;
+      targetPos: THREE.Vector3;
+      yaw: number;
+      targetYaw: number;
+      weaponKey: string;
+    }
+  >();
   private wordProgressDirty = true;
   private cachedWordSummary: {
     seen: number;
@@ -1101,7 +1127,7 @@ export class RpgWorldEngine {
       ? this.mapCtxFull.createImageData(MAP_FULL_W, MAP_FULL_H)
       : null;
 
-    this.hero = createHeroAvatar(this.palette);
+    this.hero = createHeroAvatar(this.palette, getCharacterPreset(this.localCharacterId).colors);
     this.hero.root.position.copy(this.heroPos);
     setHeroWeaponVisual(this.hero, 'ketapel', false);
     this.scene.add(this.hero.root);
@@ -3048,11 +3074,149 @@ export class RpgWorldEngine {
     this.pushHud(true);
   }
 
-  public startNewGame(aimMode?: AimMode, difficulty?: DifficultyMode): void {
+  public setLocalAppearance(characterId: CharacterPresetId, displayName?: string): void {
+    this.localCharacterId = characterId;
+    if (displayName && displayName.trim().length > 0) {
+      this.localPlayerName = displayName.trim().slice(0, 24);
+    }
+    applyHeroAppearance(this.hero, getCharacterPreset(characterId).colors);
+  }
+
+  public setMultiplayerActive(active: boolean): void {
+    this.multiplayerActive = active;
+    if (!active) {
+      for (const peer of this.remotePeers.values()) {
+        this.scene.remove(peer.rig.root);
+      }
+      this.remotePeers.clear();
+    }
+  }
+
+  public upsertRemotePlayers(players: RemotePlayerState[]): void {
+    if (!this.multiplayerActive) return;
+    const activeUids = new Set<string>();
+    for (const p of players) {
+      activeUids.add(p.uid);
+      let entry = this.remotePeers.get(p.uid);
+      if (!entry) {
+        const rig = createHeroAvatar(this.palette, getCharacterPreset(p.characterId).colors);
+        rig.root.position.set(p.x, p.y, p.z);
+        rig.body.rotation.y = p.yaw;
+        setHeroWeaponVisual(rig, p.activeWeapon, p.weaponOwned);
+        this.scene.add(rig.root);
+        entry = {
+          state: { ...p },
+          rig,
+          pos: new THREE.Vector3(p.x, p.y, p.z),
+          targetPos: new THREE.Vector3(p.x, p.y, p.z),
+          yaw: p.yaw,
+          targetYaw: p.yaw,
+          weaponKey: `${p.activeWeapon}:${p.weaponOwned ? 1 : 0}`,
+        };
+        this.remotePeers.set(p.uid, entry);
+      } else {
+        if (entry.state.characterId !== p.characterId) {
+          applyHeroAppearance(entry.rig, getCharacterPreset(p.characterId).colors);
+        }
+        entry.state = { ...p };
+        entry.targetPos.set(p.x, p.y, p.z);
+        entry.targetYaw = p.yaw;
+      }
+    }
+
+    for (const [uid, entry] of this.remotePeers.entries()) {
+      if (!activeUids.has(uid)) {
+        this.scene.remove(entry.rig.root);
+        this.remotePeers.delete(uid);
+      }
+    }
+  }
+
+  public triggerRemoteChatBubble(uid: string, text: string): void {
+    const entry = this.remotePeers.get(uid);
+    if (!entry) return;
+    entry.state.lastChatText = text;
+    entry.state.lastChatAt = Date.now();
+  }
+
+  public getLocalSyncPacket(): LocalPlayerSyncPacket {
+    const spd = Math.hypot(this.heroVel.x, this.heroVel.z);
+    return {
+      t: 'state',
+      w: this.worldMode,
+      x: Math.round(this.heroPos.x * 100) / 100,
+      y: Math.round(this.heroPos.y * 100) / 100,
+      z: Math.round(this.heroPos.z * 100) / 100,
+      yaw: Math.round(this.heroYaw * 100) / 100,
+      spd: Math.round(spd * 10) / 10,
+      wc: Math.round(this.walkCycle * 100) / 100,
+      og: this.heroOnGround,
+      sw: this.isSwimming,
+      wp: this.activeWeapon,
+      wo: this.ownedWeapons.has(this.activeWeapon),
+      ap: Math.round(this.shootAimPitch * 100) / 100,
+      ch: this.localCharacterId,
+      nm: this.localPlayerName,
+    };
+  }
+
+  private pickSafeSpawnPoint(spawnMode?: SpawnPreference, spawnIndex?: number): { x: number; y: number; z: number; yaw: number; label?: string } {
+    const def = OVERWORLD_ANCHORS.desaSpawn;
+    if (spawnMode !== 'random' && typeof spawnIndex !== 'number') {
+      return {
+        x: def.x,
+        y: getArchipelagoGroundY(def.x, def.z),
+        z: def.z,
+        yaw: def.yaw,
+      };
+    }
+    const idx =
+      typeof spawnIndex === 'number' && RANDOM_SPAWN_POINTS.length > 0
+        ? Math.abs(Math.floor(spawnIndex)) % RANDOM_SPAWN_POINTS.length
+        : Math.floor(Math.random() * RANDOM_SPAWN_POINTS.length);
+    const chosen = RANDOM_SPAWN_POINTS[idx] ?? {
+      id: 'default',
+      label: 'Alun-Alun Desa',
+      x: def.x,
+      z: def.z,
+      yaw: def.yaw,
+    };
+    const pt = new THREE.Vector3(chosen.x, getArchipelagoGroundY(chosen.x, chosen.z), chosen.z);
+    constrainToWalkableArchipelago(pt, 0.85);
+    if (this.villageRig?.obstacles) {
+      resolveObstacleBoxes(pt, 0.85, this.villageRig.obstacles);
+    }
+    pt.y = getArchipelagoGroundY(pt.x, pt.z);
+    return {
+      x: pt.x,
+      y: pt.y,
+      z: pt.z,
+      yaw: chosen.yaw,
+      label: chosen.label,
+    };
+  }
+
+  public startNewGame(
+    aimMode?: AimMode,
+    difficulty?: DifficultyMode,
+    options?: {
+      spawnMode?: SpawnPreference;
+      spawnIndex?: number;
+      skipStory?: boolean;
+      characterId?: CharacterPresetId;
+      playerName?: string;
+    },
+  ): void {
     this.clearSubScenes();
     this.clearOverworldNightMonsters();
     this.worldMode = 'overworld';
     this.overworldGroup.visible = true;
+    if (options?.characterId || options?.playerName) {
+      this.setLocalAppearance(
+        options.characterId ?? this.localCharacterId,
+        options.playerName,
+      );
+    }
     if (aimMode) {
       this.settings.aimMode = aimMode;
     }
@@ -3178,8 +3342,8 @@ export class RpgWorldEngine {
     this.autoCamPitchActive = false;
     this.updateOverworldDayNightAtmosphere(0, false);
 
-    const sp = OVERWORLD_ANCHORS.desaSpawn;
-    this.heroPos.set(sp.x, getArchipelagoGroundY(sp.x, sp.z), sp.z);
+    const sp = this.pickSafeSpawnPoint(options?.spawnMode, options?.spawnIndex);
+    this.heroPos.set(sp.x, sp.y, sp.z);
     this.savedOverworldHeroPos.copy(this.heroPos);
     this.heroVel.set(0, 0, 0);
     this.heroVelY = 0;
@@ -3193,8 +3357,25 @@ export class RpgWorldEngine {
     this.applyCameraVisibilityAndControls();
     this.snapCameraBehindHero();
 
-    // Begin Bab 4 Opening Story Sequence!
-    this.startOpeningStory();
+    if (options?.skipStory) {
+      this.introDone = true;
+      this.storyDialog = null;
+      this.owlRig.root.visible = false;
+      this.owlState = 'hidden';
+      this.phase = 'playing';
+      this.applyCameraVisibilityAndControls();
+      this.showBanner(
+        sp.label
+          ? `🌐 Mabar Aktif · Mendarat di ${sp.label}!`
+          : '🌐 Mode Mabar Aktif · Selamat berpetualang bersama!',
+        3.6,
+      );
+      soundEngine.playWin();
+      this.pushHud(true);
+    } else {
+      // Begin Bab 4 Opening Story Sequence!
+      this.startOpeningStory();
+    }
     this.saveProgress();
   }
 
@@ -8516,6 +8697,7 @@ export class RpgWorldEngine {
         this.controls.update();
       }
     }
+    this.updateRemotePeers(dt);
     this.updateParticles(dt);
 
     if (this.renderer.shadowMap.enabled) {
@@ -10662,6 +10844,13 @@ export class RpgWorldEngine {
             : 0.68 + spec.hitRadius * 0.65;
         const my = m.y ?? getArchipelagoGroundY(m.x, m.z);
         pushHeroCircle(m.x, my, m.z, minD, 2.4);
+      }
+
+      if (this.multiplayerActive && this.remotePeers.size > 0) {
+        for (const peer of this.remotePeers.values()) {
+          if (peer.state.worldMode !== this.worldMode) continue;
+          pushHeroCircle(peer.pos.x, peer.pos.y, peer.pos.z, 1.05, 2.2);
+        }
       }
 
       if (this.isInDesaSapaanArea(this.heroPos.x, this.heroPos.z)) {
@@ -12921,6 +13110,49 @@ export class RpgWorldEngine {
     }
   }
 
+  private updateRemotePeers(dt: number): void {
+    if (!this.multiplayerActive || this.remotePeers.size === 0) return;
+    const blend = 1 - Math.exp(-14 * dt);
+    const nowMs = Date.now();
+    for (const peer of this.remotePeers.values()) {
+      const visible = peer.state.worldMode === this.worldMode && this.phase !== 'title';
+      peer.rig.root.visible = visible;
+      if (!visible) continue;
+
+      peer.pos.lerp(peer.targetPos, blend);
+      let yawDiff = peer.targetYaw - peer.yaw;
+      while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+      while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+      peer.yaw += yawDiff * blend;
+
+      peer.rig.root.position.copy(peer.pos);
+      peer.rig.body.rotation.y = peer.yaw;
+
+      const wKey = `${peer.state.activeWeapon}:${peer.state.weaponOwned ? 1 : 0}`;
+      if (peer.weaponKey !== wKey) {
+        peer.weaponKey = wKey;
+        setHeroWeaponVisual(peer.rig, peer.state.activeWeapon, peer.state.weaponOwned);
+      }
+
+      const dSq =
+        (peer.pos.x - this.heroPos.x) ** 2 + (peer.pos.z - this.heroPos.z) ** 2;
+      if (dSq < 68 * 68) {
+        const staleSpeed = nowMs - peer.state.updatedAtMs > 1200 ? 0 : peer.state.speed;
+        applyHeroWeaponPose(peer.rig, peer.state.activeWeapon, peer.state.weaponOwned, {
+          speed: staleSpeed,
+          walkCycle: peer.state.walkCycle,
+          aimAlpha: 0,
+          recoil: 0,
+          dt,
+          elapsed: this.elapsed,
+          aimPitch: peer.state.aimPitch,
+          onGround: peer.state.onGround,
+          isSwimming: peer.state.isSwimming,
+        });
+      }
+    }
+  }
+
   private updateParticles(dt: number): void {
     if (!this.hasActiveParticles) {
       if (this.particleMesh.visible) this.particleMesh.visible = false;
@@ -12993,6 +13225,41 @@ export class RpgWorldEngine {
           title: `💭 ${this.heroThoughtText}`,
           kind: 'thought',
         });
+      }
+    }
+
+    if (this.multiplayerActive && this.phase === 'playing' && this.remotePeers.size > 0) {
+      const nowMs = Date.now();
+      for (const peer of this.remotePeers.values()) {
+        if (peer.state.worldMode !== this.worldMode) continue;
+        const dSq = (peer.pos.x - this.heroPos.x) ** 2 + (peer.pos.z - this.heroPos.z) ** 2;
+        if (dSq > 85 * 85) continue;
+        const namePos = projectPoint(peer.pos.x, peer.pos.y + 3.45, peer.pos.z);
+        if (namePos) {
+          labels.push({
+            id: `peer_name_${peer.state.uid}`,
+            x: namePos.x,
+            y: namePos.y,
+            title: `${peer.state.speaking ? '🔊 ' : ''}${peer.state.displayName}`,
+            kind: 'player',
+          });
+        }
+        if (
+          peer.state.lastChatText &&
+          peer.state.lastChatAt &&
+          nowMs - peer.state.lastChatAt < 5500
+        ) {
+          const chatPos = projectPoint(peer.pos.x, peer.pos.y + 4.3, peer.pos.z);
+          if (chatPos) {
+            labels.push({
+              id: `peer_chat_${peer.state.uid}`,
+              x: chatPos.x,
+              y: chatPos.y,
+              title: peer.state.lastChatText,
+              kind: 'speech',
+            });
+          }
+        }
       }
     }
 
@@ -13985,6 +14252,19 @@ export class RpgWorldEngine {
           color: m.combatOnly ? '#f97316' : '#c084fc',
           label: m.name,
         });
+      }
+      if (this.multiplayerActive && this.remotePeers.size > 0) {
+        for (const peer of this.remotePeers.values()) {
+          if (peer.state.worldMode !== this.worldMode) continue;
+          blips.push({
+            id: `peer_${peer.state.uid}`,
+            x: peer.pos.x,
+            z: peer.pos.z,
+            kind: 'hero_friend',
+            color: '#34d399',
+            label: peer.state.displayName,
+          });
+        }
       }
       if (this.archipelagoUnderwaterRig && this.isHeroUnderwater()) {
         for (const ch of this.archipelagoUnderwaterRig.chests) {
@@ -15248,6 +15528,7 @@ export class RpgWorldEngine {
   }
 
   public dispose(): void {
+    this.setMultiplayerActive(false);
     this.onPageHideSave();
     this.disposed = true;
     soundEngine.setWalking(false);

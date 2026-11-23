@@ -410,7 +410,7 @@ export interface ProjectedLabel {
   x: number;
   y: number;
   title: string;
-  kind: 'zone' | 'npc_alert' | 'speech' | 'thought' | 'portal' | 'monster' | 'door' | 'pickup';
+  kind: 'zone' | 'npc_alert' | 'speech' | 'thought' | 'portal' | 'monster' | 'door' | 'pickup' | 'player';
   subtext?: string;
 }
 
@@ -462,7 +462,8 @@ export type RadarBlipKind =
   | 'chest'
   | 'collectible'
   | 'door'
-  | 'exit';
+  | 'exit'
+  | 'hero_friend';
 
 export interface RadarBlip {
   id: string;
@@ -625,3 +626,129 @@ export interface UserProfileRecord {
   createdAt?: unknown;
   updatedAt?: unknown;
 }
+
+export type CharacterPresetId =
+  | 'hoot_emerald'
+  | 'aria_sky'
+  | 'karsa_crimson'
+  | 'raka_gold'
+  | 'luna_violet'
+  | 'nusa_teal';
+
+export interface HeroAppearanceColors {
+  tunicHex: number;
+  pantsHex: number;
+  hatHex: number;
+  skinHex: number;
+  packHex: number;
+  featherHex: number;
+}
+
+export interface CharacterPreset {
+  id: CharacterPresetId;
+  name: string;
+  roleTitle: string;
+  tagline: string;
+  badgeColor: string;
+  colors: HeroAppearanceColors;
+}
+
+export interface SpawnPointDef {
+  id: string;
+  label: string;
+  x: number;
+  z: number;
+  yaw: number;
+}
+
+export type PlayModeType = 'solo' | 'multiplayer_group' | 'multiplayer_public';
+export type SpawnPreference = 'default' | 'random';
+export type MultiplayerRoomMode = 'group' | 'public';
+export type MultiplayerRoomStatus = 'waiting' | 'playing';
+
+export interface MultiplayerRoomDoc {
+  roomId: string;
+  code: string;
+  mode: MultiplayerRoomMode;
+  status: MultiplayerRoomStatus;
+  hostUid: string;
+  hostName: string;
+  difficulty: DifficultyMode;
+  maxPlayers: number;
+  memberCount: number;
+  createdAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface MultiplayerMemberDoc {
+  uid: string;
+  roomId: string;
+  displayName: string;
+  characterId: CharacterPresetId;
+  spawnIndex: number;
+  isHost: boolean;
+  online: boolean;
+  joinedAt?: unknown;
+  updatedAt?: unknown;
+}
+
+export interface WebRtcSignalDoc {
+  id?: string;
+  roomId: string;
+  fromUid: string;
+  toUid: string;
+  kind: 'offer' | 'answer' | 'ice';
+  payload: string;
+  createdAt?: unknown;
+}
+
+export interface RoomChatMessage {
+  id: string;
+  roomId: string;
+  senderUid: string;
+  senderName: string;
+  text: string;
+  createdAtMs: number;
+  source: 'p2p' | 'firestore' | 'system';
+}
+
+export interface RemotePlayerState {
+  uid: string;
+  displayName: string;
+  characterId: CharacterPresetId;
+  worldMode: WorldLocationMode;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  speed: number;
+  walkCycle: number;
+  onGround: boolean;
+  isSwimming: boolean;
+  activeWeapon: WeaponId;
+  weaponOwned: boolean;
+  aimPitch: number;
+  speaking?: boolean;
+  lastChatText?: string;
+  lastChatAt?: number;
+  updatedAtMs: number;
+}
+
+export interface LocalPlayerSyncPacket {
+  t: 'state';
+  w: WorldLocationMode;
+  x: number;
+  y: number;
+  z: number;
+  yaw: number;
+  spd: number;
+  wc: number;
+  og: boolean;
+  sw: boolean;
+  wp: WeaponId;
+  wo: boolean;
+  ap: number;
+  ch: CharacterPresetId;
+  nm: string;
+}
+

@@ -94,6 +94,127 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidMultiplayerRoom(data, roomId) {
+      return data.keys().hasAll([
+          'roomId',
+          'code',
+          'mode',
+          'status',
+          'hostUid',
+          'hostName',
+          'difficulty',
+          'maxPlayers',
+          'memberCount',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'roomId',
+          'code',
+          'mode',
+          'status',
+          'hostUid',
+          'hostName',
+          'difficulty',
+          'maxPlayers',
+          'memberCount',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.roomId is string && data.roomId == roomId && data.roomId.size() >= 4 && data.roomId.size() <= 64 &&
+        data.code is string && data.code.size() >= 4 && data.code.size() <= 12 &&
+        data.mode in ['group', 'public'] &&
+        data.status in ['waiting', 'playing'] &&
+        data.hostUid is string && data.hostUid.size() >= 1 && data.hostUid.size() <= 128 &&
+        data.hostName is string && data.hostName.size() >= 1 && data.hostName.size() <= 40 &&
+        data.difficulty in ['santai', 'petualang', 'pendekar'] &&
+        data.maxPlayers is int && data.maxPlayers >= 2 && data.maxPlayers <= 8 &&
+        data.memberCount is int && data.memberCount >= 1 && data.memberCount <= data.maxPlayers &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidMultiplayerMember(data, roomId, memberId) {
+      return data.keys().hasAll([
+          'uid',
+          'roomId',
+          'displayName',
+          'characterId',
+          'spawnIndex',
+          'isHost',
+          'online',
+          'joinedAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'roomId',
+          'displayName',
+          'characterId',
+          'spawnIndex',
+          'isHost',
+          'online',
+          'joinedAt',
+          'updatedAt'
+        ]) &&
+        data.uid is string && data.uid == memberId && data.uid == request.auth.uid && data.uid.size() >= 1 && data.uid.size() <= 128 &&
+        data.roomId is string && data.roomId == roomId && data.roomId.size() >= 4 && data.roomId.size() <= 64 &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 40 &&
+        data.characterId is string && data.characterId.size() >= 1 && data.characterId.size() <= 40 &&
+        data.spawnIndex is int && data.spawnIndex >= 0 && data.spawnIndex <= 7 &&
+        data.isHost is bool &&
+        data.online is bool &&
+        data.joinedAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidWebRtcSignal(data, roomId) {
+      return data.keys().hasAll([
+          'roomId',
+          'fromUid',
+          'toUid',
+          'kind',
+          'payload',
+          'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'roomId',
+          'fromUid',
+          'toUid',
+          'kind',
+          'payload',
+          'createdAt'
+        ]) &&
+        data.roomId is string && data.roomId == roomId && data.roomId.size() >= 4 && data.roomId.size() <= 64 &&
+        data.fromUid is string && data.fromUid == request.auth.uid && data.fromUid.size() >= 1 && data.fromUid.size() <= 128 &&
+        data.toUid is string && data.toUid.size() >= 1 && data.toUid.size() <= 128 &&
+        data.kind in ['offer', 'answer', 'ice'] &&
+        data.payload is string && data.payload.size() >= 2 && data.payload.size() <= 8192 &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidRoomChatMessage(data, roomId) {
+      return data.keys().hasAll([
+          'roomId',
+          'senderUid',
+          'senderName',
+          'text',
+          'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'roomId',
+          'senderUid',
+          'senderName',
+          'text',
+          'createdAt'
+        ]) &&
+        data.roomId is string && data.roomId == roomId && data.roomId.size() >= 4 && data.roomId.size() <= 64 &&
+        data.senderUid is string && data.senderUid == request.auth.uid && data.senderUid.size() >= 1 && data.senderUid.size() <= 128 &&
+        data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 40 &&
+        data.text is string && data.text.size() >= 1 && data.text.size() <= 160 &&
+        data.createdAt is timestamp;
+    }
+
     match /users/{userId} {
       allow get: if isValidId(userId) && isOwner(userId);
       allow list: if isOwner(userId) && resource.data.uid == request.auth.uid;
@@ -145,6 +266,159 @@ service cloud.firestore {
           'updatedAt'
         ]);
       allow delete: if false;
+    }
+
+    match /rooms/{roomId} {
+      allow get: if isValidId(roomId) && isVerified();
+      allow list: if isVerified() &&
+        resource.data.mode == 'public' &&
+        resource.data.status in ['waiting', 'playing'] &&
+        resource.data.memberCount < resource.data.maxPlayers &&
+        request.query.limit <= 20;
+      allow create: if isValidId(roomId) &&
+        isVerified() &&
+        isValidMultiplayerRoom(incoming(), roomId) &&
+        incoming().hostUid == request.auth.uid &&
+        incoming().status == 'waiting' &&
+        incoming().memberCount == 1 &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+      allow update: if isValidId(roomId) &&
+        isVerified() &&
+        isValidMultiplayerRoom(incoming(), roomId) &&
+        incoming().roomId == existing().roomId &&
+        incoming().code == existing().code &&
+        incoming().mode == existing().mode &&
+        incoming().maxPlayers == existing().maxPlayers &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          (
+            existing().hostUid == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'status',
+              'memberCount',
+              'hostUid',
+              'hostName',
+              'difficulty',
+              'updatedAt'
+            ])
+          ) ||
+          (
+            incoming().hostUid == existing().hostUid &&
+            incoming().hostName == existing().hostName &&
+            incoming().status == existing().status &&
+            incoming().difficulty == existing().difficulty &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'memberCount',
+              'updatedAt'
+            ]) &&
+            (
+              incoming().memberCount == existing().memberCount + 1 ||
+              incoming().memberCount == existing().memberCount - 1
+            )
+          ) ||
+          (
+            incoming().hostUid == request.auth.uid &&
+            incoming().status == existing().status &&
+            incoming().difficulty == existing().difficulty &&
+            incoming().memberCount == existing().memberCount - 1 &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'hostUid',
+              'hostName',
+              'memberCount',
+              'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(roomId) &&
+        isVerified() &&
+        existing().hostUid == request.auth.uid;
+
+      match /members/{memberId} {
+        allow get: if isValidId(roomId) && isValidId(memberId) && isVerified();
+        allow list: if isVerified() &&
+          resource.data.roomId == roomId &&
+          request.query.limit <= 10;
+        allow create: if isValidId(roomId) &&
+          isValidId(memberId) &&
+          isVerified() &&
+          isOwner(memberId) &&
+          exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+          isValidMultiplayerMember(incoming(), roomId, memberId) &&
+          incoming().joinedAt == request.time &&
+          incoming().updatedAt == request.time;
+        allow update: if isValidId(roomId) &&
+          isValidId(memberId) &&
+          isVerified() &&
+          isOwner(memberId) &&
+          exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+          isValidMultiplayerMember(incoming(), roomId, memberId) &&
+          incoming().uid == existing().uid &&
+          incoming().roomId == existing().roomId &&
+          incoming().joinedAt == existing().joinedAt &&
+          incoming().updatedAt == request.time &&
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'displayName',
+            'characterId',
+            'spawnIndex',
+            'isHost',
+            'online',
+            'updatedAt'
+          ]);
+        allow delete: if isValidId(roomId) &&
+          isValidId(memberId) &&
+          isVerified() &&
+          (
+            isOwner(memberId) ||
+            (
+              exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+              get(/databases/$(database)/documents/rooms/$(roomId)).data.hostUid == request.auth.uid
+            )
+          );
+      }
+
+      match /signals/{signalId} {
+        allow get: if isValidId(roomId) &&
+          isValidId(signalId) &&
+          isVerified() &&
+          (resource.data.toUid == request.auth.uid || resource.data.fromUid == request.auth.uid);
+        allow list: if isVerified() &&
+          resource.data.roomId == roomId &&
+          resource.data.toUid == request.auth.uid &&
+          request.query.limit <= 40;
+        allow create: if isValidId(roomId) &&
+          isValidId(signalId) &&
+          isVerified() &&
+          exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+          isValidWebRtcSignal(incoming(), roomId) &&
+          incoming().fromUid == request.auth.uid &&
+          incoming().createdAt == request.time;
+        allow update: if false;
+        allow delete: if isValidId(roomId) &&
+          isValidId(signalId) &&
+          isVerified() &&
+          (existing().toUid == request.auth.uid || existing().fromUid == request.auth.uid);
+      }
+
+      match /messages/{messageId} {
+        allow get: if isValidId(roomId) && isValidId(messageId) && isVerified();
+        allow list: if isVerified() &&
+          resource.data.roomId == roomId &&
+          request.query.limit <= 30;
+        allow create: if isValidId(roomId) &&
+          isValidId(messageId) &&
+          isVerified() &&
+          exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+          isValidRoomChatMessage(incoming(), roomId) &&
+          incoming().senderUid == request.auth.uid &&
+          incoming().createdAt == request.time;
+        allow update: if false;
+        allow delete: if isValidId(roomId) &&
+          isValidId(messageId) &&
+          isVerified() &&
+          existing().senderUid == request.auth.uid;
+      }
     }
   }
 }

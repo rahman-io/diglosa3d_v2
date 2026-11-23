@@ -93,6 +93,7 @@ interface RpgHudProps {
   voiceTranscript?: string;
   voiceLastAction?: string;
   onToggleVoice?: () => void;
+  multiplayerActive?: boolean;
 }
 
 export const RpgHud: React.FC<RpgHudProps> = ({
@@ -134,6 +135,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   voiceTranscript = '',
   voiceLastAction = '',
   onToggleVoice,
+  multiplayerActive = false,
 }) => {
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [touchUsed, setTouchUsed] = useState(false);
@@ -354,6 +356,8 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               ? 'rounded-lg border border-cyan-300/70 bg-cyan-950/85 px-2 py-0.5 text-[10px] font-extrabold text-cyan-100'
               : lbl.kind === 'monster'
               ? 'rounded-lg border border-rose-400/70 bg-rose-950/85 px-2 py-0.5 text-[10px] font-extrabold text-amber-200'
+              : lbl.kind === 'player'
+              ? 'rounded-full border border-emerald-300/80 bg-slate-950/90 px-2.5 py-0.5 text-[10.5px] font-black text-emerald-200 shadow-lg'
               : 'rounded-lg border border-white/20 bg-slate-950/85 px-2.5 py-0.5 text-[10px] font-extrabold text-slate-100'
           }`}
         >
@@ -1034,7 +1038,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
       {/* Transient Event Toast (single slim pill near top edge) */}
       {hud.bannerMessage && (
-        <div className="pointer-events-none fixed left-1/2 top-2.5 z-20 -translate-x-1/2 sm:top-3.5">
+        <div
+          className={`pointer-events-none fixed left-1/2 z-20 -translate-x-1/2 ${
+            multiplayerActive ? 'top-12 sm:top-14' : 'top-2.5 sm:top-3.5'
+          }`}
+        >
           <div className="max-w-[78vw] truncate rounded-full border border-amber-300/50 bg-slate-950/90 px-3.5 py-0.5 text-[10px] font-extrabold text-amber-100 shadow-lg sm:text-[11px]">
             {hud.bannerMessage}
           </div>
@@ -1047,7 +1055,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         const activeId = hud.activeSwimStyle ?? 'water_tread';
         const activeMeta = SWIM_STYLE_OPTIONS.find((s) => s.id === activeId) ?? SWIM_STYLE_OPTIONS[6];
         return (
-          <div className="pointer-events-auto fixed left-1/2 top-9 z-20 flex -translate-x-1/2 flex-col items-center gap-1 sm:top-11">
+          <div
+            className={`pointer-events-auto fixed left-1/2 z-20 flex -translate-x-1/2 flex-col items-center gap-1 ${
+              multiplayerActive ? 'top-[4.5rem] sm:top-[5rem]' : 'top-9 sm:top-11'
+            }`}
+          >
             <div className="flex max-w-[92vw] items-center gap-1.5 rounded-full border border-cyan-400/50 bg-slate-950/90 px-2.5 py-0.5 text-[10px] font-extrabold text-cyan-100 shadow-lg sm:text-[11px]">
               <span className="truncate">
                 🏊 {pref === 'auto' ? `Auto · ${activeMeta.indo}` : `${activeMeta.num}. ${activeMeta.name} (${activeMeta.indo})`}
