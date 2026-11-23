@@ -72,6 +72,7 @@ interface PeerSlot {
   speaking: boolean;
   pendingIce: RTCIceCandidateInit[];
   iceFlushTimer: number | null;
+  createdAtMs: number;
 }
 
 export interface P2pTransportCallbacks {
@@ -175,12 +176,13 @@ export class P2pMeshTransport {
           existingSlot.dc?.readyState === 'open' ||
           existingSlot.reliableDc?.readyState === 'open';
         const pcState = existingSlot.pc.connectionState;
-        if (
-          !dcOpen ||
-          pcState === 'disconnected' ||
-          pcState === 'failed' ||
-          pcState === 'closed'
-        ) {
+        const iceState = existingSlot.pc.iceConnectionState;
+        const handshakeAgeMs = Date.now() - existingSlot.createdAtMs;
+        const isActivelyNegotiating =
+          pcState === 'connecting' || iceState === 'checking' || handshakeAgeMs < 8000;
+        const isHardBroken =
+          pcState === 'failed' || pcState === 'closed' || (pcState === 'disconnected' && handshakeAgeMs >= 3000);
+        if (isHardBroken || (!dcOpen && !isActivelyNegotiating)) {
           this.closePeer(m.uid);
           this.createPeer(m.uid);
         }
@@ -557,6 +559,7 @@ export class P2pMeshTransport {
       speaking: false,
       pendingIce: [],
       iceFlushTimer: null,
+      createdAtMs: Date.now(),
     };
     this.peers.set(remoteUid, slot);
 
@@ -785,7 +788,7 @@ export class P2pMeshTransport {
       slot &&
       (slot.pc.connectionState === 'failed' ||
         slot.pc.connectionState === 'closed' ||
-        slot.pc.connectionState === 'disconnected')
+        (slot.pc.connectionState === 'disconnected' && Date.now() - slot.createdAtMs >= 3000))
     ) {
       this.closePeer(sig.fromUid);
       slot = undefined;

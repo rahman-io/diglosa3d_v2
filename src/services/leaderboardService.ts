@@ -93,6 +93,8 @@ export async function syncRunToCloud(params: {
   maxCombo: number;
   questsCompleted: number;
   districtTitle: string;
+  cachedProfile?: UserProfileRecord | null;
+  forceLeaderboardCheck?: boolean;
 }): Promise<{ newPersonalBest: boolean; profile?: UserProfileRecord }> {
   const user = auth.currentUser;
   if (!user || !user.emailVerified) {
@@ -108,38 +110,24 @@ export async function syncRunToCloud(params: {
   const safeQuests = clampInt(params.questsCompleted, 0, 1000000);
   const safeDistrict = sanitizeName(params.districtTitle, 'Desa Padang');
 
-  // 1. Update private user progress record
+  // 1. Update private user progress record (reuse cachedProfile to skip redundant getDoc when known)
   const userPath = `${USERS_COLLECTION}/${uid}`;
-  let previousBest = 0;
+  let previousBest = params.cachedProfile?.uid === uid ? (params.cachedProfile.bestScore || 0) : 0;
   let updatedProfile: UserProfileRecord | undefined;
   try {
     const userRef = doc(db, USERS_COLLECTION, uid);
-    const existingSnap = await getDoc(userRef);
+    const knownExisting =
+      params.cachedProfile && params.cachedProfile.uid === uid ? params.cachedProfile : null;
 
-    if (!existingSnap.exists()) {
-      updatedProfile = {
-        uid,
-        playerName,
-        bestScore: safeScore,
-        highestLevel: safeLevel,
-        totalBuilt: safeLandmarks,
-        questsCompleted: safeQuests,
-      };
-      await setDoc(userRef, {
-        ...updatedProfile,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
-    } else {
-      const existing = existingSnap.data() as UserProfileRecord;
-      previousBest = existing.bestScore || 0;
+    if (knownExisting) {
+      previousBest = knownExisting.bestScore || 0;
       updatedProfile = {
         uid,
         playerName,
         bestScore: Math.max(previousBest, safeScore),
-        highestLevel: Math.max(existing.highestLevel || 1, safeLevel),
-        totalBuilt: clampInt((existing.totalBuilt || 0) + safeLandmarks, 0, 1000000),
-        questsCompleted: clampInt((existing.questsCompleted || 0) + safeQuests, 0, 1000000),
+        highestLevel: Math.max(knownExisting.highestLevel || 1, safeLevel),
+        totalBuilt: clampInt((knownExisting.totalBuilt || 0) + safeLandmarks, 0, 1000000),
+        questsCompleted: clampInt((knownExisting.questsCompleted || 0) + safeQuests, 0, 1000000),
       };
       await updateDoc(userRef, {
         playerName: updatedProfile.playerName,
@@ -149,12 +137,55 @@ export async function syncRunToCloud(params: {
         questsCompleted: updatedProfile.questsCompleted,
         updatedAt: serverTimestamp(),
       });
+    } else {
+      const existingSnap = await getDoc(userRef);
+
+      if (!existingSnap.exists()) {
+        updatedProfile = {
+          uid,
+          playerName,
+          bestScore: safeScore,
+          highestLevel: safeLevel,
+          totalBuilt: safeLandmarks,
+          questsCompleted: safeQuests,
+        };
+        await setDoc(userRef, {
+          ...updatedProfile,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        const existing = existingSnap.data() as UserProfileRecord;
+        previousBest = existing.bestScore || 0;
+        updatedProfile = {
+          uid,
+          playerName,
+          bestScore: Math.max(previousBest, safeScore),
+          highestLevel: Math.max(existing.highestLevel || 1, safeLevel),
+          totalBuilt: clampInt((existing.totalBuilt || 0) + safeLandmarks, 0, 1000000),
+          questsCompleted: clampInt((existing.questsCompleted || 0) + safeQuests, 0, 1000000),
+        };
+        await updateDoc(userRef, {
+          playerName: updatedProfile.playerName,
+          bestScore: updatedProfile.bestScore,
+          highestLevel: updatedProfile.highestLevel,
+          totalBuilt: updatedProfile.totalBuilt,
+          questsCompleted: updatedProfile.questsCompleted,
+          updatedAt: serverTimestamp(),
+        });
+      }
     }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, userPath);
   }
 
-  // 2. Update public leaderboard entry if score beats or equals previous record
+  // 2. Skip reading/writing leaderboard when score didn't beat an existing non-zero personal best
+  const shouldCheckLeaderboard =
+    Boolean(params.forceLeaderboardCheck) || previousBest === 0 || safeScore > previousBest;
+  if (!shouldCheckLeaderboard) {
+    return { newPersonalBest: false, profile: updatedProfile };
+  }
+
   const lbPath = `${LEADERBOARD_COLLECTION}/${uid}`;
   let isNewBest = safeScore > previousBest;
   try {
@@ -162,7 +193,7 @@ export async function syncRunToCloud(params: {
     const lbSnap = await getDoc(lbRef);
 
     if (!lbSnap.exists()) {
-      isNewBest = true;
+      isNewBest = safeScore > 0;
       await setDoc(lbRef, {
         uid,
         playerName,
@@ -186,6 +217,8 @@ export async function syncRunToCloud(params: {
           districtTitle: safeDistrict,
           updatedAt: serverTimestamp(),
         });
+      } else {
+        isNewBest = false;
       }
     }
   } catch (error) {

@@ -123,12 +123,13 @@ export function handleFirestoreError(
 
 let reachabilityPromise: Promise<boolean> | null = null;
 let lastReachableAt = 0;
+const REACHABILITY_CACHE_MS = 5 * 60 * 1000;
 
 export async function probeFirestoreReachable(timeoutMs = 4500): Promise<boolean> {
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     return false;
   }
-  if (lastReachableAt > 0 && Date.now() - lastReachableAt < 30000) {
+  if (lastReachableAt > 0 && Date.now() - lastReachableAt < REACHABILITY_CACHE_MS) {
     return true;
   }
   if (reachabilityPromise) {
@@ -191,10 +192,6 @@ let connectionTested = false;
 export async function testConnection(): Promise<void> {
   if (connectionTested) return;
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    return;
-  }
-  const reachable = await probeFirestoreReachable();
-  if (!reachable) {
     if (typeof window !== 'undefined') {
       window.addEventListener(
         'online',
@@ -209,9 +206,14 @@ export async function testConnection(): Promise<void> {
   connectionTested = true;
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
+    lastReachableAt = Date.now();
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes('the client is offline')) {
       console.error('Please check your Firebase configuration.');
+    } else if (msg.includes('permission') || msg.includes('Missing or insufficient')) {
+      // Server responded normally (rules denied reading test/connection), so Firestore is reachable
+      lastReachableAt = Date.now();
     }
   }
 }

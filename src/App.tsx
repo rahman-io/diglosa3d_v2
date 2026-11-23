@@ -301,6 +301,8 @@ function DiglosaRpgApp() {
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfileRecord | null>(null);
+  const userProfileRef = useRef<UserProfileRecord | null>(null);
+  userProfileRef.current = userProfile;
   const [bestLocalScore, setBestLocalScore] = useState<number>(() => {
     try {
       return Number(localStorage.getItem('voxelia_best_score') || '0') || 0;
@@ -778,8 +780,7 @@ function DiglosaRpgApp() {
         });
       }
       if (nextUser) {
-        const reachable = await probeFirestoreReachable();
-        if (disposed || !reachable) return;
+        if (typeof navigator !== 'undefined' && !navigator.onLine) return;
         try {
           const profile = await loadUserProgress(nextUser.uid);
           if (!disposed) {
@@ -905,6 +906,10 @@ function DiglosaRpgApp() {
       setActiveBattle(null);
       const questsDone = hud.quests.filter((q) => q.claimed).length;
       if (auth.currentUser && auth.currentUser.emailVerified) {
+        if (hud.score === 0 && questsDone === 0 && hud.wordsMastered === 0) {
+          setCloudSyncNote('Belum ada skor/misi baru untuk disimpan ke Cloud.');
+          return;
+        }
         setSyncing(true);
         syncRunToCloud({
           score: hud.score,
@@ -913,6 +918,7 @@ function DiglosaRpgApp() {
           maxCombo: hud.maxStreak,
           questsCompleted: questsDone,
           districtTitle: hud.rankTitle,
+          cachedProfile: userProfileRef.current,
         })
           .then(({ newPersonalBest, profile }) => {
             setCloudSyncNote(
@@ -1599,14 +1605,15 @@ function DiglosaRpgApp() {
     };
   }, [activeRoomId, activeUid]);
 
-  // Keep room updatedAt fresh while Host is actively playing/waiting (every 3 minutes)
+  // Keep public room updatedAt fresh while Host is active (every 10 minutes; group rooms need 0 heartbeats)
+  const isPublicRoom = activeRoom?.mode === 'public';
   useEffect(() => {
-    if (!activeRoomId || !activeUid || !isHostInRoom) return;
+    if (!activeRoomId || !activeUid || !isHostInRoom || !isPublicRoom) return;
     const id = window.setInterval(() => {
       void touchRoomHeartbeat(activeRoomId);
-    }, 180_000);
+    }, 600_000);
     return () => window.clearInterval(id);
-  }, [activeRoomId, activeUid, isHostInRoom]);
+  }, [activeRoomId, activeUid, isHostInRoom, isPublicRoom]);
 
   // Sync authoritative Host/Client role into 3D engine (supports seamless Host Migration)
   useEffect(() => {
@@ -1906,10 +1913,16 @@ function DiglosaRpgApp() {
     );
     const seed = activeRoom.waveSeed || roomMetaRef.current.ws || generateRandomWaveSeed();
     const count = activeRoom.waveCount || roomMetaRef.current.wc || rollRandomWaveCount(seed);
+    const metaAlreadyStored = Boolean(
+      activeRoom.groupName === resolvedGroupName &&
+        activeRoom.waveSeed === seed &&
+        activeRoom.waveCount === count,
+    );
     const presetWave = {
       waveSeed: seed,
       waveCount: count,
       groupName: resolvedGroupName,
+      skipMetaWrite: metaAlreadyStored,
     };
     const wave = await startMultiplayerMatch(
       activeRoom.roomId,
@@ -2029,6 +2042,8 @@ function DiglosaRpgApp() {
         maxCombo: hud.maxStreak,
         questsCompleted: questsDone,
         districtTitle: hud.rankTitle,
+        cachedProfile: userProfileRef.current,
+        forceLeaderboardCheck: true,
       });
       setSyncStatus(
         newPersonalBest ? 'Rekor baru tersimpan di Papan Peringkat!' : 'Skor berhasil diperbarui.',

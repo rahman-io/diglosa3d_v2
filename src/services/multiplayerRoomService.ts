@@ -115,16 +115,12 @@ export function normalizeRoomCode(raw: string): string {
   return raw.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
 }
 
-function pickUnusedSpawnIndex(existingMembers: MultiplayerMemberDoc[]): number {
-  const used = new Set(existingMembers.map((m) => m.spawnIndex));
-  const free: number[] = [];
-  for (let i = 0; i < 8; i++) {
-    if (!used.has(i)) free.push(i);
+function pickDeterministicSpawnIndex(uid: string, offset = 0): number {
+  let hash = 0;
+  for (let i = 0; i < uid.length; i++) {
+    hash = (hash * 31 + uid.charCodeAt(i)) >>> 0;
   }
-  if (free.length > 0) {
-    return free[Math.floor(Math.random() * free.length)];
-  }
-  return Math.floor(Math.random() * 8);
+  return (hash + Math.max(0, offset)) % 8;
 }
 
 export interface JoinOrCreateRoomResult {
@@ -135,6 +131,8 @@ export interface JoinOrCreateRoomResult {
 
 const ROOM_META_PREFIX = '__DIGLOSA_META__:';
 const ROOM_META_DOC_ID = 'squad_meta';
+const roomsCreatedMetaByMe = new Set<string>();
+const roomsWithFallbackChatSent = new Set<string>();
 
 export interface RoomSquadMeta {
   g?: string;
@@ -182,8 +180,11 @@ async function publishRoomMeta(
   const path = `${ROOMS_COLLECTION}/${roomId}/messages`;
   const cleanText = encodeRoomMetaText(meta);
 
-  if (useFixedDocOnly) {
+  if (useFixedDocOnly || roomsCreatedMetaByMe.has(roomId)) {
     try {
+      if (!useFixedDocOnly && roomsCreatedMetaByMe.has(roomId)) {
+        await deleteDoc(doc(db, path, ROOM_META_DOC_ID)).catch(() => undefined);
+      }
       await setDoc(doc(db, path, ROOM_META_DOC_ID), {
         roomId,
         senderUid: user.uid,
@@ -191,10 +192,11 @@ async function publishRoomMeta(
         text: cleanText,
         createdAt: serverTimestamp(),
       });
+      roomsCreatedMetaByMe.add(roomId);
+      return;
     } catch {
-      // Ignore if metadata doc write fails
+      if (useFixedDocOnly) return;
     }
-    return;
   }
 
   try {
@@ -205,6 +207,7 @@ async function publishRoomMeta(
       text: cleanText,
       createdAt: serverTimestamp(),
     });
+    roomsWithFallbackChatSent.add(roomId);
   } catch {
     // Best-effort live meta publish
   }
@@ -213,14 +216,36 @@ async function publishRoomMeta(
 export async function readLatestRoomMeta(roomId: string): Promise<RoomSquadMeta> {
   const path = `${ROOMS_COLLECTION}/${roomId}/messages`;
   let best: RoomSquadMeta = {};
-  let bestTs = -1;
 
+  // Fast path: 1 single getDoc on fixed squad_meta document
+  try {
+    const fixedSnap = await getDoc(doc(db, path, ROOM_META_DOC_ID));
+    if (fixedSnap.exists()) {
+      const txt = (fixedSnap.data() as { text?: string }).text;
+      const parsed = txt ? parseRoomMetaText(txt) : null;
+      if (parsed) {
+        best = {
+          g: parsed.g,
+          ws: parsed.ws,
+          wc: parsed.wc,
+          ts: parsed.ts ?? 0,
+        };
+        if (best.g && best.ws && best.wc) {
+          return best;
+        }
+      }
+    }
+  } catch {
+    // ignore and fallback to recent messages query
+  }
+
+  let bestTs = best.ts ?? -1;
   try {
     const q = query(
       collection(db, path),
       where('roomId', '==', roomId),
       orderBy('createdAt', 'desc'),
-      limit(10),
+      limit(6),
     );
     const snap = await getDocs(q);
     for (const d of snap.docs) {
@@ -240,27 +265,7 @@ export async function readLatestRoomMeta(roomId: string): Promise<RoomSquadMeta>
       }
     }
   } catch {
-    // Fallback to fixed squad_meta doc below
-  }
-
-  if (!best.g || !best.ws || !best.wc) {
-    try {
-      const fixedSnap = await getDoc(doc(db, path, ROOM_META_DOC_ID));
-      if (fixedSnap.exists()) {
-        const txt = (fixedSnap.data() as { text?: string }).text;
-        const parsed = txt ? parseRoomMetaText(txt) : null;
-        if (parsed) {
-          best = {
-            g: best.g ?? parsed.g,
-            ws: best.ws ?? parsed.ws,
-            wc: best.wc ?? parsed.wc,
-            ts: Math.max(best.ts ?? 0, parsed.ts ?? 0),
-          };
-        }
-      }
-    } catch {
-      // ignore
-    }
+    // ignore
   }
 
   return best;
@@ -358,41 +363,26 @@ export async function joinRoomByCode(params: {
   const roomId = cleanCode;
   const roomRef = doc(db, ROOMS_COLLECTION, roomId);
   const roomPath = `${ROOMS_COLLECTION}/${roomId}`;
+  const memberRef = doc(db, ROOMS_COLLECTION, roomId, 'members', user.uid);
+  const memberPath = `${ROOMS_COLLECTION}/${roomId}/members/${user.uid}`;
   const displayName = sanitizeDisplayName(params.displayName, user.displayName || 'Petualang');
 
-  let roomSnap;
+  let alreadyMember: MultiplayerMemberDoc | null = null;
   try {
-    roomSnap = await getDoc(roomRef);
+    const myMemberSnap = await getDoc(memberRef);
+    if (myMemberSnap.exists()) {
+      alreadyMember = myMemberSnap.data() as MultiplayerMemberDoc;
+    }
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, roomPath);
+    handleFirestoreError(error, OperationType.GET, memberPath);
   }
-
-  if (!roomSnap.exists()) {
-    throw new Error(`Room dengan kode "${cleanCode}" tidak ditemukan.`);
-  }
-
-  const existingMembersPath = `${ROOMS_COLLECTION}/${roomId}/members`;
-  let existingMembers: MultiplayerMemberDoc[] = [];
-  try {
-    const mSnap = await getDocs(
-      query(collection(db, existingMembersPath), where('roomId', '==', roomId), limit(10)),
-    );
-    existingMembers = mSnap.docs.map((d) => d.data() as MultiplayerMemberDoc);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, existingMembersPath);
-  }
-
-  const alreadyMember = existingMembers.find((m) => m.uid === user.uid);
-  const spawnIndex = alreadyMember
-    ? alreadyMember.spawnIndex
-    : pickUnusedSpawnIndex(existingMembers);
 
   let joinedRoom: MultiplayerRoomDoc | null = null;
   try {
     joinedRoom = await runTransaction(db, async (tx) => {
       const snap = await tx.get(roomRef);
       if (!snap.exists()) {
-        throw new Error(`Room "${cleanCode}" sudah ditutup.`);
+        throw new Error(`Room dengan kode "${cleanCode}" tidak ditemukan.`);
       }
       const data = snap.data() as MultiplayerRoomDoc;
       if (!alreadyMember && data.memberCount >= data.maxPlayers) {
@@ -412,14 +402,20 @@ export async function joinRoomByCode(params: {
       };
     });
   } catch (error) {
-    if (error instanceof Error && (error.message.includes('penuh') || error.message.includes('ditutup'))) {
+    if (
+      error instanceof Error &&
+      (error.message.includes('penuh') ||
+        error.message.includes('ditutup') ||
+        error.message.includes('tidak ditemukan'))
+    ) {
       throw error;
     }
     handleFirestoreError(error, OperationType.UPDATE, roomPath);
   }
 
-  const memberRef = doc(db, ROOMS_COLLECTION, roomId, 'members', user.uid);
-  const memberPath = `${ROOMS_COLLECTION}/${roomId}/members/${user.uid}`;
+  const spawnIndex = alreadyMember
+    ? alreadyMember.spawnIndex
+    : pickDeterministicSpawnIndex(user.uid, joinedRoom.memberCount);
   try {
     if (alreadyMember) {
       await updateDoc(memberRef, {
@@ -481,7 +477,7 @@ export async function findOrCreatePublicRoom(params: {
       collection(db, ROOMS_COLLECTION),
       where('mode', '==', 'public'),
       where('status', 'in', ['waiting', 'playing']),
-      limit(20),
+      limit(6),
     );
     const snap = await getDocs(q);
     const nowMs = Date.now();
@@ -490,8 +486,8 @@ export async function findOrCreatePublicRoom(params: {
       .filter((r) => {
         if (r.memberCount <= 0 || r.memberCount >= r.maxPlayers) return false;
         const updatedMs = getTimestampMs(r.updatedAt);
-        // Ignore stale abandoned public rooms (>15 mins without host heartbeat/update)
-        if (updatedMs > 0 && nowMs - updatedMs > 15 * 60 * 1000) return false;
+        // Ignore stale abandoned public rooms (>25 mins without host heartbeat/update)
+        if (updatedMs > 0 && nowMs - updatedMs > 25 * 60 * 1000) return false;
         return true;
       });
   } catch (error) {
@@ -504,15 +500,12 @@ export async function findOrCreatePublicRoom(params: {
   for (const cand of candidates) {
     try {
       const roomRef = doc(db, ROOMS_COLLECTION, cand.roomId);
-      const membersPath = `${ROOMS_COLLECTION}/${cand.roomId}/members`;
-      const mSnap = await getDocs(
-        query(collection(db, membersPath), where('roomId', '==', cand.roomId), limit(10)),
-      );
-      const existingMembers = mSnap.docs.map((d) => d.data() as MultiplayerMemberDoc);
-      const already = existingMembers.find((m) => m.uid === user.uid);
-      if (!already && existingMembers.length >= cand.maxPlayers) continue;
+      const memberRef = doc(db, ROOMS_COLLECTION, cand.roomId, 'members', user.uid);
+      const myMemberSnap = await getDoc(memberRef);
+      const already = myMemberSnap.exists()
+        ? (myMemberSnap.data() as MultiplayerMemberDoc)
+        : null;
 
-      const spawnIndex = already ? already.spawnIndex : pickUnusedSpawnIndex(existingMembers);
       const joined = await runTransaction(db, async (tx) => {
         const snap = await tx.get(roomRef);
         if (!snap.exists()) return null;
@@ -529,7 +522,9 @@ export async function findOrCreatePublicRoom(params: {
       });
       if (!joined) continue;
 
-      const memberRef = doc(db, ROOMS_COLLECTION, cand.roomId, 'members', user.uid);
+      const spawnIndex = already
+        ? already.spawnIndex
+        : pickDeterministicSpawnIndex(user.uid, joined.memberCount);
       if (already) {
         await updateDoc(memberRef, {
           displayName,
@@ -659,23 +654,25 @@ export async function updateRoomGroupName(
 export async function startMultiplayerMatch(
   roomId: string,
   difficulty?: DifficultyMode,
-  presetWave?: { waveSeed: number; waveCount: number; groupName?: string },
+  presetWave?: { waveSeed: number; waveCount: number; groupName?: string; skipMetaWrite?: boolean },
 ): Promise<{ waveSeed: number; waveCount: number }> {
   const waveSeed = presetWave?.waveSeed || generateRandomWaveSeed();
   const waveCount = presetWave?.waveCount || rollRandomWaveCount(waveSeed);
   const user = auth.currentUser;
   if (!user || !user.emailVerified) return { waveSeed, waveCount };
   const roomPath = `${ROOMS_COLLECTION}/${roomId}`;
-  await publishRoomMeta(
-    roomId,
-    {
-      g: presetWave?.groupName,
-      ws: waveSeed,
-      wc: waveCount,
-      ts: Date.now(),
-    },
-    false,
-  );
+  if (!presetWave?.skipMetaWrite) {
+    await publishRoomMeta(
+      roomId,
+      {
+        g: presetWave?.groupName,
+        ws: waveSeed,
+        wc: waveCount,
+        ts: Date.now(),
+      },
+      false,
+    );
+  }
   try {
     const payload: Record<string, unknown> = {
       status: 'playing',
@@ -752,42 +749,27 @@ export async function rejoinRoomById(params: {
   const roomId = params.roomId.trim();
   const roomRef = doc(db, ROOMS_COLLECTION, roomId);
   const roomPath = `${ROOMS_COLLECTION}/${roomId}`;
+  const memberRef = doc(db, ROOMS_COLLECTION, roomId, 'members', user.uid);
+  const memberPath = `${ROOMS_COLLECTION}/${roomId}/members/${user.uid}`;
   const displayName = sanitizeDisplayName(params.displayName, user.displayName || 'Petualang');
 
-  let roomSnap;
+  let alreadyMember: MultiplayerMemberDoc | null = null;
   try {
-    roomSnap = await getDoc(roomRef);
+    const myMemberSnap = await getDoc(memberRef);
+    if (myMemberSnap.exists()) {
+      alreadyMember = myMemberSnap.data() as MultiplayerMemberDoc;
+    }
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, roomPath);
+    handleFirestoreError(error, OperationType.GET, memberPath);
   }
-
-  if (!roomSnap.exists()) {
-    clearLastActiveRoomSession();
-    throw new Error('Room sebelumnya sudah ditutup atau selesai.');
-  }
-
-  const existingMembersPath = `${ROOMS_COLLECTION}/${roomId}/members`;
-  let existingMembers: MultiplayerMemberDoc[] = [];
-  try {
-    const mSnap = await getDocs(
-      query(collection(db, existingMembersPath), where('roomId', '==', roomId), limit(10)),
-    );
-    existingMembers = mSnap.docs.map((d) => d.data() as MultiplayerMemberDoc);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, existingMembersPath);
-  }
-
-  const alreadyMember = existingMembers.find((m) => m.uid === user.uid);
-  const spawnIndex = alreadyMember
-    ? alreadyMember.spawnIndex
-    : pickUnusedSpawnIndex(existingMembers);
 
   let joinedRoom: MultiplayerRoomDoc | null = null;
   try {
     joinedRoom = await runTransaction(db, async (tx) => {
       const snap = await tx.get(roomRef);
       if (!snap.exists()) {
-        throw new Error('Room sebelumnya sudah ditutup.');
+        clearLastActiveRoomSession();
+        throw new Error('Room sebelumnya sudah ditutup atau selesai.');
       }
       const data = snap.data() as MultiplayerRoomDoc;
       if (!alreadyMember && data.memberCount >= data.maxPlayers) {
@@ -806,14 +788,20 @@ export async function rejoinRoomById(params: {
       };
     });
   } catch (error) {
-    if (error instanceof Error && (error.message.includes('penuh') || error.message.includes('ditutup'))) {
+    if (
+      error instanceof Error &&
+      (error.message.includes('penuh') ||
+        error.message.includes('ditutup') ||
+        error.message.includes('selesai'))
+    ) {
       throw error;
     }
     handleFirestoreError(error, OperationType.UPDATE, roomPath);
   }
 
-  const memberRef = doc(db, ROOMS_COLLECTION, roomId, 'members', user.uid);
-  const memberPath = `${ROOMS_COLLECTION}/${roomId}/members/${user.uid}`;
+  const spawnIndex = alreadyMember
+    ? alreadyMember.spawnIndex
+    : pickDeterministicSpawnIndex(user.uid, joinedRoom.memberCount);
   try {
     if (alreadyMember) {
       await updateDoc(memberRef, {
@@ -867,7 +855,7 @@ async function deleteUserMessagesAndSignals(
         collection(db, ROOMS_COLLECTION, roomId, 'signals'),
         where('roomId', '==', roomId),
         where('toUid', '==', uid),
-        limit(40),
+        limit(15),
       ),
     );
     await Promise.all(sigSnap.docs.map((d) => deleteDoc(d.ref).catch(() => undefined)));
@@ -875,13 +863,26 @@ async function deleteUserMessagesAndSignals(
     // ignore
   }
 
-  // Clean up my own Firestore chat/meta docs (rules permit senderUid == auth.uid)
+  const hadOwnMeta = !keepRoomMeta && roomsCreatedMetaByMe.has(roomId);
+  const hadFallbackMessages = roomsWithFallbackChatSent.has(roomId);
+  roomsCreatedMetaByMe.delete(roomId);
+  roomsWithFallbackChatSent.delete(roomId);
+
+  if (hadOwnMeta) {
+    await deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'messages', ROOM_META_DOC_ID)).catch(
+      () => undefined,
+    );
+  }
+
+  // Only query messages subcollection if this user actually sent fallback chat/meta docs in this room
+  if (!hadFallbackMessages) return;
+
   try {
     const msgSnap = await getDocs(
       query(
         collection(db, ROOMS_COLLECTION, roomId, 'messages'),
         where('roomId', '==', roomId),
-        limit(30),
+        limit(15),
       ),
     );
     const toDelete = msgSnap.docs.filter((d) => {
@@ -1221,6 +1222,7 @@ export async function sendFallbackChatMessage(params: {
       text: cleanText,
       createdAt: serverTimestamp(),
     });
+    roomsWithFallbackChatSent.add(params.roomId);
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
   }
@@ -1236,7 +1238,7 @@ export function subscribeFallbackChatMessages(
     collection(db, path),
     where('roomId', '==', roomId),
     orderBy('createdAt', 'desc'),
-    limit(8),
+    limit(6),
   );
   const seen = new Set<string>();
   let initialized = false;
