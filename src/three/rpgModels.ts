@@ -610,6 +610,7 @@ export interface HeroWeaponPoseInput {
   swimStyle?: SwimStyleId;
   swimBankRoll?: number;
   divingGear?: DivingGearId[];
+  wearingSwimsuit?: boolean;
   ridingTurtle?: boolean;
   jumpDiveTrick?: JumpDiveTrick | null;
   jumpDiveElapsed?: number;
@@ -641,6 +642,7 @@ export function applyHeroWeaponPose(
     swimStyle,
     swimBankRoll = 0,
     divingGear = [],
+    wearingSwimsuit = false,
     ridingTurtle = false,
     jumpDiveTrick = null,
     jumpDiveElapsed = 0,
@@ -1266,18 +1268,21 @@ export function applyHeroWeaponPose(
     targetRightLegZ = -0.48;
   }
 
-  const showMask = showScuba || divingGear.includes('snorkel');
+  const showSwimSuitLook = Boolean(wearingSwimsuit && isSwimming);
+  const showMask = showScuba || showSwimSuitLook || divingGear.includes('snorkel');
   const showTank = showScuba || divingGear.includes('wetsuit_tank');
-  const showTorchFins = showScuba || divingGear.includes('fins_torch');
+  const showWetsuit = showTank || showSwimSuitLook;
+  const showTorch = showScuba || divingGear.includes('fins_torch');
+  const showFins = showTorch || showSwimSuitLook;
 
   rig.scubaMask.visible = showMask;
   rig.scubaTanks.visible = showTank;
   for (const acc of rig.wetsuitAccents) {
-    acc.visible = showTank;
+    acc.visible = showWetsuit;
   }
-  rig.scubaTorch.visible = showTorchFins;
+  rig.scubaTorch.visible = showTorch;
   for (const fin of rig.flippers) {
-    fin.visible = showTorchFins;
+    fin.visible = showFins;
   }
   rig.turtleMount.visible = ridingTurtle && isSwimming;
   if (rig.turtleMount.visible) {
@@ -1425,6 +1430,86 @@ export function createStarterWeaponPickup(palette: MaterialPalette): THREE.Group
   topDiamond.userData.animOrb = true;
 
   group.add(basePad, baseRing, beacon, orb, gun, topDiamond);
+  return group;
+}
+
+// 3b. Swimsuit (Pakaian Renang) Pickup near Desa Sapaan
+export function createSwimSuitPickup(palette: MaterialPalette): THREE.Group {
+  const group = new THREE.Group();
+  const basePad = new THREE.Mesh(
+    new THREE.BoxGeometry(2.1, 0.25, 2.1),
+    palette.getMat(0x0f172a, 'matte'),
+  );
+  basePad.position.y = 0.125;
+
+  const baseRing = new THREE.Mesh(
+    new THREE.RingGeometry(1.05, 1.48, 24),
+    palette.getMat(0x22d3ee, 'emissive'),
+  );
+  baseRing.rotation.x = -Math.PI / 2;
+  baseRing.position.y = 0.27;
+  baseRing.userData.animRing = true;
+
+  const beaconMat = new THREE.MeshBasicMaterial({
+    color: 0x06b6d4,
+    transparent: true,
+    opacity: 0.26,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.52, 13, 12, 1, true), beaconMat);
+  beacon.position.y = 6.7;
+  beacon.userData.animBeacon = true;
+
+  const orb = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.5, 0),
+    palette.getMat(0x38bdf8, 'emissive'),
+  );
+  orb.position.y = 1.02;
+  orb.userData.animOrb = true;
+
+  // Voxel Swimsuit Ensemble (Wetsuit torso + sleeves + goggles + snorkel + flippers)
+  const suitGroup = new THREE.Group();
+  suitGroup.position.set(0, 1.85, 0);
+  suitGroup.userData.animOrb = true;
+
+  const navyMat = palette.getMat(0x0f172a, 'matte');
+  const tealMat = palette.getMat(0x14b8a6, 'emissive');
+  const skyMat = palette.getMat(0x38bdf8, 'emissive');
+  const goldMat = palette.getMat(0xfacc15, 'emissive');
+
+  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.84, 0.42), navyMat);
+  const stripeL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.8, 0.46), tealMat);
+  stripeL.position.x = -0.26;
+  const stripeR = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.8, 0.46), tealMat);
+  stripeR.position.x = 0.26;
+  const sleeveL = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.55, 0.28), tealMat);
+  sleeveL.position.set(-0.5, 0.14, 0);
+  sleeveL.rotation.z = 0.24;
+  const sleeveR = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.55, 0.28), tealMat);
+  sleeveR.position.set(0.5, 0.14, 0);
+  sleeveR.rotation.z = -0.24;
+
+  const goggles = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.22, 0.18), skyMat);
+  goggles.position.set(0, 0.62, 0.12);
+  const snorkel = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.52, 0.09), goldMat);
+  snorkel.position.set(0.38, 0.72, 0.08);
+
+  const finL = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.44), tealMat);
+  finL.position.set(-0.2, -0.58, 0.08);
+  const finR = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.08, 0.44), tealMat);
+  finR.position.set(0.2, -0.58, 0.08);
+
+  suitGroup.add(chest, stripeL, stripeR, sleeveL, sleeveR, goggles, snorkel, finL, finR);
+
+  const topDiamond = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.32, 0),
+    palette.getMat(0x22d3ee, 'emissive'),
+  );
+  topDiamond.position.y = 3.2;
+  topDiamond.userData.animOrb = true;
+
+  group.add(basePad, baseRing, beacon, orb, suitGroup, topDiamond);
   return group;
 }
 

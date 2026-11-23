@@ -440,6 +440,7 @@ export interface GameSettings {
 
 export type RadarBlipKind =
   | 'starter'
+  | 'swimsuit'
   | 'spot_desa'
   | 'spot_pasar'
   | 'spot_satwa'
@@ -536,6 +537,13 @@ export interface RpgHudSnapshot {
     angleDeg: number;
     directionLabel: string;
   } | null;
+  swimSuitPicked: boolean;
+  swimSuitGuide: {
+    distance: number;
+    angleDeg: number;
+    directionLabel: string;
+  } | null;
+  diveTransitionStage?: 'idle' | 'swim_to_water' | 'plunge' | 'submerge' | 'surface';
   radarState: RadarState | null;
   ownedRelics: RelicId[];
   crowns: number;

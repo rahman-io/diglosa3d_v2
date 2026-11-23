@@ -127,6 +127,7 @@ import {
   createPortalArch,
   createShooterMesh,
   createStarterWeaponPickup,
+  createSwimSuitPickup,
   createVoxelClouds,
   createZoneLandmarks,
   createZoneNpc,
@@ -346,6 +347,7 @@ interface SavedStatePayload {
   ownedWeapons: WeaponId[];
   weaponAmmo: Record<WeaponId, number>;
   starterWeaponPicked: boolean;
+  swimSuitPicked?: boolean;
   ownedRelics: RelicId[];
   ribbons: ZoneId[];
   liberatedZones: ZoneId[];
@@ -480,6 +482,7 @@ export class RpgWorldEngine {
   private owlRig: OwlMessengerRig;
   private portalRig: PortalArchRig;
   private starterPickupMesh: THREE.Group;
+  private swimSuitPickupMesh: THREE.Group;
   private areaMists: Map<ZoneId, THREE.Mesh>;
   private isSoftwareGl: boolean;
   private isMobileDevice: boolean;
@@ -680,6 +683,14 @@ export class RpgWorldEngine {
   private nearBiotaNode: OceanBiotaNode | null = null;
   private nearOceanChest: OceanSupplyChest | null = null;
   private nearOceanTurtle = false;
+  private diveTransition: {
+    active: boolean;
+    stage: 'swim_to_water' | 'plunge' | 'submerge' | 'surface';
+    timer: number;
+    targetX?: number;
+    targetZ?: number;
+    bubbleTimer: number;
+  } | null = null;
   private zoneCaveProgress: Partial<Record<ZoneId, { defeated: number; remaining: number; total: number }>> = {};
   private zoneCaveDetails: Partial<Record<ZoneId, SavedZoneCaveDetail>> = {};
   private defeatedAcademyEnemyIds = new Set<string>();
@@ -812,6 +823,7 @@ export class RpgWorldEngine {
     kristal: 0,
   };
   private starterWeaponPicked = false;
+  private swimSuitPicked = false;
   private ownedRelics = new Set<RelicId>();
   private ribbons = new Set<ZoneId>();
   private liberatedZones = new Set<ZoneId>();
@@ -1026,6 +1038,13 @@ export class RpgWorldEngine {
     this.overworldGroup.add(this.starterPickupMesh);
     this.overworldClickables.push(this.starterPickupMesh);
 
+    this.swimSuitPickupMesh = createSwimSuitPickup(this.palette);
+    const ss = OVERWORLD_ANCHORS.swimSuit;
+    this.swimSuitPickupMesh.position.set(ss.x, getArchipelagoGroundY(ss.x, ss.z), ss.z);
+    this.swimSuitPickupMesh.userData.swimSuitPickup = true;
+    this.overworldGroup.add(this.swimSuitPickupMesh);
+    this.overworldClickables.push(this.swimSuitPickupMesh);
+
     this.cloudsMesh = createVoxelClouds(36, this.preferLiteShader);
     this.cloudsMesh.userData.isMapHidden = true;
     this.overworldGroup.add(this.cloudsMesh);
@@ -1177,6 +1196,7 @@ export class RpgWorldEngine {
     dyn.add(this.portalRig.ringOuter);
     dyn.add(this.portalRig.ringInner);
     dyn.add(this.starterPickupMesh);
+    dyn.add(this.swimSuitPickupMesh);
     dyn.add(this.cloudsMesh);
     dyn.add(this.diamondInstanced);
     dyn.add(this.heartInstanced);
@@ -1341,6 +1361,7 @@ export class RpgWorldEngine {
         ownedWeapons: Array.from(this.ownedWeapons),
         weaponAmmo: { ...this.weaponAmmo },
         starterWeaponPicked: this.starterWeaponPicked,
+        swimSuitPicked: this.swimSuitPicked,
         ownedRelics: Array.from(this.ownedRelics),
         ribbons: Array.from(this.ribbons),
         liberatedZones: Array.from(this.liberatedZones),
@@ -1446,6 +1467,7 @@ export class RpgWorldEngine {
       this.caveTntLeft = data.caveTntLeft ?? 1;
       this.pickaxeTier = data.pickaxeTier ?? 1;
       this.starterWeaponPicked = Boolean(data.starterWeaponPicked);
+      this.swimSuitPicked = Boolean(data.swimSuitPicked);
       this.ownedRelics = new Set(data.ownedRelics || []);
       this.ribbons = new Set(data.ribbons || []);
       this.liberatedZones = new Set(data.liberatedZones || []);
@@ -1945,6 +1967,7 @@ export class RpgWorldEngine {
       { x: this.heroPos.x, z: this.heroPos.z, minR: 11.0 },
       { x: OVERWORLD_ANCHORS.desaSpawn.x, z: OVERWORLD_ANCHORS.desaSpawn.z, minR: 12.0 },
       { x: OVERWORLD_ANCHORS.starterWeapon.x, z: OVERWORLD_ANCHORS.starterWeapon.z, minR: 10.0 },
+      { x: OVERWORLD_ANCHORS.swimSuit.x, z: OVERWORLD_ANCHORS.swimSuit.z, minR: 9.0 },
     ];
     for (const pt of avoidPoints) {
       const dx = sx - pt.x;
@@ -2462,6 +2485,7 @@ export class RpgWorldEngine {
     }
 
     this.starterPickupMesh.visible = !this.starterWeaponPicked;
+    this.swimSuitPickupMesh.visible = !this.swimSuitPicked;
   }
 
   public selectHotbarSlot(slotIndex: number): void {
@@ -2869,6 +2893,8 @@ export class RpgWorldEngine {
     this.caveTntLeft = 1;
     this.pickaxeTier = 1;
     this.starterWeaponPicked = false;
+    this.swimSuitPicked = false;
+    this.diveTransition = null;
     this.ownedRelics.clear();
     this.ribbons.clear();
     this.liberatedZones.clear();
@@ -3612,6 +3638,7 @@ export class RpgWorldEngine {
     this.activeJumpTrick = null;
     this.jumpTrickElapsed = 0;
     this.jumpToSwimPlayedForAir = false;
+    this.diveTransition = null;
     soundEngine.setSwimmingAudio(false);
     this.clearCaveBoulders();
     this.activeTnts.forEach((t) => {
@@ -4524,7 +4551,7 @@ export class RpgWorldEngine {
     return 35 + bonus;
   }
 
-  public enterOceanWorld(resumeSavedPos = false): void {
+  public enterOceanWorld(resumeSavedPos = false, preserveDiveEntry = false): void {
     if (this.worldMode === 'overworld' && !resumeSavedPos) {
       this.savedOverworldHeroPos.copy(this.heroPos);
     }
@@ -4630,31 +4657,197 @@ export class RpgWorldEngine {
       const ry = THREE.MathUtils.clamp(this.restoredHeroPos.y, floorY, -1.2);
       this.heroPos.set(rx, ry, rz);
       this.heroYaw = this.restoredHeroPos.yaw;
+    } else if (preserveDiveEntry) {
+      this.heroPos.set(0, -2.35, 26);
+      this.heroYaw = Math.PI;
     } else {
       this.heroPos.set(0, -5.2, 26);
       this.heroYaw = Math.PI;
     }
     this.hero.root.position.copy(this.heroPos);
     this.hero.body.rotation.y = this.heroYaw;
-    this.heroVel.set(0, 0, 0);
-    this.heroVelY = 0;
+    this.heroVel.set(0, 0, preserveDiveEntry ? -2.2 : 0);
+    this.heroVelY = preserveDiveEntry ? -3.4 : 0;
     this.oceanOxygen = this.getOceanMaxOxygen();
     this.oceanSuffocateTimer = 0;
     this.fireCoralStingTimer = 0;
     this.ridingTurtle = false;
-    this.activeSwimStyle = this.oceanGear.has('wetsuit_tank') ? 'scuba_explore' : 'underwater_glide';
+    this.activeSwimStyle = preserveDiveEntry
+      ? 'deep_submerge'
+      : this.oceanGear.has('wetsuit_tank')
+      ? 'scuba_explore'
+      : 'underwater_glide';
     this.encounterGraceTimer = 2.0;
 
     this.refreshWeaponVisual();
     if (this.cameraMode === 'orbit') this.cameraMode = 'third_back';
     this.applyCameraVisibilityAndControls();
-    this.snapCameraBehindHero();
+    if (!preserveDiveEntry) {
+      this.snapCameraBehindHero();
+    }
 
     soundEngine.playJumpToSwim();
     this.showBanner(
       '🐠 Selamat datang di Taman Karang Dangkal! Temukan 20 Biota Laut & cari Baju Selam sebelum turun ke Palung Abyssal!',
       5.0,
     );
+    this.saveProgress();
+    this.pushHud(true);
+  }
+
+  private findNearestWaterEntrySpot(x: number, z: number, yaw: number): { x: number; z: number } | null {
+    for (let dist = 4; dist <= 92; dist += 4) {
+      let bestSpot: { x: number; z: number; score: number } | null = null;
+      for (let i = 0; i < 24; i++) {
+        const ang = yaw + (i / 24) * Math.PI * 2;
+        const wx = x + Math.sin(ang) * dist;
+        const wz = z + Math.cos(ang) * dist;
+        if (Math.abs(wx) >= WORLD_OCEAN_LIMIT - 8 || Math.abs(wz) >= WORLD_OCEAN_LIMIT - 8) continue;
+        const s = sampleArchipelagoTerrain(wx, wz);
+        if (!s.isLandOrBridge && s.groundY <= -0.5) {
+          let angDiff = ang - yaw;
+          while (angDiff > Math.PI) angDiff -= Math.PI * 2;
+          while (angDiff < -Math.PI) angDiff += Math.PI * 2;
+          const score = dist + Math.abs(angDiff) * 2.2;
+          if (!bestSpot || score < bestSpot.score) {
+            bestSpot = { x: wx, z: wz, score };
+          }
+        }
+      }
+      if (bestSpot) return { x: bestSpot.x, z: bestSpot.z };
+    }
+    return null;
+  }
+
+  public walkToSwimSuit(): void {
+    if (this.phase !== 'playing' || this.worldMode !== 'overworld' || this.swimSuitPicked) return;
+    const ss = OVERWORLD_ANCHORS.swimSuit;
+    this.diveTransition = null;
+    this.tapMoveTarget = new THREE.Vector3(ss.x, getArchipelagoGroundY(ss.x, ss.z), ss.z);
+    this.showBanner('🩱 Menuju ke Pakaian Renang di Desa Sapaan...', 2.4);
+    soundEngine.playPick();
+  }
+
+  public toggleDiveOcean(): void {
+    this.lastInputActivityMs = performance.now();
+    if (this.phase !== 'playing') return;
+
+    if (this.worldMode === 'ocean') {
+      if (this.diveTransition?.stage === 'surface') {
+        this.showBanner('🫧 Sedang berenang naik ke permukaan laut...', 1.8);
+        return;
+      }
+      this.tapMoveTarget = null;
+      this.diveTransition = {
+        active: true,
+        stage: 'surface',
+        timer: 0,
+        bubbleTimer: 0,
+      };
+      soundEngine.playSplash(0.75);
+      this.showBanner('🫧 Berenang naik perlahan ke permukaan laut...', 2.2);
+      this.pushHud(true);
+      return;
+    }
+
+    if (this.worldMode !== 'overworld') return;
+
+    if (!this.swimSuitPicked) {
+      soundEngine.playNo();
+      this.showBanner(
+        '🩱 Ambil Pakaian Renang di Desa Sapaan dahulu sebelum menyelam! Cek ikon Pakaian Renang di Peta.',
+        3.6,
+      );
+      return;
+    }
+
+    if (this.diveTransition?.active) {
+      if (this.diveTransition.stage === 'swim_to_water') {
+        this.diveTransition = null;
+        this.tapMoveTarget = null;
+        this.showBanner('Menyelam dibatalkan.', 1.6);
+        this.pushHud(true);
+      }
+      return;
+    }
+
+    const curSample = sampleArchipelagoTerrain(this.heroPos.x, this.heroPos.z);
+    const alreadyOverWater = this.isSwimming || !curSample.isLandOrBridge || curSample.groundY < -0.15;
+    if (alreadyOverWater) {
+      this.savedOverworldHeroPos.copy(this.heroPos);
+      this.tapMoveTarget = null;
+      this.isSwimming = true;
+      this.heroOnGround = false;
+      this.activeSwimStyle = 'jump_dive';
+      this.diveTransition = {
+        active: true,
+        stage: 'plunge',
+        timer: 0,
+        bubbleTimer: 0,
+      };
+      soundEngine.playJumpToSwim();
+      this.spawnBurst(this.heroPos.x, 0.14, this.heroPos.z, 0xbae6fd, 18);
+      this.showBanner('🤿 Menyelam perlahan masuk ke dalam laut...', 2.2);
+      this.pushHud(true);
+      return;
+    }
+
+    const waterSpot = this.findNearestWaterEntrySpot(this.heroPos.x, this.heroPos.z, this.heroYaw);
+    if (!waterSpot) {
+      soundEngine.playNo();
+      this.showBanner('🌊 Dekati tepi laut atau dermaga untuk mulai menyelam!', 2.5);
+      return;
+    }
+
+    this.tapMoveTarget = new THREE.Vector3(waterSpot.x, -0.5, waterSpot.z);
+    this.diveTransition = {
+      active: true,
+      stage: 'swim_to_water',
+      timer: 0,
+      targetX: waterSpot.x,
+      targetZ: waterSpot.z,
+      bubbleTimer: 0,
+    };
+    soundEngine.playPick();
+    this.showBanner('🏊 Menuju tepi laut untuk terjun & menyelam pelan ke dasar...', 2.8);
+    this.pushHud(true);
+  }
+
+  private exitOceanToSurface(): void {
+    const savedX = this.savedOverworldHeroPos.x;
+    const savedZ = this.savedOverworldHeroPos.z;
+    const savedSample = sampleArchipelagoTerrain(savedX, savedZ);
+    const savedInWater = !savedSample.isLandOrBridge || savedSample.groundY < -0.25;
+    const waterSpot = savedInWater
+      ? { x: savedX, z: savedZ }
+      : this.findNearestWaterEntrySpot(savedX, savedZ, this.heroYaw) ?? { x: 0, z: 186 };
+
+    this.clearSubScenes();
+    this.worldMode = 'overworld';
+    this.overworldGroup.visible = true;
+    this.phase = 'playing';
+    this.heldKeys.clear();
+    this.tapMoveTarget = null;
+
+    this.heroPos.set(waterSpot.x, -0.95, waterSpot.z);
+    this.heroVel.set(0, 0, 0);
+    this.heroVelY = 2.6;
+    this.heroOnGround = false;
+    this.isSwimming = true;
+    this.activeSwimStyle = 'surface_paddle';
+    this.hero.root.position.copy(this.heroPos);
+    this.encounterGraceTimer = 2.0;
+
+    this.refreshAreaMists();
+    this.syncShootersForDifficulty();
+    this.refreshWeaponVisual();
+    this.applyCameraVisibilityAndControls();
+    this.updateOverworldDayNightAtmosphere(0, false);
+    this.snapCameraBehindHero();
+
+    this.spawnBurst(this.heroPos.x, 0.16, this.heroPos.z, 0xbae6fd, 24);
+    soundEngine.playSplash(1.05);
+    this.showBanner('🌊 Berhasil berenang naik ke permukaan laut!', 2.6);
     this.saveProgress();
     this.pushHud(true);
   }
@@ -7424,9 +7617,9 @@ export class RpgWorldEngine {
       } else if (e.code === 'KeyG' && this.isSwimming) {
         e.preventDefault();
         this.cycleSwimStyle();
-      } else if (e.code === 'KeyX' && this.worldMode === 'overworld' && this.isSwimming) {
+      } else if (e.code === 'KeyX' && (this.worldMode === 'overworld' || this.worldMode === 'ocean')) {
         e.preventDefault();
-        this.enterOceanWorld();
+        this.toggleDiveOcean();
       } else if (e.code === 'KeyC' || e.code === 'F5') {
         e.preventDefault();
         this.toggleCameraMode();
@@ -7785,6 +7978,10 @@ export class RpgWorldEngine {
           const sw = OVERWORLD_ANCHORS.starterWeapon;
           this.tapMoveTarget = new THREE.Vector3(sw.x, getArchipelagoGroundY(sw.x, sw.z), sw.z);
           this.showBanner('Menuju ke Senjata Pertamamu...', 2.0);
+          return;
+        }
+        if (obj.userData.swimSuitPickup && this.worldMode === 'overworld' && !this.swimSuitPicked) {
+          this.walkToSwimSuit();
           return;
         }
         if (obj.userData.academyTip && this.worldMode === 'academy') {
@@ -9047,6 +9244,21 @@ export class RpgWorldEngine {
       });
     }
 
+    if (this.swimSuitPickupMesh.visible) {
+      this.swimSuitPickupMesh.rotation.y += dt * 1.6;
+      this.swimSuitPickupMesh.children.forEach((c) => {
+        if (c.userData.animOrb) {
+          c.position.y += Math.sin(this.elapsed * 3.2 + 1.1) * 0.004;
+        } else if (c.userData.animBeacon) {
+          const mat = (c as THREE.Mesh).material as THREE.MeshBasicMaterial;
+          mat.opacity = 0.18 + Math.sin(this.elapsed * 3.8) * 0.09;
+        } else if (c.userData.animRing) {
+          const s = 1 + Math.sin(this.elapsed * 4.2) * 0.12;
+          c.scale.setScalar(s);
+        }
+      });
+    }
+
     const isNightShift = currentDayPhase === 'sore' || currentDayPhase === 'malam';
     let npcIdx = 0;
     for (const [npcId, npc] of this.npcs.entries()) {
@@ -9353,6 +9565,10 @@ export class RpgWorldEngine {
       this.voiceMoveTimer = 0;
       this.voiceMoveVec = { x: 0, z: 0 };
       this.voiceSprint = false;
+      if (this.diveTransition?.stage === 'swim_to_water') {
+        this.diveTransition = null;
+        this.pushHud(true);
+      }
     } else if (this.voiceMoveTimer !== 0) {
       mx = this.voiceMoveVec.x;
       mz = this.voiceMoveVec.z;
@@ -9516,7 +9732,15 @@ export class RpgWorldEngine {
         this.heldKeys.has('KeyZ') ||
         this.oceanDescendHeld;
       let targetVelY = 0;
-      if (upHeld && !downHeld) {
+      if (this.diveTransition?.active && this.diveTransition.stage === 'surface') {
+        this.diveTransition.timer += dt;
+        this.diveTransition.bubbleTimer += dt;
+        targetVelY = 8.4;
+        if (this.diveTransition.bubbleTimer >= 0.12) {
+          this.diveTransition.bubbleTimer = 0;
+          this.spawnBurst(this.heroPos.x, this.heroPos.y + 0.5, this.heroPos.z, 0xbae6fd, 6);
+        }
+      } else if (upHeld && !downHeld) {
         targetVelY = 6.4 * (this.ridingTurtle ? 1.2 : 1.0);
       } else if (downHeld && !upHeld) {
         targetVelY = -6.4 * (this.ridingTurtle ? 1.2 : 1.0);
@@ -9531,11 +9755,25 @@ export class RpgWorldEngine {
       const seabedY = getOceanFloorY(this.heroPos.x, this.heroPos.z) + 0.45;
       this.heroPos.y = THREE.MathUtils.clamp(this.heroPos.y, seabedY, -1.05);
 
+      if (
+        this.diveTransition?.active &&
+        this.diveTransition.stage === 'surface' &&
+        (this.heroPos.y >= -1.18 || this.diveTransition.timer >= 2.6)
+      ) {
+        this.diveTransition = null;
+        this.exitOceanToSurface();
+        return;
+      }
+
       // Dynamic underwater lighting & fog transitioning smoothly from sunny Coral Sanctuary to Abyssal Trench
       const depthRatio = THREE.MathUtils.clamp((-this.heroPos.y - 2) / 23, 0, 1);
       const zAbyssRatio = THREE.MathUtils.clamp((-this.heroPos.z + 2) / 42, 0, 1);
       const darkT = Math.min(1, Math.max(depthRatio * 0.72, zAbyssRatio * 0.85));
       _skyColorScratch.setHex(0x0e7490).lerp(_skyNightCol, darkT * 0.86);
+      if (this.diveTransition?.active && this.diveTransition.stage === 'surface') {
+        const surfT = THREE.MathUtils.clamp((this.heroPos.y + 4.5) / 3.4, 0, 1);
+        _skyColorScratch.lerp(_skyDayCol, surfT * 0.65);
+      }
       if (this.scene.background instanceof THREE.Color) {
         this.scene.background.copy(_skyColorScratch);
       }
@@ -9791,8 +10029,12 @@ export class RpgWorldEngine {
           : 0;
       const SWIM_FLOAT_Y = -1.16 + floatOffset;
 
+      const activeDiveSubmerge =
+        this.diveTransition?.active &&
+        (this.diveTransition.stage === 'plunge' || this.diveTransition.stage === 'submerge');
+
       if (
-        inWaterZone &&
+        (inWaterZone || activeDiveSubmerge) &&
         this.heroPos.y <= 0.14 &&
         !(this.swimLeapTimer > 0.18 && this.heroVelY > 1.8)
       ) {
@@ -9821,10 +10063,57 @@ export class RpgWorldEngine {
           this.jumpToSwimPlayedForAir = false;
           this.heroVelY *= 0.25;
         }
-        const waveBobY = SWIM_FLOAT_Y + Math.sin(this.elapsed * 3.1 + this.heroPos.x * 0.2) * 0.07;
-        this.heroVelY += (waveBobY - this.heroPos.y) * 20 * dt;
-        this.heroVelY *= Math.exp(-6.5 * dt);
-        this.heroPos.y += this.heroVelY * dt;
+        if (this.diveTransition?.active && this.diveTransition.stage === 'plunge') {
+          this.diveTransition.timer += dt;
+          const p = THREE.MathUtils.clamp(this.diveTransition.timer / 0.48, 0, 1);
+          const targetDiveY = THREE.MathUtils.lerp(-1.16, -1.95, p);
+          this.heroVelY = (targetDiveY - this.heroPos.y) * 10;
+          this.heroPos.y += this.heroVelY * dt;
+          _forward.set(Math.sin(this.heroYaw), 0, Math.cos(this.heroYaw));
+          this.heroPos.addScaledVector(_forward, 2.4 * dt);
+          this.diveTransition.bubbleTimer += dt;
+          if (this.diveTransition.bubbleTimer >= 0.1) {
+            this.diveTransition.bubbleTimer = 0;
+            this.spawnBurst(this.heroPos.x, 0.08, this.heroPos.z, 0xbae6fd, 7);
+          }
+          if (p >= 1) {
+            this.diveTransition.stage = 'submerge';
+            this.diveTransition.timer = 0;
+            this.diveTransition.bubbleTimer = 0;
+          }
+        } else if (this.diveTransition?.active && this.diveTransition.stage === 'submerge') {
+          this.diveTransition.timer += dt;
+          const p = THREE.MathUtils.clamp(this.diveTransition.timer / 1.55, 0, 1);
+          const eased = p * p * (3 - 2 * p);
+          const targetSubY = THREE.MathUtils.lerp(-1.95, -5.0, eased);
+          this.heroVelY = (targetSubY - this.heroPos.y) * 9;
+          this.heroPos.y += this.heroVelY * dt;
+          _forward.set(Math.sin(this.heroYaw), 0, Math.cos(this.heroYaw));
+          this.heroPos.addScaledVector(_forward, 2.8 * dt);
+          this.diveTransition.bubbleTimer += dt;
+          if (this.diveTransition.bubbleTimer >= 0.12) {
+            this.diveTransition.bubbleTimer = 0;
+            this.spawnBurst(this.heroPos.x, this.heroPos.y + 0.45, this.heroPos.z, 0x67e8f9, 8);
+          }
+          if (this.scene.background instanceof THREE.Color) {
+            _skyColorScratch.setHex(0x0c4a6e);
+            this.scene.background.lerp(_skyColorScratch, eased * 0.92);
+            if (this.scene.fog instanceof THREE.FogExp2) {
+              this.scene.fog.color.copy(this.scene.background);
+              this.scene.fog.density = THREE.MathUtils.lerp(0.006, 0.036, eased);
+            }
+          }
+          if (p >= 1) {
+            this.diveTransition = null;
+            this.enterOceanWorld(false, true);
+            return;
+          }
+        } else {
+          const waveBobY = SWIM_FLOAT_Y + Math.sin(this.elapsed * 3.1 + this.heroPos.x * 0.2) * 0.07;
+          this.heroVelY += (waveBobY - this.heroPos.y) * 20 * dt;
+          this.heroVelY *= Math.exp(-6.5 * dt);
+          this.heroPos.y += this.heroVelY * dt;
+        }
       } else {
         const shoreOrLeap = wasSwimming || this.swimLeapTimer > 0;
         const bridgeLedgeCatch =
@@ -9927,6 +10216,30 @@ export class RpgWorldEngine {
           );
         }
       }
+
+      if (this.diveTransition?.active && this.diveTransition.stage === 'swim_to_water') {
+        this.diveTransition.timer += dt;
+        if (this.isSwimming || !effLandOrBridge || effGroundY < -0.15) {
+          this.savedOverworldHeroPos.copy(this.heroPos);
+          this.tapMoveTarget = null;
+          this.heroVel.multiplyScalar(0.35);
+          this.isSwimming = true;
+          this.heroOnGround = false;
+          this.activeSwimStyle = 'jump_dive';
+          this.diveTransition.stage = 'plunge';
+          this.diveTransition.timer = 0;
+          this.diveTransition.bubbleTimer = 0;
+          soundEngine.playJumpToSwim();
+          this.spawnBurst(this.heroPos.x, 0.14, this.heroPos.z, 0xbae6fd, 18);
+          this.showBanner('🤿 Menyelam perlahan masuk ke dalam laut...', 2.2);
+          this.pushHud(true);
+        } else if (this.diveTransition.timer >= 9.0) {
+          this.diveTransition = null;
+          this.tapMoveTarget = null;
+          this.showBanner('🌊 Dekati tepi laut lalu tekan tombol Selam lagi.', 2.6);
+          this.pushHud(true);
+        }
+      }
     }
 
     if (wasAirborne && this.heroOnGround) {
@@ -9994,7 +10307,13 @@ export class RpgWorldEngine {
     const isSprintingSwim =
       this.heldKeys.has('ShiftLeft') || this.heldKeys.has('ShiftRight') || this.voiceSprint;
     if (this.isSwimming) {
-      if (this.swimStylePreference !== 'auto') {
+      if (this.diveTransition?.active && this.diveTransition.stage === 'plunge') {
+        this.activeSwimStyle = 'jump_dive';
+      } else if (this.diveTransition?.active && this.diveTransition.stage === 'submerge') {
+        this.activeSwimStyle = 'deep_submerge';
+      } else if (this.diveTransition?.active && this.diveTransition.stage === 'surface') {
+        this.activeSwimStyle = 'front_crawl';
+      } else if (this.swimStylePreference !== 'auto') {
         this.activeSwimStyle = this.swimStylePreference;
       } else if (this.worldMode === 'ocean' && this.oceanGear.has('wetsuit_tank')) {
         this.activeSwimStyle = 'scuba_explore';
@@ -10148,6 +10467,7 @@ export class RpgWorldEngine {
       swimStyle: effectivePoseSwimStyle,
       swimBankRoll: this.swimDodgeTimer > 0 ? this.swimDodgeRoll : 0,
       divingGear: this.worldMode === 'ocean' ? Array.from(this.oceanGear) : [],
+      wearingSwimsuit: this.swimSuitPicked,
       ridingTurtle: this.worldMode === 'ocean' && this.ridingTurtle,
       jumpDiveTrick: this.activeJumpTrick,
       jumpDiveElapsed: this.jumpTrickElapsed,
@@ -10262,11 +10582,15 @@ export class RpgWorldEngine {
       const camX = this.heroPos.x + (rx / rayLen) * this.currentCamDist;
       const camZ = this.heroPos.z + (rz / rayLen) * this.currentCamDist;
       const liveCamFloorY =
-        (this.worldMode === 'overworld'
-          ? getArchipelagoGroundY(camX, camZ)
-          : this.worldMode === 'ocean'
-          ? getOceanFloorY(camX, camZ)
-          : 0) + 0.55;
+        this.worldMode === 'overworld' &&
+        this.diveTransition?.active &&
+        (this.diveTransition.stage === 'plunge' || this.diveTransition.stage === 'submerge')
+          ? -5.6
+          : (this.worldMode === 'overworld'
+              ? getArchipelagoGroundY(camX, camZ)
+              : this.worldMode === 'ocean'
+              ? getOceanFloorY(camX, camZ)
+              : 0) + 0.55;
       let camY = Math.max(liveCamFloorY, pivotY + (ry / rayLen) * this.currentCamDist);
       if (this.worldMode === 'ocean') {
         camY = Math.min(-0.45, camY);
@@ -10356,6 +10680,25 @@ export class RpgWorldEngine {
         this.showBanner(
           '✨ Senjata Pemula Didapat! (Damage Kecil: 1 · Jelajahi Gua & kalahkan Bos untuk senjata kuat!)',
           4.8,
+        );
+        this.saveProgress();
+      }
+
+      // Swimsuit Pickup in Desa Sapaan
+      const ss = OVERWORLD_ANCHORS.swimSuit;
+      const ssY = getArchipelagoGroundY(ss.x, ss.z);
+      if (
+        !this.swimSuitPicked &&
+        Math.hypot(this.heroPos.x - ss.x, this.heroPos.z - ss.z) < 2.6 &&
+        Math.abs(this.heroPos.y - ssY) < 3.2
+      ) {
+        this.swimSuitPicked = true;
+        this.refreshWeaponVisual();
+        this.spawnBurst(ss.x, ssY + 1.5, ss.z, 0x22d3ee, 26);
+        soundEngine.playPick();
+        this.showBanner(
+          '🤿 Pakaian Renang Didapat! Tekan tombol Selam di sebelah tombol Loncat untuk berenang & menyelam ke dalam laut!',
+          5.0,
         );
         this.saveProgress();
       }
@@ -11672,6 +12015,21 @@ export class RpgWorldEngine {
       }
     }
 
+    if (this.swimSuitPickupMesh.visible && this.phase === 'playing') {
+      const ss = OVERWORLD_ANCHORS.swimSuit;
+      const ssp = projectPoint(ss.x, getArchipelagoGroundY(ss.x, ss.z) + 3.2, ss.z);
+      if (ssp) {
+        labels.push({
+          id: 'swimsuit_pickup',
+          x: ssp.x,
+          y: ssp.y,
+          title: '🤿 Pakaian Renang (Ambil)',
+          subtext: 'Perlengkapan Selam & Masuk Laut',
+          kind: 'pickup',
+        });
+      }
+    }
+
     for (const npc of NPC_CATALOG) {
       const liveNpc = this.npcs.get(npc.id);
       const nx = liveNpc?.x ?? npc.x;
@@ -12393,6 +12751,17 @@ export class RpgWorldEngine {
           label: 'Senjata Pertama',
         });
       }
+      if (!this.swimSuitPicked) {
+        blips.push({
+          id: 'swimsuit',
+          x: OVERWORLD_ANCHORS.swimSuit.x,
+          z: OVERWORLD_ANCHORS.swimSuit.z,
+          kind: 'swimsuit',
+          color: '#06b6d4',
+          needsHelp: true,
+          label: 'Pakaian Renang',
+        });
+      }
       const spotKindByZone: Record<ZoneId, RadarBlipKind> = {
         desa_sapaan: 'spot_desa',
         pasar_rasa: 'spot_pasar',
@@ -12942,6 +13311,42 @@ export class RpgWorldEngine {
             : 'Kiri Belakang';
         return { distance, angleDeg, directionLabel };
       })(),
+      swimSuitPicked: this.swimSuitPicked,
+      swimSuitGuide: (() => {
+        if (this.swimSuitPicked || this.worldMode !== 'overworld' || this.phase !== 'playing') {
+          return null;
+        }
+        const ss = OVERWORLD_ANCHORS.swimSuit;
+        const tx = ss.x - this.heroPos.x;
+        const tz = ss.z - this.heroPos.z;
+        const distance = Math.max(1, Math.round(Math.hypot(tx, tz)));
+        this.camera.getWorldDirection(_v1);
+        _v1.y = 0;
+        if (_v1.lengthSq() < 0.001) _v1.set(0, 0, -1);
+        _v1.normalize();
+        const fx = _v1.x;
+        const fz = _v1.z;
+        const rx = -fz;
+        const rz = fx;
+        const forwardDot = tx * fx + tz * fz;
+        const rightDot = tx * rx + tz * rz;
+        const angleDeg = Math.round((Math.atan2(rightDot, forwardDot) * 180) / Math.PI);
+        const absA = Math.abs(angleDeg);
+        const directionLabel =
+          absA < 30
+            ? 'Lurus Depan'
+            : absA > 150
+            ? 'Belakang'
+            : angleDeg > 0
+            ? absA < 115
+              ? 'Kanan'
+              : 'Kanan Belakang'
+            : absA < 115
+            ? 'Kiri'
+            : 'Kiri Belakang';
+        return { distance, angleDeg, directionLabel };
+      })(),
+      diveTransitionStage: this.diveTransition?.active ? this.diveTransition.stage : 'idle',
       radarState: this.buildRadarState(),
       ownedRelics: Array.from(this.ownedRelics),
       crowns: this.ribbons.size,
@@ -13458,6 +13863,13 @@ export class RpgWorldEngine {
           OVERWORLD_ANCHORS.starterWeapon.x,
           OVERWORLD_ANCHORS.starterWeapon.z,
           'Senjata Pertama',
+        );
+      }
+      if (!this.swimSuitPicked) {
+        consider(
+          OVERWORLD_ANCHORS.swimSuit.x,
+          OVERWORLD_ANCHORS.swimSuit.z,
+          'Pakaian Renang',
         );
       }
       consider(this.portalRig.root.position.x, this.portalRig.root.position.z + 2.5, 'Portal Istana IELTS');

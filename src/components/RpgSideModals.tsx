@@ -69,6 +69,8 @@ interface RpgSideModalsProps {
   onEnterDungeon: (zoneId: ZoneId) => void;
   onEnterIelts: () => void;
   onExitDungeon?: () => void;
+  onWalkToSwimSuit?: () => void;
+  onDiveOcean?: () => void;
   onUpdateSettings: (partial: Partial<GameSettings>) => void;
   onOpenOfflineSync?: () => void;
 }
@@ -87,6 +89,8 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
   onEnterDungeon,
   onEnterIelts,
   onExitDungeon,
+  onWalkToSwimSuit,
+  onDiveOcean,
   onUpdateSettings,
   onOpenOfflineSync,
 }) => {
@@ -187,6 +191,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                 radar={hud.radarState}
                 liberatedZones={hud.liberatedZones}
                 starterPicked={hud.starterWeaponPicked}
+                swimSuitPicked={hud.swimSuitPicked}
                 dungeonName={hud.dungeonState?.zoneName}
                 getLiveMapSnapshot={getLiveMapSnapshot}
                 onSelectZone={(zId) => {
@@ -196,6 +201,10 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                 onSelectPortal={() => {
                   onClose();
                   onEnterIelts();
+                }}
+                onSelectSwimSuit={() => {
+                  onClose();
+                  onWalkToSwimSuit?.();
                 }}
               />
 
@@ -348,6 +357,87 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
 
               {hud.worldMode === 'overworld' && (
                 <>
+                  {/* Info Pakaian Renang & Lokasi Menyelam */}
+                  <div className="grid grid-cols-1 gap-2 rounded-2xl border border-cyan-400/35 bg-slate-950/85 p-2.5 shadow-inner sm:grid-cols-2 sm:p-3">
+                    <div className="flex items-center justify-between gap-2.5 rounded-xl border border-cyan-300/25 bg-slate-900/75 px-2.5 py-2">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-amber-300/70 bg-slate-950 shadow">
+                          <img
+                            src="./assets/aistudio/Gemini_Generated_Image_o4clnqo4clnqo4cl_c0838042.jpeg"
+                            alt="Pakaian Renang"
+                            className="h-full w-full scale-[1.42] object-cover"
+                            draggable={false}
+                          />
+                        </span>
+                        <div className="min-w-0">
+                          <div className="truncate text-xs font-black text-cyan-200">
+                            Pakaian Renang
+                          </div>
+                          <div className="truncate text-[10px] font-bold text-slate-300">
+                            {hud.swimSuitPicked
+                              ? 'Sudah terpasang · Siap menyelam'
+                              : hud.swimSuitGuide
+                              ? `${hud.swimSuitGuide.distance}m (${hud.swimSuitGuide.directionLabel}) · Jalur Desa`
+                              : 'Dekat jalur dermaga Desa Sapaan'}
+                          </div>
+                        </div>
+                      </div>
+                      {!hud.swimSuitPicked && onWalkToSwimSuit ? (
+                        <RpgPillButton
+                          variant="gold"
+                          size="sm"
+                          onClick={() => {
+                            onClose();
+                            onWalkToSwimSuit();
+                          }}
+                          className="shrink-0 whitespace-nowrap"
+                        >
+                          <span>Pergi Ambil</span>
+                        </RpgPillButton>
+                      ) : (
+                        <span className="shrink-0 rounded-full border border-emerald-400/50 bg-emerald-950/70 px-2 py-0.5 text-[10px] font-black text-emerald-300">
+                          ✓ Aktif
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex items-center justify-between gap-2.5 rounded-xl border border-cyan-300/25 bg-slate-900/75 px-2.5 py-2">
+                      <div className="flex min-w-0 items-center gap-2.5">
+                        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-cyan-300/70 bg-slate-950 shadow">
+                          <img
+                            src="./assets/aistudio/Gemini_Generated_Image_q4s0n7q4s0n7q4s0_03737224.jpeg"
+                            alt="Akses Dunia Laut"
+                            className="h-full w-full scale-[1.14] object-cover"
+                            draggable={false}
+                          />
+                        </span>
+                        <div className="min-w-0">
+                          <div className="truncate text-xs font-black text-amber-200">
+                            Akses Laut & Menyelam
+                          </div>
+                          <div className="truncate text-[10px] font-bold text-slate-300">
+                            {hud.swimSuitPicked
+                              ? 'Tekan tombol Menyelam di sebelah Loncat'
+                              : 'Ambil pakaian renang dulu di dekat Desa'}
+                          </div>
+                        </div>
+                      </div>
+                      {onDiveOcean && (
+                        <RpgPillButton
+                          variant="green"
+                          size="sm"
+                          onClick={() => {
+                            onClose();
+                            onDiveOcean();
+                          }}
+                          className="shrink-0 whitespace-nowrap"
+                        >
+                          <span>{hud.swimSuitPicked ? 'Menyelam' : 'Cari Baju'}</span>
+                        </RpgPillButton>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
                     {ZONE_ORDER.map((zId) => {
                       const info = ZONE_INFO[zId];

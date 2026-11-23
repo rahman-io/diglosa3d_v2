@@ -23,6 +23,10 @@ const REFERENCED_AISTUDIO_IMAGES = new Set([
   'Easy_e28c90a2.jpeg',
   'Medium_868df2a3.jpeg',
   'Hard_9eb17eeb.jpeg',
+  'Gemini_Generated_Image_o4clnqo4clnqo4cl_c0838042.jpeg',
+  'Gemini_Generated_Image_p9qrl3p9qrl3p9qr_c81c9878.jpeg',
+  'Gemini_Generated_Image_q4s0n7q4s0n7q4s0_03737224.jpeg',
+  'Gemini_Generated_Image_aoej87aoej87aoej_de96d052.jpeg',
 ]);
 
 const PWA_ICONS = [

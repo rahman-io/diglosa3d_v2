@@ -19,10 +19,12 @@ interface Kingdom3DMapProps {
   radar: RadarState | null;
   liberatedZones: ZoneId[];
   starterPicked: boolean;
+  swimSuitPicked?: boolean;
   dungeonName?: string;
   getLiveMapSnapshot?: (kind: 'minimap' | 'full') => LiveMapSnapshot | null;
   onSelectZone?: (zoneId: ZoneId) => void;
   onSelectPortal?: () => void;
+  onSelectSwimSuit?: () => void;
 }
 
 /** Custom pixel-vector Blaster / Starter Weapon SVG icon (zero emojis) */
@@ -61,12 +63,29 @@ export const StarterWeaponPixelIcon: React.FC<{ className?: string }> = ({
   </svg>
 );
 
+/** Custom Wetsuit & Diving Gear icon */
+export const SwimSuitIcon: React.FC<{ className?: string }> = ({
+  className = 'h-5 w-5',
+}) => (
+  <span
+    className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-md border border-amber-300/70 bg-slate-950 ${className}`}
+  >
+    <img
+      src="./assets/aistudio/Gemini_Generated_Image_o4clnqo4clnqo4cl_c0838042.jpeg"
+      alt="Pakaian Renang"
+      className="h-full w-full scale-[1.42] object-cover"
+      draggable={false}
+    />
+  </span>
+);
+
 /** Reusable custom SVG legend icon per spot kind (zero emojis) */
 export const SpotLegendIcon: React.FC<{ kind: RadarBlipKind; className?: string }> = ({
   kind,
   className = 'h-4 w-4',
 }) => {
   if (kind === 'starter') return <StarterWeaponPixelIcon className={className} />;
+  if (kind === 'swimsuit') return <SwimSuitIcon className={className} />;
   if (kind === 'spot_gua') {
     return (
       <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -384,6 +403,37 @@ function drawIcon(
     ctx.fillStyle = '#fef08a';
     ctx.fillRect(-3.5, -1.5, 7, 2.2);
     ctx.fillRect(-3.5, 0.4, 2.2, 2.6);
+    ctx.restore();
+    return;
+  }
+
+  if (kind === 'swimsuit') {
+    const r = 8.8 + Math.sin(pulse * 5) * 1.2;
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(34, 211, 238, 0.28)';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = '#67e8f9';
+    ctx.stroke();
+
+    ctx.beginPath();
+    ctx.moveTo(0, -6.6);
+    ctx.lineTo(6.6, 0);
+    ctx.lineTo(0, 6.6);
+    ctx.lineTo(-6.6, 0);
+    ctx.closePath();
+    ctx.fillStyle = '#0891b2';
+    ctx.fill();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = '#0f172a';
+    ctx.stroke();
+
+    ctx.fillStyle = '#cffafe';
+    ctx.fillRect(-3.6, -2.2, 3.0, 2.2);
+    ctx.fillRect(0.6, -2.2, 3.0, 2.2);
+    ctx.fillStyle = '#facc15';
+    ctx.fillRect(-1.0, 0.8, 2.0, 2.6);
     ctx.restore();
     return;
   }
@@ -865,7 +915,7 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
       snapRevRef.current += 1;
     }
 
-    const hasStarter = radar.blips.some((b) => b.kind === 'starter');
+    const hasStarter = radar.blips.some((b) => b.kind === 'starter' || b.kind === 'swimsuit');
     const nowMs = performance.now();
     const pulseBucket = hasStarter ? Math.floor(nowMs / 180) : 0;
     const blipSig = radar.blips
@@ -964,7 +1014,7 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
 
     // 4. Draw Exact World-Aligned Tactical Blips (with edge clamping inside rounded-square)
     const rank = (k: RadarBlipKind) =>
-      k === 'starter'
+      k === 'starter' || k === 'swimsuit'
         ? 6
         : k === 'portal' || k === 'boss' || k === 'exit'
         ? 5
@@ -985,6 +1035,7 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
     for (const b of orderedBlips) {
       const keepClamped =
         b.kind === 'starter' ||
+        b.kind === 'swimsuit' ||
         b.kind.startsWith('spot_') ||
         b.kind === 'npc' ||
         b.kind === 'portal' ||
@@ -1115,6 +1166,14 @@ const KINGDOM_SPOTS: MapSpotDef[] = [
     shortLabel: 'Senjata Awal',
   },
   {
+    id: 'swimsuit',
+    x: OVERWORLD_ANCHORS.swimSuit.x,
+    z: OVERWORLD_ANCHORS.swimSuit.z,
+    kind: 'swimsuit',
+    color: '#22d3ee',
+    shortLabel: 'Pakaian Renang',
+  },
+  {
     id: 'desa',
     zoneId: 'desa_sapaan',
     x: OVERWORLD_ANCHORS.zones.desa_sapaan.x,
@@ -1182,14 +1241,16 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
   radar,
   liberatedZones,
   starterPicked,
+  swimSuitPicked = false,
   dungeonName,
   getLiveMapSnapshot,
   onSelectZone,
   onSelectPortal,
+  onSelectSwimSuit,
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const hitZonesRef = useRef<
-    Array<{ x: number; y: number; r: number; zoneId?: ZoneId; isPortal?: boolean }>
+    Array<{ x: number; y: number; r: number; zoneId?: ZoneId; isPortal?: boolean; isSwimSuit?: boolean }>
   >([]);
 
   const radarRef = useRef(radar);
@@ -1198,6 +1259,8 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
   liberatedRef.current = liberatedZones;
   const starterPickedRef = useRef(starterPicked);
   starterPickedRef.current = starterPicked;
+  const swimSuitPickedRef = useRef(swimSuitPicked);
+  swimSuitPickedRef.current = swimSuitPicked;
   const getSnapRef = useRef(getLiveMapSnapshot);
   getSnapRef.current = getLiveMapSnapshot;
 
@@ -1218,6 +1281,7 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
       const curRadar = radarRef.current;
       const curLiberated = liberatedRef.current;
       const curStarterPicked = starterPickedRef.current;
+      const curSwimSuitPicked = swimSuitPickedRef.current;
       const snap = getSnapRef.current?.('full') ?? null;
       const worldMode = snap?.bounds.worldMode ?? curRadar?.worldMode ?? 'overworld';
       const pulse = performance.now() / 1000;
@@ -1266,7 +1330,14 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
         ctx.stroke();
       }
 
-      const hits: Array<{ x: number; y: number; r: number; zoneId?: ZoneId; isPortal?: boolean }> = [];
+      const hits: Array<{
+        x: number;
+        y: number;
+        r: number;
+        zoneId?: ZoneId;
+        isPortal?: boolean;
+        isSwimSuit?: boolean;
+      }> = [];
 
       if (worldMode === 'overworld') {
         // Active night/roaming/sea/sky monsters from live radar blips
@@ -1297,6 +1368,7 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
 
         for (const sp of KINGDOM_SPOTS) {
           if (sp.id === 'starter' && curStarterPicked) continue;
+          if (sp.id === 'swimsuit' && curSwimSuitPicked) continue;
           const lib = sp.zoneId ? curLiberated.includes(sp.zoneId) : false;
           const pt = worldToMapPx(sp.x, sp.z, bounds, 0, 0, width, height);
 
@@ -1305,7 +1377,14 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
           ctx.arc(pt.sx, pt.sy, 13, 0, Math.PI * 2);
           ctx.fillStyle = lib ? 'rgba(34, 197, 94, 0.2)' : 'rgba(15, 23, 42, 0.55)';
           ctx.fill();
-          ctx.strokeStyle = sp.kind === 'portal' ? '#c084fc' : lib ? '#4ade80' : '#facc15';
+          ctx.strokeStyle =
+            sp.kind === 'portal'
+              ? '#c084fc'
+              : sp.kind === 'swimsuit'
+              ? '#22d3ee'
+              : lib
+              ? '#4ade80'
+              : '#facc15';
           ctx.lineWidth = 1.6;
           ctx.stroke();
 
@@ -1327,13 +1406,22 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
           ctx.lineWidth = 3.2;
           ctx.strokeStyle = '#090d16';
           ctx.strokeText(sp.shortLabel, pt.sx, pt.sy + 14);
-          ctx.fillStyle = sp.kind === 'portal' ? '#e9d5ff' : lib ? '#86efac' : '#fef08a';
+          ctx.fillStyle =
+            sp.kind === 'portal'
+              ? '#e9d5ff'
+              : sp.kind === 'swimsuit'
+              ? '#67e8f9'
+              : lib
+              ? '#86efac'
+              : '#fef08a';
           ctx.fillText(sp.shortLabel, pt.sx, pt.sy + 14);
 
           if (sp.zoneId) {
             hits.push({ x: pt.sx, y: pt.sy, r: 26, zoneId: sp.zoneId });
           } else if (sp.kind === 'portal') {
             hits.push({ x: pt.sx, y: pt.sy, r: 26, isPortal: true });
+          } else if (sp.kind === 'swimsuit') {
+            hits.push({ x: pt.sx, y: pt.sy, r: 26, isSwimSuit: true });
           }
         }
       } else if (curRadar) {
@@ -1457,6 +1545,10 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
     const y = ((e.clientY - rect.top) / rect.height) * 400;
     for (const h of hitZonesRef.current) {
       if (Math.hypot(x - h.x, y - h.y) <= h.r) {
+        if (h.isSwimSuit && onSelectSwimSuit) {
+          onSelectSwimSuit();
+          return;
+        }
         if (h.isPortal && onSelectPortal) {
           onSelectPortal();
           return;
@@ -1508,6 +1600,12 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
                 <SpotLegendIcon kind="spot_menara" className="h-4 w-4" />
                 <span>Menara</span>
               </span>
+              {!swimSuitPicked && (
+                <span className="inline-flex items-center gap-1">
+                  <SpotLegendIcon kind="swimsuit" className="h-4 w-4" />
+                  <span className="text-cyan-300">Pakaian Renang</span>
+                </span>
+              )}
               <span className="inline-flex items-center gap-1">
                 <SpotLegendIcon kind="monster_brawl" className="h-4 w-4" />
                 <span>Monster</span>

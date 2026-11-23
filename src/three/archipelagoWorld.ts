@@ -14,6 +14,7 @@ export const OVERWORLD_ANCHORS = {
   hub: { x: -8.0, y: 6.0, z: -5.0 },
   desaSpawn: { x: -6.0, y: 2.6, z: 126.0, yaw: Math.PI * 0.85 },
   starterWeapon: { x: -12.5, y: 2.6, z: 123.0 },
+  swimSuit: { x: -4.5, y: 2.6, z: 140.0 },
   portal: { x: 2.0, y: 14.0, z: -185.0 },
   istanaFloating: { x: 254, y: 38, z: -188 },
   zones: {
@@ -629,6 +630,7 @@ function sampleIslandInterior(
     h = rectBlend(wx, wz, -27.5, -12.5, 111.5, 124.5, 4.0, 4.6, h); // Rumah Desa 2 (12m x 10m)
     h = padBlend(wx, wz, -6.0, 126.0, 5.0, 9.5, 2.6, h); // desaSpawn & village square
     h = padBlend(wx, wz, -12.5, 123.0, 3.2, 6.5, 2.6, h); // starterWeapon
+    h = padBlend(wx, wz, -4.5, 140.0, 3.0, 6.0, 2.6, h); // swimSuit
     h = padBlend(wx, wz, -6.5, 111.5, 3.0, 6.0, 2.6, h); // village_well
     h = padBlend(wx, wz, 11.5, 109.0, 3.0, 6.0, 2.6, h); // guardPost
     h = rectBlend(wx, wz, 0.0, 9.0, 130.0, 138.0, 3.5, 2.6, h); // Wheat Farm meadow

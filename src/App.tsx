@@ -99,6 +99,9 @@ const INITIAL_HUD: RpgHudSnapshot = {
   },
   starterWeaponPicked: false,
   starterWeaponGuide: null,
+  swimSuitPicked: false,
+  swimSuitGuide: null,
+  diveTransitionStage: 'idle',
   radarState: null,
   ownedRelics: [],
   crowns: 0,
@@ -1124,7 +1127,9 @@ function DiglosaRpgApp() {
           onOpenCrafting={() => engineRef.current?.openCraftingTable()}
           onVirtualMove={(vx, vz) => engineRef.current?.setVirtualMove(vx, vz)}
           onExitDungeon={() => engineRef.current?.exitDungeon()}
-          onEnterOcean={() => engineRef.current?.enterOceanWorld()}
+          onEnterOcean={() => engineRef.current?.toggleDiveOcean()}
+          onDiveOcean={() => engineRef.current?.toggleDiveOcean()}
+          onGoToSwimSuit={() => engineRef.current?.walkToSwimSuit()}
           onOceanVertical={(dir, held) => engineRef.current?.setOceanVerticalInput(dir, held)}
           onToggleOceanTurtle={() => engineRef.current?.toggleOceanTurtleMount()}
           onCraftDivingGear={(gearId, method) => engineRef.current?.craftOrBuyDivingGear(gearId, method)}
@@ -1246,6 +1251,8 @@ function DiglosaRpgApp() {
         onEnterDungeon={(zoneId) => engineRef.current?.enterZoneDungeon(zoneId, false)}
         onEnterIelts={() => engineRef.current?.startIeltsTrial()}
         onExitDungeon={() => engineRef.current?.exitDungeon()}
+        onWalkToSwimSuit={() => engineRef.current?.walkToSwimSuit()}
+        onDiveOcean={() => engineRef.current?.toggleDiveOcean()}
         onUpdateSettings={(partial) => engineRef.current?.updateSettings(partial)}
         onOpenOfflineSync={() => void runServerAndCacheCheck(true)}
       />

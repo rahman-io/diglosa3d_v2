@@ -24,7 +24,7 @@ import { DIVING_GEAR_DEFS } from '../three/oceanWorld';
 import { SEA_BIOTA_CATALOG } from '../three/seaBiotaCatalog';
 import { isFullscreenActive, toggleAppFullscreen } from '../utils/fullscreen';
 import { getWeaponThumbnails } from '../utils/weaponThumbnails';
-import { RadarMinimap, StarterWeaponPixelIcon } from './RadarMinimap';
+import { RadarMinimap, StarterWeaponPixelIcon, SwimSuitIcon } from './RadarMinimap';
 import { WeaponPreviewCanvas } from './WeaponPreviewCanvas';
 import { scrollFieldIntoView, useVisualViewport } from '../utils/useVisualViewport';
 
@@ -81,6 +81,8 @@ interface RpgHudProps {
   onVirtualMove: (vx: number, vz: number) => void;
   onExitDungeon: () => void;
   onEnterOcean?: () => void;
+  onDiveOcean?: () => void;
+  onGoToSwimSuit?: () => void;
   onOceanVertical?: (dir: 'up' | 'down', held: boolean) => void;
   onToggleOceanTurtle?: () => void;
   onCraftDivingGear?: (gearId: DivingGearId, method: 'craft' | 'diamond') => void;
@@ -120,6 +122,8 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   onVirtualMove,
   onExitDungeon,
   onEnterOcean,
+  onDiveOcean,
+  onGoToSwimSuit,
   onOceanVertical,
   onToggleOceanTurtle,
   onCraftDivingGear,
@@ -420,10 +424,27 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             )}
           </button>
 
-          {hud.worldMode === 'overworld' && !hud.starterWeaponPicked && hud.starterWeaponGuide && (
-            <div className="flex items-center gap-1.5 rounded-full border border-cyan-300/40 bg-slate-950/85 px-2.5 py-0.5 text-[10px] font-bold text-cyan-100">
-              <StarterWeaponPixelIcon className="h-3.5 w-3.5 shrink-0" />
-              <span>Senjata ({hud.starterWeaponGuide.distance}m)</span>
+          {(hud.worldMode === 'overworld' &&
+            ((!hud.starterWeaponPicked && hud.starterWeaponGuide) ||
+              (!hud.swimSuitPicked && hud.swimSuitGuide))) && (
+            <div className="flex flex-col items-start gap-1">
+              {!hud.starterWeaponPicked && hud.starterWeaponGuide && (
+                <div className="flex items-center gap-1.5 rounded-full border border-cyan-300/40 bg-slate-950/85 px-2.5 py-0.5 text-[10px] font-bold text-cyan-100">
+                  <StarterWeaponPixelIcon className="h-3.5 w-3.5 shrink-0" />
+                  <span>Senjata ({hud.starterWeaponGuide.distance}m)</span>
+                </div>
+              )}
+              {!hud.swimSuitPicked && hud.swimSuitGuide && (
+                <button
+                  type="button"
+                  onClick={onGoToSwimSuit}
+                  title="Klik untuk berjalan mengambil Pakaian Renang"
+                  className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-amber-300/50 bg-slate-950/85 px-2.5 py-0.5 text-[10px] font-bold text-amber-100 shadow transition hover:border-cyan-300 hover:bg-slate-900 active:scale-95"
+                >
+                  <SwimSuitIcon className="h-3.5 w-3.5" />
+                  <span>Pakaian Renang ({hud.swimSuitGuide.distance}m)</span>
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -1036,10 +1057,10 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                   ↻
                 </button>
               )}
-              {hud.worldMode === 'overworld' && onEnterOcean && (
+              {hud.worldMode === 'overworld' && (onDiveOcean || onEnterOcean) && (
                 <button
                   type="button"
-                  onClick={onEnterOcean}
+                  onClick={() => (onDiveOcean ?? onEnterOcean)?.()}
                   className="shrink-0 rounded-full border border-emerald-300/70 bg-emerald-600/90 px-2 py-0.5 text-[9px] font-black text-white transition hover:bg-emerald-500 sm:text-[10px]"
                   title="Masuk ke Dunia Survival Bawah Laut (Tombol X)"
                 >
@@ -1861,8 +1882,15 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         </div>
       )}
 
-      {/* CONTEXTUAL ACTION MEDALLIONS (Mobile Legends style icon row left of Jump button) */}
-      <div className="pointer-events-auto fixed bottom-[16px] right-[168px] z-20 flex items-center gap-2.5 sm:bottom-[24px] sm:right-[198px] sm:gap-3">
+      {/* CONTEXTUAL ACTION MEDALLIONS (Mobile Legends style icon row left of Jump & Dive buttons) */}
+      <div
+        className={`pointer-events-auto fixed bottom-[16px] z-20 flex items-center gap-2.5 sm:bottom-[24px] sm:gap-3 ${
+          (hud.worldMode === 'overworld' || hud.worldMode === 'ocean') &&
+          Boolean(onDiveOcean || onEnterOcean)
+            ? 'right-[218px] sm:right-[250px]'
+            : 'right-[168px] sm:right-[198px]'
+        }`}
+      >
         {nearbyOverworldNpc && (
           <button
             type="button"
@@ -2149,8 +2177,71 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         </div>
       )}
 
-      {/* BOTTOM-RIGHT: Mobile Legends Style Thumb Cluster (Jump, Scope, Attack) */}
-      <div className="pointer-events-none fixed bottom-3 right-3 z-20 h-[144px] w-[156px] sm:bottom-5 sm:right-5 sm:h-[168px] sm:w-[180px]">
+      {/* BOTTOM-RIGHT: Mobile Legends Style Thumb Cluster (Dive, Jump, Scope, Attack) */}
+      <div className="pointer-events-none fixed bottom-3 right-3 z-20 h-[144px] w-[216px] sm:bottom-5 sm:right-5 sm:h-[168px] sm:w-[244px]">
+
+        {/* Dive / Surface Ocean Medallion right next to Jump */}
+        {(hud.worldMode === 'overworld' || hud.worldMode === 'ocean') &&
+          Boolean(onDiveOcean || onEnterOcean) && (
+            <button
+              type="button"
+              data-no-click-sfx="true"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                (onDiveOcean ?? onEnterOcean)?.();
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  (onDiveOcean ?? onEnterOcean)?.();
+                }
+              }}
+              title={
+                hud.worldMode === 'ocean'
+                  ? 'Berenang Naik ke Permukaan Laut (X)'
+                  : hud.swimSuitPicked
+                  ? 'Berenang & Menyelam Masuk ke Laut (X)'
+                  : 'Ambil Pakaian Renang di Dekat Desa untuk Menyelam'
+              }
+              aria-label={
+                hud.worldMode === 'ocean'
+                  ? 'Berenang Naik ke Permukaan Laut'
+                  : hud.swimSuitPicked
+                  ? 'Menyelam ke Laut'
+                  : 'Cari Pakaian Renang'
+              }
+              className={`pointer-events-auto absolute bottom-[10px] right-[152px] flex h-[52px] w-[52px] touch-none select-none items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:bottom-[14px] sm:right-[176px] sm:h-[58px] sm:w-[58px] ${
+                hud.diveTransitionStage && hud.diveTransitionStage !== 'idle'
+                  ? 'animate-pulse ring-2 ring-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.85)]'
+                  : hud.worldMode === 'ocean'
+                  ? 'shadow-[0_5px_14px_rgba(16,185,129,0.58)] ring-2 ring-emerald-300/75'
+                  : hud.swimSuitPicked
+                  ? 'shadow-[0_5px_14px_rgba(34,211,238,0.56)] ring-2 ring-cyan-300/75'
+                  : 'opacity-90 shadow-[0_5px_14px_rgba(245,158,11,0.45)] ring-2 ring-amber-300/70'
+              }`}
+            >
+              <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                <img
+                  src={
+                    hud.worldMode === 'ocean'
+                      ? './assets/aistudio/Gemini_Generated_Image_aoej87aoej87aoej_de96d052.jpeg'
+                      : './assets/aistudio/Gemini_Generated_Image_p9qrl3p9qrl3p9qr_c81c9878.jpeg'
+                  }
+                  alt={hud.worldMode === 'ocean' ? 'Naik ke Permukaan' : 'Menyelam ke Laut'}
+                  className="pointer-events-none h-full w-full scale-[1.09] select-none object-cover"
+                  draggable={false}
+                />
+              </span>
+              {hud.worldMode === 'overworld' && !hud.swimSuitPicked && (
+                <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-amber-300 bg-slate-950/95 text-amber-200 shadow sm:h-5 sm:w-5">
+                  <Lock className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                </span>
+              )}
+              <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-300/65 bg-slate-950/90 px-1.5 text-[8px] font-black leading-tight text-cyan-100 shadow sm:text-[9px]">
+                {hud.worldMode === 'ocean' ? 'Naik' : hud.swimSuitPicked ? 'Selam' : 'Baju'}
+              </span>
+            </button>
+          )}
 
         {/* Button 2 (Arc Left): Winged-Boot Jump Medallion */}
         <button
