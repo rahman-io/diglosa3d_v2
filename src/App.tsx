@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
+import { onAuthStateChanged, signOut, User } from 'firebase/auth';
 import { RotateCw, Smartphone } from 'lucide-react';
 import { soundEngine } from './audio/soundEngine';
 import { AssetDownloaderScreen } from './components/AssetDownloaderScreen';
@@ -13,6 +13,7 @@ import { GameOverModal } from './components/GameOverModal';
 import { AcademySkillMode, IeltsAcademyModal } from './components/IeltsAcademyModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
 import { LearningModeModal } from './components/LearningModeModal';
+import { LoginGateScreen } from './components/LoginGateScreen';
 import { NpcDialogueModal } from './components/NpcDialogueModal';
 import {
   getGlobalPwaInstallState,
@@ -25,7 +26,7 @@ import { RpgHud } from './components/RpgHud';
 import { RpgSideModals, SideModalTab } from './components/RpgSideModals';
 import { StoryOverlayModal } from './components/StoryOverlayModal';
 import { TitleScreen } from './components/TitleScreen';
-import { auth, googleProvider, probeFirestoreReachable } from './firebase';
+import { auth, probeFirestoreReachable, signInWithGoogleAccount } from './firebase';
 import {
   fetchPublicLeaderboard,
   loadUserProgress,
@@ -267,6 +268,7 @@ function DiglosaRpgApp() {
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardRecord[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(true);
   const [user, setUser] = useState<User | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfileRecord | null>(null);
   const [bestLocalScore, setBestLocalScore] = useState<number>(() => {
     try {
@@ -731,6 +733,7 @@ function DiglosaRpgApp() {
 
     const unsubAuth = onAuthStateChanged(auth, async (nextUser) => {
       setUser(nextUser);
+      setAuthChecked(true);
       if (nextUser?.displayName) {
         setPlayerName((prev) => {
           if (!prev || prev === 'Petualang') {
@@ -1590,14 +1593,34 @@ function DiglosaRpgApp() {
     transportRef.current?.setMuteAllPeers(next);
   }, [muteAllVoice]);
 
-  const handleSignIn = useCallback(async () => {
-    await signInWithPopup(auth, googleProvider);
+  const handleSignIn = useCallback(async (selectAccount = false) => {
+    await signInWithGoogleAccount(selectAccount);
   }, []);
 
   const handleSignOut = useCallback(async () => {
+    if (activeRoom) {
+      await handleLeaveMultiplayerRoom(true);
+    } else if (resumableRoom) {
+      const oldRoomId = resumableRoom.room.roomId;
+      setResumableRoom(null);
+      clearLastActiveRoomSession();
+      await leaveMultiplayerRoom(oldRoomId).catch(() => undefined);
+    }
+    setSideTab(null);
+    setDifficultyPromptOpen(false);
+    setLeaderboardOpen(false);
+    setActiveBattle(null);
+    setActiveLearning(null);
+    setActiveAcademySkill(null);
+    setActiveCaveSeal(null);
+    setCraftingOpen(false);
+    setDialogueNpcId(null);
+    setIsMultiplayerPlaying(false);
+    engineRef.current?.setMultiplayerActive(false);
+    engineRef.current?.setPhase('title');
     await signOut(auth);
     setSyncStatus(null);
-  }, []);
+  }, [activeRoom, resumableRoom, handleLeaveMultiplayerRoom]);
 
   const handleManualSync = useCallback(async () => {
     if (!auth.currentUser) return;
@@ -1623,12 +1646,24 @@ function DiglosaRpgApp() {
     }
   }, [hud]);
 
+  const isAuthenticatedUser = Boolean(user && user.emailVerified);
+
   return (
     <div className="relative h-[100dvh] w-[100dvw] overflow-hidden">
       {/* Isolated 100% 3D World Viewport */}
       <div ref={mountRef} className="absolute inset-0 h-full w-full" />
 
-      {hud.phase === 'title' && (
+      {!showAssetDownloader && (!authChecked || !isAuthenticatedUser) && (
+        <LoginGateScreen
+          authChecked={authChecked}
+          offlineVersion={offlineVersion}
+          offlineReady={offlineReady}
+          onSignIn={handleSignIn}
+          onOpenOfflineSync={() => void runServerAndCacheCheck(true)}
+        />
+      )}
+
+      {hud.phase === 'title' && authChecked && isAuthenticatedUser && (
         <TitleScreen
           hasSavedGame={hud.hasSavedGame}
           hasResumableRoom={Boolean(resumableRoom)}
@@ -1643,6 +1678,7 @@ function DiglosaRpgApp() {
           onOpenGuide={() => setSideTab('guide')}
           bestLocalScore={bestLocalScore}
           user={user}
+          onSignOut={handleSignOut}
           muted={muted}
           onToggleMute={handleToggleMute}
           disableShortcuts={
@@ -1842,6 +1878,8 @@ function DiglosaRpgApp() {
         onDiveOcean={() => engineRef.current?.toggleDiveOcean()}
         onUpdateSettings={(partial) => engineRef.current?.updateSettings(partial)}
         onOpenOfflineSync={() => void runServerAndCacheCheck(true)}
+        user={user}
+        onSignOut={handleSignOut}
       />
 
       <GameOverModal
@@ -1896,7 +1934,6 @@ function DiglosaRpgApp() {
         userProfile={userProfile}
         currentRunScore={hud.score}
         onSignIn={handleSignIn}
-        onSignOut={handleSignOut}
         onManualSync={handleManualSync}
         syncing={syncing}
         syncStatus={syncStatus}

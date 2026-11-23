@@ -1,6 +1,13 @@
 import { Analytics, getAnalytics, isSupported } from 'firebase/analytics';
 import { getApp, getApps, initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import {
+  browserLocalPersistence,
+  getAuth,
+  GoogleAuthProvider,
+  setPersistence,
+  signInWithPopup,
+  UserCredential,
+} from 'firebase/auth';
 import {
   doc,
   Firestore,
@@ -45,7 +52,22 @@ function createFirestoreInstance(): Firestore {
 
 export const db = createFirestoreInstance();
 export const auth = getAuth(app);
+if (typeof window !== 'undefined') {
+  void setPersistence(auth, browserLocalPersistence).catch(() => undefined);
+}
 export const googleProvider = new GoogleAuthProvider();
+
+export async function signInWithGoogleAccount(
+  selectAccount = false,
+): Promise<UserCredential> {
+  await setPersistence(auth, browserLocalPersistence).catch(() => undefined);
+  if (selectAccount) {
+    const selectorProvider = new GoogleAuthProvider();
+    selectorProvider.setCustomParameters({ prompt: 'select_account' });
+    return signInWithPopup(auth, selectorProvider);
+  }
+  return signInWithPopup(auth, googleProvider);
+}
 
 export enum OperationType {
   CREATE = 'create',

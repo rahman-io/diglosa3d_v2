@@ -8,6 +8,7 @@ import {
   Crown,
   HelpCircle,
   Lock,
+  LogOut,
   RefreshCw,
   ScrollText,
   Search,
@@ -15,6 +16,7 @@ import {
   Volume2,
   X,
 } from 'lucide-react';
+import { User } from 'firebase/auth';
 import { soundEngine } from '../audio/soundEngine';
 import { formatBytesMb, getLocalOfflineState } from '../services/offlineSyncService';
 import { DIVING_GEAR_DEFS } from '../three/oceanWorld';
@@ -73,6 +75,8 @@ interface RpgSideModalsProps {
   onDiveOcean?: () => void;
   onUpdateSettings: (partial: Partial<GameSettings>) => void;
   onOpenOfflineSync?: () => void;
+  user?: User | null;
+  onSignOut?: () => Promise<void>;
 }
 
 export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
@@ -93,6 +97,8 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
   onDiveOcean,
   onUpdateSettings,
   onOpenOfflineSync,
+  user,
+  onSignOut,
 }) => {
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'new' | 'learn' | 'mast'>('all');
@@ -1306,6 +1312,37 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                   </span>
                 </div>
               </div>
+
+              {/* Profil Akun Google & Logout Sistem */}
+              {user && (
+                <div className="rounded-2xl border-2 border-[#d6b67c] bg-white p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-600/40 bg-emerald-100 text-sm font-black text-emerald-900">
+                        {(user.displayName || user.email || 'P').slice(0, 1).toUpperCase()}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-black text-[#451a03]">
+                          Profil Akun Google · {user.displayName || 'Petualang'}
+                        </div>
+                        <div className="truncate text-[11px] font-medium text-[#78350f]">
+                          {user.email || 'Sesi aktif tersimpan di perangkat ini'}
+                        </div>
+                      </div>
+                    </div>
+                    {onSignOut && (
+                      <button
+                        type="button"
+                        onClick={() => void onSignOut()}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border-2 border-rose-700/40 bg-rose-600 px-3.5 py-2 text-xs font-black text-white transition hover:bg-rose-700"
+                      >
+                        <LogOut className="h-3.5 w-3.5" />
+                        <span>Logout Akun</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

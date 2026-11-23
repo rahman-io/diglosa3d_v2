@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import {
   Download,
   HelpCircle,
+  LogOut,
   RefreshCw,
   Sparkles,
   Trophy,
@@ -26,6 +27,7 @@ interface TitleScreenProps {
   onOpenGuide: () => void;
   bestLocalScore: number;
   user: User | null;
+  onSignOut?: () => Promise<void>;
   muted: boolean;
   onToggleMute: () => void;
   disableShortcuts?: boolean;
@@ -45,6 +47,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onOpenGuide,
   bestLocalScore,
   user,
+  onSignOut,
   muted,
   onToggleMute,
   disableShortcuts = false,
@@ -54,6 +57,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 }) => {
   const [showQuickMenu, setShowQuickMenu] = useState(false);
   const [showInfoSheet, setShowInfoSheet] = useState(false);
+  const [logoutBusy, setLogoutBusy] = useState(false);
   const [isFs, setIsFs] = useState(false);
   const wotd = getWordOfTheDay();
 
@@ -197,6 +201,42 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                   </div>
                 )}
               </div>
+
+              {user && (
+                <div className="mt-2.5 flex items-center justify-between gap-2 rounded-xl border border-emerald-400/25 bg-emerald-950/35 px-2.5 py-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-emerald-300/50 bg-emerald-500/25 text-xs font-black text-emerald-200">
+                      {(user.displayName || user.email || 'P').slice(0, 1).toUpperCase()}
+                    </span>
+                    <div className="min-w-0">
+                      <div className="truncate text-xs font-black text-white">
+                        {user.displayName || 'Petualang'}
+                      </div>
+                      <div className="truncate text-[10px] text-emerald-200/85">
+                        {user.email || 'Akun Google Aktif'}
+                      </div>
+                    </div>
+                  </div>
+                  {onSignOut && (
+                    <button
+                      type="button"
+                      disabled={logoutBusy}
+                      onClick={() => {
+                        setLogoutBusy(true);
+                        void onSignOut().finally(() => {
+                          setLogoutBusy(false);
+                          setShowInfoSheet(false);
+                        });
+                      }}
+                      title="Logout dari Akun Google"
+                      className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-400/45 bg-rose-500/20 px-2.5 py-1.5 text-[10px] font-black text-rose-100 transition hover:bg-rose-500/35 disabled:opacity-50"
+                    >
+                      <LogOut className="h-3 w-3" />
+                      <span>{logoutBusy ? '...' : 'Logout'}</span>
+                    </button>
+                  )}
+                </div>
+              )}
 
               <div className="mt-2.5 flex items-center justify-between gap-2 rounded-xl border border-white/10 bg-white/5 px-2.5 py-2">
                 <div className="min-w-0">

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Award, CloudUpload, LogIn, LogOut, Trophy, X } from 'lucide-react';
+import { Award, CloudUpload, LogIn, Trophy, X } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { LeaderboardRecord, UserProfileRecord } from '../types/game';
 
@@ -12,7 +12,6 @@ interface LeaderboardModalProps {
   userProfile: UserProfileRecord | null;
   currentRunScore: number;
   onSignIn: () => Promise<void>;
-  onSignOut: () => Promise<void>;
   onManualSync: () => Promise<void>;
   syncing: boolean;
   syncStatus: string | null;
@@ -27,7 +26,6 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   userProfile,
   currentRunScore,
   onSignIn,
-  onSignOut,
   onManualSync,
   syncing,
   syncStatus,
@@ -98,14 +96,6 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                     <span>{syncing ? 'Menyimpan...' : `Unggah (${currentRunScore.toLocaleString('id-ID')})`}</span>
                   </button>
                 )}
-                <button
-                  type="button"
-                  onClick={onSignOut}
-                  className="inline-flex items-center gap-1 rounded-xl border border-white/15 px-3 py-1.5 text-xs font-semibold text-slate-300 transition hover:bg-white/10"
-                >
-                  <LogOut className="h-3.5 w-3.5" />
-                  <span>Keluar</span>
-                </button>
               </div>
             </div>
           ) : (
