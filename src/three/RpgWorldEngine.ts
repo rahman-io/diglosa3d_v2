@@ -57,6 +57,8 @@ import {
   RpgHudSnapshot,
   RpgQuestState,
   StoryDialogState,
+  SwimStyleId,
+  SwimStylePreference,
   WeaponId,
   WordProgress,
   WorldLocationMode,
@@ -676,8 +678,14 @@ export class RpgWorldEngine {
   private heroVelY = 0;
   private heroOnGround = true;
   private isSwimming = false;
+  private swimStylePreference: SwimStylePreference = 'auto';
+  private activeSwimStyle: SwimStyleId = 'water_tread';
   private swimFxTimer = 0;
   private swimLeapTimer = 0;
+  private swimDiveTimer = 0;
+  private swimDodgeTimer = 0;
+  private swimDodgeRoll = 0;
+  private prevHeroYaw = OVERWORLD_ANCHORS.desaSpawn.yaw;
   private coyoteTimer = 0;
   private jumpBufferTimer = 0;
   private jumpLandTimer = 0;
@@ -4354,6 +4362,33 @@ export class RpgWorldEngine {
     );
   }
 
+  public setSwimStylePreference(style: SwimStylePreference): void {
+    this.swimStylePreference = style;
+    if (style !== 'auto') {
+      this.activeSwimStyle = style;
+    }
+    this.pushHud(true);
+  }
+
+  public cycleSwimStyle(): void {
+    const order: SwimStylePreference[] = [
+      'auto',
+      'surface_paddle',
+      'front_crawl',
+      'underwater_glide',
+      'jump_dive',
+      'deep_submerge',
+      'scuba_explore',
+      'water_tread',
+      'quick_dodge',
+      'water_dash',
+      'backstroke',
+    ];
+    const idx = order.indexOf(this.swimStylePreference);
+    const next = order[(idx + 1) % order.length];
+    this.setSwimStylePreference(next);
+  }
+
   public equipWeapon(id: WeaponId): void {
     if (!this.ownedWeapons.has(id)) return;
     this.activeWeapon = id;
@@ -6862,6 +6897,9 @@ export class RpgWorldEngine {
           this.heroVel.addScaledVector(_forward, 22);
           soundEngine.playDash();
         }
+      } else if (e.code === 'KeyG' && this.isSwimming) {
+        e.preventDefault();
+        this.cycleSwimStyle();
       } else if (e.code === 'KeyC' || e.code === 'F5') {
         e.preventDefault();
         this.toggleCameraMode();
@@ -8767,10 +8805,28 @@ export class RpgWorldEngine {
       const isSprinting =
         (this.heldKeys.has('ShiftLeft') || this.heldKeys.has('ShiftRight') || this.voiceSprint) &&
         !wantAds;
+      const swimSpeedByStyle: Record<SwimStyleId, number> = {
+        surface_paddle: 0.72,
+        front_crawl: 0.88,
+        underwater_glide: 1.04,
+        jump_dive: 0.92,
+        deep_submerge: 0.78,
+        scuba_explore: 0.82,
+        water_tread: 0.58,
+        quick_dodge: 0.96,
+        water_dash: 1.14,
+        backstroke: 0.62,
+      };
+      const swimPrefMult =
+        this.swimStylePreference === 'auto'
+          ? isSprinting
+            ? 1.12
+            : 0.86
+          : isSprinting
+          ? Math.max(swimSpeedByStyle[this.swimStylePreference], 1.04)
+          : swimSpeedByStyle[this.swimStylePreference];
       const sprint = this.isSwimming
-        ? isSprinting
-          ? 1.02
-          : 0.72
+        ? swimPrefMult
         : isSprinting
         ? 1.35
         : wantAds
@@ -8799,7 +8855,13 @@ export class RpgWorldEngine {
         this.tapMoveTarget = null;
       } else {
         _v3.set(dx / dist, 0, dz / dist);
-        const tapAccel = this.isSwimming ? 54 : 72;
+        const tapSwimMult =
+          this.swimStylePreference === 'auto'
+            ? 1.15
+            : this.swimStylePreference === 'water_dash' || this.swimStylePreference === 'underwater_glide'
+            ? 1.4
+            : 1.0;
+        const tapAccel = this.isSwimming ? 54 * tapSwimMult : 72;
         this.heroVel.addScaledVector(_v3, tapAccel * dt);
         if (
           this.cameraMode !== 'first_person' &&
@@ -8964,8 +9026,14 @@ export class RpgWorldEngine {
         prevHeroY < curSample.groundY - 1.35 &&
         !(this.swimLeapTimer > 0 && this.heroVelY > 0.5);
       const inWaterZone = !effLandOrBridge || effGroundY < -0.15 || underDeckNow;
-      // Lower pivot so standing/freestyle swimmer's chest, arms & head stay cleanly above water surface y=0!
-      const SWIM_FLOAT_Y = -1.16;
+      // Lower pivot so swimming & diving poses skim cleanly at ocean surface y=0 without disappearing under opaque water
+      const floatOffset =
+        this.activeSwimStyle === 'deep_submerge' || this.activeSwimStyle === 'underwater_glide'
+          ? -0.04
+          : this.activeSwimStyle === 'backstroke' || this.activeSwimStyle === 'surface_paddle'
+          ? 0.03
+          : 0;
+      const SWIM_FLOAT_Y = -1.16 + floatOffset;
 
       if (
         inWaterZone &&
@@ -8978,6 +9046,9 @@ export class RpgWorldEngine {
         if (!wasSwimming) {
           soundEngine.playSplash(Math.min(1.3, 0.72 + Math.abs(this.heroVelY) * 0.06));
           this.spawnBurst(this.heroPos.x, 0.12, this.heroPos.z, 0xbae6fd, 14);
+          if (prevHeroY > -0.25 && this.heroVelY < -2.2) {
+            this.swimDiveTimer = 0.72;
+          }
           this.heroVelY *= 0.25;
         }
         const waveBobY = SWIM_FLOAT_Y + Math.sin(this.elapsed * 3.1 + this.heroPos.x * 0.2) * 0.07;
@@ -9071,8 +9142,19 @@ export class RpgWorldEngine {
       if (this.isSwimming && Math.hypot(this.heroVel.x, this.heroVel.z) > 1.2) {
         this.swimFxTimer -= dt;
         if (this.swimFxTimer <= 0) {
-          this.swimFxTimer = 0.15;
-          this.spawnBurst(this.heroPos.x, 0.06, this.heroPos.z, 0xe0f2fe, 3);
+          const isBubbleStyle =
+            this.activeSwimStyle === 'underwater_glide' ||
+            this.activeSwimStyle === 'deep_submerge' ||
+            this.activeSwimStyle === 'scuba_explore' ||
+            this.activeSwimStyle === 'water_dash';
+          this.swimFxTimer = isBubbleStyle ? 0.1 : 0.15;
+          this.spawnBurst(
+            this.heroPos.x,
+            0.06,
+            this.heroPos.z,
+            isBubbleStyle ? 0x67e8f9 : 0xe0f2fe,
+            isBubbleStyle ? 5 : 3,
+          );
         }
       }
     }
@@ -9128,6 +9210,45 @@ export class RpgWorldEngine {
     }
 
     const speed = Math.hypot(this.heroVel.x, this.heroVel.z);
+    let yawDelta = this.heroYaw - this.prevHeroYaw;
+    while (yawDelta > Math.PI) yawDelta -= Math.PI * 2;
+    while (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
+    this.prevHeroYaw = this.heroYaw;
+    this.swimDiveTimer = Math.max(0, this.swimDiveTimer - dt);
+    this.swimDodgeTimer = Math.max(0, this.swimDodgeTimer - dt);
+    if (this.isSwimming && dt > 0.001 && Math.abs(yawDelta) / dt > 2.4 && speed > 2.2) {
+      this.swimDodgeTimer = 0.36;
+      this.swimDodgeRoll = THREE.MathUtils.clamp((-yawDelta / dt) * 0.14, -0.55, 0.55);
+    }
+
+    const isSprintingSwim =
+      this.heldKeys.has('ShiftLeft') || this.heldKeys.has('ShiftRight') || this.voiceSprint;
+    if (this.isSwimming) {
+      if (this.swimStylePreference !== 'auto') {
+        this.activeSwimStyle = this.swimStylePreference;
+      } else if (this.swimDiveTimer > 0) {
+        this.activeSwimStyle = 'jump_dive';
+      } else if (speed <= 0.6) {
+        this.activeSwimStyle = 'water_tread';
+      } else if (this.swimDodgeTimer > 0) {
+        this.activeSwimStyle = 'quick_dodge';
+      } else if (isSprintingSwim || speed > 8.6) {
+        this.activeSwimStyle = 'water_dash';
+      } else {
+        this.activeSwimStyle = 'front_crawl';
+      }
+    }
+
+    let effectivePoseSwimStyle: SwimStyleId | undefined = this.isSwimming
+      ? this.activeSwimStyle
+      : undefined;
+    if (!this.isSwimming && !this.heroOnGround && this.worldMode === 'overworld' && this.heroVelY < -1.8) {
+      const airSample = sampleArchipelagoTerrain(this.heroPos.x, this.heroPos.z);
+      if ((!airSample.isLandOrBridge || airSample.groundY < -0.15) && this.heroPos.y > 0.15) {
+        effectivePoseSwimStyle = 'jump_dive';
+      }
+    }
+
     if (this.isSwimming) {
       this.walkCycle += dt * (speed > 0.6 ? 6.5 + speed * 0.55 : 2.8);
     } else if (speed > 0.6 && this.heroOnGround) {
@@ -9216,6 +9337,8 @@ export class RpgWorldEngine {
       landImpulse,
       idleDuration: this.heroIdleTime,
       isSwimming: this.isSwimming,
+      swimStyle: effectivePoseSwimStyle,
+      swimBankRoll: this.swimDodgeTimer > 0 ? this.swimDodgeRoll : 0,
     });
 
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
@@ -11896,6 +12019,8 @@ export class RpgWorldEngine {
       ),
       pointerLocked: this.pointerLocked,
       isSwimming: this.isSwimming,
+      swimStylePreference: this.swimStylePreference,
+      activeSwimStyle: this.activeSwimStyle,
       worldTime: this.getWorldTimeState(),
     });
   }

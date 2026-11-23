@@ -1117,6 +1117,8 @@ function DiglosaRpgApp() {
           onSetFireHeld={(held) => engineRef.current?.setFireHeld(held)}
           onToggleAim={() => engineRef.current?.toggleAimMode()}
           onToggleAimMode={() => engineRef.current?.toggleAimModeSetting()}
+          onSetSwimStyle={(style) => engineRef.current?.setSwimStylePreference(style)}
+          onCycleSwimStyle={() => engineRef.current?.cycleSwimStyle()}
           onTogglePointerLock={() => engineRef.current?.togglePointerLock()}
           onJump={() => engineRef.current?.jumpHero()}
           onOpenCrafting={() => engineRef.current?.openCraftingTable()}

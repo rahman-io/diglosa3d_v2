@@ -19,7 +19,7 @@ import {
   WEAPONS,
   ZONE_DOORS,
 } from '../data/diglosaCatalog';
-import { CameraMode, LiveMapSnapshot, RpgHudSnapshot, WeaponId } from '../types/game';
+import { CameraMode, LiveMapSnapshot, RpgHudSnapshot, SwimStyleId, SwimStylePreference, WeaponId } from '../types/game';
 import { isFullscreenActive, toggleAppFullscreen } from '../utils/fullscreen';
 import { getWeaponThumbnails } from '../utils/weaponThumbnails';
 import { RadarMinimap, StarterWeaponPixelIcon } from './RadarMinimap';
@@ -32,6 +32,25 @@ const CAMERA_VIEW_LABELS: Record<CameraMode, string> = {
   third_front: 'Kamera Depan',
   orbit: 'Kamera Bebas',
 };
+
+const SWIM_STYLE_OPTIONS: Array<{
+  num: number;
+  id: SwimStyleId;
+  name: string;
+  indo: string;
+  spd: string;
+}> = [
+  { num: 1, id: 'surface_paddle', name: 'Surface Paddle', indo: 'Gaya Dada', spd: 'Normal' },
+  { num: 2, id: 'front_crawl', name: 'Front Crawl', indo: 'Gaya Bebas', spd: 'Fast' },
+  { num: 3, id: 'underwater_glide', name: 'Underwater Glide', indo: 'Meluncur', spd: 'Very Fast' },
+  { num: 4, id: 'jump_dive', name: 'Jump Dive', indo: 'Terjun Bebas', spd: 'Fast' },
+  { num: 5, id: 'deep_submerge', name: 'Deep Submerge', indo: 'Menyelam Dalam', spd: 'Depth' },
+  { num: 6, id: 'scuba_explore', name: 'Scuba Explore', indo: 'Eksplorasi Scuba', spd: 'Gear' },
+  { num: 7, id: 'water_tread', name: 'Water Tread', indo: 'Mengapung', spd: 'Idle' },
+  { num: 8, id: 'quick_dodge', name: 'Quick Dodge', indo: 'Manuver Aman', spd: 'Fast' },
+  { num: 9, id: 'water_dash', name: 'Water Dash', indo: 'Mencoba Cepat', spd: 'Burst' },
+  { num: 10, id: 'backstroke', name: 'Backstroke', indo: 'Gaya Punggung', spd: 'Slow' },
+];
 
 interface RpgHudProps {
   hud: RpgHudSnapshot;
@@ -52,6 +71,8 @@ interface RpgHudProps {
   onSetFireHeld: (held: boolean) => void;
   onToggleAim: () => void;
   onToggleAimMode: () => void;
+  onSetSwimStyle?: (style: SwimStylePreference) => void;
+  onCycleSwimStyle?: () => void;
   onTogglePointerLock: () => void;
   onJump: () => void;
   onOpenCrafting: () => void;
@@ -84,6 +105,8 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   onSetFireHeld,
   onToggleAim,
   onToggleAimMode,
+  onSetSwimStyle,
+  onCycleSwimStyle,
   onTogglePointerLock,
   onJump,
   onOpenCrafting,
@@ -101,6 +124,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   const [isSmallViewport, setIsSmallViewport] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [hotbarOpen, setHotbarOpen] = useState(false);
+  const [swimMenuOpen, setSwimMenuOpen] = useState(false);
   const [voiceHelpOpen, setVoiceHelpOpen] = useState(false);
   const [voiceSearch, setVoiceSearch] = useState('');
   const voiceModalVp = useVisualViewport(voiceHelpOpen);
@@ -146,6 +170,12 @@ export const RpgHud: React.FC<RpgHudProps> = ({
       document.removeEventListener('webkitfullscreenchange', onFsChange);
     };
   }, []);
+
+  useEffect(() => {
+    if (!hud.isSwimming) {
+      setSwimMenuOpen(false);
+    }
+  }, [hud.isSwimming]);
 
   const showTouchControls =
     hud.phase === 'playing' &&
@@ -884,14 +914,107 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         </div>
       )}
 
-      {/* Compact Swim Hint Indicator when Hero is swimming in the sea */}
-      {hud.phase === 'playing' && hud.isSwimming && (
-        <div className="pointer-events-none fixed left-1/2 top-9 z-20 -translate-x-1/2 sm:top-11">
-          <div className="max-w-[82vw] truncate rounded-full border border-cyan-400/50 bg-slate-950/90 px-3 py-0.5 text-[10px] font-extrabold text-cyan-100 shadow-lg sm:text-[11px]">
-            🏊 Berenang · Renang ke pantai/dermaga atau tekan Lompat (J / Spasi) untuk naik
+      {/* Compact Swim Hint & 10-Pose Style Selector when Hero is swimming in the sea */}
+      {hud.phase === 'playing' && hud.isSwimming && (() => {
+        const pref = hud.swimStylePreference ?? 'auto';
+        const activeId = hud.activeSwimStyle ?? 'water_tread';
+        const activeMeta = SWIM_STYLE_OPTIONS.find((s) => s.id === activeId) ?? SWIM_STYLE_OPTIONS[6];
+        return (
+          <div className="pointer-events-auto fixed left-1/2 top-9 z-20 flex -translate-x-1/2 flex-col items-center gap-1 sm:top-11">
+            <div className="flex max-w-[92vw] items-center gap-1.5 rounded-full border border-cyan-400/50 bg-slate-950/90 px-2.5 py-0.5 text-[10px] font-extrabold text-cyan-100 shadow-lg sm:text-[11px]">
+              <span className="truncate">
+                🏊 {pref === 'auto' ? `Auto · ${activeMeta.indo}` : `${activeMeta.num}. ${activeMeta.name} (${activeMeta.indo})`}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSwimMenuOpen((v) => !v)}
+                className="shrink-0 rounded-full border border-cyan-300/60 bg-cyan-600/80 px-2 py-0.5 text-[9px] font-black text-white transition hover:bg-cyan-500 sm:text-[10px]"
+                title="Pilih 10 Gaya Renang (Tombol G)"
+              >
+                Gaya ▾
+              </button>
+              {onCycleSwimStyle && (
+                <button
+                  type="button"
+                  onClick={onCycleSwimStyle}
+                  className="shrink-0 rounded-full border border-slate-600 bg-slate-800/90 px-1.5 py-0.5 text-[9px] font-black text-cyan-200 transition hover:bg-slate-700 sm:text-[10px]"
+                  title="Ganti Gaya Berikutnya (G)"
+                >
+                  ↻
+                </button>
+              )}
+            </div>
+
+            {swimMenuOpen && (
+              <div className="w-[90vw] max-w-[430px] rounded-xl border border-cyan-400/45 bg-slate-950/95 p-2 shadow-2xl backdrop-blur-md">
+                <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
+                  <span className="text-[10px] font-black tracking-wide text-cyan-200">
+                    10 GAYA RENANG & SELAM
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        onSetSwimStyle?.('auto');
+                        setSwimMenuOpen(false);
+                      }}
+                      className={`rounded-md border px-2 py-0.5 text-[9px] font-black transition ${
+                        pref === 'auto'
+                          ? 'border-cyan-300 bg-cyan-500 text-slate-950'
+                          : 'border-slate-700 bg-slate-800 text-slate-200 hover:bg-slate-700'
+                      }`}
+                    >
+                      Auto
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSwimMenuOpen(false)}
+                      className="rounded-md border border-slate-700 bg-slate-800 px-1.5 py-0.5 text-[9px] font-bold text-slate-300 hover:bg-slate-700"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-1">
+                  {SWIM_STYLE_OPTIONS.map((opt) => {
+                    const selected = pref === opt.id;
+                    const running = pref === 'auto' && activeId === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => {
+                          onSetSwimStyle?.(opt.id);
+                          setSwimMenuOpen(false);
+                        }}
+                        className={`flex items-center justify-between gap-1 rounded-lg border px-2 py-1 text-left transition ${
+                          selected
+                            ? 'border-cyan-300 bg-cyan-500/25 text-white'
+                            : running
+                            ? 'border-cyan-400/50 bg-slate-800/90 text-cyan-100'
+                            : 'border-slate-800 bg-slate-900/85 text-slate-200 hover:border-cyan-500/50 hover:bg-slate-800'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <div className="truncate text-[10px] font-extrabold leading-tight">
+                            {opt.num}. {opt.name}
+                          </div>
+                          <div className="truncate text-[8.5px] font-semibold text-cyan-300/85">
+                            {opt.indo}
+                          </div>
+                        </div>
+                        <span className="shrink-0 rounded bg-slate-950/80 px-1 py-0.5 text-[8px] font-bold text-amber-300">
+                          {opt.spd}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Dynamic Tactical Crosshair & Hit Marker in Bidik Bebas TPS & FPS Modes */}
       {hud.phase === 'playing' &&

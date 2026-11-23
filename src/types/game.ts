@@ -69,6 +69,20 @@ export type DifficultyMode = 'santai' | 'petualang' | 'pendekar';
 export type LearningModeType = 'cards' | 'quiz' | 'listen' | 'type' | 'match';
 export type FxLevel = 'full' | 'lite' | 'off';
 
+export type SwimStyleId =
+  | 'surface_paddle'
+  | 'front_crawl'
+  | 'underwater_glide'
+  | 'jump_dive'
+  | 'deep_submerge'
+  | 'scuba_explore'
+  | 'water_tread'
+  | 'quick_dodge'
+  | 'water_dash'
+  | 'backstroke';
+
+export type SwimStylePreference = 'auto' | SwimStyleId;
+
 export type WeaponId =
   | 'ketapel'
   | 'kerikil'
@@ -515,6 +529,8 @@ export interface RpgHudSnapshot {
   crosshairSpread: number;
   pointerLocked: boolean;
   isSwimming?: boolean;
+  swimStylePreference?: SwimStylePreference;
+  activeSwimStyle?: SwimStyleId;
   worldTime: WorldTimeState;
 }
 

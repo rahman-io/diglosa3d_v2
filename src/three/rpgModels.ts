@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { WEAPON_ORDER, ZONE_CAVE_STORIES, ZONE_DOORS, ZONE_INFO } from '../data/diglosaCatalog';
-import { CaveBlockKind, DoorDef, MonsterType, WeaponId, ZoneId } from '../types/game';
+import { CaveBlockKind, DoorDef, MonsterType, SwimStyleId, WeaponId, ZoneId } from '../types/game';
 import { MaterialPalette, SurfaceMaterial } from './materials';
 import {
   getArchipelagoGroundY,
@@ -33,6 +33,9 @@ export interface HeroAvatarRig {
   rightArm: THREE.Group;
   dashRing: THREE.Mesh;
   swimRing: THREE.Mesh;
+  scubaMask: THREE.Group;
+  scubaTanks: THREE.Group;
+  scubaTorch: THREE.Group;
   weaponGroup: THREE.Group;
   weaponMeshes: Record<WeaponId, THREE.Group>;
   weaponTipMat: SurfaceMaterial;
@@ -261,6 +264,8 @@ function addShadow(group: THREE.Group, palette: MaterialPalette, radius: number)
 export function createHeroAvatar(palette: MaterialPalette): HeroAvatarRig {
   const root = new THREE.Group();
   const body = new THREE.Group();
+  // Use YXZ Euler order so yaw (Y) always resolves first for 360-deg swimming & diving pitch/roll
+  body.rotation.order = 'YXZ';
   root.add(body);
   addShadow(root, palette, 1.0);
 
@@ -385,6 +390,66 @@ export function createHeroAvatar(palette: MaterialPalette): HeroAvatarRig {
   const leftArm = makeArm(0.62, false);
   upperBody.add(leftArm, rightArm);
 
+  // Scuba Explore Gear (visible exclusively during scuba_explore pose)
+  const scubaSlate = palette.getMat(0x1e293b, 'matte');
+  const scubaTankMetal = palette.getMat(0x94a3b8, 'metal');
+  const scubaAccent = palette.getMat(0x06b6d4, 'emissive');
+  const scubaLens = palette.createSurfaceMat({
+    color: 0x38bdf8,
+    emissive: 0x0284c7,
+    emissiveIntensity: 0.45,
+    roughness: 0.15,
+  });
+
+  const scubaMask = new THREE.Group();
+  const gogglesRim = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.28, 0.12), scubaSlate);
+  gogglesRim.position.set(0, 0.41, 0.43);
+  const gogglesVisor = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.2, 0.06), scubaLens);
+  gogglesVisor.position.set(0, 0.41, 0.47);
+  const maskStrap = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.1, 0.86), scubaSlate);
+  maskStrap.position.set(0, 0.41, 0);
+  const snorkelTube = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.62, 0.1), palette.getMat(0xf59e0b, 'matte'));
+  snorkelTube.position.set(0.46, 0.56, 0.18);
+  scubaMask.add(gogglesRim, gogglesVisor, maskStrap, snorkelTube);
+  scubaMask.visible = false;
+  headGroup.add(scubaMask);
+
+  const scubaTanks = new THREE.Group();
+  for (const tx of [-0.17, 0.17]) {
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.14, 0.78, 10), scubaTankMetal);
+    tank.position.set(tx, 0.52, -0.7);
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.12, 10), palette.getMat(0xfacc15, 'matte'));
+    band.position.set(tx, 0.62, -0.7);
+    scubaTanks.add(tank, band);
+  }
+  scubaTanks.visible = false;
+  upperBody.add(scubaTanks);
+
+  const scubaTorch = new THREE.Group();
+  scubaTorch.position.set(0, -0.76, 0.12);
+  scubaTorch.rotation.x = Math.PI / 2;
+  const torchBody = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.09, 0.42, 8), scubaSlate);
+  torchBody.rotation.x = Math.PI / 2;
+  torchBody.position.z = 0.14;
+  const torchGlow = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.09, 0.08, 10), scubaAccent);
+  torchGlow.rotation.x = Math.PI / 2;
+  torchGlow.position.z = 0.36;
+  const torchBeam = new THREE.Mesh(
+    new THREE.ConeGeometry(0.46, 1.45, 12, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: 0x67e8f9,
+      transparent: true,
+      opacity: 0.24,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  torchBeam.rotation.x = -Math.PI / 2;
+  torchBeam.position.z = 1.1;
+  scubaTorch.add(torchBody, torchGlow, torchBeam);
+  scubaTorch.visible = false;
+  rightArm.add(scubaTorch);
+
   // Dash / Pulse ring
   const dashRing = new THREE.Mesh(
     new THREE.RingGeometry(1.1, 1.45, 28),
@@ -429,6 +494,9 @@ export function createHeroAvatar(palette: MaterialPalette): HeroAvatarRig {
     rightArm,
     dashRing,
     swimRing,
+    scubaMask,
+    scubaTanks,
+    scubaTorch,
     weaponGroup,
     weaponMeshes,
     weaponTipMat,
@@ -480,6 +548,8 @@ export interface HeroWeaponPoseInput {
   landImpulse?: number;
   idleDuration?: number;
   isSwimming?: boolean;
+  swimStyle?: SwimStyleId;
+  swimBankRoll?: number;
 }
 
 /**
@@ -505,6 +575,8 @@ export function applyHeroWeaponPose(
     landImpulse = 0,
     idleDuration = 0,
     isSwimming = false,
+    swimStyle,
+    swimBankRoll = 0,
   } = input;
   const clampedAimPitch = THREE.MathUtils.clamp(aimPitch, -0.68, 1.32);
   const moving = speed > 0.6;
@@ -813,47 +885,222 @@ export function applyHeroWeaponPose(
   }
 
   let targetBodyRotX = 0;
-  if (isSwimming) {
+  let targetBodyRotZ = 0;
+  let showScuba = false;
+
+  if (!isSwimming && airborne && swimStyle === 'jump_dive') {
+    // 4. Jump Dive (Terjun Bebas) while airborne plunging toward water
+    targetBodyRotX = 0.86;
+    targetBodyY = 0.35;
+    targetUpperX = 0.08;
+    targetHeadX = -0.68;
+    targetRightArmX = -2.55;
+    targetRightArmZ = -0.14;
+    targetLeftArmX = -2.55;
+    targetLeftArmZ = 0.14;
+    targetLeftLegX = 0.28;
+    targetRightLegX = 0.24;
+    targetLeftLegZ = 0.05;
+    targetRightLegZ = -0.05;
+  } else if (isSwimming) {
     if (hasWeapon && aimAlpha > 0.12) {
       const tread = Math.sin(elapsed * 3.8);
       targetBodyRotX = 0.08;
-      targetBodyY = 0.08 + Math.sin(elapsed * 2.6) * 0.05;
+      targetBodyY = 0.1 + Math.sin(elapsed * 2.6) * 0.05;
       targetLeftLegX = tread * 0.42;
       targetRightLegX = -tread * 0.42;
-    } else if (moving) {
-      // Lift body pivot up toward water surface so forward-pitched head, shoulders & freestyle strokes stay above waves!
-      targetBodyRotX = 1.14;
-      targetBodyY = 0.84 + Math.sin(walkCycle * 2) * 0.04;
-      targetUpperX = 0.04;
-      targetUpperZ = Math.sin(walkCycle) * 0.28;
-      targetHeadX = -0.92;
-      targetHeadY = 0;
-      targetHeadZ = -Math.sin(walkCycle) * 0.14;
-      targetRightArmX = -1.78 + Math.sin(walkCycle) * 1.18;
-      targetRightArmZ = -0.26 - Math.cos(walkCycle) * 0.24;
-      targetLeftArmX = -1.78 - Math.sin(walkCycle) * 1.18;
-      targetLeftArmZ = 0.26 + Math.cos(walkCycle) * 0.24;
-      targetLeftLegX = Math.sin(walkCycle * 1.6) * 0.62;
-      targetRightLegX = -Math.sin(walkCycle * 1.6) * 0.62;
-      targetLeftLegZ = 0.08;
-      targetRightLegZ = -0.08;
     } else {
-      const tread = Math.sin(elapsed * 3.1);
-      targetBodyRotX = 0.14;
-      targetBodyY = 0.1 + Math.sin(elapsed * 2.6) * 0.05;
-      targetUpperX = 0.04;
-      targetHeadX = -0.06;
-      targetHeadY = Math.sin(elapsed * 0.9) * 0.14;
-      targetRightArmX = -0.78 + tread * 0.22;
-      targetRightArmZ = -0.62 - tread * 0.34;
-      targetLeftArmX = -0.78 - tread * 0.22;
-      targetLeftArmZ = 0.62 + tread * 0.34;
-      targetLeftLegX = tread * 0.32;
-      targetRightLegX = -tread * 0.32;
+      const effectiveStyle: SwimStyleId = swimStyle ?? (moving ? 'front_crawl' : 'water_tread');
+      if (effectiveStyle === 'surface_paddle') {
+        // 1. Surface Paddle (Gaya Dada)
+        const stroke = walkCycle * 0.92;
+        const kick = Math.max(0, Math.sin(stroke + 0.6));
+        targetBodyRotX = 0.56;
+        targetBodyY = 0.64 + Math.sin(stroke * 2) * 0.04;
+        targetUpperX = 0.06;
+        targetUpperZ = 0;
+        targetHeadX = -0.46;
+        targetHeadY = Math.sin(stroke * 0.5) * 0.08;
+        targetHeadZ = 0;
+        targetRightArmX = -1.25 + Math.cos(stroke) * 0.54;
+        targetRightArmZ = -0.52 - Math.max(0, Math.sin(stroke)) * 0.66;
+        targetLeftArmX = targetRightArmX;
+        targetLeftArmZ = -targetRightArmZ;
+        targetLeftLegX = 0.16 + kick * 0.54;
+        targetRightLegX = 0.16 + kick * 0.54;
+        targetLeftLegZ = 0.14 + kick * 0.24;
+        targetRightLegZ = -0.14 - kick * 0.24;
+      } else if (effectiveStyle === 'underwater_glide') {
+        // 3. Underwater Glide (Meluncur)
+        targetBodyRotX = 1.42;
+        targetBodyY = 0.88 + Math.sin(elapsed * 4.2) * 0.03;
+        targetUpperX = 0.02;
+        targetUpperZ = Math.sin(walkCycle * 0.5) * 0.06;
+        targetHeadX = -1.16;
+        targetHeadY = 0;
+        targetHeadZ = 0;
+        targetRightArmX = -2.92 + Math.sin(walkCycle * 0.8) * 0.08;
+        targetRightArmZ = -0.14;
+        targetLeftArmX = -2.92 - Math.sin(walkCycle * 0.8) * 0.08;
+        targetLeftArmZ = 0.14;
+        targetLeftLegX = 0.12 + Math.sin(walkCycle * 2.1) * 0.36;
+        targetRightLegX = 0.12 - Math.sin(walkCycle * 2.1) * 0.36;
+        targetLeftLegZ = 0.04;
+        targetRightLegZ = -0.04;
+      } else if (effectiveStyle === 'jump_dive') {
+        // 4. Jump Dive (Terjun Bebas) in water entry glide
+        targetBodyRotX = 1.1;
+        targetBodyY = 1.04 + Math.abs(Math.sin(walkCycle * 0.8)) * 0.08;
+        targetUpperX = 0.08;
+        targetUpperZ = 0;
+        targetHeadX = -0.82;
+        targetHeadY = 0;
+        targetHeadZ = 0;
+        targetRightArmX = -2.68 + Math.sin(walkCycle * 0.9) * 0.14;
+        targetRightArmZ = -0.12;
+        targetLeftArmX = -2.68 + Math.sin(walkCycle * 0.9) * 0.14;
+        targetLeftArmZ = 0.12;
+        targetLeftLegX = 0.24 + Math.sin(walkCycle * 1.4) * 0.18;
+        targetRightLegX = 0.24 - Math.sin(walkCycle * 1.4) * 0.18;
+        targetLeftLegZ = 0.05;
+        targetRightLegZ = -0.05;
+      } else if (effectiveStyle === 'deep_submerge') {
+        // 5. Deep Submerge (Menyelam Dalam)
+        const pull = walkCycle * 0.95;
+        targetBodyRotX = 1.54;
+        targetBodyY = 0.88 + Math.sin(walkCycle * 1.2) * 0.04;
+        targetUpperX = 0.08;
+        targetUpperZ = 0;
+        targetHeadX = -1.24;
+        targetHeadY = 0;
+        targetHeadZ = 0;
+        targetRightArmX = -2.05 + Math.cos(pull) * 0.85;
+        targetRightArmZ = -0.34 - Math.max(0, Math.sin(pull)) * 0.45;
+        targetLeftArmX = targetRightArmX;
+        targetLeftArmZ = -targetRightArmZ;
+        targetLeftLegX = 0.16 + Math.sin(walkCycle * 1.6) * 0.48;
+        targetRightLegX = 0.16 - Math.sin(walkCycle * 1.6) * 0.48;
+        targetLeftLegZ = 0.08;
+        targetRightLegZ = -0.08;
+      } else if (effectiveStyle === 'scuba_explore') {
+        // 6. Scuba Explore (Eksplorasi Scuba - With Gear)
+        showScuba = true;
+        targetBodyRotX = 1.38;
+        targetBodyY = 0.9 + Math.sin(elapsed * 2.8) * 0.04;
+        targetUpperX = 0.04;
+        targetUpperZ = Math.sin(walkCycle * 0.45) * 0.08;
+        targetHeadX = -1.08;
+        targetHeadY = Math.sin(elapsed * 1.2) * 0.18;
+        targetHeadZ = 0;
+        targetRightArmX = -1.62 + Math.sin(elapsed * 2.2) * 0.06;
+        targetRightArmZ = -0.14;
+        targetLeftArmX = -1.15 + Math.sin(walkCycle * 0.85) * 0.35;
+        targetLeftArmZ = 0.42 + Math.cos(walkCycle * 0.85) * 0.2;
+        targetLeftLegX = 0.1 + Math.sin(walkCycle * 1.25) * 0.54;
+        targetRightLegX = 0.1 - Math.sin(walkCycle * 1.25) * 0.54;
+        targetLeftLegZ = 0.07;
+        targetRightLegZ = -0.07;
+      } else if (effectiveStyle === 'quick_dodge') {
+        // 8. Quick Dodge (Manuver Aman)
+        const bank = Math.abs(swimBankRoll) > 0.08 ? swimBankRoll : Math.sin(walkCycle * 0.95) * 0.46;
+        targetBodyRotX = 1.12;
+        targetBodyRotZ = THREE.MathUtils.clamp(bank, -0.58, 0.58);
+        targetBodyY = 0.9 + Math.sin(walkCycle * 2) * 0.04;
+        targetUpperX = 0.04;
+        targetUpperZ = -targetBodyRotZ * 0.42;
+        targetHeadX = -0.92;
+        targetHeadY = 0;
+        targetHeadZ = -targetBodyRotZ * 0.55;
+        targetRightArmX = -1.55 + Math.sin(walkCycle * 1.3) * 0.95;
+        targetRightArmZ = -0.42 - Math.cos(walkCycle * 1.3) * 0.35;
+        targetLeftArmX = -1.55 - Math.sin(walkCycle * 1.3) * 0.95;
+        targetLeftArmZ = 0.42 + Math.cos(walkCycle * 1.3) * 0.35;
+        targetLeftLegX = Math.sin(walkCycle * 1.8) * 0.68;
+        targetRightLegX = -Math.sin(walkCycle * 1.8) * 0.68;
+        targetLeftLegZ = 0.1;
+        targetRightLegZ = -0.1;
+      } else if (effectiveStyle === 'water_dash') {
+        // 9. Water Dash (Mencoba Cepat - Butterfly Burst)
+        const fly = walkCycle * 1.35;
+        const dolphin = Math.sin(fly + 0.5) * 0.58;
+        targetBodyRotX = 1.28;
+        targetBodyY = 0.98 + Math.sin(fly) * 0.08;
+        targetUpperX = 0.1 + Math.cos(fly) * 0.14;
+        targetUpperZ = 0;
+        targetHeadX = -1.04 + Math.cos(fly) * 0.16;
+        targetHeadY = 0;
+        targetHeadZ = 0;
+        targetRightArmX = -1.85 + Math.sin(fly) * 1.25;
+        targetRightArmZ = -0.34 - Math.cos(fly) * 0.36;
+        targetLeftArmX = targetRightArmX;
+        targetLeftArmZ = -targetRightArmZ;
+        targetLeftLegX = dolphin;
+        targetRightLegX = dolphin;
+        targetLeftLegZ = 0.04;
+        targetRightLegZ = -0.04;
+      } else if (effectiveStyle === 'backstroke') {
+        // 10. Backstroke (Gaya Punggung)
+        const bCycle = walkCycle * 0.85;
+        targetBodyRotX = -1.24;
+        targetBodyY = 1.04 + Math.sin(elapsed * 2.8) * 0.04;
+        targetUpperX = -0.05;
+        targetUpperZ = Math.sin(bCycle) * 0.18;
+        targetHeadX = 0.52;
+        targetHeadY = 0;
+        targetHeadZ = Math.sin(bCycle) * 0.08;
+        targetRightArmX = -2.45 + Math.sin(bCycle) * 1.25;
+        targetRightArmZ = -0.28 - Math.cos(bCycle) * 0.28;
+        targetLeftArmX = -2.45 - Math.sin(bCycle) * 1.25;
+        targetLeftArmZ = 0.28 + Math.cos(bCycle) * 0.28;
+        targetLeftLegX = -0.18 + Math.sin(walkCycle * 1.4) * 0.45;
+        targetRightLegX = -0.18 - Math.sin(walkCycle * 1.4) * 0.45;
+        targetLeftLegZ = 0.07;
+        targetRightLegZ = -0.07;
+      } else if (effectiveStyle === 'front_crawl') {
+        // 2. Front Crawl (Gaya Bebas)
+        targetBodyRotX = 1.24;
+        targetBodyY = 0.94 + Math.sin(walkCycle * 2) * 0.04;
+        targetUpperX = 0.04;
+        targetUpperZ = Math.sin(walkCycle) * 0.28;
+        targetHeadX = -0.96;
+        targetHeadY = Math.sin(walkCycle) * 0.1;
+        targetHeadZ = -Math.sin(walkCycle) * 0.14;
+        targetRightArmX = -1.82 + Math.sin(walkCycle) * 1.22;
+        targetRightArmZ = -0.26 - Math.cos(walkCycle) * 0.24;
+        targetLeftArmX = -1.82 - Math.sin(walkCycle) * 1.22;
+        targetLeftArmZ = 0.26 + Math.cos(walkCycle) * 0.24;
+        targetLeftLegX = Math.sin(walkCycle * 1.7) * 0.64;
+        targetRightLegX = -Math.sin(walkCycle * 1.7) * 0.64;
+        targetLeftLegZ = 0.08;
+        targetRightLegZ = -0.08;
+      } else {
+        // 7. Water Tread (Mengapung)
+        const tread = Math.sin(elapsed * 3.1);
+        targetBodyRotX = 0.1;
+        targetBodyY = 0.14 + Math.sin(elapsed * 2.6) * 0.05;
+        targetUpperX = 0.04;
+        targetUpperZ = 0;
+        targetHeadX = -0.05;
+        targetHeadY = Math.sin(elapsed * 0.9) * 0.15;
+        targetHeadZ = 0;
+        targetRightArmX = -0.78 + tread * 0.22;
+        targetRightArmZ = -0.64 - tread * 0.34;
+        targetLeftArmX = -0.78 - tread * 0.22;
+        targetLeftArmZ = 0.64 + tread * 0.34;
+        targetLeftLegX = tread * 0.36;
+        targetRightLegX = -tread * 0.36;
+        targetLeftLegZ = 0.08;
+        targetRightLegZ = -0.08;
+      }
     }
   }
 
+  rig.scubaMask.visible = showScuba;
+  rig.scubaTanks.visible = showScuba;
+  rig.scubaTorch.visible = showScuba;
+
   rig.body.rotation.x = THREE.MathUtils.damp(rig.body.rotation.x, targetBodyRotX, 14, dt);
+  rig.body.rotation.z = THREE.MathUtils.damp(rig.body.rotation.z, targetBodyRotZ, 14, dt);
   rig.leftLeg.rotation.x = THREE.MathUtils.damp(rig.leftLeg.rotation.x, targetLeftLegX, dampRate, dt);
   rig.rightLeg.rotation.x = THREE.MathUtils.damp(rig.rightLeg.rotation.x, targetRightLegX, dampRate, dt);
   rig.leftLeg.rotation.z = THREE.MathUtils.damp(rig.leftLeg.rotation.z, targetLeftLegZ, dampRate, dt);
