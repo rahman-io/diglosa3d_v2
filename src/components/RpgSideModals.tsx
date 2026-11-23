@@ -856,7 +856,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
             </div>
           )}
 
-          {/* TAB 2: KAMUS KATA (450+ WORDS, SEARCH, STATUS, 26 CATEGORIES) */}
+          {/* TAB 2: KAMUS KATA (A1 PDF + IELTS WORDS, SEARCH, STATUS, DYNAMIC CATEGORIES) */}
           {tab === 'kamus' && (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
@@ -878,7 +878,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                   }
                   className="rounded-xl border-2 border-[#c4a472] bg-white px-3 py-2 text-xs font-bold"
                 >
-                  <option value="all">Semua 26 Tema ({VOCAB_CATALOG.length})</option>
+                  <option value="all">Semua {CATEGORIES.length} Tema ({VOCAB_CATALOG.length})</option>
                   {CATEGORIES.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.icon} {c.name}
