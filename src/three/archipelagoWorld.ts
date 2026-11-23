@@ -1144,11 +1144,41 @@ export function sampleArchipelagoTerrain(x: number, z: number): TerrainSample {
   }
 
   return {
-    groundY: SEABED_Y,
+    groundY: getArchipelagoSeabedY(x, z),
     isLandOrBridge: false,
     isDryLand: false,
     surface: 'water',
   };
+}
+
+export function getArchipelagoSeabedY(x: number, z: number): number {
+  let minEdgeDist = Infinity;
+  for (let i = 0; i < ISLAND_DISKS.length; i++) {
+    const isl = ISLAND_DISKS[i];
+    const d = Math.hypot(x - isl.cx, z - isl.cz) - isl.radius;
+    if (d < minEdgeDist) minEdgeDist = d;
+  }
+  for (let i = 0; i < SEA_ISLETS.length; i++) {
+    const isl = SEA_ISLETS[i];
+    const d = Math.hypot(x - isl.cx, z - isl.cz) - isl.radius;
+    if (d < minEdgeDist) minEdgeDist = d;
+  }
+  const coastalDist = Math.max(0, minEdgeDist);
+  let baseY: number;
+  if (coastalDist <= 14) {
+    const t = coastalDist / 14;
+    baseY = -2.4 - t * t * 5.2;
+  } else if (coastalDist <= 38) {
+    const t = (coastalDist - 14) / 24;
+    baseY = -7.6 - t * 9.2;
+  } else {
+    const t = Math.min(1, (coastalDist - 38) / 36);
+    baseY = -16.8 - t * 9.0;
+  }
+  const ripple =
+    Math.sin(x * 0.065) * Math.cos(z * 0.065) * 0.95 +
+    Math.sin(x * 0.14 - z * 0.12) * 0.45;
+  return THREE.MathUtils.clamp(baseY + ripple, -27.5, -1.65);
 }
 
 export function getArchipelagoGroundY(x: number, z: number): number {
@@ -1695,16 +1725,20 @@ export function createArchipelagoWorld(
   const disposables: Array<{ dispose: () => void }> = [];
   const waterUniforms = { uTime: { value: 0 } };
 
-  // 1. Expansive Vibrant Azure Ocean (swimmable across ±275 archipelago!)
+  // 1. Expansive Vibrant Azure Ocean (swimmable & diveable across ±275 archipelago!)
   const oceanGeo = new THREE.PlaneGeometry(960, 960, lowDetail ? 36 : 84, lowDetail ? 36 : 84);
   const oceanMat = palette.createSurfaceMat({
     color: 0x0284c7,
     emissive: 0x0369a1,
     emissiveIntensity: 0.22,
-    roughness: 0.56,
+    roughness: 0.36,
     metalness: 0.08,
+    transparent: true,
+    opacity: 0.8,
+    side: THREE.DoubleSide,
   });
-  oceanMat.customProgramCacheKey = () => 'archipelago-ocean-v3';
+  oceanMat.depthWrite = false;
+  oceanMat.customProgramCacheKey = () => 'archipelago-ocean-v4';
   oceanMat.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = waterUniforms.uTime;
     shader.vertexShader = 'uniform float uTime;\n' + shader.vertexShader;
@@ -1717,18 +1751,60 @@ export function createArchipelagoWorld(
   const oceanMesh = new THREE.Mesh(oceanGeo, oceanMat);
   oceanMesh.rotation.x = -Math.PI / 2;
   oceanMesh.position.y = 0;
-  oceanMesh.receiveShadow = true;
+  oceanMesh.receiveShadow = false;
   group.add(oceanMesh);
   walkableTargets.push(oceanMesh);
   disposables.push(oceanGeo, oceanMat);
 
-  const seabedGeo = new THREE.PlaneGeometry(740, 740);
-  const seabedMat = palette.getMat(0x0c4a6e, 'matte');
+  // Sculpted Multi-Depth Archipelago Seabed (Coastal Coral Shelf -> Twilight Reef -> Abyssal Trenches)
+  const seabedSegs = lowDetail ? 96 : 156;
+  const seabedGeo = new THREE.PlaneGeometry(740, 740, seabedSegs, seabedSegs);
+  seabedGeo.rotateX(-Math.PI / 2);
+  const sbPos = seabedGeo.attributes.position as THREE.BufferAttribute;
+  const sbColors = new Float32Array(sbPos.count * 3);
+  const cSand = new THREE.Color(0xc2a86b);
+  const cReefTeal = new THREE.Color(0x0f766e);
+  const cTwilight = new THREE.Color(0x163a5f);
+  const cAbyss = new THREE.Color(0x091629);
+  const cWork = new THREE.Color();
+  for (let i = 0; i < sbPos.count; i++) {
+    const sx = sbPos.getX(i);
+    const sz = sbPos.getZ(i);
+    const sy = getArchipelagoSeabedY(sx, sz);
+    sbPos.setY(i, sy);
+    if (sy > -6.8) {
+      const t = THREE.MathUtils.clamp((-2.0 - sy) / 4.8, 0, 1);
+      cWork.copy(cSand).lerp(cReefTeal, t * 0.85);
+    } else if (sy > -15.8) {
+      const t = THREE.MathUtils.clamp((-6.8 - sy) / 9.0, 0, 1);
+      cWork.copy(cReefTeal).lerp(cTwilight, t);
+    } else {
+      const t = THREE.MathUtils.clamp((-15.8 - sy) / 10.5, 0, 1);
+      cWork.copy(cTwilight).lerp(cAbyss, t);
+    }
+    sbColors[i * 3] = cWork.r;
+    sbColors[i * 3 + 1] = cWork.g;
+    sbColors[i * 3 + 2] = cWork.b;
+  }
+  seabedGeo.setAttribute('color', new THREE.BufferAttribute(sbColors, 3));
+  seabedGeo.computeVertexNormals();
+  const seabedMat = palette.createSurfaceMat({
+    color: 0xffffff,
+    roughness: 0.94,
+    metalness: 0.02,
+  });
+  seabedMat.vertexColors = true;
   const seabedMesh = new THREE.Mesh(seabedGeo, seabedMat);
-  seabedMesh.rotation.x = -Math.PI / 2;
-  seabedMesh.position.y = SEABED_Y - 0.1;
+  seabedMesh.receiveShadow = !lowDetail;
   group.add(seabedMesh);
-  disposables.push(seabedGeo);
+  disposables.push(seabedGeo, seabedMat);
+
+  const outerAbyssGeo = new THREE.PlaneGeometry(1200, 1200);
+  const outerAbyssMesh = new THREE.Mesh(outerAbyssGeo, palette.getMat(0x071324, 'matte'));
+  outerAbyssMesh.rotation.x = -Math.PI / 2;
+  outerAbyssMesh.position.y = -29.5;
+  group.add(outerAbyssMesh);
+  disposables.push(outerAbyssGeo);
 
   const walkableTopBlocks: VoxelSpec[] = [];
   const cliffBlocks: VoxelSpec[] = [];
@@ -1920,7 +1996,9 @@ export function createArchipelagoWorld(
           const hasSteepDrop = inner.y - minNeighborY > 0.2;
 
           if (isOuterRim || hasSteepDrop) {
-            const bottomY = isOuterRim ? SEABED_Y - 0.15 : Math.max(SEABED_Y - 0.15, minNeighborY - topThickness);
+            const bottomY = isOuterRim
+              ? Math.min(SEABED_Y - 0.15, getArchipelagoSeabedY(wx, wz) - 0.85)
+              : Math.max(SEABED_Y - 0.15, minNeighborY - topThickness);
             const topColumnY = inner.y - topThickness;
             const colH = Math.max(0.38, topColumnY - bottomY);
             const hubBasaltCliff = [0x1c1917, 0x292524, 0x3f3f46];
@@ -1986,12 +2064,13 @@ export function createArchipelagoWorld(
             sz: cellStep * 1.03,
             color: colList[Math.abs(gx + gz) % colList.length],
           });
+          const isletBottomY = Math.min(SEABED_Y - 0.15, getArchipelagoSeabedY(wx, wz) - 0.85);
           cliffBlocks.push({
             x: wx,
-            y: (inner.y - topThickness + SEABED_Y) * 0.5,
+            y: (inner.y - topThickness + isletBottomY) * 0.5,
             z: wz,
             sx: cellStep * 1.03,
-            sy: Math.max(0.4, inner.y - topThickness - SEABED_Y),
+            sy: Math.max(0.4, inner.y - topThickness - isletBottomY),
             sz: cellStep * 1.03,
             color: pal.cliff[Math.abs(gx * 3 + gz) % pal.cliff.length],
           });
@@ -2130,15 +2209,16 @@ export function createArchipelagoWorld(
             });
           }
         });
-        // Tall arched stone viaduct piers & arch shoulders down to SEABED_Y
+        // Tall arched stone viaduct piers & arch shoulders down to sculpted seabed
         if (s === 0 || s === segs - 1 || s % 7 === 0) {
           const pierW = br.style === 'highway' ? 3.8 : 2.8;
+          const pierBottomY = Math.min(SEABED_Y - 0.2, getArchipelagoSeabedY(mx, mz) - 0.8);
           cliffBlocks.push({
             x: mx,
-            y: (my + SEABED_Y) * 0.5 - 0.3,
+            y: (my + pierBottomY) * 0.5 - 0.15,
             z: mz,
             sx: pierW,
-            sy: my - SEABED_Y + 0.2,
+            sy: my - pierBottomY + 0.3,
             sz: pierW,
             color: 0x64748b,
           });
@@ -2253,12 +2333,13 @@ export function createArchipelagoWorld(
         }
 
         if (s % 5 === 2 || isJumpEdge) {
+          const pierBottomY = Math.min(SEABED_Y - 0.2, getArchipelagoSeabedY(mx, mz) - 0.8);
           cliffBlocks.push({
             x: mx,
-            y: (my + SEABED_Y) * 0.5 - 0.2,
+            y: (my + pierBottomY) * 0.5 - 0.15,
             z: mz,
             sx: isRailBridge ? 2.2 : 1.65,
-            sy: my - SEABED_Y + 0.2,
+            sy: my - pierBottomY + 0.3,
             sz: isRailBridge ? 2.2 : 1.65,
             color: br.style === 'stone' ? 0x475569 : 0x5c3a1e,
           });
@@ -2307,24 +2388,27 @@ export function createArchipelagoWorld(
     } else if (pad.style === 'dock') {
       [-pad.halfW + 0.24, pad.halfW - 0.24].forEach((ox) => {
         [-pad.halfD + 0.24, pad.halfD - 0.24].forEach((oz) => {
+          const postBottomY = Math.min(SEABED_Y - 0.2, getArchipelagoSeabedY(pad.x + ox, pad.z + oz) - 0.6);
+          const postH = Math.max(1.5, pad.y - postBottomY + 0.2);
           cliffBlocks.push({
             x: pad.x + ox,
-            y: 0.15,
+            y: postBottomY + postH * 0.5,
             z: pad.z + oz,
             sx: 0.32,
-            sy: 2.0,
+            sy: postH,
             sz: 0.32,
             color: 0x5c3a1e,
           });
         });
       });
     } else {
+      const padBottomY = Math.min(SEABED_Y - 0.2, getArchipelagoSeabedY(pad.x, pad.z) - 0.8);
       cliffBlocks.push({
         x: pad.x,
-        y: (pad.y + SEABED_Y) * 0.5 - 0.25,
+        y: (pad.y + padBottomY) * 0.5 - 0.15,
         z: pad.z,
         sx: pad.halfW * 1.45,
-        sy: pad.y - SEABED_Y + 0.2,
+        sy: pad.y - padBottomY + 0.3,
         sz: pad.halfD * 1.45,
         color: pad.style === 'wood' ? 0x5c3a1e : 0x475569,
       });

@@ -591,14 +591,16 @@ export function createOceanEnvironment(
     if (opts?.yaw !== undefined) {
       rig.root.rotation.y = opts.yaw;
     }
+    const nodeId = `biota_${speciesId}_${bSeq++}`;
     rig.root.userData.oceanBiotaSpecies = speciesId;
+    rig.root.userData.biotaNodeId = nodeId;
     if ((opts?.patrolMode ?? 'static') === 'static' && rig.parts.length === 0) {
       freezeSubtreeMatrices(rig.root);
     }
     group.add(rig.root);
     clickables.push(rig.root);
     biotaNodes.push({
-      id: `biota_${speciesId}_${bSeq++}`,
+      id: nodeId,
       speciesId,
       rig,
       x,
@@ -972,6 +974,708 @@ export function updateOceanWorld(
       const nx = node.homeX + Math.cos(t) * node.patrolRadius;
       const nz = node.homeZ + Math.sin(t * 1.1) * (node.patrolRadius * 0.65);
       const ny = getOceanFloorY(nx, nz) + 0.05;
+      const dx = nx - node.x;
+      const dz = nz - node.z;
+      if (Math.hypot(dx, dz) > 0.002) {
+        node.rig.root.rotation.y = Math.atan2(dx, dz);
+      }
+      node.x = nx;
+      node.y = ny;
+      node.z = nz;
+      node.rig.root.position.set(nx, ny, nz);
+    }
+
+    animateSeaBiotaRig(node.rig, elapsed, node.phase);
+  }
+}
+
+export function getArchipelagoOceanZoneInfo(y: number): {
+  kind: 'sanctuary' | 'twilight' | 'abyss';
+  label: string;
+} {
+  if (y <= -16.0) {
+    return { kind: 'abyss', label: 'Palung Abyssal' };
+  }
+  if (y <= -7.2) {
+    return { kind: 'twilight', label: 'Terumbu Senja' };
+  }
+  return { kind: 'sanctuary', label: 'Taman Karang Dangkal' };
+}
+
+export interface ArchipelagoUnderwaterRig {
+  group: THREE.Group;
+  sunbeams: THREE.Mesh[];
+  bubblesPoints: THREE.Points;
+  torchLight: THREE.PointLight;
+  biotaNodes: OceanBiotaNode[];
+  airVents: OceanAirVent[];
+  chests: OceanSupplyChest[];
+  dynamicNodes: THREE.Object3D[];
+  clickables: THREE.Object3D[];
+  disposables: Array<{ dispose: () => void }>;
+  sampleFloorY: (x: number, z: number) => number;
+}
+
+export function createArchipelagoUnderwaterProps(
+  palette: MaterialPalette,
+  isWaterSpot: (x: number, z: number) => boolean,
+  sampleFloorY: (x: number, z: number) => number,
+  lowDetail = false,
+): ArchipelagoUnderwaterRig {
+  const group = new THREE.Group();
+  const disposables: Array<{ dispose: () => void }> = [];
+  const clickables: THREE.Object3D[] = [];
+  const dynamicNodes: THREE.Object3D[] = [];
+
+  const nudgeToWater = (x: number, z: number): [number, number] => {
+    if (isWaterSpot(x, z)) return [x, z];
+    for (let r = 4; r <= 28; r += 4) {
+      for (let a = 0; a < 8; a++) {
+        const ang = (a / 8) * Math.PI * 2;
+        const nx = Math.round((x + Math.cos(ang) * r) * 10) / 10;
+        const nz = Math.round((z + Math.sin(ang) * r) * 10) / 10;
+        if (isWaterSpot(nx, nz)) return [nx, nz];
+      }
+    }
+    return [x, z];
+  };
+
+  // 1. Sunken Temple Ruins & Stone Arches across Inter-Island Straits
+  const mossStoneMat = palette.getMat(0x475569, 'matte');
+  const mossGreenMat = palette.getMat(0x15803d, 'matte');
+  const tealReefMat = palette.getMat(0x0f766e, 'matte');
+  const ruinLocations: Array<[number, number, number]> = [
+    [-26, 186, 0.42],
+    [-68, 96, -0.35],
+    [62, 108, 0.78],
+    [-64, -64, 0.18],
+  ];
+  ruinLocations.forEach(([rxRaw, rzRaw, rotY]) => {
+    const [rx, rz] = nudgeToWater(rxRaw, rzRaw);
+    const ry = sampleFloorY(rx, rz);
+    const ruins = new THREE.Group();
+    ruins.position.set(rx, ry, rz);
+    ruins.rotation.y = rotY;
+    const colL = makeVoxelBox(1.4, 5.2, 1.4, mossStoneMat, -2.4, 2.5, 0);
+    const colR = makeVoxelBox(1.4, 5.2, 1.4, mossStoneMat, 2.4, 2.5, 0);
+    const lintel = makeVoxelBox(7.0, 1.2, 1.6, mossStoneMat, 0, 5.5, 0);
+    const lintelTop = makeVoxelBox(5.6, 0.8, 1.3, mossGreenMat, 0, 6.3, 0);
+    const stepBase = makeVoxelBox(8.0, 0.7, 3.8, tealReefMat, 0, 0.25, 0);
+    ruins.add(colL, colR, lintel, lintelTop, stepBase);
+    ruins.updateMatrixWorld(true);
+    freezeSubtreeMatrices(ruins);
+    ruins.matrixAutoUpdate = false;
+    group.add(ruins);
+  });
+
+  // 2. Hero-Following Volumetric Sunbeams & Rising Bubbles (hidden on dry land for zero FPS cost)
+  const sunbeams: THREE.Mesh[] = [];
+  const beamGeo = new THREE.ConeGeometry(5.2, 24, lowDetail ? 6 : 9, 1, true);
+  const beamMat = new THREE.MeshBasicMaterial({
+    color: 0xbae6fd,
+    transparent: true,
+    opacity: 0.12,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  disposables.push(beamGeo, beamMat);
+
+  const beamOffsets: Array<[number, number, number]> = lowDetail
+    ? [
+        [-10, -8.5, 8],
+        [8, -9.2, -6],
+        [0, -7.8, 12],
+      ]
+    : [
+        [-12, -8.5, 10],
+        [9, -9.0, 12],
+        [-7, -10.5, -9],
+        [13, -8.8, -7],
+      ];
+  beamOffsets.forEach(([ox, oy, oz], idx) => {
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.set(ox, oy, oz);
+    beam.rotation.z = 0.2 + (idx % 2 === 0 ? 0.04 : -0.04);
+    beam.rotation.x = -0.14;
+    beam.userData.baseOffsetX = ox;
+    beam.userData.baseOffsetY = oy;
+    beam.userData.baseOffsetZ = oz;
+    beam.userData.isMapHidden = true;
+    beam.visible = false;
+    group.add(beam);
+    sunbeams.push(beam);
+    dynamicNodes.push(beam);
+  });
+
+  const bubbleCount = lowDetail ? 75 : 180;
+  const bubblePositions = new Float32Array(bubbleCount * 3);
+  for (let i = 0; i < bubbleCount; i++) {
+    bubblePositions[i * 3] = (Math.random() - 0.5) * 46;
+    bubblePositions[i * 3 + 1] = -25 + Math.random() * 24;
+    bubblePositions[i * 3 + 2] = (Math.random() - 0.5) * 46;
+  }
+  const bubbleGeo = new THREE.BufferGeometry();
+  bubbleGeo.setAttribute('position', new THREE.BufferAttribute(bubblePositions, 3));
+  const bubbleMat = new THREE.PointsMaterial({
+    color: 0xe0f2fe,
+    size: lowDetail ? 0.38 : 0.3,
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false,
+  });
+  const bubblesPoints = new THREE.Points(bubbleGeo, bubbleMat);
+  bubblesPoints.userData.isMapHidden = true;
+  bubblesPoints.visible = false;
+  group.add(bubblesPoints);
+  dynamicNodes.push(bubblesPoints);
+  disposables.push(bubbleGeo, bubbleMat);
+
+  // 3. Underwater O₂ Air Bubble Vents across All Inter-Island Straits
+  const airVents: OceanAirVent[] = [];
+  const ventCoords: Array<[number, number]> = [
+    [-10, 190], // Desa Sapaan South Reef
+    [-42, 146], // Desa SW -> Pasar Rasa
+    [-76, 86], // Pasar Rasa East Strait
+    [42, 134], // Desa SE -> Hutan Satwa
+    [74, 88], // Hutan Satwa West Lagoon
+    [-84, -8], // Hub <-> Gerbang Kota
+    [86, -2], // Hub <-> Menara Waktu
+    [-46, -110], // Gerbang <-> Gua Portal
+    [68, -118], // Menara <-> Gua Portal
+    [-6, -54], // Citadel North Strait
+  ];
+  const ventStoneMat = palette.getMat(0x334155, 'matte');
+  const ventGlowMat = palette.createSurfaceMat({
+    color: 0x67e8f9,
+    emissive: 0x06b6d4,
+    emissiveIntensity: 1.4,
+    roughness: 0.2,
+  });
+  disposables.push(ventGlowMat);
+  ventCoords.forEach(([vxRaw, vzRaw], idx) => {
+    const [vx, vz] = nudgeToWater(vxRaw, vzRaw);
+    const vy = sampleFloorY(vx, vz);
+    const vGroup = new THREE.Group();
+    vGroup.position.set(vx, vy, vz);
+    const crater = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.4, 0.8, 7), ventStoneMat);
+    crater.position.y = 0.4;
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.2, 7), ventGlowMat);
+    core.position.y = 0.82;
+    vGroup.add(crater, core);
+
+    const rings: THREE.Mesh[] = [];
+    const ringCount = lowDetail ? 2 : 3;
+    for (let r = 0; r < ringCount; r++) {
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(0.55 + r * 0.15, 0.08, 5, lowDetail ? 9 : 12),
+        ventGlowMat,
+      );
+      ring.rotation.x = Math.PI / 2;
+      ring.position.y = 1.2 + r * 1.4;
+      vGroup.add(ring);
+      rings.push(ring);
+      dynamicNodes.push(ring);
+    }
+    group.add(vGroup);
+    dynamicNodes.push(vGroup);
+    airVents.push({ id: `arch_vent_${idx}`, x: vx, y: vy, z: vz, group: vGroup, rings });
+  });
+
+  // 4. Sunken Supply Chests (Snorkel near Desa South Reef & Twilight Cache toward Pasar)
+  const chests: OceanSupplyChest[] = [];
+  const chestWoodMat = palette.getMat(0x92400e, 'matte');
+  const chestGoldMat = palette.getMat(0xfbbf24, 'metal');
+  const chestDefs: Array<{
+    id: string;
+    label: string;
+    x: number;
+    z: number;
+    rewardGear?: DivingGearId;
+    rewardMaterials: Partial<OceanMaterials>;
+  }> = [
+    {
+      id: 'chest_temple_snorkel',
+      label: 'Peti Harta Kuil (Snorkel & Bahan Selam)',
+      x: -22,
+      z: 188,
+      rewardGear: 'snorkel',
+      rewardMaterials: { fiber: 3, calcium: 2, pearl: 1 },
+    },
+    {
+      id: 'chest_twilight_cache',
+      label: 'Peti Gua Terumbu Senja (Mutiara & Sirip)',
+      x: -68,
+      z: 96,
+      rewardGear: 'fins_torch',
+      rewardMaterials: { pearl: 2, shell: 2, fiber: 3, food: 2 },
+    },
+  ];
+  chestDefs.forEach((cd) => {
+    const [cx, cz] = nudgeToWater(cd.x, cd.z);
+    const cy = sampleFloorY(cx, cz);
+    const cGroup = new THREE.Group();
+    cGroup.position.set(cx, cy, cz);
+    const base = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.72, 1.05), chestWoodMat);
+    base.position.y = 0.36;
+    const band = new THREE.Mesh(new THREE.BoxGeometry(1.56, 0.16, 1.1), chestGoldMat);
+    band.position.y = 0.66;
+    const lid = new THREE.Group();
+    lid.position.set(0, 0.72, -0.5);
+    const lidMesh = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.42, 1.05), chestWoodMat);
+    lidMesh.position.set(0, 0.21, 0.5);
+    const clasp = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.28, 0.14), chestGoldMat);
+    clasp.position.set(0, 0.08, 1.04);
+    lid.add(lidMesh, clasp);
+    const beacon = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.32, 0),
+      palette.getMat(0xfacc15, 'emissive'),
+    );
+    beacon.position.y = 1.95;
+    cGroup.add(base, band, lid, beacon);
+    cGroup.userData.oceanChestId = cd.id;
+    group.add(cGroup);
+    clickables.push(cGroup);
+    dynamicNodes.push(cGroup, lid, beacon);
+    chests.push({
+      id: cd.id,
+      label: cd.label,
+      x: cx,
+      y: cy,
+      z: cz,
+      rewardGear: cd.rewardGear,
+      rewardMaterials: cd.rewardMaterials,
+      opened: false,
+      group: cGroup,
+      lid,
+      beacon,
+    });
+  });
+
+  // 5. Populate All 20 Sea Biota Species Across Inter-Island Straits & Coastal Reefs
+  const biotaNodes: OceanBiotaNode[] = [];
+  let bSeq = 0;
+  const placeArchBiota = (
+    speciesId: SeaBiotaId,
+    rawX: number,
+    rawZ: number,
+    opts?: {
+      yOffset?: number;
+      patrolMode?: OceanBiotaNode['patrolMode'];
+      patrolRadius?: number;
+      patrolSpeed?: number;
+      scale?: number;
+      yaw?: number;
+    },
+  ) => {
+    const [x, z] = nudgeToWater(rawX, rawZ);
+    const rig = createSeaBiotaMesh(speciesId, palette);
+    const floorY = sampleFloorY(x, z);
+    const maxYOffset = Math.max(0.15, Math.abs(floorY) - 1.35);
+    const safeOffset = Math.min(opts?.yOffset ?? 0, maxYOffset);
+    const y = floorY + safeOffset;
+    const scale = opts?.scale ?? 1.0;
+    const nodeId = `arch_biota_${speciesId}_${bSeq++}`;
+    rig.root.position.set(x, y, z);
+    rig.root.scale.setScalar(scale);
+    if (opts?.yaw !== undefined) {
+      rig.root.rotation.y = opts.yaw;
+    }
+    rig.root.userData.oceanBiotaSpecies = speciesId;
+    rig.root.userData.biotaNodeId = nodeId;
+    group.add(rig.root);
+    clickables.push(rig.root);
+    dynamicNodes.push(rig.root);
+    biotaNodes.push({
+      id: nodeId,
+      speciesId,
+      rig,
+      x,
+      y,
+      z,
+      homeX: x,
+      homeY: y,
+      homeZ: z,
+      phase: bSeq * 1.13,
+      patrolMode: opts?.patrolMode ?? 'static',
+      patrolRadius: opts?.patrolRadius ?? 0,
+      patrolSpeed: opts?.patrolSpeed ?? 0.65,
+      harvestCooldown: 0,
+      scale,
+      lastDimScale: scale,
+    });
+  };
+
+  const pickList = <T>(items: T[], mobileMax: number): T[] =>
+    lowDetail ? items.slice(0, Math.min(items.length, mobileMax)) : items;
+
+  // #1 Brain Coral
+  pickList([[-16, 188, 1.2], [-56, 134, 1.15], [42, 148, 1.2], [-80, 74, 1.15], [76, 94, 1.15]], 3).forEach(
+    ([x, z, sc]) => placeArchBiota('brain_coral', x, z, { scale: sc }),
+  );
+  // #2 Fire Coral
+  pickList([[-34, 184, 1.15], [22, 192, 1.15], [-74, 62, 1.1], [72, 68, 1.2], [-76, -18, 1.15]], 3).forEach(
+    ([x, z, sc]) => placeArchBiota('fire_coral', x, z, { scale: sc }),
+  );
+  // #3 Blue Staghorn
+  pickList([[-4, 194, 1.15], [-52, 122, 1.2], [46, 124, 1.15], [-86, -4, 1.2], [86, -10, 1.15]], 3).forEach(
+    ([x, z, sc]) => placeArchBiota('blue_staghorn', x, z, { scale: sc }),
+  );
+  // #4 Sea Anemone
+  pickList([[4, 188, 1.1], [-28, 178, 1.15], [-66, 106, 1.05], [56, 114, 1.1], [-22, -96, 1.1]], 3).forEach(
+    ([x, z, sc]) => placeArchBiota('sea_anemone', x, z, { scale: sc }),
+  );
+  // #5 Giant Kelp Forests
+  pickList([
+    [-14, 182, 1.35],
+    [16, 184, 1.4],
+    [-46, 136, 1.45],
+    [-70, 88, 1.4],
+    [52, 120, 1.35],
+    [82, 18, 1.4],
+    [-82, 10, 1.4],
+    [-40, -106, 1.45],
+  ], 5).forEach(([x, z, sc]) => placeArchBiota('giant_kelp', x, z, { scale: sc }));
+  // #6 Seagrass
+  pickList([
+    [-2, 184, 1.1],
+    [-22, 196, 1.1],
+    [28, 180, 1.1],
+    [-60, 118, 1.15],
+    [48, 136, 1.1],
+    [76, 8, 1.15],
+  ], 4).forEach(([x, z, sc]) => placeArchBiota('seagrass', x, z, { scale: sc }));
+  // #7 Bioluminescent Algae (glowing along Twilight Straits!)
+  pickList([
+    [-48, 104, 1.25],
+    [-84, 12, 1.3],
+    [-86, -24, 1.3],
+    [88, -20, 1.25],
+    [-48, -124, 1.3],
+    [72, -118, 1.25],
+  ], 4).forEach(([x, z, sc]) => placeArchBiota('bioluminescent_algae', x, z, { scale: sc }));
+  // #8 Sea Fan
+  pickList([[10, 196, 1.15], [-38, 152, 1.15], [64, 102, 1.1], [-72, 16, 1.2], [42, -118, 1.15]], 3).forEach(
+    ([x, z, sc]) => placeArchBiota('sea_fan', x, z, { scale: sc, yaw: x * 0.2 }),
+  );
+  // #9 Tiger Cowrie
+  pickList([[-8, 186, 1.05], [14, 188, 1.0], [-62, 112, 1.1], [68, 98, 1.05]], 3).forEach(
+    ([x, z, sc]) => placeArchBiota('tiger_cowrie', x, z, { scale: sc, yaw: z * 0.3 }),
+  );
+  // #10 Giant Clam (Pearl yield!)
+  pickList([[-18, 192, 1.2], [-64, 92, 1.25], [58, 116, 1.2], [-80, -16, 1.25], [74, -112, 1.25]], 3).forEach(
+    ([x, z, sc]) => placeArchBiota('giant_clam', x, z, { scale: sc, yaw: x * 0.15 }),
+  );
+  // #11 Clownfish
+  pickList([
+    [4, 188, 1.6],
+    [-26, 180, 1.8],
+    [-64, 106, 2.2],
+    [56, 114, 2.0],
+    [-78, 4, 2.2],
+  ], 3).forEach(([x, z, yOff]) =>
+    placeArchBiota('clownfish', x, z, {
+      yOffset: yOff,
+      patrolMode: 'swim',
+      patrolRadius: 3.5,
+      patrolSpeed: 0.9,
+      scale: 1.1,
+    }),
+  );
+  // #12 Blue Tang
+  pickList([
+    [-10, 194, 2.0],
+    [-46, 130, 2.6],
+    [46, 128, 2.4],
+    [82, -6, 2.8],
+    [-42, -114, 2.6],
+  ], 3).forEach(([x, z, yOff]) =>
+    placeArchBiota('blue_tang', x, z, {
+      yOffset: yOff,
+      patrolMode: 'swim',
+      patrolRadius: 4.8,
+      patrolSpeed: 1.0,
+      scale: 1.1,
+    }),
+  );
+  // #13 Sea Turtle (Mountable!)
+  pickList([
+    [-8, 192, 2.2],
+    [-56, 116, 2.8],
+    [54, 118, 2.6],
+    [-76, -8, 3.2],
+    [76, -8, 3.0],
+  ], 3).forEach(([x, z, yOff]) =>
+    placeArchBiota('sea_turtle', x, z, {
+      yOffset: yOff,
+      patrolMode: 'swim',
+      patrolRadius: 7.0,
+      patrolSpeed: 0.42,
+      scale: 1.25,
+    }),
+  );
+  // #14 Spotted Stingray
+  pickList([
+    [16, 194, 1.8],
+    [-70, 84, 2.2],
+    [66, 92, 2.2],
+    [-46, -118, 2.5],
+  ], 3).forEach(([x, z, yOff]) =>
+    placeArchBiota('spotted_stingray', x, z, {
+      yOffset: yOff,
+      patrolMode: 'swim',
+      patrolRadius: 6.5,
+      patrolSpeed: 0.48,
+      scale: 1.15,
+    }),
+  );
+  // #15 Yellow Seahorse
+  pickList([
+    [-4, 184, 1.2],
+    [18, 182, 1.3],
+    [-48, 134, 1.4],
+    [54, 118, 1.3],
+  ], 2).forEach(([x, z, yOff]) =>
+    placeArchBiota('yellow_seahorse', x, z, {
+      yOffset: yOff,
+      patrolMode: 'hover',
+      patrolRadius: 0.85,
+      patrolSpeed: 0.7,
+      scale: 1.15,
+    }),
+  );
+  // #16 Chameleon Octopus
+  pickList([
+    [-24, 190, 0.25],
+    [-72, 92, 0.25],
+    [74, 88, 0.25],
+    [-88, -18, 0.25],
+  ], 2).forEach(([x, z, yOff]) =>
+    placeArchBiota('chameleon_octopus', x, z, {
+      yOffset: yOff,
+      patrolMode: 'crawl',
+      patrolRadius: 2.2,
+      patrolSpeed: 0.35,
+      scale: 1.15,
+    }),
+  );
+  // #17 Spiny Lobster
+  pickList([
+    [-12, 186, 0.05],
+    [-58, 124, 0.05],
+    [60, 110, 0.05],
+    [82, -16, 0.05],
+  ], 2).forEach(([x, z, yOff]) =>
+    placeArchBiota('spiny_lobster', x, z, {
+      yOffset: yOff,
+      patrolMode: 'crawl',
+      patrolRadius: 1.9,
+      patrolSpeed: 0.45,
+      scale: 1.05,
+    }),
+  );
+  // #18 Box Crab
+  pickList([
+    [6, 186, 0.05],
+    [-34, 166, 0.05],
+    [38, 152, 0.05],
+    [-64, 72, 0.05],
+  ], 2).forEach(([x, z, yOff]) =>
+    placeArchBiota('box_crab', x, z, {
+      yOffset: yOff,
+      patrolMode: 'crawl',
+      patrolRadius: 2.2,
+      patrolSpeed: 0.55,
+      scale: 1.0,
+    }),
+  );
+  // #19 Starfish
+  pickList([
+    [-2, 189, 0.04],
+    [12, 191, 0.04],
+    [-54, 130, 0.04],
+    [48, 138, 0.04],
+  ], 3).forEach(([x, z, yOff]) =>
+    placeArchBiota('starfish', x, z, { yOffset: yOff, scale: 1.1, yaw: x * 0.4 }),
+  );
+  // #20 Glowing Jellyfish
+  pickList([
+    [-38, 142, 3.2],
+    [-78, 42, 3.8],
+    [64, 86, 3.4],
+    [-86, -12, 4.2],
+    [88, -14, 4.0],
+    [-44, -120, 4.2],
+  ], 3).forEach(([x, z, yOff]) =>
+    placeArchBiota('glowing_jellyfish', x, z, {
+      yOffset: yOff,
+      patrolMode: 'hover',
+      patrolRadius: 2.4,
+      patrolSpeed: 0.35,
+      scale: 1.25,
+    }),
+  );
+
+  // Sanity guard: verify all 20 species exist
+  for (const spec of SEA_BIOTA_CATALOG) {
+    if (!biotaNodes.some((n) => n.speciesId === spec.id)) {
+      placeArchBiota(spec.id, -8, 190, { yOffset: 1 });
+    }
+  }
+
+  // 6. Hero Underwater Torch Light (only lit when underwater!)
+  const torchLight = new THREE.PointLight(0x7dd3fc, 0, 26, 1.4);
+  torchLight.position.set(0, -4, 190);
+  group.add(torchLight);
+  dynamicNodes.push(torchLight);
+
+  return {
+    group,
+    sunbeams,
+    bubblesPoints,
+    torchLight,
+    biotaNodes,
+    airVents,
+    chests,
+    dynamicNodes,
+    clickables,
+    disposables,
+    sampleFloorY,
+  };
+}
+
+export function updateArchipelagoUnderwaterProps(
+  rig: ArchipelagoUnderwaterRig,
+  dt: number,
+  elapsed: number,
+  heroPos: THREE.Vector3,
+  heroYaw: number,
+  camY: number,
+  ownedGear: Set<DivingGearId>,
+  isUnderwater: boolean,
+  lowDetail = false,
+): void {
+  const showAtmosphereFx = isUnderwater || camY < 0.05;
+  rig.bubblesPoints.visible = showAtmosphereFx;
+  if (showAtmosphereFx) {
+    rig.bubblesPoints.position.set(heroPos.x, 0, heroPos.z);
+    const posAttr = rig.bubblesPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const arr = posAttr.array as Float32Array;
+    for (let i = 0; i < arr.length; i += 3) {
+      arr[i + 1] += dt * (1.8 + (i % 5) * 0.35);
+      arr[i] += Math.sin(elapsed * 2.2 + i) * dt * 0.2;
+      if (arr[i + 1] > -0.25) {
+        arr[i + 1] = -24 + Math.random() * 6;
+      }
+    }
+    posAttr.needsUpdate = true;
+  }
+
+  for (let i = 0; i < rig.sunbeams.length; i++) {
+    const b = rig.sunbeams[i];
+    b.visible = showAtmosphereFx && heroPos.y > -18.5;
+    if (b.visible) {
+      b.position.set(
+        heroPos.x + ((b.userData.baseOffsetX as number) ?? 0),
+        (b.userData.baseOffsetY as number) ?? -8.5,
+        heroPos.z + ((b.userData.baseOffsetZ as number) ?? 0),
+      );
+      b.rotation.z = 0.2 + Math.sin(elapsed * 0.7 + i * 1.1) * 0.05;
+    }
+  }
+
+  if (showAtmosphereFx) {
+    const hasTorch = ownedGear.has('fins_torch');
+    const hasMask = ownedGear.has('snorkel') || ownedGear.has('wetsuit_tank');
+    rig.torchLight.intensity = hasTorch ? 5.2 : hasMask ? 2.4 : 1.3;
+    rig.torchLight.distance = hasTorch ? 36 : 24;
+    rig.torchLight.color.setHex(hasTorch ? 0xfef08a : 0x67e8f9);
+    rig.torchLight.position.set(
+      heroPos.x + Math.sin(heroYaw) * 1.4,
+      heroPos.y + 1.8,
+      heroPos.z + Math.cos(heroYaw) * 1.4,
+    );
+  } else {
+    rig.torchLight.intensity = 0;
+  }
+
+  const visDistSq = lowDetail ? 46 * 46 : 74 * 74;
+
+  // Air vents
+  for (const vent of rig.airVents) {
+    const dx = vent.x - heroPos.x;
+    const dz = vent.z - heroPos.z;
+    const distSq = dx * dx + dz * dz;
+    const visible = distSq <= visDistSq;
+    vent.group.visible = visible;
+    if (!visible) continue;
+    vent.rings.forEach((ring, idx) => {
+      const cycle = (elapsed * 0.75 + idx * 0.33) % 1;
+      ring.position.y = 1.0 + cycle * 4.2;
+      ring.scale.setScalar(0.8 + cycle * 0.55);
+    });
+  }
+
+  // Supply chests
+  for (const ch of rig.chests) {
+    const dx = ch.x - heroPos.x;
+    const dz = ch.z - heroPos.z;
+    const distSq = dx * dx + dz * dz;
+    ch.group.visible = distSq <= visDistSq;
+    if (!ch.group.visible) continue;
+    if (!ch.opened) {
+      ch.beacon.visible = true;
+      ch.beacon.rotation.y += dt * 2.1;
+      ch.beacon.position.y = 1.9 + Math.sin(elapsed * 3.0 + ch.x) * 0.22;
+    } else {
+      ch.beacon.visible = false;
+      ch.lid.rotation.x = THREE.MathUtils.damp(ch.lid.rotation.x, -1.25, 10, dt);
+    }
+  }
+
+  // Distance-culled 20 Sea Biota Species
+  for (const node of rig.biotaNodes) {
+    if (node.harvestCooldown > 0) {
+      node.harvestCooldown = Math.max(0, node.harvestCooldown - dt);
+    }
+    const dxH = node.x - heroPos.x;
+    const dzH = node.z - heroPos.z;
+    const distSqXZ = dxH * dxH + dzH * dzH;
+    const visible = distSqXZ <= visDistSq;
+    node.rig.root.visible = visible;
+    if (!visible) continue;
+
+    const nextScale = node.scale * (node.harvestCooldown > 0 ? 0.76 : 1.0);
+    if (node.lastDimScale !== nextScale) {
+      node.rig.root.scale.setScalar(nextScale);
+      node.lastDimScale = nextScale;
+    }
+
+    if (node.patrolMode === 'swim') {
+      const t = elapsed * node.patrolSpeed + node.phase;
+      const nx = node.homeX + Math.cos(t) * node.patrolRadius;
+      const nz = node.homeZ + Math.sin(t * 0.8) * (node.patrolRadius * 0.75);
+      const ny = Math.min(-1.25, node.homeY + Math.sin(elapsed * 1.6 + node.phase) * 0.35);
+      const dx = nx - node.x;
+      const dz = nz - node.z;
+      if (Math.hypot(dx, dz) > 0.002) {
+        node.rig.root.rotation.y = Math.atan2(dx, dz);
+      }
+      node.x = nx;
+      node.y = ny;
+      node.z = nz;
+      node.rig.root.position.set(nx, ny, nz);
+    } else if (node.patrolMode === 'hover') {
+      const t = elapsed * node.patrolSpeed + node.phase;
+      node.x = node.homeX + Math.cos(t) * node.patrolRadius * 0.5;
+      node.z = node.homeZ + Math.sin(t) * node.patrolRadius * 0.5;
+      node.y = Math.min(-1.25, node.homeY + Math.sin(elapsed * 1.3 + node.phase) * 0.55);
+      node.rig.root.position.set(node.x, node.y, node.z);
+    } else if (node.patrolMode === 'crawl') {
+      const t = elapsed * node.patrolSpeed + node.phase;
+      const nx = node.homeX + Math.cos(t) * node.patrolRadius;
+      const nz = node.homeZ + Math.sin(t * 1.1) * (node.patrolRadius * 0.65);
+      const ny = rig.sampleFloorY(nx, nz) + 0.05;
       const dx = nx - node.x;
       const dz = nz - node.z;
       if (Math.hypot(dx, dz) > 0.002) {

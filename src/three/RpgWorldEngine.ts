@@ -71,8 +71,11 @@ import {
   ZoneId,
 } from '../types/game';
 import {
+  ArchipelagoUnderwaterRig,
+  createArchipelagoUnderwaterProps,
   createOceanEnvironment,
   DIVING_GEAR_DEFS,
+  getArchipelagoOceanZoneInfo,
   getBiotaActionLabel,
   getOceanFloorY,
   getOceanZoneInfo,
@@ -80,6 +83,7 @@ import {
   OceanBiotaNode,
   OceanSupplyChest,
   OceanWorldRig,
+  updateArchipelagoUnderwaterProps,
   updateOceanWorld,
 } from './oceanWorld';
 import { SEA_BIOTA_BY_ID } from './seaBiotaCatalog';
@@ -99,6 +103,7 @@ import {
   createArchipelagoWorld,
   freezeStaticSubtree,
   getArchipelagoGroundY,
+  getArchipelagoSeabedY,
   IELTS_TEMPORARILY_LOCKED,
   isWalkableArchipelago,
   OVERWORLD_ANCHORS,
@@ -583,6 +588,7 @@ export class RpgWorldEngine {
   private worldMode: WorldLocationMode = 'overworld';
   private overworldGroup: THREE.Group;
   private archipelagoRig!: ArchipelagoRig;
+  private archipelagoUnderwaterRig: ArchipelagoUnderwaterRig | null = null;
   private villageRig!: MinecraftVillageRig;
   private worldObstaclesRig!: WorldObstaclesRig;
   private heroOnIce = false;
@@ -678,6 +684,7 @@ export class RpgWorldEngine {
   private discoveredBiota = new Set<SeaBiotaId>();
   private openedOceanChests = new Set<string>();
   private ridingTurtle = false;
+  private heroDiveActive = false;
   private oceanAscendHeld = false;
   private oceanDescendHeld = false;
   private nearBiotaNode: OceanBiotaNode | null = null;
@@ -1177,6 +1184,11 @@ export class RpgWorldEngine {
     for (const ch of this.archipelagoRig.clockHands) dyn.add(ch);
     for (const c of this.archipelagoRig.cars) dyn.add(c.mesh);
     for (const zc of this.archipelagoRig.zooCritters) dyn.add(zc.root);
+    if (this.archipelagoUnderwaterRig) {
+      for (const dn of this.archipelagoUnderwaterRig.dynamicNodes) {
+        dyn.add(dn);
+      }
+    }
 
     for (const v of this.villageRig.villagers) dyn.add(v.root);
     for (const gm of this.villageRig.golems) dyn.add(gm.root);
@@ -1522,13 +1534,29 @@ export class RpgWorldEngine {
       if (data.lastHeroPos) {
         const lx = data.lastHeroPos.x;
         const lz = data.lastHeroPos.z;
+        const ly = data.lastHeroPos.y;
+        const inArchBounds =
+          Number.isFinite(lx) &&
+          Number.isFinite(lz) &&
+          Math.abs(lx) < WORLD_OCEAN_LIMIT - 4 &&
+          Math.abs(lz) < WORLD_OCEAN_LIMIT - 4;
         if (this.restoredWorldMode === 'overworld' && !isWalkableArchipelago(lx, lz)) {
-          const sp = OVERWORLD_ANCHORS.desaSpawn;
-          this.restoredHeroPos = { x: sp.x, y: getArchipelagoGroundY(sp.x, sp.z), z: sp.z, yaw: sp.yaw };
+          if (inArchBounds) {
+            const minSeabed = getArchipelagoSeabedY(lx, lz) + 0.45;
+            this.restoredHeroPos = {
+              x: lx,
+              y: THREE.MathUtils.clamp(Number.isFinite(ly) ? ly : -1.16, minSeabed, 0),
+              z: lz,
+              yaw: data.lastHeroPos.yaw || 0,
+            };
+          } else {
+            const sp = OVERWORLD_ANCHORS.desaSpawn;
+            this.restoredHeroPos = { x: sp.x, y: getArchipelagoGroundY(sp.x, sp.z), z: sp.z, yaw: sp.yaw };
+          }
         } else {
           this.restoredHeroPos = {
             ...data.lastHeroPos,
-            y: this.restoredWorldMode === 'overworld' ? getArchipelagoGroundY(lx, lz) : data.lastHeroPos.y,
+            y: this.restoredWorldMode === 'overworld' ? getArchipelagoGroundY(lx, lz) : ly,
           };
         }
       } else {
@@ -1595,6 +1623,17 @@ export class RpgWorldEngine {
 
     this.worldObstaclesRig = createWorldObstacles(this.palette);
     this.overworldGroup.add(this.worldObstaclesRig.group);
+
+    const underLowDetail =
+      this.isMobileDevice || this.isLowEndMobile || this.settings.fxLevel !== 'full';
+    this.archipelagoUnderwaterRig = createArchipelagoUnderwaterProps(
+      this.palette,
+      (wx, wz) => this.isOpenSeaPoint(wx, wz, 2.5),
+      getArchipelagoSeabedY,
+      underLowDetail,
+    );
+    this.overworldGroup.add(this.archipelagoUnderwaterRig.group);
+    this.overworldClickables.push(...this.archipelagoUnderwaterRig.clickables);
   }
 
   private initNpcs(): void {
@@ -2460,7 +2499,7 @@ export class RpgWorldEngine {
     const canHoldWeapon =
       this.activeHotbarSlot <= 7 &&
       this.ownedWeapons.has(this.activeWeapon) &&
-      (!this.isSwimming || this.worldMode === 'ocean' || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
+      (!this.isSwimming || this.worldMode === 'ocean' || this.isHeroUnderwater() || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
     setHeroWeaponVisual(this.hero, this.activeWeapon, canHoldWeapon);
 
     if (this.isSwimming) {
@@ -2783,12 +2822,13 @@ export class RpgWorldEngine {
       return;
     }
 
-    if (this.restoredWorldMode === 'ocean') {
-      this.enterOceanWorld(true);
-      this.showBanner('🐠 Selamat datang kembali di Dunia Bawah Laut!', 3.6);
-      soundEngine.playWin();
-      this.pushHud(true);
-      return;
+    if (this.archipelagoUnderwaterRig) {
+      for (const ch of this.archipelagoUnderwaterRig.chests) {
+        const opened = this.openedOceanChests.has(ch.id);
+        ch.opened = opened;
+        ch.lid.rotation.x = opened ? -1.25 : 0;
+        ch.beacon.visible = !opened;
+      }
     }
 
     this.syncShootersForDifficulty();
@@ -2797,22 +2837,44 @@ export class RpgWorldEngine {
     this.initSkyMonsters();
 
     const sp = OVERWORLD_ANCHORS.desaSpawn;
-    if (
-      this.restoredHeroPos &&
-      this.restoredWorldMode === 'overworld' &&
-      isWalkableArchipelago(this.restoredHeroPos.x, this.restoredHeroPos.z)
-    ) {
-      const hy = getArchipelagoGroundY(this.restoredHeroPos.x, this.restoredHeroPos.z);
-      this.heroPos.set(this.restoredHeroPos.x, hy, this.restoredHeroPos.z);
-      this.heroYaw = this.restoredHeroPos.yaw;
+    if (this.restoredWorldMode === 'ocean') {
+      const diveY = Math.max(getArchipelagoSeabedY(-18, 192) + 0.8, -4.4);
+      this.heroPos.set(-18, diveY, 192);
+      this.heroYaw = Math.PI;
+      this.heroDiveActive = true;
+      this.isSwimming = true;
+      this.heroOnGround = false;
+      this.showBanner('🐠 Selamat datang kembali di Dunia Bawah Laut Kepulauan!', 3.6);
+    } else if (this.restoredHeroPos && this.restoredWorldMode === 'overworld') {
+      const rx = this.restoredHeroPos.x;
+      const rz = this.restoredHeroPos.z;
+      if (isWalkableArchipelago(rx, rz)) {
+        const hy = getArchipelagoGroundY(rx, rz);
+        this.heroPos.set(rx, hy, rz);
+        this.heroYaw = this.restoredHeroPos.yaw;
+        this.heroDiveActive = false;
+        this.isSwimming = false;
+        this.heroOnGround = true;
+      } else {
+        const minSeabed = getArchipelagoSeabedY(rx, rz) + 0.45;
+        const ry = THREE.MathUtils.clamp(this.restoredHeroPos.y, minSeabed, -1.16);
+        this.heroPos.set(rx, ry, rz);
+        this.heroYaw = this.restoredHeroPos.yaw;
+        this.isSwimming = true;
+        this.heroDiveActive = ry < -1.65;
+        this.heroOnGround = false;
+      }
     } else if (isWalkableArchipelago(this.savedOverworldHeroPos.x, this.savedOverworldHeroPos.z)) {
       const hy = getArchipelagoGroundY(this.savedOverworldHeroPos.x, this.savedOverworldHeroPos.z);
       this.heroPos.set(this.savedOverworldHeroPos.x, hy, this.savedOverworldHeroPos.z);
       this.heroYaw = sp.yaw;
+      this.heroDiveActive = false;
     } else {
       this.heroPos.set(sp.x, getArchipelagoGroundY(sp.x, sp.z), sp.z);
       this.heroYaw = sp.yaw;
+      this.heroDiveActive = false;
     }
+    this.oceanOxygen = this.getOceanMaxOxygen();
     this.savedOverworldHeroPos.copy(this.heroPos);
     this.hero.root.position.copy(this.heroPos);
     this.hero.body.rotation.y = this.heroYaw;
@@ -2921,6 +2983,14 @@ export class RpgWorldEngine {
     this.openedOceanChests.clear();
     this.oceanOxygen = 35;
     this.ridingTurtle = false;
+    this.heroDiveActive = false;
+    if (this.archipelagoUnderwaterRig) {
+      for (const ch of this.archipelagoUnderwaterRig.chests) {
+        ch.opened = false;
+        ch.lid.rotation.x = 0;
+        ch.beacon.visible = true;
+      }
+    }
     this.restoredWorldMode = 'overworld';
     this.restoredDungeonZoneId = null;
     this.restoredDungeonMixed = false;
@@ -3500,6 +3570,29 @@ export class RpgWorldEngine {
     if (this.villageRig?.starMat) {
       this.villageRig.starMat.opacity = THREE.MathUtils.clamp((0.35 - daylight) * 2.4, 0, 0.92);
     }
+
+    // Continuous underwater optical atmosphere blending whenever camera dips below water surface (y < 0.08)
+    const camSubmergeT = THREE.MathUtils.clamp((0.08 - this.camera.position.y) / 0.85, 0, 1);
+    if (camSubmergeT > 0.001) {
+      const depthRatio = THREE.MathUtils.clamp((-this.camera.position.y - 1.5) / 22, 0, 1);
+      _sunColorScratch.setHex(0x0e7490).lerp(_skyNightCol, depthRatio * 0.85);
+      (this.scene.background as THREE.Color).lerp(_sunColorScratch, camSubmergeT * 0.94);
+      if (this.scene.fog instanceof THREE.FogExp2) {
+        this.scene.fog.color.copy(this.scene.background as THREE.Color);
+        const uwDensity = 0.012 + depthRatio * 0.02;
+        this.scene.fog.density = THREE.MathUtils.lerp(this.scene.fog.density, uwDensity, camSubmergeT);
+      }
+      this.hemiLight.intensity = THREE.MathUtils.lerp(
+        this.hemiLight.intensity,
+        THREE.MathUtils.lerp(1.12, 0.44, depthRatio),
+        camSubmergeT,
+      );
+      this.sunLight.intensity = THREE.MathUtils.lerp(
+        this.sunLight.intensity,
+        THREE.MathUtils.lerp(1.28, 0.3, depthRatio),
+        camSubmergeT,
+      );
+    }
   }
 
   private applyAtmosphere(mode: WorldLocationMode, zoneId?: ZoneId, dungeonBright = false): void {
@@ -3659,6 +3752,7 @@ export class RpgWorldEngine {
     this.oceanTotalSpawned = 0;
     this.oceanClickables = [];
     this.ridingTurtle = false;
+    this.heroDiveActive = false;
     this.oceanAscendHeld = false;
     this.oceanDescendHeld = false;
     this.nearBiotaNode = null;
@@ -4728,16 +4822,28 @@ export class RpgWorldEngine {
     soundEngine.playPick();
   }
 
+  private isHeroUnderwater(): boolean {
+    if (this.worldMode === 'ocean') return true;
+    if (this.worldMode !== 'overworld' || !this.isSwimming) return false;
+    const divingStage =
+      this.diveTransition?.active &&
+      (this.diveTransition.stage === 'plunge' ||
+        this.diveTransition.stage === 'submerge' ||
+        this.diveTransition.stage === 'surface');
+    return this.heroDiveActive || this.heroPos.y < -1.65 || Boolean(divingStage);
+  }
+
   public toggleDiveOcean(): void {
     this.lastInputActivityMs = performance.now();
     if (this.phase !== 'playing') return;
 
-    if (this.worldMode === 'ocean') {
+    if (this.worldMode === 'ocean' || (this.worldMode === 'overworld' && this.isHeroUnderwater())) {
       if (this.diveTransition?.stage === 'surface') {
         this.showBanner('🫧 Sedang berenang naik ke permukaan laut...', 1.8);
         return;
       }
       this.tapMoveTarget = null;
+      this.heroDiveActive = true;
       this.diveTransition = {
         active: true,
         stage: 'surface',
@@ -4774,10 +4880,11 @@ export class RpgWorldEngine {
     const curSample = sampleArchipelagoTerrain(this.heroPos.x, this.heroPos.z);
     const alreadyOverWater = this.isSwimming || !curSample.isLandOrBridge || curSample.groundY < -0.15;
     if (alreadyOverWater) {
-      this.savedOverworldHeroPos.copy(this.heroPos);
       this.tapMoveTarget = null;
       this.isSwimming = true;
+      this.heroDiveActive = true;
       this.heroOnGround = false;
+      this.oceanOxygen = Math.max(this.oceanOxygen, this.getOceanMaxOxygen());
       this.activeSwimStyle = 'jump_dive';
       this.diveTransition = {
         active: true,
@@ -4834,6 +4941,7 @@ export class RpgWorldEngine {
     this.heroVelY = 2.6;
     this.heroOnGround = false;
     this.isSwimming = true;
+    this.heroDiveActive = false;
     this.activeSwimStyle = 'surface_paddle';
     this.hero.root.position.copy(this.heroPos);
     this.encounterGraceTimer = 2.0;
@@ -4859,7 +4967,7 @@ export class RpgWorldEngine {
   }
 
   public toggleOceanTurtleMount(): void {
-    if (this.worldMode !== 'ocean') return;
+    if (this.worldMode !== 'ocean' && !this.isHeroUnderwater()) return;
     if (this.ridingTurtle) {
       this.ridingTurtle = false;
       soundEngine.playSplash(0.6);
@@ -5800,8 +5908,8 @@ export class RpgWorldEngine {
     this.lastInputActivityMs = performance.now();
     if (this.phase !== 'playing') return;
 
-    if (this.worldMode === 'ocean') {
-      if (this.nearDungeonExit) {
+    if (this.worldMode === 'ocean' || this.isHeroUnderwater()) {
+      if (this.worldMode === 'ocean' && this.nearDungeonExit) {
         this.exitDungeon();
         return;
       }
@@ -6704,7 +6812,7 @@ export class RpgWorldEngine {
   public jumpHero(): void {
     this.lastInputActivityMs = performance.now();
     if (this.phase !== 'playing') return;
-    if (this.worldMode === 'ocean') {
+    if (this.worldMode === 'ocean' || this.isHeroUnderwater()) {
       this.heroVelY = Math.min(7.2, this.heroVelY + 4.8);
       soundEngine.playSplash(0.65);
       this.spawnBurst(this.heroPos.x, this.heroPos.y + 0.3, this.heroPos.z, 0xbae6fd, 8);
@@ -7118,7 +7226,7 @@ export class RpgWorldEngine {
 
   public fireActiveWeapon(fromHold = false, skipTurnWait = false): void {
     if (this.phase !== 'playing') return;
-    if (this.isSwimming && this.worldMode !== 'ocean') {
+    if (this.isSwimming && this.worldMode !== 'ocean' && !this.isHeroUnderwater()) {
       const slotWpn = this.activeHotbarSlot <= 7 ? WEAPON_ORDER[this.activeHotbarSlot] : undefined;
       const canShootWater = Boolean(
         slotWpn && this.ownedWeapons.has(slotWpn) && SEA_CAPABLE_WEAPONS.has(slotWpn),
@@ -7820,8 +7928,14 @@ export class RpgWorldEngine {
           }
           return;
         }
-        if (obj.userData.oceanChestId && this.worldMode === 'ocean' && this.oceanRig) {
-          const ch = this.oceanRig.chests.find((item) => item.id === obj!.userData.oceanChestId);
+        const activeOceanRig =
+          this.worldMode === 'ocean'
+            ? this.oceanRig
+            : this.worldMode === 'overworld'
+            ? this.archipelagoUnderwaterRig
+            : null;
+        if (obj.userData.oceanChestId && activeOceanRig) {
+          const ch = activeOceanRig.chests.find((item) => item.id === obj!.userData.oceanChestId);
           if (ch && !ch.opened) {
             if (Math.hypot(this.heroPos.x - ch.x, this.heroPos.z - ch.z) < 5.0) {
               this.interactWithOceanChest(ch);
@@ -7832,8 +7946,8 @@ export class RpgWorldEngine {
           }
           return;
         }
-        if (obj.userData.biotaNodeId && this.worldMode === 'ocean' && this.oceanRig) {
-          const node = this.oceanRig.biotaNodes.find(
+        if (obj.userData.biotaNodeId && activeOceanRig) {
+          const node = activeOceanRig.biotaNodes.find(
             (item) => item.id === obj!.userData.biotaNodeId,
           );
           if (node) {
@@ -8351,7 +8465,7 @@ export class RpgWorldEngine {
     const ambientMode =
       this.phase === 'title' || this.phase === 'paused' || this.phase === 'gameover'
         ? 'none'
-        : this.worldMode === 'ocean'
+        : this.worldMode === 'ocean' || this.isHeroUnderwater()
         ? 'deep_sea'
         : this.worldMode === 'overworld'
         ? this.getCurrentDayPhase() === 'malam'
@@ -9180,6 +9294,20 @@ export class RpgWorldEngine {
       this.camera.position,
     );
 
+    if (this.archipelagoUnderwaterRig) {
+      updateArchipelagoUnderwaterProps(
+        this.archipelagoUnderwaterRig,
+        dt,
+        this.elapsed,
+        this.heroPos,
+        this.heroYaw,
+        this.camera.position.y,
+        this.oceanGear,
+        this.isHeroUnderwater(),
+        this.isMobileDevice || this.isLowEndMobile || this.settings.fxLevel !== 'full',
+      );
+    }
+
     const currentDayPhase = this.getCurrentDayPhase();
 
     this.extraVillageColliders.length = 0;
@@ -9935,7 +10063,9 @@ export class RpgWorldEngine {
       // 3D Step-Up vs Cliff-Wall Sliding: allow beaches/docks (<=0.95m) from water, swim-leaps to mantle ledges, and stairs on land!
       const climbLimit =
         wasSwimming || this.swimLeapTimer > 0
-          ? Math.max(0.95, Math.max(prevHeroY, this.heroPos.y) + 1.15)
+          ? this.heroPos.y < -1.65
+            ? prevHeroY + 0.85
+            : Math.max(0.95, Math.max(prevHeroY, this.heroPos.y) + 1.15)
           : prevHeroY + 1.02;
       const isUnderElevatedDeck = (s: ReturnType<typeof sampleArchipelagoTerrain>): boolean =>
         s.isLandOrBridge && !s.isDryLand && prevHeroY < s.groundY - 1.35 && this.heroVelY <= 1.5;
@@ -10031,7 +10161,9 @@ export class RpgWorldEngine {
 
       const activeDiveSubmerge =
         this.diveTransition?.active &&
-        (this.diveTransition.stage === 'plunge' || this.diveTransition.stage === 'submerge');
+        (this.diveTransition.stage === 'plunge' ||
+          this.diveTransition.stage === 'submerge' ||
+          this.diveTransition.stage === 'surface');
 
       if (
         (inWaterZone || activeDiveSubmerge) &&
@@ -10063,10 +10195,22 @@ export class RpgWorldEngine {
           this.jumpToSwimPlayedForAir = false;
           this.heroVelY *= 0.25;
         }
+        const localSeabedY = getArchipelagoSeabedY(this.heroPos.x, this.heroPos.z);
+        const upHeld =
+          this.heldKeys.has('Space') || this.heldKeys.has('KeyJ') || this.oceanAscendHeld;
+        const downHeld =
+          this.heldKeys.has('ControlLeft') ||
+          this.heldKeys.has('ControlRight') ||
+          this.heldKeys.has('KeyZ') ||
+          this.oceanDescendHeld;
+
         if (this.diveTransition?.active && this.diveTransition.stage === 'plunge') {
           this.diveTransition.timer += dt;
           const p = THREE.MathUtils.clamp(this.diveTransition.timer / 0.48, 0, 1);
-          const targetDiveY = THREE.MathUtils.lerp(-1.16, -1.95, p);
+          const targetDiveY = Math.max(
+            localSeabedY + 0.55,
+            THREE.MathUtils.lerp(-1.16, -2.15, p),
+          );
           this.heroVelY = (targetDiveY - this.heroPos.y) * 10;
           this.heroPos.y += this.heroVelY * dt;
           _forward.set(Math.sin(this.heroYaw), 0, Math.cos(this.heroYaw));
@@ -10083,9 +10227,10 @@ export class RpgWorldEngine {
           }
         } else if (this.diveTransition?.active && this.diveTransition.stage === 'submerge') {
           this.diveTransition.timer += dt;
-          const p = THREE.MathUtils.clamp(this.diveTransition.timer / 1.55, 0, 1);
+          const p = THREE.MathUtils.clamp(this.diveTransition.timer / 1.35, 0, 1);
           const eased = p * p * (3 - 2 * p);
-          const targetSubY = THREE.MathUtils.lerp(-1.95, -5.0, eased);
+          const diveGoalY = Math.max(localSeabedY + 0.65, -4.6);
+          const targetSubY = THREE.MathUtils.lerp(-2.15, diveGoalY, eased);
           this.heroVelY = (targetSubY - this.heroPos.y) * 9;
           this.heroPos.y += this.heroVelY * dt;
           _forward.set(Math.sin(this.heroYaw), 0, Math.cos(this.heroYaw));
@@ -10095,24 +10240,77 @@ export class RpgWorldEngine {
             this.diveTransition.bubbleTimer = 0;
             this.spawnBurst(this.heroPos.x, this.heroPos.y + 0.45, this.heroPos.z, 0x67e8f9, 8);
           }
-          if (this.scene.background instanceof THREE.Color) {
-            _skyColorScratch.setHex(0x0c4a6e);
-            this.scene.background.lerp(_skyColorScratch, eased * 0.92);
-            if (this.scene.fog instanceof THREE.FogExp2) {
-              this.scene.fog.color.copy(this.scene.background);
-              this.scene.fog.density = THREE.MathUtils.lerp(0.006, 0.036, eased);
-            }
-          }
           if (p >= 1) {
             this.diveTransition = null;
-            this.enterOceanWorld(false, true);
-            return;
+            this.heroDiveActive = true;
+            this.showBanner(
+              '🌊 Kamu berada di bawah laut! Berenang bebas antar-pulau atau tekan Naik kapan saja.',
+              3.0,
+            );
+            this.pushHud(true);
+          }
+        } else if (this.diveTransition?.active && this.diveTransition.stage === 'surface') {
+          this.diveTransition.timer += dt;
+          this.diveTransition.bubbleTimer += dt;
+          this.heroVelY = THREE.MathUtils.damp(this.heroVelY, 7.4, 8.5, dt);
+          this.heroPos.y = THREE.MathUtils.clamp(
+            this.heroPos.y + this.heroVelY * dt,
+            localSeabedY + 0.45,
+            -1.05,
+          );
+          if (this.diveTransition.bubbleTimer >= 0.12) {
+            this.diveTransition.bubbleTimer = 0;
+            this.spawnBurst(this.heroPos.x, this.heroPos.y + 0.45, this.heroPos.z, 0xbae6fd, 6);
+          }
+          if (this.heroPos.y >= -1.24 || this.diveTransition.timer >= 4.2) {
+            this.diveTransition = null;
+            this.heroDiveActive = false;
+            this.ridingTurtle = false;
+            this.heroPos.y = Math.max(-1.18, this.heroPos.y);
+            this.heroVelY = 1.6;
+            this.activeSwimStyle = 'surface_paddle';
+            this.spawnBurst(this.heroPos.x, 0.16, this.heroPos.z, 0xbae6fd, 22);
+            soundEngine.playSplash(0.95);
+            this.showBanner('🌊 Berhasil berenang naik ke permukaan laut!', 2.4);
+            this.saveProgress();
+            this.pushHud(true);
           }
         } else {
-          const waveBobY = SWIM_FLOAT_Y + Math.sin(this.elapsed * 3.1 + this.heroPos.x * 0.2) * 0.07;
-          this.heroVelY += (waveBobY - this.heroPos.y) * 20 * dt;
-          this.heroVelY *= Math.exp(-6.5 * dt);
-          this.heroPos.y += this.heroVelY * dt;
+          if (!this.heroDiveActive && downHeld && !upHeld && this.swimSuitPicked) {
+            this.heroDiveActive = true;
+          }
+          if (this.heroDiveActive) {
+            let oceanSpeedMult = this.ridingTurtle ? 1.48 : 1.0;
+            for (const gId of this.oceanGear) {
+              oceanSpeedMult += DIVING_GEAR_DEFS[gId].speedBonus;
+            }
+            this.heroPos.x += this.heroVel.x * Math.max(0, oceanSpeedMult - 1) * dt;
+            this.heroPos.z += this.heroVel.z * Math.max(0, oceanSpeedMult - 1) * dt;
+
+            let targetVelY = 0;
+            if (upHeld && !downHeld) {
+              targetVelY = 6.4 * (this.ridingTurtle ? 1.2 : 1.0);
+            } else if (downHeld && !upHeld) {
+              targetVelY = -6.4 * (this.ridingTurtle ? 1.2 : 1.0);
+            } else if (Math.hypot(mx, mz) > 0.12 && this.cameraMode !== 'orbit') {
+              targetVelY = THREE.MathUtils.clamp(-Math.sin(this.cameraPitch) * 3.8, -3.5, 3.5);
+            }
+            this.heroVelY = THREE.MathUtils.damp(this.heroVelY, targetVelY, 8.5, dt);
+            this.heroPos.y = THREE.MathUtils.clamp(
+              this.heroPos.y + this.heroVelY * dt,
+              localSeabedY + 0.45,
+              -1.05,
+            );
+            if (this.heroPos.y >= -1.22 && (upHeld || this.heroVelY > 0.35)) {
+              this.heroDiveActive = false;
+              this.ridingTurtle = false;
+            }
+          } else {
+            const waveBobY = SWIM_FLOAT_Y + Math.sin(this.elapsed * 3.1 + this.heroPos.x * 0.2) * 0.07;
+            this.heroVelY += (waveBobY - this.heroPos.y) * 20 * dt;
+            this.heroVelY *= Math.exp(-6.5 * dt);
+            this.heroPos.y += this.heroVelY * dt;
+          }
         }
       } else {
         const shoreOrLeap = wasSwimming || this.swimLeapTimer > 0;
@@ -10130,6 +10328,11 @@ export class RpgWorldEngine {
           this.heroVelY = 0;
           this.heroOnGround = true;
           this.isSwimming = false;
+          this.heroDiveActive = false;
+          this.ridingTurtle = false;
+          if (this.diveTransition?.stage !== 'swim_to_water') {
+            this.diveTransition = null;
+          }
           this.swimLeapTimer = 0;
         } else if (
           !inWaterZone &&
@@ -10143,6 +10346,8 @@ export class RpgWorldEngine {
           this.heroVelY = 0;
           this.heroOnGround = true;
           this.isSwimming = false;
+          this.heroDiveActive = false;
+          this.ridingTurtle = false;
         } else {
           this.heroOnGround = false;
           this.isSwimming = false;
@@ -10195,6 +10400,134 @@ export class RpgWorldEngine {
         }
       }
 
+      if (this.archipelagoUnderwaterRig && this.isHeroUnderwater()) {
+        const maxO2 = this.getOceanMaxOxygen();
+        let nearAirRefill = this.heroPos.y >= -2.15;
+        if (!nearAirRefill) {
+          for (const vent of this.archipelagoUnderwaterRig.airVents) {
+            if (
+              Math.hypot(this.heroPos.x - vent.x, this.heroPos.z - vent.z) < 4.6 &&
+              this.heroPos.y <= vent.y + 9.0
+            ) {
+              nearAirRefill = true;
+              break;
+            }
+          }
+        }
+        if (nearAirRefill) {
+          this.oceanOxygen = Math.min(maxO2, this.oceanOxygen + 44 * dt);
+          this.oceanSuffocateTimer = 0;
+        } else {
+          let gearDrainMult = 1.0;
+          for (const gId of this.oceanGear) {
+            gearDrainMult *= DIVING_GEAR_DEFS[gId].drainMultiplier;
+          }
+          const depthPressure = 1.0 + Math.max(0, -this.heroPos.y - 3) * 0.085;
+          const drainRate = 3.8 * depthPressure * gearDrainMult;
+          this.oceanOxygen = Math.max(0, this.oceanOxygen - drainRate * dt);
+          if (this.oceanOxygen <= 0) {
+            this.oceanSuffocateTimer += dt;
+            if (this.oceanSuffocateTimer >= 2.0) {
+              this.oceanSuffocateTimer = 0;
+              this.hp = Math.max(0, this.hp - 1);
+              soundEngine.playHurt();
+              this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.2, this.heroPos.z, 0x38bdf8, 12);
+              this.showBanner(
+                '🫧 Kehabisan napas! Cari Gelembung O₂, berenang naik, atau buat Baju Selam! (-1 ❤️)',
+                2.5,
+              );
+              if (this.hp <= 0) {
+                this.phase = 'gameover';
+                soundEngine.playLose();
+                this.pushHud(true);
+                return;
+              }
+            }
+          } else {
+            this.oceanSuffocateTimer = 0;
+          }
+        }
+
+        if (this.fireCoralStingTimer > 0) {
+          this.fireCoralStingTimer = Math.max(0, this.fireCoralStingTimer - dt);
+        }
+
+        let bestBiota: OceanBiotaNode | null = null;
+        let bestBiotaDist = 4.2;
+        let nearTurtle = false;
+        for (const node of this.archipelagoUnderwaterRig.biotaNodes) {
+          const d3 = Math.hypot(
+            this.heroPos.x - node.x,
+            this.heroPos.y + 0.6 - node.y,
+            this.heroPos.z - node.z,
+          );
+          if (d3 < 7.0 && !this.discoveredBiota.has(node.speciesId)) {
+            this.discoveredBiota.add(node.speciesId);
+            this.gainXp(10);
+            this.addScore(35);
+            soundEngine.playPick();
+            const info = SEA_BIOTA_BY_ID[node.speciesId];
+            this.showBanner(
+              `🐠 Biota Baru Ditemukan: ${info?.indoName ?? node.speciesId} (${this.discoveredBiota.size}/20)!`,
+              3.0,
+            );
+            this.saveProgress();
+          }
+          if (node.speciesId === 'fire_coral' && d3 < 1.45 && this.fireCoralStingTimer <= 0) {
+            this.fireCoralStingTimer = 2.8;
+            this.hp = Math.max(0, this.hp - 1);
+            soundEngine.playHurt();
+            this.spawnBurst(this.heroPos.x, this.heroPos.y + 0.9, this.heroPos.z, 0xf97316, 12);
+            this.showBanner('🔥 Tersengat Karang Api! Menjauh sedikit dari koral jingga (-1 ❤️)', 2.4);
+            if (this.hp <= 0) {
+              this.phase = 'gameover';
+              soundEngine.playLose();
+              this.pushHud(true);
+              return;
+            }
+          }
+          if (node.speciesId === 'sea_turtle' && d3 < 4.6) {
+            nearTurtle = true;
+          }
+          const entry = SEA_BIOTA_BY_ID[node.speciesId];
+          const canInteract =
+            Boolean(entry?.mountable) ||
+            (Boolean(entry?.yieldKind) && node.harvestCooldown <= 0);
+          if (canInteract && d3 < bestBiotaDist) {
+            bestBiotaDist = d3;
+            bestBiota = node;
+          }
+        }
+        this.nearBiotaNode = bestBiota;
+        this.nearOceanTurtle = nearTurtle;
+
+        let bestChest: OceanSupplyChest | null = null;
+        let bestChestDist = 4.4;
+        for (const ch of this.archipelagoUnderwaterRig.chests) {
+          if (ch.opened) continue;
+          const dc = Math.hypot(
+            this.heroPos.x - ch.x,
+            this.heroPos.y + 0.5 - ch.y,
+            this.heroPos.z - ch.z,
+          );
+          if (dc < 2.4) {
+            this.interactWithOceanChest(ch);
+            break;
+          }
+          if (dc < bestChestDist) {
+            bestChestDist = dc;
+            bestChest = ch;
+          }
+        }
+        this.nearOceanChest = bestChest;
+      } else {
+        this.oceanOxygen = Math.min(this.getOceanMaxOxygen(), this.oceanOxygen + 44 * dt);
+        this.oceanSuffocateTimer = 0;
+        this.nearBiotaNode = null;
+        this.nearOceanChest = null;
+        this.nearOceanTurtle = false;
+      }
+
       if (this.isSwimming !== wasSwimming) {
         this.refreshWeaponVisual();
       }
@@ -10209,7 +10542,7 @@ export class RpgWorldEngine {
           this.swimFxTimer = isBubbleStyle ? 0.1 : 0.15;
           this.spawnBurst(
             this.heroPos.x,
-            0.06,
+            this.isHeroUnderwater() ? this.heroPos.y + 0.45 : 0.06,
             this.heroPos.z,
             isBubbleStyle ? 0x67e8f9 : 0xe0f2fe,
             isBubbleStyle ? 5 : 3,
@@ -10224,6 +10557,7 @@ export class RpgWorldEngine {
           this.tapMoveTarget = null;
           this.heroVel.multiplyScalar(0.35);
           this.isSwimming = true;
+          this.heroDiveActive = true;
           this.heroOnGround = false;
           this.activeSwimStyle = 'jump_dive';
           this.diveTransition.stage = 'plunge';
@@ -10315,11 +10649,11 @@ export class RpgWorldEngine {
         this.activeSwimStyle = 'front_crawl';
       } else if (this.swimStylePreference !== 'auto') {
         this.activeSwimStyle = this.swimStylePreference;
-      } else if (this.worldMode === 'ocean' && this.oceanGear.has('wetsuit_tank')) {
+      } else if ((this.worldMode === 'ocean' || this.isHeroUnderwater()) && this.oceanGear.has('wetsuit_tank')) {
         this.activeSwimStyle = 'scuba_explore';
-      } else if (this.worldMode === 'ocean' && (this.heroVelY < -1.8 || this.heroPos.y < -12)) {
+      } else if ((this.worldMode === 'ocean' || this.isHeroUnderwater()) && (this.heroVelY < -1.8 || this.heroPos.y < -12)) {
         this.activeSwimStyle = 'deep_submerge';
-      } else if (this.worldMode === 'ocean' && speed > 0.8) {
+      } else if ((this.worldMode === 'ocean' || this.isHeroUnderwater()) && speed > 0.8) {
         this.activeSwimStyle = 'underwater_glide';
       } else if (this.swimDiveTimer > 0) {
         this.activeSwimStyle = 'jump_dive';
@@ -10448,9 +10782,10 @@ export class RpgWorldEngine {
         ? -this.cameraPitch * 0.92
         : 0;
 
+    const underwaterNow = this.worldMode === 'ocean' || this.isHeroUnderwater();
     const canHoldInCurrentEnv =
       hasEquippedWeapon &&
-      (!this.isSwimming || this.worldMode === 'ocean' || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
+      (!this.isSwimming || underwaterNow || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
     applyHeroWeaponPose(this.hero, this.activeWeapon, canHoldInCurrentEnv, {
       speed,
       walkCycle: this.walkCycle,
@@ -10466,16 +10801,15 @@ export class RpgWorldEngine {
       isSwimming: this.isSwimming,
       swimStyle: effectivePoseSwimStyle,
       swimBankRoll: this.swimDodgeTimer > 0 ? this.swimDodgeRoll : 0,
-      divingGear: this.worldMode === 'ocean' ? Array.from(this.oceanGear) : [],
+      divingGear: underwaterNow ? Array.from(this.oceanGear) : [],
       wearingSwimsuit: this.swimSuitPicked,
-      ridingTurtle: this.worldMode === 'ocean' && this.ridingTurtle,
+      ridingTurtle: underwaterNow && this.ridingTurtle,
       jumpDiveTrick: this.activeJumpTrick,
       jumpDiveElapsed: this.jumpTrickElapsed,
     });
 
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
-    this.hero.swimRing.visible =
-      this.isSwimming && (this.worldMode === 'overworld' || this.heroPos.y > -2.0);
+    this.hero.swimRing.visible = this.isSwimming && this.heroPos.y > -1.75;
     if (this.hero.swimRing.visible) {
       this.hero.swimRing.position.y = Math.max(0.05, -this.heroPos.y + 0.05);
       const rScale = (speed > 0.6 ? 1.08 : 0.92) + Math.sin(this.elapsed * 5.2) * 0.08;
@@ -10582,18 +10916,17 @@ export class RpgWorldEngine {
       const camX = this.heroPos.x + (rx / rayLen) * this.currentCamDist;
       const camZ = this.heroPos.z + (rz / rayLen) * this.currentCamDist;
       const liveCamFloorY =
-        this.worldMode === 'overworld' &&
-        this.diveTransition?.active &&
-        (this.diveTransition.stage === 'plunge' || this.diveTransition.stage === 'submerge')
-          ? -5.6
-          : (this.worldMode === 'overworld'
-              ? getArchipelagoGroundY(camX, camZ)
-              : this.worldMode === 'ocean'
-              ? getOceanFloorY(camX, camZ)
-              : 0) + 0.55;
+        (this.worldMode === 'overworld'
+          ? getArchipelagoGroundY(camX, camZ)
+          : this.worldMode === 'ocean'
+          ? getOceanFloorY(camX, camZ)
+          : 0) + 0.55;
       let camY = Math.max(liveCamFloorY, pivotY + (ry / rayLen) * this.currentCamDist);
       if (this.worldMode === 'ocean') {
         camY = Math.min(-0.45, camY);
+      } else if (this.worldMode === 'overworld' && this.isSwimming && this.heroPos.y < -1.55) {
+        const subT = THREE.MathUtils.clamp((-this.heroPos.y - 1.55) / 1.4, 0, 1);
+        camY = Math.min(camY, THREE.MathUtils.lerp(camY, -0.35, subT));
       }
 
       _v1.set(camX, camY, camZ);
@@ -11581,7 +11914,7 @@ export class RpgWorldEngine {
       p.y = (p.y ?? 1.35) + p.vy * dt;
       p.z += p.vz * dt;
       const projFloor =
-        this.worldMode === 'overworld' && isWalkableArchipelago(p.x, p.z, 0)
+        this.worldMode === 'overworld'
           ? getArchipelagoGroundY(p.x, p.z)
           : this.worldMode === 'ocean'
           ? getOceanFloorY(p.x, p.z)
@@ -12130,6 +12463,24 @@ export class RpgWorldEngine {
       }
     }
 
+    if (this.archipelagoUnderwaterRig && this.isHeroUnderwater()) {
+      for (const ch of this.archipelagoUnderwaterRig.chests) {
+        if (ch.opened) continue;
+        const dSq = (ch.x - this.heroPos.x) ** 2 + (ch.z - this.heroPos.z) ** 2;
+        if (dSq > 34 * 34) continue;
+        const cp = projectPoint(ch.x, ch.y + 2.4, ch.z);
+        if (cp) {
+          labels.push({
+            id: `och_${ch.id}`,
+            x: cp.x,
+            y: cp.y,
+            title: `🧰 ${ch.label}`,
+            kind: 'pickup',
+          });
+        }
+      }
+    }
+
     for (const m of this.skyMonsters) {
       if (!m.alive) continue;
       const distSq = (m.x - this.heroPos.x) ** 2 + (m.z - this.heroPos.z) ** 2;
@@ -12233,7 +12584,7 @@ export class RpgWorldEngine {
     let monAttackProg = 0;
     const meleeReach = 2.2 + spec.hitRadius * 0.55;
     const inOceanVerticalRange =
-      this.worldMode === 'ocean'
+      this.worldMode === 'ocean' || this.isHeroUnderwater()
         ? Math.abs(this.heroPos.y - (m.y ?? spec.hoverY)) < 4.5
         : this.heroPos.y < 2.2;
 
@@ -12397,7 +12748,13 @@ export class RpgWorldEngine {
 
     const seaSpd = Math.hypot(m.x - prevX, m.z - prevZ) / Math.max(0.001, dt);
     m.walkPhase = (m.walkPhase ?? m.patrolPhase) + dt * (2.6 + seaSpd * 0.8);
-    m.y = spec.hoverY + Math.sin(this.elapsed * 2.4 + m.patrolPhase) * 0.14;
+    const seaFloorMin = getArchipelagoSeabedY(m.x, m.z) + Math.max(0.8, spec.hoverY + 0.6);
+    const surfaceTargetY = spec.hoverY + Math.sin(this.elapsed * 2.4 + m.patrolPhase) * 0.14;
+    const targetSeaY =
+      m.aggroActive && this.isHeroUnderwater()
+        ? THREE.MathUtils.clamp(this.heroPos.y + 0.4, seaFloorMin, -0.8)
+        : surfaceTargetY;
+    m.y = THREE.MathUtils.damp(m.y ?? surfaceTargetY, targetSeaY, 4.2, dt);
     m.mesh.position.set(m.x, m.y, m.z);
     m.mesh.scale.setScalar(spec.baseScale);
 
@@ -12828,6 +13185,19 @@ export class RpgWorldEngine {
           color: m.combatOnly ? '#f97316' : '#c084fc',
           label: m.name,
         });
+      }
+      if (this.archipelagoUnderwaterRig && this.isHeroUnderwater()) {
+        for (const ch of this.archipelagoUnderwaterRig.chests) {
+          if (ch.opened) continue;
+          blips.push({
+            id: `och_${ch.id}`,
+            x: ch.x,
+            z: ch.z,
+            kind: 'chest',
+            color: '#facc15',
+            label: ch.label,
+          });
+        }
       }
     } else if (this.worldMode === 'dungeon' && this.dungeonState) {
       blips.push({
@@ -13363,6 +13733,8 @@ export class RpgWorldEngine {
           ? 'Istana IELTS'
           : this.worldMode === 'ocean'
           ? getOceanZoneInfo(this.heroPos.z, this.heroPos.y).label
+          : this.isHeroUnderwater()
+          ? `${ZONE_INFO[zoneId].name} · ${getArchipelagoOceanZoneInfo(this.heroPos.y).label}`
           : ZONE_INFO[zoneId].name,
       rankTitle: getRankTitle(this.xp, this.ribbons.size, this.ieltsCleared),
       nearbyNpcId: this.nearbyNpcId,
@@ -13426,8 +13798,11 @@ export class RpgWorldEngine {
   }
 
   private buildOceanSurvivalState(): OceanSurvivalState | null {
-    if (this.worldMode !== 'ocean') return null;
-    const zone = getOceanZoneInfo(this.heroPos.z, this.heroPos.y);
+    if (this.worldMode !== 'ocean' && !this.isHeroUnderwater()) return null;
+    const zone =
+      this.worldMode === 'ocean'
+        ? getOceanZoneInfo(this.heroPos.z, this.heroPos.y)
+        : getArchipelagoOceanZoneInfo(this.heroPos.y);
     const maxOxygen = this.getOceanMaxOxygen();
     return {
       oxygen: Math.round(this.oceanOxygen),
@@ -14072,6 +14447,7 @@ export class RpgWorldEngine {
 
     this.controls.dispose();
     this.archipelagoRig?.disposables.forEach((d) => d.dispose());
+    this.archipelagoUnderwaterRig?.disposables.forEach((d) => d.dispose());
     this.villageRig?.disposables.forEach((d) => d.dispose());
     this.worldObstaclesRig?.disposables.forEach((d) => d.dispose());
     this.oceanRig?.disposables.forEach((d) => d.dispose());

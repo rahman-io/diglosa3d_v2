@@ -732,7 +732,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             </div>
           )}
 
-          {hud.worldMode === 'ocean' && hud.oceanSurvival && (
+          {hud.oceanSurvival && (
             <div className="pointer-events-auto flex w-full items-center justify-between gap-1.5 rounded-full border border-cyan-400/45 bg-slate-950/92 px-2.5 py-0.5 text-white shadow-md">
               <span className="min-w-0 truncate font-mono-nums text-[10px] font-extrabold text-cyan-200">
                 🌊 {hud.oceanSurvival.zoneLabel} · -{hud.oceanSurvival.depthMeters}m
@@ -747,7 +747,9 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={onExitDungeon}
+                  onClick={() =>
+                    hud.worldMode === 'ocean' ? onExitDungeon() : (onDiveOcean ?? onExitDungeon)()
+                  }
                   className="rounded-full bg-amber-600/90 px-2 py-0.5 text-[9px] font-extrabold text-white hover:bg-amber-500"
                 >
                   🫧 Naik
@@ -827,7 +829,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               );
             }
 
-            if (hud.worldMode === 'ocean' && hud.oceanSurvival) {
+            if (hud.oceanSurvival) {
               const oc = hud.oceanSurvival;
               const o2Pct = Math.max(0, Math.min(100, Math.round((oc.oxygen / Math.max(1, oc.maxOxygen)) * 100)));
               return (
@@ -865,7 +867,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                       🐠 Biota {oc.discoveredBiota.length}/20
                     </button>
                     <span>
-                      ⚔️ Palung {stats.defeated}/{stats.total}
+                      ⚔️ {stats.context === 'ocean' ? 'Palung' : 'Wilayah'} {stats.defeated}/{stats.total}
                     </span>
                   </div>
                   {oc.ownedGear.length === 0 && oc.depthMeters >= 6 && (
@@ -1062,9 +1064,13 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                   type="button"
                   onClick={() => (onDiveOcean ?? onEnterOcean)?.()}
                   className="shrink-0 rounded-full border border-emerald-300/70 bg-emerald-600/90 px-2 py-0.5 text-[9px] font-black text-white transition hover:bg-emerald-500 sm:text-[10px]"
-                  title="Masuk ke Dunia Survival Bawah Laut (Tombol X)"
+                  title={
+                    hud.oceanSurvival
+                      ? 'Berenang Naik ke Permukaan Laut (Tombol X)'
+                      : 'Masuk ke Dunia Survival Bawah Laut (Tombol X)'
+                  }
                 >
-                  🤿 Menyelam (X)
+                  {hud.oceanSurvival ? '🫧 Naik (X)' : '🤿 Menyelam (X)'}
                 </button>
               )}
             </div>
@@ -1142,7 +1148,6 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
       {/* UNDERWATER SURVIVAL: DIVING GEAR CRAFTING & 20 SEA BIOTA ENCYCLOPEDIA DRAWER */}
       {hud.phase === 'playing' &&
-        hud.worldMode === 'ocean' &&
         hud.oceanSurvival &&
         oceanGearOpen && (() => {
           const oc = hud.oceanSurvival!;
@@ -2100,7 +2105,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             </button>
           )}
 
-        {hud.worldMode === 'ocean' && hud.oceanSurvival?.nearChestLabel && (
+        {hud.oceanSurvival?.nearChestLabel && (
           <button
             type="button"
             onClick={onPrimaryAction}
@@ -2112,7 +2117,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           </button>
         )}
 
-        {hud.worldMode === 'ocean' && hud.oceanSurvival?.nearBiotaId && (
+        {hud.oceanSurvival?.nearBiotaId && (
           <button
             type="button"
             onClick={onPrimaryAction}
@@ -2126,8 +2131,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           </button>
         )}
 
-        {hud.worldMode === 'ocean' &&
-          (hud.oceanSurvival?.nearTurtleMount || hud.oceanSurvival?.ridingTurtle) &&
+        {(hud.oceanSurvival?.nearTurtleMount || hud.oceanSurvival?.ridingTurtle) &&
           onToggleOceanTurtle && (
             <button
               type="button"
@@ -2142,106 +2146,111 @@ export const RpgHud: React.FC<RpgHudProps> = ({
       </div>
 
       {/* OCEAN DEPTH CONTROLS (Holdable Naik / Turun buttons cleanly above Attack) */}
-      {hud.phase === 'playing' && hud.worldMode === 'ocean' && onOceanVertical && (
-        <div className="pointer-events-auto fixed bottom-[92px] right-3 z-20 flex flex-col gap-1.5 sm:bottom-[108px] sm:right-5">
-          <button
-            type="button"
-            data-no-click-sfx="true"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              onOceanVertical('up', true);
-            }}
-            onPointerUp={() => onOceanVertical('up', false)}
-            onPointerCancel={() => onOceanVertical('up', false)}
-            onPointerLeave={() => onOceanVertical('up', false)}
-            title="Berenang Naik (Spasi)"
-            className="flex h-8 w-[74px] touch-none select-none items-center justify-center gap-1 rounded-full border border-cyan-300/70 bg-cyan-800/95 text-[10px] font-black text-white shadow-lg transition active:scale-95 sm:h-9 sm:w-[82px] sm:text-[11px]"
-          >
-            <span>▲ Naik</span>
-          </button>
-          <button
-            type="button"
-            data-no-click-sfx="true"
-            onPointerDown={(e) => {
-              e.preventDefault();
-              onOceanVertical('down', true);
-            }}
-            onPointerUp={() => onOceanVertical('down', false)}
-            onPointerCancel={() => onOceanVertical('down', false)}
-            onPointerLeave={() => onOceanVertical('down', false)}
-            title="Menyelam Turun (Z / Ctrl)"
-            className="flex h-8 w-[74px] touch-none select-none items-center justify-center gap-1 rounded-full border border-sky-300/70 bg-slate-900/95 text-[10px] font-black text-cyan-200 shadow-lg transition active:scale-95 sm:h-9 sm:w-[82px] sm:text-[11px]"
-          >
-            <span>▼ Turun</span>
-          </button>
-        </div>
-      )}
+      {hud.phase === 'playing' &&
+        (hud.worldMode === 'ocean' || Boolean(hud.oceanSurvival)) &&
+        onOceanVertical && (
+          <div className="pointer-events-auto fixed bottom-[92px] right-3 z-20 flex flex-col gap-1.5 sm:bottom-[108px] sm:right-5">
+            <button
+              type="button"
+              data-no-click-sfx="true"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                onOceanVertical('up', true);
+              }}
+              onPointerUp={() => onOceanVertical('up', false)}
+              onPointerCancel={() => onOceanVertical('up', false)}
+              onPointerLeave={() => onOceanVertical('up', false)}
+              title="Berenang Naik (Spasi)"
+              className="flex h-8 w-[74px] touch-none select-none items-center justify-center gap-1 rounded-full border border-cyan-300/70 bg-cyan-800/95 text-[10px] font-black text-white shadow-lg transition active:scale-95 sm:h-9 sm:w-[82px] sm:text-[11px]"
+            >
+              <span>▲ Naik</span>
+            </button>
+            <button
+              type="button"
+              data-no-click-sfx="true"
+              onPointerDown={(e) => {
+                e.preventDefault();
+                onOceanVertical('down', true);
+              }}
+              onPointerUp={() => onOceanVertical('down', false)}
+              onPointerCancel={() => onOceanVertical('down', false)}
+              onPointerLeave={() => onOceanVertical('down', false)}
+              title="Menyelam Turun (Z / Ctrl)"
+              className="flex h-8 w-[74px] touch-none select-none items-center justify-center gap-1 rounded-full border border-sky-300/70 bg-slate-900/95 text-[10px] font-black text-cyan-200 shadow-lg transition active:scale-95 sm:h-9 sm:w-[82px] sm:text-[11px]"
+            >
+              <span>▼ Turun</span>
+            </button>
+          </div>
+        )}
 
       {/* BOTTOM-RIGHT: Mobile Legends Style Thumb Cluster (Dive, Jump, Scope, Attack) */}
       <div className="pointer-events-none fixed bottom-3 right-3 z-20 h-[144px] w-[216px] sm:bottom-5 sm:right-5 sm:h-[168px] sm:w-[244px]">
 
         {/* Dive / Surface Ocean Medallion right next to Jump */}
         {(hud.worldMode === 'overworld' || hud.worldMode === 'ocean') &&
-          Boolean(onDiveOcean || onEnterOcean) && (
-            <button
-              type="button"
-              data-no-click-sfx="true"
-              onPointerDown={(e) => {
-                e.preventDefault();
-                (onDiveOcean ?? onEnterOcean)?.();
-              }}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
+          Boolean(onDiveOcean || onEnterOcean) && (() => {
+            const isUnderwaterHud = hud.worldMode === 'ocean' || Boolean(hud.oceanSurvival);
+            return (
+              <button
+                type="button"
+                data-no-click-sfx="true"
+                onPointerDown={(e) => {
                   e.preventDefault();
                   (onDiveOcean ?? onEnterOcean)?.();
-                }
-              }}
-              title={
-                hud.worldMode === 'ocean'
-                  ? 'Berenang Naik ke Permukaan Laut (X)'
-                  : hud.swimSuitPicked
-                  ? 'Berenang & Menyelam Masuk ke Laut (X)'
-                  : 'Ambil Pakaian Renang di Dekat Desa untuk Menyelam'
-              }
-              aria-label={
-                hud.worldMode === 'ocean'
-                  ? 'Berenang Naik ke Permukaan Laut'
-                  : hud.swimSuitPicked
-                  ? 'Menyelam ke Laut'
-                  : 'Cari Pakaian Renang'
-              }
-              className={`pointer-events-auto absolute bottom-[10px] right-[152px] flex h-[52px] w-[52px] touch-none select-none items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:bottom-[14px] sm:right-[176px] sm:h-[58px] sm:w-[58px] ${
-                hud.diveTransitionStage && hud.diveTransitionStage !== 'idle'
-                  ? 'animate-pulse ring-2 ring-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.85)]'
-                  : hud.worldMode === 'ocean'
-                  ? 'shadow-[0_5px_14px_rgba(16,185,129,0.58)] ring-2 ring-emerald-300/75'
-                  : hud.swimSuitPicked
-                  ? 'shadow-[0_5px_14px_rgba(34,211,238,0.56)] ring-2 ring-cyan-300/75'
-                  : 'opacity-90 shadow-[0_5px_14px_rgba(245,158,11,0.45)] ring-2 ring-amber-300/70'
-              }`}
-            >
-              <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
-                <img
-                  src={
-                    hud.worldMode === 'ocean'
-                      ? './assets/aistudio/Gemini_Generated_Image_aoej87aoej87aoej_de96d052.jpeg'
-                      : './assets/aistudio/Gemini_Generated_Image_p9qrl3p9qrl3p9qr_c81c9878.jpeg'
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    (onDiveOcean ?? onEnterOcean)?.();
                   }
-                  alt={hud.worldMode === 'ocean' ? 'Naik ke Permukaan' : 'Menyelam ke Laut'}
-                  className="pointer-events-none h-full w-full scale-[1.09] select-none object-cover"
-                  draggable={false}
-                />
-              </span>
-              {hud.worldMode === 'overworld' && !hud.swimSuitPicked && (
-                <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-amber-300 bg-slate-950/95 text-amber-200 shadow sm:h-5 sm:w-5">
-                  <Lock className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                }}
+                title={
+                  isUnderwaterHud
+                    ? 'Berenang Naik ke Permukaan Laut (X)'
+                    : hud.swimSuitPicked
+                    ? 'Berenang & Menyelam Masuk ke Laut (X)'
+                    : 'Ambil Pakaian Renang di Dekat Desa untuk Menyelam'
+                }
+                aria-label={
+                  isUnderwaterHud
+                    ? 'Berenang Naik ke Permukaan Laut'
+                    : hud.swimSuitPicked
+                    ? 'Menyelam ke Laut'
+                    : 'Cari Pakaian Renang'
+                }
+                className={`pointer-events-auto absolute bottom-[10px] right-[152px] flex h-[52px] w-[52px] touch-none select-none items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:bottom-[14px] sm:right-[176px] sm:h-[58px] sm:w-[58px] ${
+                  hud.diveTransitionStage && hud.diveTransitionStage !== 'idle'
+                    ? 'animate-pulse ring-2 ring-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.85)]'
+                    : isUnderwaterHud
+                    ? 'shadow-[0_5px_14px_rgba(16,185,129,0.58)] ring-2 ring-emerald-300/75'
+                    : hud.swimSuitPicked
+                    ? 'shadow-[0_5px_14px_rgba(34,211,238,0.56)] ring-2 ring-cyan-300/75'
+                    : 'opacity-90 shadow-[0_5px_14px_rgba(245,158,11,0.45)] ring-2 ring-amber-300/70'
+                }`}
+              >
+                <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                  <img
+                    src={
+                      isUnderwaterHud
+                        ? './assets/aistudio/Gemini_Generated_Image_aoej87aoej87aoej_de96d052.jpeg'
+                        : './assets/aistudio/Gemini_Generated_Image_p9qrl3p9qrl3p9qr_c81c9878.jpeg'
+                    }
+                    alt={isUnderwaterHud ? 'Naik ke Permukaan' : 'Menyelam ke Laut'}
+                    className="pointer-events-none h-full w-full scale-[1.09] select-none object-cover"
+                    draggable={false}
+                  />
                 </span>
-              )}
-              <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-300/65 bg-slate-950/90 px-1.5 text-[8px] font-black leading-tight text-cyan-100 shadow sm:text-[9px]">
-                {hud.worldMode === 'ocean' ? 'Naik' : hud.swimSuitPicked ? 'Selam' : 'Baju'}
-              </span>
-            </button>
-          )}
+                {!isUnderwaterHud && !hud.swimSuitPicked && (
+                  <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-amber-300 bg-slate-950/95 text-amber-200 shadow sm:h-5 sm:w-5">
+                    <Lock className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                  </span>
+                )}
+                <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-300/65 bg-slate-950/90 px-1.5 text-[8px] font-black leading-tight text-cyan-100 shadow sm:text-[9px]">
+                  {isUnderwaterHud ? 'Naik' : hud.swimSuitPicked ? 'Selam' : 'Baju'}
+                </span>
+              </button>
+            );
+          })()}
 
         {/* Button 2 (Arc Left): Winged-Boot Jump Medallion */}
         <button

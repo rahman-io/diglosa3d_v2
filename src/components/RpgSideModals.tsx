@@ -304,7 +304,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                 </div>
               )}
 
-              {hud.worldMode === 'ocean' && hud.oceanSurvival && (
+              {hud.oceanSurvival && (
                 <div className="space-y-2.5 rounded-2xl border border-cyan-400/35 bg-slate-950/85 p-3.5 shadow-inner">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
                     <div>
@@ -316,7 +316,8 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                       </div>
                     </div>
                     <span className="font-mono-nums text-xs font-black text-emerald-300">
-                      Biota {hud.oceanSurvival.discoveredBiota.length}/20 · Monster Palung{' '}
+                      Biota {hud.oceanSurvival.discoveredBiota.length}/20 ·{' '}
+                      {hud.areaMonsterStats.context === 'ocean' ? 'Monster Palung' : 'Monster Wilayah'}{' '}
                       {hud.areaMonsterStats.defeated}/{hud.areaMonsterStats.total}
                     </span>
                   </div>
@@ -339,17 +340,21 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                     )}
                   </div>
 
-                  {onExitDungeon && (
+                  {(onDiveOcean || onExitDungeon) && (
                     <RpgPillButton
                       variant="cream"
                       size="sm"
                       onClick={() => {
                         onClose();
-                        onExitDungeon();
+                        if (hud.worldMode === 'ocean') {
+                          onExitDungeon?.();
+                        } else {
+                          (onDiveOcean ?? onExitDungeon)?.();
+                        }
                       }}
                       className="w-full"
                     >
-                      <span>Naik ke Permukaan (Keluar Laut)</span>
+                      <span>Naik ke Permukaan (Keluar Bawah Laut)</span>
                     </RpgPillButton>
                   )}
                 </div>
@@ -432,7 +437,13 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                           }}
                           className="shrink-0 whitespace-nowrap"
                         >
-                          <span>{hud.swimSuitPicked ? 'Menyelam' : 'Cari Baju'}</span>
+                          <span>
+                            {hud.oceanSurvival
+                              ? 'Naik Permukaan'
+                              : hud.swimSuitPicked
+                              ? 'Menyelam'
+                              : 'Cari Baju'}
+                          </span>
                         </RpgPillButton>
                       )}
                     </div>
