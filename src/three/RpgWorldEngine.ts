@@ -1153,7 +1153,11 @@ export class RpgWorldEngine {
       ? this.mapCtxFull.createImageData(MAP_FULL_W, MAP_FULL_H)
       : null;
 
-    this.hero = createHeroAvatar(this.palette, getCharacterPreset(this.localCharacterId).colors);
+    this.hero = createHeroAvatar(
+      this.palette,
+      getCharacterPreset(this.localCharacterId).colors,
+      this.localCharacterId,
+    );
     this.hero.root.position.copy(this.heroPos);
     setHeroWeaponVisual(this.hero, 'ketapel', false);
     this.scene.add(this.hero.root);
@@ -3109,7 +3113,7 @@ export class RpgWorldEngine {
     if (displayName && displayName.trim().length > 0) {
       this.localPlayerName = displayName.trim().slice(0, 24);
     }
-    applyHeroAppearance(this.hero, getCharacterPreset(characterId).colors);
+    applyHeroAppearance(this.hero, getCharacterPreset(characterId).colors, characterId);
   }
 
   public setMultiplayerActive(active: boolean, localUid?: string): void {
@@ -3940,7 +3944,11 @@ export class RpgWorldEngine {
       activeUids.add(p.uid);
       let entry = this.remotePeers.get(p.uid);
       if (!entry) {
-        const rig = createHeroAvatar(this.palette, getCharacterPreset(p.characterId).colors);
+        const rig = createHeroAvatar(
+          this.palette,
+          getCharacterPreset(p.characterId).colors,
+          p.characterId,
+        );
         rig.root.position.set(p.x, p.y, p.z);
         rig.body.rotation.y = p.yaw;
         setHeroWeaponVisual(rig, p.activeWeapon, p.weaponOwned);
@@ -3957,7 +3965,7 @@ export class RpgWorldEngine {
         this.remotePeers.set(p.uid, entry);
       } else {
         if (entry.state.characterId !== p.characterId) {
-          applyHeroAppearance(entry.rig, getCharacterPreset(p.characterId).colors);
+          applyHeroAppearance(entry.rig, getCharacterPreset(p.characterId).colors, p.characterId);
         }
         entry.state = { ...p };
         entry.targetPos.set(p.x, p.y, p.z);

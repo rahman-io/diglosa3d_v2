@@ -657,7 +657,12 @@ export interface CharacterPreset {
   id: CharacterPresetId;
   name: string;
   roleTitle: string;
+  ageLabel: string;
   tagline: string;
+  perkText: string;
+  hpStat: number;
+  atkStat: number;
+  nrgStat: number;
   badgeColor: string;
   colors: HeroAppearanceColors;
 }

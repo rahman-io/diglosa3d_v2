@@ -1085,9 +1085,10 @@ function DiglosaRpgApp() {
     setDialogueNpcId(null);
     setSideTab(null);
     setCloudSyncNote(null);
+    engineRef.current?.setLocalAppearance(characterId, playerName);
     engineRef.current?.setMultiplayerActive(false);
     engineRef.current?.continueGame();
-  }, []);
+  }, [characterId, playerName]);
 
   const appendChatMessage = useCallback((msg: RoomChatMessage) => {
     if (chatSeenIdsRef.current.has(msg.id)) return;
@@ -1823,6 +1824,8 @@ function DiglosaRpgApp() {
 
       <BattleQuizModal
         battle={activeBattle}
+        characterId={characterId}
+        playerName={playerName}
         playerHp={hud.hp}
         playerMaxHp={hud.maxHp}
         activeWeapon={hud.activeWeapon}

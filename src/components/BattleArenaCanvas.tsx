@@ -14,7 +14,8 @@ import {
   MONSTER_SPECS,
   RANGED_MONSTER_TYPES,
 } from '../three/monstersCatalog';
-import { MonsterType, WeaponId } from '../types/game';
+import { getCharacterPreset } from '../data/characterPresets';
+import { CharacterPresetId, MonsterType, WeaponId } from '../types/game';
 
 export type BattleAnimEvent =
   | 'idle'
@@ -25,6 +26,7 @@ export type BattleAnimEvent =
   | 'monster_ko';
 
 interface BattleArenaCanvasProps {
+  characterId?: CharacterPresetId;
   monsterType: MonsterType;
   isBoss: boolean;
   activeWeapon: WeaponId;
@@ -60,6 +62,7 @@ const isSoftwareWebGl = (): boolean => {
 };
 
 export const BattleArenaCanvas: React.FC<BattleArenaCanvasProps> = ({
+  characterId = 'hoot_emerald',
   monsterType,
   isBoss,
   activeWeapon,
@@ -134,7 +137,11 @@ export const BattleArenaCanvas: React.FC<BattleArenaCanvasProps> = ({
     const palette = createMaterialPalette(renderer, softGl, softGl);
 
     // 3D Hero Explorer
-    const heroRig = createHeroAvatar(palette);
+    const heroRig = createHeroAvatar(
+      palette,
+      getCharacterPreset(characterId).colors,
+      characterId,
+    );
     setHeroWeaponVisual(heroRig, activeWeapon, hasWeapon);
     const HERO_HOME_X = -2.25;
     heroRig.root.position.set(HERO_HOME_X, 0, 0);
@@ -406,7 +413,7 @@ export const BattleArenaCanvas: React.FC<BattleArenaCanvasProps> = ({
         host.removeChild(renderer.domElement);
       }
     };
-  }, [monsterType, isBoss, activeWeapon, hasWeapon]);
+  }, [characterId, monsterType, isBoss, activeWeapon, hasWeapon]);
 
   return <div ref={containerRef} className="pointer-events-none absolute inset-0 h-full w-full" />;
 };

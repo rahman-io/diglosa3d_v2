@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { WEAPON_ORDER, ZONE_CAVE_STORIES, ZONE_DOORS, ZONE_INFO } from '../data/diglosaCatalog';
 import {
   CaveBlockKind,
+  CharacterPresetId,
   DivingGearId,
   DoorDef,
   HeroAppearanceColors,
@@ -52,6 +53,10 @@ export interface HeroAvatarRig {
   weaponGroup: THREE.Group;
   weaponMeshes: Record<WeaponId, THREE.Group>;
   weaponTipMat: SurfaceMaterial;
+  activePresetId?: CharacterPresetId;
+  variantGroups?: Record<CharacterPresetId, THREE.Object3D[]>;
+  leftSleeveMesh?: THREE.Mesh;
+  rightSleeveMesh?: THREE.Mesh;
   appearanceMats?: {
     skin: SurfaceMaterial;
     tunic: SurfaceMaterial;
@@ -295,6 +300,7 @@ export const DEFAULT_HERO_APPEARANCE: HeroAppearanceColors = {
 export function createHeroAvatar(
   palette: MaterialPalette,
   appearance: HeroAppearanceColors = DEFAULT_HERO_APPEARANCE,
+  presetId: CharacterPresetId = 'hoot_emerald',
 ): HeroAvatarRig {
   const root = new THREE.Group();
   const body = new THREE.Group();
@@ -334,7 +340,7 @@ export function createHeroAvatar(
   upperBody.position.set(0, 1.1, 0);
   body.add(upperBody);
 
-  // Torso & Belt (children of upperBody, local Y = oldY - 1.1)
+  // Torso & Belt
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.92, 1.05, 0.58), tunic);
   torso.position.y = 0.48;
   torso.castShadow = true;
@@ -346,19 +352,7 @@ export function createHeroAvatar(
   buckle.position.set(0, 0.08, 0.32);
   upperBody.add(belt, buckle);
 
-  // Explorer Backpack
-  const backpack = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.88, 0.42), pack);
-  backpack.position.set(0, 0.52, -0.45);
-  backpack.castShadow = true;
-  const bedroll = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.16, 0.16, 0.8, 8),
-    palette.getMat(0xf59e0b, 'matte'),
-  );
-  bedroll.rotation.z = Math.PI / 2;
-  bedroll.position.set(0, 1.02, -0.45);
-  upperBody.add(backpack, bedroll);
-
-  // Head & Adventurer Hat pivoted at neck (y = 2.15 => 1.05 inside upperBody)
+  // Head pivoted at neck
   const headGroup = new THREE.Group();
   headGroup.position.set(0, 1.05, 0);
   upperBody.add(headGroup);
@@ -375,17 +369,6 @@ export function createHeroAvatar(
   leftEye.position.set(0.2, 0.41, 0.42);
   headGroup.add(leftEye, rightEye);
 
-  const hatBrim = new THREE.Mesh(new THREE.CylinderGeometry(0.76, 0.78, 0.1, 14), hatMat);
-  hatBrim.position.set(0, 0.83, 0);
-  const hatCrown = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.42, 0.72), hatMat);
-  hatCrown.position.set(0, 1.07, 0);
-  const hatBand = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.12, 0.76), gold);
-  hatBand.position.set(0, 0.91, 0);
-  const feather = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.42, 0.18), featherMat);
-  feather.position.set(0.36, 1.17, -0.05);
-  feather.rotation.z = -0.3;
-  headGroup.add(hatBrim, hatCrown, hatBand, feather);
-
   // Weapon tip custom material fallback
   const weaponTipMat = palette.createSurfaceMat({
     color: 0x4fd8ff,
@@ -396,6 +379,8 @@ export function createHeroAvatar(
 
   const weaponGroup = new THREE.Group();
   const weaponMeshes = {} as Record<WeaponId, THREE.Group>;
+  let leftSleeveMesh!: THREE.Mesh;
+  let rightSleeveMesh!: THREE.Mesh;
   const makeArm = (x: number, withWeapon: boolean): THREE.Group => {
     const arm = new THREE.Group();
     arm.position.set(x, 0.88, 0);
@@ -405,8 +390,7 @@ export function createHeroAvatar(
     hand.position.y = -0.56;
     arm.add(sleeve, hand);
     if (withWeapon) {
-      // Orient +PI/2 around X inside arm so when arm aims forward (-PI/2 around X),
-      // weapon barrel (+Z) points straight forward and sights (+Y) stay upright!
+      rightSleeveMesh = sleeve;
       weaponGroup.position.set(0, -0.72, 0.06);
       weaponGroup.rotation.x = Math.PI / 2;
       WEAPON_ORDER.forEach((wId) => {
@@ -416,6 +400,8 @@ export function createHeroAvatar(
         weaponGroup.add(wMesh);
       });
       arm.add(weaponGroup);
+    } else {
+      leftSleeveMesh = sleeve;
     }
     return arm;
   };
@@ -424,6 +410,346 @@ export function createHeroAvatar(
   const rightArm = makeArm(-0.62, true);
   const leftArm = makeArm(0.62, false);
   upperBody.add(leftArm, rightArm);
+
+  // =========================================================================
+  // 6 SHEET-ACCURATE 3D HERO VARIANTS (Hoot, Aria, Karsa, Raka, Luna, Nusa)
+  // =========================================================================
+  const variantGroups: Record<CharacterPresetId, THREE.Object3D[]> = {
+    hoot_emerald: [],
+    aria_sky: [],
+    karsa_crimson: [],
+    raka_gold: [],
+    luna_violet: [],
+    nusa_teal: [],
+  };
+  const regVariant = (id: CharacterPresetId, parent: THREE.Object3D, obj: THREE.Object3D) => {
+    parent.add(obj);
+    variantGroups[id].push(obj);
+    obj.visible = id === presetId;
+  };
+
+  const hairDarkBrown = palette.getMat(0x4a2f1d, 'matte');
+  const hairWarmBrown = palette.getMat(0x6b3e26, 'matte');
+  const owlBrown = palette.getMat(0x8c5a32, 'matte');
+  const owlCream = palette.getMat(0xfef3c7, 'matte');
+  const owlWingDark = palette.getMat(0x6d4120, 'matte');
+  const amberGlow = palette.getMat(0xfef08a, 'emissive');
+  const cyanGlow = palette.getMat(0x22d3ee, 'emissive');
+  const aquaGlow = palette.getMat(0x67e8f9, 'emissive');
+  const darkSlate = palette.getMat(0x1e293b, 'matte');
+  const steelMat = palette.getMat(0xcbd5e1, 'metal');
+  const greenLeaf = palette.getMat(0x22c55e, 'matte');
+  const pinkAccent = palette.getMat(0xec4899, 'matte');
+  const purpleAccent = palette.getMat(0x9333ea, 'matte');
+  const tealCoat = palette.getMat(0x0d9488, 'matte');
+  const scholarCoat = palette.getMat(0x47413c, 'matte');
+  const oceanPlate = palette.getMat(0x38bdf8, 'metal');
+
+  // --- 1. HOOT (Burung Hantu Penolong): Owl Hood + Ears + Wing Sleeves + Golden Lantern ---
+  {
+    const hHead = new THREE.Group();
+    const hoodTop = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.34, 0.92), owlBrown);
+    hoodTop.position.set(0, 0.78, -0.02);
+    const hoodBack = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.72, 0.32), owlBrown);
+    hoodBack.position.set(0, 0.44, -0.34);
+    const hoodSideL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.68, 0.78), owlBrown);
+    hoodSideL.position.set(0.43, 0.46, -0.02);
+    const hoodSideR = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.68, 0.78), owlBrown);
+    hoodSideR.position.set(-0.43, 0.46, -0.02);
+    const hoodFaceTrim = new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.14, 0.16), owlCream);
+    hoodFaceTrim.position.set(0, 0.66, 0.38);
+    const earL = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.22), owlWingDark);
+    earL.position.set(0.36, 0.98, 0.14);
+    earL.rotation.z = -0.25;
+    const earR = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.22), owlWingDark);
+    earR.position.set(-0.36, 0.98, 0.14);
+    earR.rotation.z = 0.25;
+    const owlEyeL = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.12, 0.08), amberGlow);
+    owlEyeL.position.set(0.2, 0.8, 0.44);
+    const owlEyeR = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.12, 0.08), amberGlow);
+    owlEyeR.position.set(-0.2, 0.8, 0.44);
+    const beak = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.12), gold);
+    beak.position.set(0, 0.71, 0.46);
+    const bangs = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.12, 0.1), hairDarkBrown);
+    bangs.position.set(0, 0.56, 0.41);
+    hHead.add(hoodTop, hoodBack, hoodSideL, hoodSideR, hoodFaceTrim, earL, earR, owlEyeL, owlEyeR, beak, bangs);
+    regVariant('hoot_emerald', headGroup, hHead);
+
+    const hBody = new THREE.Group();
+    const plumage = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.62, 0.1), owlCream);
+    plumage.position.set(0, 0.56, 0.28);
+    const hPack = new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.82, 0.36), pack);
+    hPack.position.set(0, 0.52, -0.44);
+    hBody.add(plumage, hPack);
+    regVariant('hoot_emerald', upperBody, hBody);
+
+    for (const [arm, dir] of [[leftArm, 1], [rightArm, -1]] as const) {
+      const wing = new THREE.Group();
+      const wMain = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.56, 0.42), owlWingDark);
+      wMain.position.set(dir * 0.16, -0.24, -0.04);
+      const wTrim = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.18, 0.38), owlCream);
+      wTrim.position.set(dir * 0.17, -0.48, -0.05);
+      wing.add(wMain, wTrim);
+      regVariant('hoot_emerald', arm, wing);
+    }
+
+    const lantern = new THREE.Group();
+    lantern.position.set(0.06, -0.86, 0.12);
+    const lTop = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.08, 0.22), darkSlate);
+    lTop.position.y = 0.15;
+    const lCore = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.24, 0.18), amberGlow);
+    const lBot = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.07, 0.22), darkSlate);
+    lBot.position.y = -0.15;
+    lantern.add(lTop, lCore, lBot);
+    regVariant('hoot_emerald', leftArm, lantern);
+  }
+
+  // --- 2. ARIA (Penerjemah Agung): Woven Nusantara Hijab + Scholar Coat + Rune Tome ---
+  {
+    const aHead = new THREE.Group();
+    const wrapTop = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.28, 0.92), tealCoat);
+    wrapTop.position.set(0, 0.78, -0.02);
+    const wrapBack = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.86, 0.32), tealCoat);
+    wrapBack.position.set(0, 0.36, -0.34);
+    const wrapSideL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.78, 0.78), tealCoat);
+    wrapSideL.position.set(0.42, 0.4, -0.02);
+    const wrapSideR = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.78, 0.78), tealCoat);
+    wrapSideR.position.set(-0.42, 0.4, -0.02);
+    const bandPink = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.12, 0.94), pinkAccent);
+    bandPink.position.set(0, 0.68, 0.01);
+    const bandPurple = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.1, 0.94), purpleAccent);
+    bandPurple.position.set(0, 0.82, -0.01);
+    const neckDrape = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.22, 0.72), pinkAccent);
+    neckDrape.position.set(0, 0.02, -0.04);
+    aHead.add(wrapTop, wrapBack, wrapSideL, wrapSideR, bandPink, bandPurple, neckDrape);
+    regVariant('aria_sky', headGroup, aHead);
+
+    const aBody = new THREE.Group();
+    const coatL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.96, 0.62), scholarCoat);
+    coatL.position.set(0.32, 0.46, 0);
+    const coatR = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.96, 0.62), scholarCoat);
+    coatR.position.set(-0.32, 0.46, 0);
+    const coatBack = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.96, 0.22), scholarCoat);
+    coatBack.position.set(0, 0.46, -0.24);
+    const sash = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.16, 0.65), pinkAccent);
+    sash.position.y = 0.18;
+    const goldTrim = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.82, 0.06), gold);
+    goldTrim.position.set(0, 0.56, 0.29);
+    aBody.add(coatL, coatR, coatBack, sash, goldTrim);
+    regVariant('aria_sky', upperBody, aBody);
+
+    const tome = new THREE.Group();
+    tome.position.set(0.06, -0.76, 0.16);
+    tome.rotation.set(-0.35, 0.2, 0);
+    const cover = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.34), boot);
+    const pages = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.08, 0.28), owlCream);
+    pages.position.y = 0.04;
+    const runeGlow = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.04, 0.18), aquaGlow);
+    runeGlow.position.y = 0.08;
+    tome.add(cover, pages, runeGlow);
+    regVariant('aria_sky', leftArm, tome);
+  }
+
+  // --- 3. KARSA (Petualang Tangguh): Spiky Hair + Tactical Vest + Bare Muscular Arms + Bracers + Pickaxe ---
+  {
+    const kHead = new THREE.Group();
+    const hairBase = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.24, 0.88), hairDarkBrown);
+    hairBase.position.set(0, 0.82, -0.02);
+    const hairBack = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.66, 0.24), hairDarkBrown);
+    hairBack.position.set(0, 0.5, -0.36);
+    const spike1 = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.26, 0.24), hairDarkBrown);
+    spike1.position.set(-0.22, 0.98, 0.12);
+    spike1.rotation.z = 0.2;
+    const spike2 = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.3, 0.26), hairDarkBrown);
+    spike2.position.set(0.04, 1.02, 0.14);
+    const spike3 = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.22), hairDarkBrown);
+    spike3.position.set(0.26, 0.96, 0.08);
+    spike3.rotation.z = -0.22;
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.08, 0.08), hairDarkBrown);
+    brow.position.set(0, 0.55, 0.42);
+    kHead.add(hairBase, hairBack, spike1, spike2, spike3, brow);
+    regVariant('karsa_crimson', headGroup, kHead);
+
+    const kBody = new THREE.Group();
+    const chestSkin = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.34, 0.08), skin);
+    chestSkin.position.set(0, 0.82, 0.28);
+    const pouchL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.26, 0.14), boot);
+    pouchL.position.set(-0.28, 0.34, 0.31);
+    const pouchR = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.26, 0.14), boot);
+    pouchR.position.set(0.28, 0.34, 0.31);
+    kBody.add(chestSkin, pouchL, pouchR);
+    regVariant('karsa_crimson', upperBody, kBody);
+
+    for (const arm of [leftArm, rightArm]) {
+      const bracer = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.28, 0.34), darkSlate);
+      bracer.position.y = -0.52;
+      regVariant('karsa_crimson', arm, bracer);
+    }
+
+    const pickaxe = new THREE.Group();
+    pickaxe.position.set(0.04, -0.76, 0.12);
+    pickaxe.rotation.set(Math.PI / 2 - 0.3, 0, 0);
+    const pHandle = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.92, 0.09), boot);
+    pHandle.position.y = 0.18;
+    const pHead = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.13, 0.13), steelMat);
+    pHead.position.y = 0.58;
+    pickaxe.add(pHandle, pHead);
+    regVariant('karsa_crimson', leftArm, pickaxe);
+  }
+
+  // --- 4. RAKA (Sain Saintis Muda): Tech Goggles + Neon Cyan Jacket + Scanner Pack + Tablet ---
+  {
+    const rHead = new THREE.Group();
+    const rHairTop = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.26, 0.88), hairWarmBrown);
+    rHairTop.position.set(0, 0.82, -0.02);
+    const rHairBack = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.62, 0.24), hairWarmBrown);
+    rHairBack.position.set(0, 0.48, -0.35);
+    const goggleStrap = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.16, 0.88), darkSlate);
+    goggleStrap.position.set(0, 0.68, 0);
+    const lensL = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.12), cyanGlow);
+    lensL.position.set(0.2, 0.69, 0.44);
+    const lensR = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.18, 0.12), cyanGlow);
+    lensR.position.set(-0.2, 0.69, 0.44);
+    rHead.add(rHairTop, rHairBack, goggleStrap, lensL, lensR);
+    regVariant('raka_gold', headGroup, rHead);
+
+    const rBody = new THREE.Group();
+    const neonStripeL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.82, 0.64), cyanGlow);
+    neonStripeL.position.set(0.28, 0.54, 0);
+    const neonStripeR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.82, 0.64), cyanGlow);
+    neonStripeR.position.set(-0.28, 0.54, 0);
+    const techPack = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.8, 0.34), darkSlate);
+    techPack.position.set(0, 0.52, -0.44);
+    const holoRing = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.045, 8, 20), cyanGlow);
+    holoRing.position.set(0, 0.64, -0.62);
+    rBody.add(neonStripeL, neonStripeR, techPack, holoRing);
+    regVariant('raka_gold', upperBody, rBody);
+
+    for (const arm of [leftArm, rightArm]) {
+      const cuff = new THREE.Mesh(new THREE.BoxGeometry(0.33, 0.1, 0.35), cyanGlow);
+      cuff.position.y = -0.36;
+      regVariant('raka_gold', arm, cuff);
+    }
+
+    const tablet = new THREE.Group();
+    tablet.position.set(0.05, -0.74, 0.16);
+    tablet.rotation.set(-0.4, 0.15, 0);
+    const tFrame = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.06, 0.44), darkSlate);
+    const tScreen = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.07, 0.36), aquaGlow);
+    tScreen.position.y = 0.01;
+    tablet.add(tFrame, tScreen);
+    regVariant('raka_gold', leftArm, tablet);
+  }
+
+  // --- 5. LUNA (Penjaga Alam): Forest Flower Circlet + Braided Hair + Quiver + Nature Bow ---
+  {
+    const lHead = new THREE.Group();
+    const lHairTop = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.24, 0.86), hairWarmBrown);
+    lHairTop.position.set(0, 0.8, -0.02);
+    const lHairBack = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.86, 0.26), hairWarmBrown);
+    lHairBack.position.set(0, 0.34, -0.36);
+    const braidL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.72, 0.22), hairWarmBrown);
+    braidL.position.set(0.42, 0.14, 0.16);
+    const braidR = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.72, 0.22), hairWarmBrown);
+    braidR.position.set(-0.42, 0.14, 0.16);
+    const circlet = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.13, 0.9), greenLeaf);
+    circlet.position.set(0, 0.68, 0);
+    const flower1 = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.1), pinkAccent);
+    flower1.position.set(0.24, 0.72, 0.44);
+    const flower2 = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 0.1), gold);
+    flower2.position.set(-0.22, 0.72, 0.44);
+    lHead.add(lHairTop, lHairBack, braidL, braidR, circlet, flower1, flower2);
+    regVariant('luna_violet', headGroup, lHead);
+
+    const lBody = new THREE.Group();
+    const sashStrap = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.04, 0.64), boot);
+    sashStrap.position.set(0, 0.52, 0);
+    sashStrap.rotation.z = 0.55;
+    const quiver = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.76, 0.28), boot);
+    quiver.position.set(0.18, 0.64, -0.44);
+    quiver.rotation.z = -0.3;
+    const arrowFletch = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.14, 0.26), greenLeaf);
+    arrowFletch.position.set(0.3, 1.02, -0.44);
+    lBody.add(sashStrap, quiver, arrowFletch);
+    regVariant('luna_violet', upperBody, lBody);
+
+    for (const arm of [leftArm, rightArm]) {
+      const vineWrap = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.18, 0.34), greenLeaf);
+      vineWrap.position.y = -0.46;
+      regVariant('luna_violet', arm, vineWrap);
+    }
+
+    const bow = new THREE.Group();
+    bow.position.set(0.12, -0.68, 0.14);
+    const bowGrip = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.46, 0.12), boot);
+    const bowTop = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.44, 0.1), greenLeaf);
+    bowTop.position.set(0, 0.38, -0.1);
+    bowTop.rotation.x = 0.45;
+    const bowBot = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.44, 0.1), greenLeaf);
+    bowBot.position.set(0, -0.38, -0.1);
+    bowBot.rotation.x = -0.45;
+    const bowString = new THREE.Mesh(new THREE.BoxGeometry(0.03, 1.15, 0.03), owlCream);
+    bowString.position.set(0, 0, -0.2);
+    bow.add(bowGrip, bowTop, bowBot, bowString);
+    regVariant('luna_violet', leftArm, bow);
+  }
+
+  // --- 6. NUSA (Pengembara Bahari): Aquatic Ear-Fins + Blue-Gold Scale Armor + Trisula ---
+  {
+    const nHead = new THREE.Group();
+    const nHairTop = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.26, 0.86), hairWarmBrown);
+    nHairTop.position.set(0, 0.81, -0.02);
+    const nHairBack = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.58, 0.24), hairWarmBrown);
+    nHairBack.position.set(0, 0.48, -0.34);
+    const finL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.36, 0.26), cyanGlow);
+    finL.position.set(0.5, 0.48, -0.04);
+    finL.rotation.z = -0.35;
+    const finR = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.36, 0.26), cyanGlow);
+    finR.position.set(-0.5, 0.48, -0.04);
+    finR.rotation.z = 0.35;
+    nHead.add(nHairTop, nHairBack, finL, finR);
+    regVariant('nusa_teal', headGroup, nHead);
+
+    const nBody = new THREE.Group();
+    const armorChest = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.72, 0.64), oceanPlate);
+    armorChest.position.set(0, 0.64, 0);
+    const goldCrest = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.32, 0.68), gold);
+    goldCrest.position.set(0, 0.72, 0);
+    const goldHem = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.14, 0.66), gold);
+    goldHem.position.set(0, 0.24, 0);
+    nBody.add(armorChest, goldCrest, goldHem);
+    regVariant('nusa_teal', upperBody, nBody);
+
+    for (const [arm, dir] of [[leftArm, 1], [rightArm, -1]] as const) {
+      const pauldron = new THREE.Group();
+      const pTop = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.24, 0.44), oceanPlate);
+      pTop.position.set(dir * 0.06, -0.02, 0);
+      const pTrim = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.08, 0.46), gold);
+      pTrim.position.set(dir * 0.06, -0.14, 0);
+      pauldron.add(pTop, pTrim);
+      regVariant('nusa_teal', arm, pauldron);
+    }
+
+    const trisula = new THREE.Group();
+    trisula.position.set(0.12, -0.4, 0.18);
+    const tShaft = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.55, 0.08), gold);
+    const tCross = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.1, 0.1), aquaGlow);
+    tCross.position.y = 0.76;
+    const tMid = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.42, 0.1), aquaGlow);
+    tMid.position.y = 0.96;
+    const tProngL = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.34, 0.08), aquaGlow);
+    tProngL.position.set(0.18, 0.92, 0);
+    const tProngR = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.34, 0.08), aquaGlow);
+    tProngR.position.set(-0.18, 0.92, 0);
+    trisula.add(tShaft, tCross, tMid, tProngL, tProngR);
+    regVariant('nusa_teal', leftArm, trisula);
+  }
+
+  // Apply bare arms immediately if Karsa is initial preset
+  if (presetId === 'karsa_crimson') {
+    leftSleeveMesh.material = skin;
+    rightSleeveMesh.material = skin;
+  }
 
   // Scuba Explore Gear (visible exclusively during scuba_explore pose)
   const scubaSlate = palette.getMat(0x1e293b, 'matte');
@@ -582,6 +908,10 @@ export function createHeroAvatar(
     weaponGroup,
     weaponMeshes,
     weaponTipMat,
+    activePresetId: presetId,
+    variantGroups,
+    leftSleeveMesh,
+    rightSleeveMesh,
     appearanceMats: {
       skin,
       tunic,
@@ -593,7 +923,11 @@ export function createHeroAvatar(
   };
 }
 
-export function applyHeroAppearance(rig: HeroAvatarRig, colors: HeroAppearanceColors): void {
+export function applyHeroAppearance(
+  rig: HeroAvatarRig,
+  colors: HeroAppearanceColors,
+  presetId?: CharacterPresetId,
+): void {
   const mats = rig.appearanceMats;
   if (!mats) return;
   mats.skin.color.setHex(colors.skinHex);
@@ -602,6 +936,19 @@ export function applyHeroAppearance(rig: HeroAvatarRig, colors: HeroAppearanceCo
   mats.hat.color.setHex(colors.hatHex);
   mats.pack.color.setHex(colors.packHex);
   mats.feather.color.setHex(colors.featherHex);
+
+  if (presetId && rig.variantGroups) {
+    rig.activePresetId = presetId;
+    (Object.keys(rig.variantGroups) as CharacterPresetId[]).forEach((id) => {
+      const visible = id === presetId;
+      for (const obj of rig.variantGroups![id]) {
+        obj.visible = visible;
+      }
+    });
+    const sleeveMat = presetId === 'karsa_crimson' ? mats.skin : mats.tunic;
+    if (rig.leftSleeveMesh) rig.leftSleeveMesh.material = sleeveMat;
+    if (rig.rightSleeveMesh) rig.rightSleeveMesh.material = sleeveMat;
+  }
 }
 
 export function setHeroWeaponVisual(

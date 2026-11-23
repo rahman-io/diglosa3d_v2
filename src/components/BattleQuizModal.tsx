@@ -16,8 +16,10 @@ import {
   generateQuestionForZone,
   RELICS,
 } from '../data/diglosaCatalog';
+import { getCharacterPreset } from '../data/characterPresets';
 import {
   BattleContext,
+  CharacterPresetId,
   DifficultyMode,
   QuizQuestion,
   RelicId,
@@ -59,6 +61,8 @@ const CONFETTI_PIECES = Array.from({ length: 20 }, (_, i) => ({
 
 interface BattleQuizModalProps {
   battle: BattleContext | null;
+  characterId?: CharacterPresetId;
+  playerName?: string;
   playerHp: number;
   playerMaxHp: number;
   activeWeapon: WeaponId;
@@ -82,6 +86,8 @@ interface BattleQuizModalProps {
 
 export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
   battle,
+  characterId = 'hoot_emerald',
+  playerName,
   playerHp,
   playerMaxHp,
   activeWeapon,
@@ -93,6 +99,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
   onAnswerResult,
   onBattleEnd,
 }) => {
+  const heroPreset = getCharacterPreset(characterId);
   const diffCfg = DIFF_CONFIG[difficulty];
   const hasPedang = ownedRelics.includes('pedang');
   const hasPerisai = ownedRelics.includes('perisai');
@@ -605,7 +612,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
             {/* Hero Side HUD Box */}
             <div className="min-w-0 rounded-xl border border-emerald-400/35 bg-slate-950/60 px-2.5 py-1.5 shadow-inner">
               <div className="truncate text-xs font-black text-amber-100 drop-shadow sm:text-sm">
-                Hoot (Pengelana)
+                {playerName?.trim() || heroPreset.name} ({heroPreset.name})
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-0.5 sm:gap-1">
                 {Array.from({ length: playerMaxHp }).map((_, i) => (
@@ -675,6 +682,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
 
             {/* Real-Time Three.js Animated 3D Hero & Monster Fighters */}
             <BattleArenaCanvas
+              characterId={characterId}
               monsterType={battle.monsterType}
               isBoss={Boolean(battle.isZoneBoss || battle.isIeltsBoss)}
               activeWeapon={activeWeapon}
