@@ -70,6 +70,8 @@ interface PeerSlot {
   analyser: AnalyserNode | null;
   analyserBuf: Uint8Array<ArrayBuffer> | null;
   speaking: boolean;
+  pendingIce: RTCIceCandidateInit[];
+  iceFlushTimer: number | null;
 }
 
 export interface P2pTransportCallbacks {
@@ -553,6 +555,8 @@ export class P2pMeshTransport {
       analyser: null,
       analyserBuf: null,
       speaking: false,
+      pendingIce: [],
+      iceFlushTimer: null,
     };
     this.peers.set(remoteUid, slot);
 
@@ -596,13 +600,27 @@ export class P2pMeshTransport {
     };
 
     pc.onicecandidate = (ev) => {
-      if (ev.candidate && !this.disposed) {
-        void sendWebRtcSignal({
-          roomId: this.roomId,
-          toUid: remoteUid,
-          kind: 'ice',
-          payload: JSON.stringify(ev.candidate),
-        });
+      if (this.disposed) return;
+      if (ev.candidate) {
+        const init: RTCIceCandidateInit =
+          typeof ev.candidate.toJSON === 'function'
+            ? ev.candidate.toJSON()
+            : {
+                candidate: ev.candidate.candidate,
+                sdpMid: ev.candidate.sdpMid,
+                sdpMLineIndex: ev.candidate.sdpMLineIndex,
+                usernameFragment: ev.candidate.usernameFragment,
+              };
+        slot.pendingIce.push(init);
+        if (slot.pendingIce.length >= 12) {
+          void this.flushIceCandidates(slot);
+        } else if (slot.iceFlushTimer === null) {
+          slot.iceFlushTimer = window.setTimeout(() => {
+            void this.flushIceCandidates(slot);
+          }, 150);
+        }
+      } else {
+        void this.flushIceCandidates(slot);
       }
     };
 
@@ -801,11 +819,14 @@ export class P2pMeshTransport {
           }
         }
       } else if (sig.kind === 'ice') {
-        const candidate = JSON.parse(sig.payload) as RTCIceCandidateInit;
-        try {
-          await pc.addIceCandidate(candidate);
-        } catch (err) {
-          if (!slot.ignoreOffer) throw err;
+        const parsed = JSON.parse(sig.payload) as RTCIceCandidateInit | RTCIceCandidateInit[];
+        const list = Array.isArray(parsed) ? parsed : [parsed];
+        for (const candidate of list) {
+          try {
+            await pc.addIceCandidate(candidate);
+          } catch (err) {
+            if (!slot.ignoreOffer) throw err;
+          }
         }
       }
     } catch {
@@ -813,10 +834,44 @@ export class P2pMeshTransport {
     }
   }
 
+  private async flushIceCandidates(slot: PeerSlot): Promise<void> {
+    if (slot.iceFlushTimer !== null) {
+      window.clearTimeout(slot.iceFlushTimer);
+      slot.iceFlushTimer = null;
+    }
+    if (this.disposed || slot.pendingIce.length === 0) {
+      slot.pendingIce.length = 0;
+      return;
+    }
+    const batch = slot.pendingIce.splice(0, slot.pendingIce.length);
+    const sendChunk = async (items: RTCIceCandidateInit[]): Promise<void> => {
+      if (items.length === 0 || this.disposed) return;
+      const serialized = JSON.stringify(items);
+      if (serialized.length <= 8190 || items.length === 1) {
+        await sendWebRtcSignal({
+          roomId: this.roomId,
+          toUid: slot.uid,
+          kind: 'ice',
+          payload: serialized,
+        }).catch(() => undefined);
+        return;
+      }
+      const mid = Math.ceil(items.length / 2);
+      await sendChunk(items.slice(0, mid));
+      await sendChunk(items.slice(mid));
+    };
+    await sendChunk(batch);
+  }
+
   private closePeer(uid: string): void {
     const slot = this.peers.get(uid);
     if (!slot) return;
     this.peers.delete(uid);
+    if (slot.iceFlushTimer !== null) {
+      window.clearTimeout(slot.iceFlushTimer);
+      slot.iceFlushTimer = null;
+    }
+    slot.pendingIce.length = 0;
     try {
       slot.dc?.close();
     } catch {

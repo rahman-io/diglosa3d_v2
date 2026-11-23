@@ -93,7 +93,7 @@ export async function syncRunToCloud(params: {
   maxCombo: number;
   questsCompleted: number;
   districtTitle: string;
-}): Promise<{ newPersonalBest: boolean }> {
+}): Promise<{ newPersonalBest: boolean; profile?: UserProfileRecord }> {
   const user = auth.currentUser;
   if (!user || !user.emailVerified) {
     return { newPersonalBest: false };
@@ -111,30 +111,42 @@ export async function syncRunToCloud(params: {
   // 1. Update private user progress record
   const userPath = `${USERS_COLLECTION}/${uid}`;
   let previousBest = 0;
+  let updatedProfile: UserProfileRecord | undefined;
   try {
     const userRef = doc(db, USERS_COLLECTION, uid);
     const existingSnap = await getDoc(userRef);
 
     if (!existingSnap.exists()) {
-      await setDoc(userRef, {
+      updatedProfile = {
         uid,
         playerName,
         bestScore: safeScore,
         highestLevel: safeLevel,
         totalBuilt: safeLandmarks,
         questsCompleted: safeQuests,
+      };
+      await setDoc(userRef, {
+        ...updatedProfile,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
     } else {
       const existing = existingSnap.data() as UserProfileRecord;
       previousBest = existing.bestScore || 0;
-      await updateDoc(userRef, {
+      updatedProfile = {
+        uid,
         playerName,
         bestScore: Math.max(previousBest, safeScore),
         highestLevel: Math.max(existing.highestLevel || 1, safeLevel),
         totalBuilt: clampInt((existing.totalBuilt || 0) + safeLandmarks, 0, 1000000),
         questsCompleted: clampInt((existing.questsCompleted || 0) + safeQuests, 0, 1000000),
+      };
+      await updateDoc(userRef, {
+        playerName: updatedProfile.playerName,
+        bestScore: updatedProfile.bestScore,
+        highestLevel: updatedProfile.highestLevel,
+        totalBuilt: updatedProfile.totalBuilt,
+        questsCompleted: updatedProfile.questsCompleted,
         updatedAt: serverTimestamp(),
       });
     }
@@ -180,5 +192,5 @@ export async function syncRunToCloud(params: {
     handleFirestoreError(error, OperationType.WRITE, lbPath);
   }
 
-  return { newPersonalBest: isNewBest };
+  return { newPersonalBest: isNewBest, profile: updatedProfile };
 }

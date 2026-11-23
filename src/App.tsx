@@ -31,7 +31,6 @@ import { auth, probeFirestoreReachable, signInWithGoogleAccount } from './fireba
 import {
   fetchPublicLeaderboard,
   loadUserProgress,
-  subscribeLeaderboard,
   syncRunToCloud,
 } from './services/leaderboardService';
 import {
@@ -297,7 +296,8 @@ function DiglosaRpgApp() {
 
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardRecord[]>([]);
-  const [leaderboardLoading, setLeaderboardLoading] = useState(true);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const leaderboardFetchedAtRef = useRef<number>(0);
   const [user, setUser] = useState<User | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [userProfile, setUserProfile] = useState<UserProfileRecord | null>(null);
@@ -732,35 +732,37 @@ function DiglosaRpgApp() {
   }, [worldBootReady]);
 
   // Auth & Online Leaderboard subscription
+  const refreshLeaderboard = useCallback(async (force = false) => {
+    if (
+      !force &&
+      leaderboardFetchedAtRef.current > 0 &&
+      Date.now() - leaderboardFetchedAtRef.current < 60_000
+    ) {
+      return;
+    }
+    setLeaderboardLoading(true);
+    try {
+      const reachable = await probeFirestoreReachable();
+      if (!reachable) return;
+      const rows = await fetchPublicLeaderboard();
+      leaderboardFetchedAtRef.current = Date.now();
+      setLeaderboardEntries(rows);
+    } catch {
+      // Offline or unreachable
+    } finally {
+      setLeaderboardLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (leaderboardOpen) {
+      void refreshLeaderboard(false);
+    }
+  }, [leaderboardOpen, refreshLeaderboard]);
+
+  // Listen to Firebase Auth state & load player's own cloud progress once on sign-in
   useEffect(() => {
     let disposed = false;
-    let unsubLeaderboard: (() => void) | null = null;
-
-    const loadBoard = async () => {
-      const reachable = await probeFirestoreReachable();
-      if (disposed || !reachable) {
-        setLeaderboardLoading(false);
-        return;
-      }
-      fetchPublicLeaderboard()
-        .then((rows) => {
-          if (!disposed) {
-            setLeaderboardEntries(rows);
-            setLeaderboardLoading(false);
-          }
-        })
-        .catch(() => {
-          if (!disposed) setLeaderboardLoading(false);
-        });
-    };
-
-    const initialLoadTimer = window.setTimeout(() => {
-      void loadBoard();
-    }, 650);
-    const onOnlineRetry = () => {
-      void loadBoard();
-    };
-    window.addEventListener('online', onOnlineRetry);
 
     const unsubAuth = onAuthStateChanged(auth, async (nextUser) => {
       setUser(nextUser);
@@ -775,16 +777,9 @@ function DiglosaRpgApp() {
           return prev;
         });
       }
-      if (unsubLeaderboard) {
-        unsubLeaderboard();
-        unsubLeaderboard = null;
-      }
       if (nextUser) {
         const reachable = await probeFirestoreReachable();
-        if (disposed || !reachable) {
-          setLeaderboardLoading(false);
-          return;
-        }
+        if (disposed || !reachable) return;
         try {
           const profile = await loadUserProgress(nextUser.uid);
           if (!disposed) {
@@ -796,15 +791,6 @@ function DiglosaRpgApp() {
         } catch {
           // first time player or offline
         }
-        if (!disposed) {
-          unsubLeaderboard = subscribeLeaderboard(
-            (rows) => {
-              setLeaderboardEntries(rows);
-              setLeaderboardLoading(false);
-            },
-            () => setLeaderboardLoading(false),
-          );
-        }
       } else {
         setUserProfile(null);
       }
@@ -812,10 +798,7 @@ function DiglosaRpgApp() {
 
     return () => {
       disposed = true;
-      window.clearTimeout(initialLoadTimer);
-      window.removeEventListener('online', onOnlineRetry);
       unsubAuth();
-      if (unsubLeaderboard) unsubLeaderboard();
     };
   }, []);
 
@@ -931,16 +914,14 @@ function DiglosaRpgApp() {
           questsCompleted: questsDone,
           districtTitle: hud.rankTitle,
         })
-          .then(({ newPersonalBest }) => {
+          .then(({ newPersonalBest, profile }) => {
             setCloudSyncNote(
               newPersonalBest
                 ? 'Rekor baru berhasil diunggah ke Papan Peringkat Daring!'
                 : 'Progres petualangan tersinkronisasi ke Cloud.',
             );
-            return loadUserProgress(auth.currentUser!.uid);
-          })
-          .then((profile) => {
             if (profile) setUserProfile(profile);
+            leaderboardFetchedAtRef.current = 0;
           })
           .catch(() => {
             setCloudSyncNote('Gagal mengunggah otomatis. Buka Papan Peringkat untuk coba lagi.');
@@ -1713,12 +1694,12 @@ function DiglosaRpgApp() {
     if (getAlwaysFullscreenPref()) void requestAppFullscreen();
     setPendingDifficulty(hud.settings.difficulty);
     setDifficultyPromptOpen(true);
-    if (user?.uid && user?.emailVerified && !activeRoom) {
+    if (user?.uid && user?.emailVerified && !activeRoom && !resumableRoom) {
       void checkSavedRoomMembership(user.uid).then((found) => {
         setResumableRoom(found);
       });
     }
-  }, [hud.settings.difficulty, user?.uid, user?.emailVerified, activeRoom]);
+  }, [hud.settings.difficulty, user?.uid, user?.emailVerified, activeRoom, resumableRoom]);
 
   const handleConfirmSolo = useCallback(
     (difficulty: DifficultyMode, spawnMode: SpawnPreference) => {
@@ -2041,7 +2022,7 @@ function DiglosaRpgApp() {
     setSyncStatus(null);
     try {
       const questsDone = hud.quests.filter((q) => q.claimed).length;
-      const { newPersonalBest } = await syncRunToCloud({
+      const { newPersonalBest, profile } = await syncRunToCloud({
         score: hud.score,
         cityLevel: hud.level,
         landmarksCount: hud.wordsMastered,
@@ -2052,12 +2033,15 @@ function DiglosaRpgApp() {
       setSyncStatus(
         newPersonalBest ? 'Rekor baru tersimpan di Papan Peringkat!' : 'Skor berhasil diperbarui.',
       );
-      const profile = await loadUserProgress(auth.currentUser.uid);
       if (profile) setUserProfile(profile);
+      leaderboardFetchedAtRef.current = 0;
+      if (leaderboardOpen) {
+        void refreshLeaderboard(true);
+      }
     } finally {
       setSyncing(false);
     }
-  }, [hud]);
+  }, [hud, leaderboardOpen, refreshLeaderboard]);
 
   const isAuthenticatedUser = Boolean(user && user.emailVerified);
   const waveVictoryOpen =

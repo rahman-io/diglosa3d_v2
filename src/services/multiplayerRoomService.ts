@@ -220,7 +220,7 @@ export async function readLatestRoomMeta(roomId: string): Promise<RoomSquadMeta>
       collection(db, path),
       where('roomId', '==', roomId),
       orderBy('createdAt', 'desc'),
-      limit(20),
+      limit(10),
     );
     const snap = await getDocs(q);
     for (const d of snap.docs) {
@@ -1236,7 +1236,7 @@ export function subscribeFallbackChatMessages(
     collection(db, path),
     where('roomId', '==', roomId),
     orderBy('createdAt', 'desc'),
-    limit(20),
+    limit(8),
   );
   const seen = new Set<string>();
   let initialized = false;
