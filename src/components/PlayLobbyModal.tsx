@@ -323,7 +323,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
 
         {/* Error banner */}
         {errorMsg && (
-          <div className="rounded-xl border border-rose-400/50 bg-rose-950/75 px-3.5 py-2 text-xs font-bold text-rose-100">
+          <div className="max-w-full overflow-hidden break-words rounded-xl border border-rose-400/50 bg-rose-950/75 px-3.5 py-2 text-xs font-bold text-rose-100 [overflow-wrap:anywhere]">
             ⚠️ {errorMsg}
           </div>
         )}

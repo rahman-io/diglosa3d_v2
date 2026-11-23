@@ -273,7 +273,6 @@ service cloud.firestore {
       allow list: if isVerified() &&
         resource.data.mode == 'public' &&
         resource.data.status in ['waiting', 'playing'] &&
-        resource.data.memberCount < resource.data.maxPlayers &&
         request.query.limit <= 20;
       allow create: if isValidId(roomId) &&
         isVerified() &&

@@ -157,7 +157,9 @@ export async function joinRoomByCode(params: {
   const existingMembersPath = `${ROOMS_COLLECTION}/${roomId}/members`;
   let existingMembers: MultiplayerMemberDoc[] = [];
   try {
-    const mSnap = await getDocs(query(collection(db, existingMembersPath), limit(10)));
+    const mSnap = await getDocs(
+      query(collection(db, existingMembersPath), where('roomId', '==', roomId), limit(10)),
+    );
     existingMembers = mSnap.docs.map((d) => d.data() as MultiplayerMemberDoc);
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, existingMembersPath);
@@ -271,7 +273,9 @@ export async function findOrCreatePublicRoom(params: {
     try {
       const roomRef = doc(db, ROOMS_COLLECTION, cand.roomId);
       const membersPath = `${ROOMS_COLLECTION}/${cand.roomId}/members`;
-      const mSnap = await getDocs(query(collection(db, membersPath), limit(10)));
+      const mSnap = await getDocs(
+        query(collection(db, membersPath), where('roomId', '==', cand.roomId), limit(10)),
+      );
       const existingMembers = mSnap.docs.map((d) => d.data() as MultiplayerMemberDoc);
       const already = existingMembers.find((m) => m.uid === user.uid);
       if (!already && existingMembers.length >= cand.maxPlayers) continue;
@@ -446,7 +450,11 @@ export async function leaveMultiplayerRoom(roomId: string): Promise<void> {
     const roomData = roomSnap.data() as MultiplayerRoomDoc;
 
     const remainingSnap = await getDocs(
-      query(collection(db, ROOMS_COLLECTION, roomId, 'members'), limit(10)),
+      query(
+        collection(db, ROOMS_COLLECTION, roomId, 'members'),
+        where('roomId', '==', roomId),
+        limit(10),
+      ),
     );
     const remaining = remainingSnap.docs
       .map((d) => d.data() as MultiplayerMemberDoc)
