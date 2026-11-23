@@ -248,7 +248,7 @@ export const DifficultyModeModal: React.FC<DifficultyModeModalProps> = ({
             onClick={() => onConfirm(selected)}
             className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-sky-300/60 bg-gradient-to-r from-sky-500 to-blue-600 px-5 py-2.5 text-sm font-black text-white shadow-[0_6px_22px_rgba(14,165,233,0.4)] transition hover:brightness-110 active:translate-y-0.5 sm:w-auto sm:min-w-[240px]"
           >
-            <span>Lanjut · Pilih Gaya Membidik</span>
+            <span>Mulai Petualangan</span>
             <ChevronRight className="h-4 w-4" />
           </button>
         </div>

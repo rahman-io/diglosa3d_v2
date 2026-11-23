@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged, signInWithPopup, signOut, User } from 'firebase/auth';
 import { RotateCw, Smartphone } from 'lucide-react';
 import { soundEngine } from './audio/soundEngine';
-import { AimModeModal } from './components/AimModeModal';
 import { AssetDownloaderScreen } from './components/AssetDownloaderScreen';
 import { BattleQuizModal } from './components/BattleQuizModal';
 import { CaveCraftingModal } from './components/CaveCraftingModal';
@@ -61,7 +60,6 @@ import {
   VoiceCommandController,
 } from './services/voiceCommandService';
 import {
-  AimMode,
   BattleContext,
   CaveSealContext,
   DifficultyMode,
@@ -205,7 +203,6 @@ function DiglosaRpgApp() {
   const [sideTab, setSideTab] = useState<SideModalTab>(null);
   const [difficultyPromptOpen, setDifficultyPromptOpen] = useState(false);
   const [pendingDifficulty, setPendingDifficulty] = useState<DifficultyMode>('petualang');
-  const [aimModePromptOpen, setAimModePromptOpen] = useState(false);
 
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardRecord[]>([]);
@@ -587,12 +584,12 @@ function DiglosaRpgApp() {
   useEffect(() => {
     const introActive =
       !showAssetDownloader &&
-      (hud.phase === 'title' || difficultyPromptOpen || aimModePromptOpen);
+      (hud.phase === 'title' || difficultyPromptOpen);
     soundEngine.setIntroMusic(introActive);
     return () => {
       soundEngine.setIntroMusic(false);
     };
-  }, [showAssetDownloader, hud.phase, difficultyPromptOpen, aimModePromptOpen]);
+  }, [showAssetDownloader, hud.phase, difficultyPromptOpen]);
 
   useEffect(() => {
     if (!showAssetDownloader) {
@@ -718,10 +715,6 @@ function DiglosaRpgApp() {
           setDifficultyPromptOpen(false);
           return;
         }
-        if (aimModePromptOpen) {
-          setAimModePromptOpen(false);
-          return;
-        }
         if (leaderboardOpen) {
           setLeaderboardOpen(false);
           return;
@@ -777,7 +770,6 @@ function DiglosaRpgApp() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     difficultyPromptOpen,
-    aimModePromptOpen,
     hud.phase,
     leaderboardOpen,
     sideTab,
@@ -1019,12 +1011,6 @@ function DiglosaRpgApp() {
     if (getAlwaysFullscreenPref()) void requestAppFullscreen();
     setPendingDifficulty(difficulty);
     setDifficultyPromptOpen(false);
-    setAimModePromptOpen(true);
-  }, []);
-
-  const handleConfirmNewAdventure = useCallback((mode: AimMode) => {
-    if (getAlwaysFullscreenPref()) void requestAppFullscreen();
-    setAimModePromptOpen(false);
     setActiveBattle(null);
     setActiveLearning(null);
     setActiveAcademySkill(null);
@@ -1034,8 +1020,8 @@ function DiglosaRpgApp() {
     setSideTab(null);
     setCloudSyncNote(null);
     setSyncStatus(null);
-    engineRef.current?.startNewGame(mode, pendingDifficulty);
-  }, [pendingDifficulty]);
+    engineRef.current?.startNewGame(hud.settings.aimMode, difficulty);
+  }, [hud.settings.aimMode]);
 
   const handleSignIn = useCallback(async () => {
     await signInWithPopup(auth, googleProvider);
@@ -1093,7 +1079,6 @@ function DiglosaRpgApp() {
           disableShortcuts={
             showAssetDownloader ||
             difficultyPromptOpen ||
-            aimModePromptOpen ||
             leaderboardOpen ||
             Boolean(sideTab)
           }
@@ -1131,6 +1116,7 @@ function DiglosaRpgApp() {
           onFireWeapon={() => engineRef.current?.fireActiveWeapon(false)}
           onSetFireHeld={(held) => engineRef.current?.setFireHeld(held)}
           onToggleAim={() => engineRef.current?.toggleAimMode()}
+          onToggleAimMode={() => engineRef.current?.toggleAimModeSetting()}
           onTogglePointerLock={() => engineRef.current?.togglePointerLock()}
           onJump={() => engineRef.current?.jumpHero()}
           onOpenCrafting={() => engineRef.current?.openCraftingTable()}
@@ -1271,16 +1257,6 @@ function DiglosaRpgApp() {
         initialDifficulty={pendingDifficulty}
         onConfirm={handleConfirmDifficulty}
         onCancel={() => setDifficultyPromptOpen(false)}
-      />
-
-      <AimModeModal
-        open={aimModePromptOpen}
-        initialMode={hud.settings.aimMode}
-        onConfirm={handleConfirmNewAdventure}
-        onCancel={() => {
-          setAimModePromptOpen(false);
-          setDifficultyPromptOpen(true);
-        }}
       />
 
       <LeaderboardModal

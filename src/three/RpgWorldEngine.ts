@@ -4343,6 +4343,17 @@ export class RpgWorldEngine {
     this.pushHud(true);
   }
 
+  public toggleAimModeSetting(): void {
+    const next: AimMode = this.settings.aimMode === 'auto' ? 'manual' : 'auto';
+    this.updateSettings({ aimMode: next });
+    this.showBanner(
+      next === 'auto'
+        ? 'Mode Bidik: Bidik Otomatis (Kunci Target Cerdas)'
+        : 'Mode Bidik: Bidik Bebas (Crosshair & Scope)',
+      2.2,
+    );
+  }
+
   public equipWeapon(id: WeaponId): void {
     if (!this.ownedWeapons.has(id)) return;
     this.activeWeapon = id;

@@ -51,6 +51,7 @@ interface RpgHudProps {
   onFireWeapon: () => void;
   onSetFireHeld: (held: boolean) => void;
   onToggleAim: () => void;
+  onToggleAimMode: () => void;
   onTogglePointerLock: () => void;
   onJump: () => void;
   onOpenCrafting: () => void;
@@ -82,6 +83,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   onFireWeapon,
   onSetFireHeld,
   onToggleAim,
+  onToggleAimMode,
   onTogglePointerLock,
   onJump,
   onOpenCrafting,
@@ -475,6 +477,37 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               />
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={onToggleAimMode}
+            title={
+              hud.settings.aimMode === 'auto'
+                ? 'Mode Bidik: Otomatis (Klik untuk ganti ke Bidik Bebas)'
+                : 'Mode Bidik: Bebas / Crosshair (Klik untuk ganti ke Bidik Otomatis)'
+            }
+            aria-label={
+              hud.settings.aimMode === 'auto'
+                ? 'Ganti Mode Bidik (Aktif: Bidik Otomatis)'
+                : 'Ganti Mode Bidik (Aktif: Bidik Bebas)'
+            }
+            className={`relative flex h-9 w-9 items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10 ${
+              hud.settings.aimMode === 'auto'
+                ? 'shadow-[0_3px_8px_rgba(251,191,36,0.42)]'
+                : 'shadow-[0_3px_8px_rgba(34,211,238,0.42)]'
+            }`}
+          >
+            <img
+              src={
+                hud.settings.aimMode === 'auto'
+                  ? './assets/ui/btn_aim_auto.png'
+                  : './assets/ui/btn_aim_manual.png'
+              }
+              alt={hud.settings.aimMode === 'auto' ? 'Bidik Otomatis' : 'Bidik Bebas'}
+              className="pointer-events-none h-full w-full select-none object-contain"
+              draggable={false}
+            />
+          </button>
 
           <button
             type="button"
