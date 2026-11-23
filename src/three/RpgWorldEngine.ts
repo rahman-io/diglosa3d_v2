@@ -957,6 +957,13 @@ export class RpgWorldEngine {
       weaponKey: string;
     }
   >();
+  private departingPeerEffects: Array<{
+    rig: HeroAvatarRig;
+    elapsed: number;
+    duration: number;
+    startY: number;
+    startYaw: number;
+  }> = [];
   private wordProgressDirty = true;
   private cachedWordSummary: {
     seen: number;
@@ -3347,6 +3354,10 @@ export class RpgWorldEngine {
         this.scene.remove(peer.rig.root);
       }
       this.remotePeers.clear();
+      for (const fx of this.departingPeerEffects) {
+        this.scene.remove(fx.rig.root);
+      }
+      this.departingPeerEffects = [];
       this.peerMonsterTargets.clear();
       this.monsterDamageContributors.clear();
       this.nearbyInjuredPeer = null;
@@ -4212,6 +4223,9 @@ export class RpgWorldEngine {
           weaponKey: `${p.activeWeapon}:${p.weaponOwned ? 1 : 0}`,
         };
         this.remotePeers.set(p.uid, entry);
+        if (this.phase === 'playing' && p.worldMode === this.worldMode) {
+          this.spawnBurst(p.x, p.y + 1.0, p.z, 0x34d399, 18);
+        }
       } else {
         if (entry.state.characterId !== p.characterId) {
           applyHeroAppearance(entry.rig, getCharacterPreset(p.characterId).colors, p.characterId);
@@ -4224,8 +4238,23 @@ export class RpgWorldEngine {
 
     for (const [uid, entry] of this.remotePeers.entries()) {
       if (!activeUids.has(uid)) {
-        this.scene.remove(entry.rig.root);
         this.remotePeers.delete(uid);
+        if (this.nearbyInjuredPeer?.uid === uid) {
+          this.nearbyInjuredPeer = null;
+        }
+        if (entry.state.worldMode === this.worldMode && this.phase !== 'title') {
+          this.spawnBurst(entry.pos.x, entry.pos.y + 1.1, entry.pos.z, 0x38bdf8, 22);
+          this.spawnBurst(entry.pos.x, entry.pos.y + 1.4, entry.pos.z, 0xfbbf24, 14);
+          this.departingPeerEffects.push({
+            rig: entry.rig,
+            elapsed: 0,
+            duration: 0.58,
+            startY: entry.pos.y,
+            startYaw: entry.yaw,
+          });
+        } else {
+          this.scene.remove(entry.rig.root);
+        }
       }
     }
   }
@@ -7447,6 +7476,11 @@ export class RpgWorldEngine {
   private showBanner(msg: string, duration = 2.8): void {
     this.bannerMessage = msg;
     this.bannerTimer = duration;
+  }
+
+  public showGroupNotice(msg: string, duration = 3.2): void {
+    this.showBanner(msg, duration);
+    this.pushHud(true);
   }
 
   private spawnBurst(x: number, y: number, z: number, colorHex: number, count: number): void {
@@ -14637,44 +14671,63 @@ export class RpgWorldEngine {
   }
 
   private updateRemotePeers(dt: number): void {
-    if (!this.multiplayerActive || this.remotePeers.size === 0) return;
-    const blend = 1 - Math.exp(-14 * dt);
-    const nowMs = Date.now();
-    for (const peer of this.remotePeers.values()) {
-      const visible = peer.state.worldMode === this.worldMode && this.phase !== 'title';
-      peer.rig.root.visible = visible;
-      if (!visible) continue;
+    if (this.multiplayerActive && this.remotePeers.size > 0) {
+      const blend = 1 - Math.exp(-14 * dt);
+      const nowMs = Date.now();
+      for (const peer of this.remotePeers.values()) {
+        const visible = peer.state.worldMode === this.worldMode && this.phase !== 'title';
+        peer.rig.root.visible = visible;
+        if (!visible) continue;
 
-      peer.pos.lerp(peer.targetPos, blend);
-      let yawDiff = peer.targetYaw - peer.yaw;
-      while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
-      while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
-      peer.yaw += yawDiff * blend;
+        peer.pos.lerp(peer.targetPos, blend);
+        let yawDiff = peer.targetYaw - peer.yaw;
+        while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+        while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+        peer.yaw += yawDiff * blend;
 
-      peer.rig.root.position.copy(peer.pos);
-      peer.rig.body.rotation.y = peer.yaw;
+        peer.rig.root.position.copy(peer.pos);
+        peer.rig.body.rotation.y = peer.yaw;
 
-      const wKey = `${peer.state.activeWeapon}:${peer.state.weaponOwned ? 1 : 0}`;
-      if (peer.weaponKey !== wKey) {
-        peer.weaponKey = wKey;
-        setHeroWeaponVisual(peer.rig, peer.state.activeWeapon, peer.state.weaponOwned);
+        const wKey = `${peer.state.activeWeapon}:${peer.state.weaponOwned ? 1 : 0}`;
+        if (peer.weaponKey !== wKey) {
+          peer.weaponKey = wKey;
+          setHeroWeaponVisual(peer.rig, peer.state.activeWeapon, peer.state.weaponOwned);
+        }
+
+        const dSq =
+          (peer.pos.x - this.heroPos.x) ** 2 + (peer.pos.z - this.heroPos.z) ** 2;
+        if (dSq < 68 * 68) {
+          const staleSpeed = nowMs - peer.state.updatedAtMs > 1200 ? 0 : peer.state.speed;
+          applyHeroWeaponPose(peer.rig, peer.state.activeWeapon, peer.state.weaponOwned, {
+            speed: staleSpeed,
+            walkCycle: peer.state.walkCycle,
+            aimAlpha: 0,
+            recoil: 0,
+            dt,
+            elapsed: this.elapsed,
+            aimPitch: peer.state.aimPitch,
+            onGround: peer.state.onGround,
+            isSwimming: peer.state.isSwimming,
+          });
+        }
       }
+    }
 
-      const dSq =
-        (peer.pos.x - this.heroPos.x) ** 2 + (peer.pos.z - this.heroPos.z) ** 2;
-      if (dSq < 68 * 68) {
-        const staleSpeed = nowMs - peer.state.updatedAtMs > 1200 ? 0 : peer.state.speed;
-        applyHeroWeaponPose(peer.rig, peer.state.activeWeapon, peer.state.weaponOwned, {
-          speed: staleSpeed,
-          walkCycle: peer.state.walkCycle,
-          aimAlpha: 0,
-          recoil: 0,
-          dt,
-          elapsed: this.elapsed,
-          aimPitch: peer.state.aimPitch,
-          onGround: peer.state.onGround,
-          isSwimming: peer.state.isSwimming,
-        });
+    if (this.departingPeerEffects.length > 0) {
+      for (let i = this.departingPeerEffects.length - 1; i >= 0; i--) {
+        const fx = this.departingPeerEffects[i];
+        fx.elapsed += dt;
+        const t = Math.min(1, fx.elapsed / fx.duration);
+        const ease = t * t;
+        const scale = Math.max(0.01, 1 - ease);
+        fx.rig.root.visible = this.phase !== 'title';
+        fx.rig.root.scale.setScalar(scale);
+        fx.rig.root.position.y = fx.startY + ease * 1.65;
+        fx.rig.body.rotation.y = fx.startYaw + t * Math.PI * 3.0;
+        if (t >= 1) {
+          this.scene.remove(fx.rig.root);
+          this.departingPeerEffects.splice(i, 1);
+        }
       }
     }
   }

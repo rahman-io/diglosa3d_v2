@@ -38,12 +38,27 @@ const ACTIVE_ROOM_STORAGE_KEY = 'diglosa_active_room_v1';
 interface StoredRoomSession {
   uid: string;
   roomId: string;
+  code?: string;
+  mode?: 'group' | 'public';
   savedAt: number;
 }
 
-export function saveLastActiveRoomSession(uid: string, roomId: string): void {
+function getTimestampMs(val: unknown): number {
+  if (!val || typeof val !== 'object') return 0;
+  const maybeTs = val as { toMillis?: () => number; seconds?: number };
+  if (typeof maybeTs.toMillis === 'function') return maybeTs.toMillis();
+  if (typeof maybeTs.seconds === 'number') return maybeTs.seconds * 1000;
+  return 0;
+}
+
+export function saveLastActiveRoomSession(
+  uid: string,
+  roomId: string,
+  code?: string,
+  mode?: 'group' | 'public',
+): void {
   try {
-    const payload: StoredRoomSession = { uid, roomId, savedAt: Date.now() };
+    const payload: StoredRoomSession = { uid, roomId, code, mode, savedAt: Date.now() };
     localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(payload));
   } catch {
     // ignore storage quota/privacy errors
@@ -317,7 +332,7 @@ export async function createGroupRoom(params: {
     true,
   );
 
-  saveLastActiveRoomSession(user.uid, roomId);
+  saveLastActiveRoomSession(user.uid, roomId, code, 'group');
   return {
     room: { ...roomDocForDb, groupName, waveSeed, waveCount },
     spawnIndex,
@@ -433,7 +448,7 @@ export async function joinRoomByCode(params: {
   }
 
   const roomMeta = await readLatestRoomMeta(roomId);
-  saveLastActiveRoomSession(user.uid, roomId);
+  saveLastActiveRoomSession(user.uid, roomId, joinedRoom.code, joinedRoom.mode);
   return {
     room: {
       ...joinedRoom,
@@ -469,9 +484,16 @@ export async function findOrCreatePublicRoom(params: {
       limit(20),
     );
     const snap = await getDocs(q);
+    const nowMs = Date.now();
     candidates = snap.docs
       .map((d) => d.data() as MultiplayerRoomDoc)
-      .filter((r) => r.memberCount > 0 && r.memberCount < r.maxPlayers);
+      .filter((r) => {
+        if (r.memberCount <= 0 || r.memberCount >= r.maxPlayers) return false;
+        const updatedMs = getTimestampMs(r.updatedAt);
+        // Ignore stale abandoned public rooms (>15 mins without host heartbeat/update)
+        if (updatedMs > 0 && nowMs - updatedMs > 15 * 60 * 1000) return false;
+        return true;
+      });
   } catch (error) {
     handleFirestoreError(error, OperationType.LIST, path);
   }
@@ -531,7 +553,7 @@ export async function findOrCreatePublicRoom(params: {
         });
       }
       const roomMeta = await readLatestRoomMeta(cand.roomId);
-      saveLastActiveRoomSession(user.uid, cand.roomId);
+      saveLastActiveRoomSession(user.uid, cand.roomId, joined.code, 'public');
       return {
         room: {
           ...joined,
@@ -599,7 +621,7 @@ export async function findOrCreatePublicRoom(params: {
     true,
   );
 
-  saveLastActiveRoomSession(user.uid, roomId);
+  saveLastActiveRoomSession(user.uid, roomId, code, 'public');
   return {
     room: { ...roomDocForDb, groupName, waveSeed, waveCount },
     spawnIndex,
@@ -683,8 +705,22 @@ export async function checkSavedRoomMembership(
     const room = roomSnap.data() as MultiplayerRoomDoc;
     const memberSnap = await getDoc(doc(db, ROOMS_COLLECTION, savedRoomId, 'members', uid));
     if (!memberSnap.exists()) {
-      clearLastActiveRoomSession();
-      return null;
+      // Slot might have been freed when player exited/disconnected; still allow rejoin if room has space
+      if (room.memberCount >= room.maxPlayers) {
+        clearLastActiveRoomSession();
+        return null;
+      }
+      const roomMeta = await readLatestRoomMeta(savedRoomId);
+      return {
+        room: {
+          ...room,
+          groupName: roomMeta.g ?? room.groupName,
+          waveSeed: roomMeta.ws ?? room.waveSeed,
+          waveCount: roomMeta.wc ?? room.waveCount,
+        },
+        spawnIndex: Math.floor(Math.random() * 8),
+        isHost: room.hostUid === uid,
+      };
     }
     const member = memberSnap.data() as MultiplayerMemberDoc;
     const roomMeta = await readLatestRoomMeta(savedRoomId);
@@ -806,7 +842,7 @@ export async function rejoinRoomById(params: {
   }
 
   const roomMeta = await readLatestRoomMeta(roomId);
-  saveLastActiveRoomSession(user.uid, roomId);
+  saveLastActiveRoomSession(user.uid, roomId, joinedRoom.code, joinedRoom.mode);
   return {
     room: {
       ...joinedRoom,
@@ -819,7 +855,136 @@ export async function rejoinRoomById(params: {
   };
 }
 
-export async function leaveMultiplayerRoom(roomId: string): Promise<void> {
+async function deleteUserMessagesAndSignals(
+  roomId: string,
+  uid: string,
+  keepRoomMeta = false,
+): Promise<void> {
+  // Clean up incoming signals targeted at me
+  try {
+    const sigSnap = await getDocs(
+      query(
+        collection(db, ROOMS_COLLECTION, roomId, 'signals'),
+        where('roomId', '==', roomId),
+        where('toUid', '==', uid),
+        limit(40),
+      ),
+    );
+    await Promise.all(sigSnap.docs.map((d) => deleteDoc(d.ref).catch(() => undefined)));
+  } catch {
+    // ignore
+  }
+
+  // Clean up my own Firestore chat/meta docs (rules permit senderUid == auth.uid)
+  try {
+    const msgSnap = await getDocs(
+      query(
+        collection(db, ROOMS_COLLECTION, roomId, 'messages'),
+        where('roomId', '==', roomId),
+        limit(30),
+      ),
+    );
+    const toDelete = msgSnap.docs.filter((d) => {
+      const data = d.data() as { senderUid?: string; text?: string };
+      if (data.senderUid !== uid) return false;
+      if (keepRoomMeta && typeof data.text === 'string' && data.text.startsWith(ROOM_META_PREFIX)) {
+        return false;
+      }
+      return true;
+    });
+    await Promise.all(toDelete.map((d) => deleteDoc(d.ref).catch(() => undefined)));
+  } catch {
+    // ignore
+  }
+}
+
+export async function pruneDisconnectedMember(
+  roomId: string,
+  targetUid: string,
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified || targetUid === user.uid) return;
+  const roomRef = doc(db, ROOMS_COLLECTION, roomId);
+  try {
+    const roomSnap = await getDoc(roomRef);
+    if (!roomSnap.exists()) return;
+    const roomData = roomSnap.data() as MultiplayerRoomDoc;
+    if (roomData.hostUid !== user.uid) return;
+
+    await deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', targetUid)).catch(() => undefined);
+
+    const remainingSnap = await getDocs(
+      query(
+        collection(db, ROOMS_COLLECTION, roomId, 'members'),
+        where('roomId', '==', roomId),
+        limit(10),
+      ),
+    );
+    const actualCount = Math.max(1, remainingSnap.docs.length);
+    if (actualCount !== roomData.memberCount) {
+      await updateDoc(roomRef, {
+        memberCount: actualCount,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch {
+    // Best-effort cleanup
+  }
+}
+
+export async function claimHostAndRemoveDeadHost(
+  roomId: string,
+  deadHostUid: string,
+  myDisplayName: string,
+): Promise<boolean> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified || deadHostUid === user.uid) return false;
+  const roomRef = doc(db, ROOMS_COLLECTION, roomId);
+  const hostName = sanitizeDisplayName(myDisplayName, user.displayName || 'Host');
+  try {
+    const claimed = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(roomRef);
+      if (!snap.exists()) return false;
+      const data = snap.data() as MultiplayerRoomDoc;
+      if (data.hostUid !== deadHostUid) return false;
+      if (data.memberCount < 2) return false;
+      tx.update(roomRef, {
+        hostUid: user.uid,
+        hostName,
+        memberCount: data.memberCount - 1,
+        updatedAt: serverTimestamp(),
+      });
+      return true;
+    });
+    if (!claimed) return false;
+
+    await deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', deadHostUid)).catch(() => undefined);
+    await updateDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', user.uid), {
+      isHost: true,
+      updatedAt: serverTimestamp(),
+    }).catch(() => undefined);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function touchRoomHeartbeat(roomId: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+  try {
+    await updateDoc(doc(db, ROOMS_COLLECTION, roomId), {
+      updatedAt: serverTimestamp(),
+    });
+  } catch {
+    // Ignore non-host / teardown errors
+  }
+}
+
+export async function leaveMultiplayerRoom(
+  roomId: string,
+  activePeerUids?: string[],
+): Promise<void> {
   clearLastActiveRoomSession();
   const user = auth.currentUser;
   if (!user) return;
@@ -834,23 +999,12 @@ export async function leaveMultiplayerRoom(roomId: string): Promise<void> {
     // ignore
   }
 
-  // Clean up any incoming signals targeted at me
-  try {
-    const q = query(
-      collection(db, ROOMS_COLLECTION, roomId, 'signals'),
-      where('roomId', '==', roomId),
-      where('toUid', '==', user.uid),
-      limit(40),
-    );
-    const sigSnap = await getDocs(q);
-    await Promise.all(sigSnap.docs.map((d) => deleteDoc(d.ref).catch(() => undefined)));
-  } catch {
-    // ignore
-  }
-
   try {
     const roomSnap = await getDoc(roomRef);
-    if (!roomSnap.exists()) return;
+    if (!roomSnap.exists()) {
+      await deleteUserMessagesAndSignals(roomId, user.uid, false);
+      return;
+    }
     const roomData = roomSnap.data() as MultiplayerRoomDoc;
 
     const remainingSnap = await getDocs(
@@ -864,17 +1018,67 @@ export async function leaveMultiplayerRoom(roomId: string): Promise<void> {
       .map((d) => d.data() as MultiplayerMemberDoc)
       .filter((m) => m.uid !== user.uid);
 
-    if (remaining.length === 0) {
+    const activePeerSet = Array.isArray(activePeerUids) ? new Set(activePeerUids) : null;
+    const activeRemaining = activePeerSet
+      ? remaining.filter((m) => activePeerSet.has(m.uid))
+      : remaining;
+    const ghostRemaining = activePeerSet
+      ? remaining.filter((m) => !activePeerSet.has(m.uid))
+      : [];
+
+    if (activeRemaining.length === 0) {
+      // No genuinely P2P-active teammates left -> close and clean up the entire room
+      await deleteUserMessagesAndSignals(roomId, user.uid, false);
       if (roomData.hostUid === user.uid) {
+        await Promise.all(
+          remaining.map((m) =>
+            deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', m.uid)).catch(() => undefined),
+          ),
+        );
         await deleteDoc(roomRef).catch(() => undefined);
+      } else if (roomData.memberCount >= 2) {
+        // Previous host crashed without cleaning up: claim host to delete dead room cleanly
+        try {
+          const claimed = await runTransaction(db, async (tx) => {
+            const snap = await tx.get(roomRef);
+            if (!snap.exists()) return false;
+            const latest = snap.data() as MultiplayerRoomDoc;
+            if (latest.memberCount < 2) return false;
+            tx.update(roomRef, {
+              hostUid: user.uid,
+              hostName: sanitizeDisplayName(user.displayName, 'Host'),
+              memberCount: latest.memberCount - 1,
+              updatedAt: serverTimestamp(),
+            });
+            return true;
+          });
+          if (claimed) {
+            await Promise.all(
+              remaining.map((m) =>
+                deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', m.uid)).catch(() => undefined),
+              ),
+            );
+            await deleteDoc(roomRef).catch(() => undefined);
+          }
+        } catch {
+          // ignore
+        }
       }
       return;
     }
 
-    const nextCount = Math.max(1, roomData.memberCount - 1);
     if (roomData.hostUid === user.uid) {
-      // Pick deterministic next host
-      const nextHost = remaining[0];
+      // Migrate Host strictly to a P2P-active teammate, purging any zombie member docs
+      await deleteUserMessagesAndSignals(roomId, user.uid, true);
+      if (ghostRemaining.length > 0) {
+        await Promise.all(
+          ghostRemaining.map((m) =>
+            deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', m.uid)).catch(() => undefined),
+          ),
+        );
+      }
+      const nextHost = activeRemaining[0];
+      const nextCount = Math.max(1, activeRemaining.length);
       await updateDoc(roomRef, {
         hostUid: nextHost.uid,
         hostName: sanitizeDisplayName(nextHost.displayName, 'Host'),
@@ -882,6 +1086,8 @@ export async function leaveMultiplayerRoom(roomId: string): Promise<void> {
         updatedAt: serverTimestamp(),
       });
     } else {
+      await deleteUserMessagesAndSignals(roomId, user.uid, false);
+      const nextCount = Math.max(1, roomData.memberCount - 1);
       await updateDoc(roomRef, {
         memberCount: nextCount,
         updatedAt: serverTimestamp(),

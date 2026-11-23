@@ -951,6 +951,10 @@ export type P2pReliableMessage =
     }
   | {
       t: 'wreq';
+    }
+  | {
+      t: 'leave';
+      nm?: string;
     };
 
 

@@ -432,6 +432,16 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
               </div>
             ) : (
               messages.map((m) => {
+                if (m.source === 'system' || m.senderUid === '__SYSTEM__') {
+                  return (
+                    <div
+                      key={m.id}
+                      className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-2 py-1 text-[10px] font-bold leading-snug text-amber-200"
+                    >
+                      {m.text}
+                    </div>
+                  );
+                }
                 const isMine = myUid && m.senderUid === myUid;
                 return (
                   <div key={m.id} className="leading-snug">

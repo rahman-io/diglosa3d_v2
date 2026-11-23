@@ -70,6 +70,7 @@ import {
 } from './data/characterPresets';
 import {
   checkSavedRoomMembership,
+  claimHostAndRemoveDeadHost,
   clearLastActiveRoomSession,
   createGroupRoom,
   findOrCreatePublicRoom,
@@ -77,6 +78,7 @@ import {
   joinRoomByCode,
   leaveMultiplayerRoom,
   normalizeRoomCode,
+  pruneDisconnectedMember,
   readLatestRoomMeta,
   rejoinRoomById,
   RoomSquadMeta,
@@ -86,6 +88,7 @@ import {
   subscribeFallbackChatMessages,
   subscribeRoom,
   subscribeRoomMembers,
+  touchRoomHeartbeat,
   updateMyMemberProfile,
   updateRoomGroupName,
 } from './services/multiplayerRoomService';
@@ -287,6 +290,10 @@ function DiglosaRpgApp() {
     ts: 0,
   });
   const enteringPlayingRoomRef = useRef<string | null>(null);
+  const activeRoomRef = useRef<MultiplayerRoomDoc | null>(null);
+  const playerNameRef = useRef<string>(playerName);
+  activeRoomRef.current = activeRoom;
+  playerNameRef.current = playerName;
 
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
   const [leaderboardEntries, setLeaderboardEntries] = useState<LeaderboardRecord[]>([]);
@@ -1276,6 +1283,8 @@ function DiglosaRpgApp() {
   const handleLeaveMultiplayerRoom = useCallback(
     async (returnToTitle = true) => {
       const roomId = activeRoom?.roomId;
+      const activePeers = transportRef.current?.getActivePeerUids() ?? [];
+      transportRef.current?.broadcastLeave(playerNameRef.current || 'Rekan Tim');
       transportRef.current?.dispose();
       transportRef.current = null;
       roomMetaRef.current = { roomId: '', ts: 0 };
@@ -1301,7 +1310,7 @@ function DiglosaRpgApp() {
       }
 
       if (roomId) {
-        await leaveMultiplayerRoom(roomId);
+        await leaveMultiplayerRoom(roomId, activePeers);
       }
     },
     [activeRoom?.roomId],
@@ -1364,6 +1373,7 @@ function DiglosaRpgApp() {
       onPeerChannelOpen: (peerUid) => {
         const engine = engineRef.current;
         if (!engine) return;
+        transport.broadcastState(engine.getLocalSyncPacket());
         const statsPkt = engine.getLocalStatsPacket(activeUid);
         transport.sendReliableToPeer(peerUid, statsPkt);
         if (engine.isAwaitingRejoinSync()) {
@@ -1371,6 +1381,57 @@ function DiglosaRpgApp() {
         } else if (engine.isMultiplayerWorldHost()) {
           transport.sendReliableToPeer(peerUid, engine.buildWorldSyncPacket());
         }
+      },
+      onPeerDeparted: ({ uid, displayName, reason }) => {
+        const currentRoom = activeRoomRef.current;
+        if (!currentRoom) return;
+        const label = reason === 'left' ? 'keluar dari grup' : 'terputus & keluar dari arena';
+        const bannerTxt = `🚪 ${displayName} ${label} (masih bisa gabung lagi selama room aktif)`;
+        engineRef.current?.showGroupNotice(bannerTxt, 3.2);
+        appendChatMessage({
+          id: `sys_leave_${uid}_${Date.now()}`,
+          roomId: currentRoom.roomId,
+          senderUid: '__SYSTEM__',
+          senderName: 'Sistem Grup',
+          text: bannerTxt,
+          createdAtMs: Date.now(),
+          source: 'system',
+        });
+
+        if (currentRoom.hostUid === activeUid) {
+          void pruneDisconnectedMember(currentRoom.roomId, uid);
+        } else if (currentRoom.hostUid === uid) {
+          const survivingActive = [activeUid, ...transport.getActivePeerUids()].sort();
+          if (survivingActive[0] === activeUid) {
+            void claimHostAndRemoveDeadHost(
+              currentRoom.roomId,
+              uid,
+              playerNameRef.current || 'Host',
+            ).then((claimed) => {
+              if (claimed) {
+                engineRef.current?.showGroupNotice(
+                  '👑 Host sebelumnya keluar — kamu sekarang menjadi Host grup!',
+                  3.0,
+                );
+              }
+            });
+          }
+        }
+      },
+      onPeerJoined: ({ uid, displayName }) => {
+        const currentRoom = activeRoomRef.current;
+        if (!currentRoom) return;
+        const bannerTxt = `👋 ${displayName} bergabung kembali ke grup!`;
+        engineRef.current?.showGroupNotice(bannerTxt, 2.8);
+        appendChatMessage({
+          id: `sys_join_${uid}_${Date.now()}`,
+          roomId: currentRoom.roomId,
+          senderUid: '__SYSTEM__',
+          senderName: 'Sistem Grup',
+          text: bannerTxt,
+          createdAtMs: Date.now(),
+          source: 'system',
+        });
       },
     });
     transportRef.current = transport;
@@ -1541,6 +1602,30 @@ function DiglosaRpgApp() {
   }, [isMultiplayerPlaying, activeRoomId]);
 
   const isHostInRoom = Boolean(activeRoom && activeUid && activeRoom.hostUid === activeUid);
+
+  // Instant P2P leave broadcast & best-effort room cleanup if player closes tab/browser
+  useEffect(() => {
+    if (!activeRoomId || !activeUid) return;
+    const handleTabExit = () => {
+      const transport = transportRef.current;
+      const activePeers = transport?.getActivePeerUids() ?? [];
+      transport?.broadcastLeave(playerNameRef.current || 'Rekan Tim');
+      void leaveMultiplayerRoom(activeRoomId, activePeers);
+    };
+    window.addEventListener('pagehide', handleTabExit);
+    return () => {
+      window.removeEventListener('pagehide', handleTabExit);
+    };
+  }, [activeRoomId, activeUid]);
+
+  // Keep room updatedAt fresh while Host is actively playing/waiting (every 3 minutes)
+  useEffect(() => {
+    if (!activeRoomId || !activeUid || !isHostInRoom) return;
+    const id = window.setInterval(() => {
+      void touchRoomHeartbeat(activeRoomId);
+    }, 180_000);
+    return () => window.clearInterval(id);
+  }, [activeRoomId, activeUid, isHostInRoom]);
 
   // Sync authoritative Host/Client role into 3D engine (supports seamless Host Migration)
   useEffect(() => {

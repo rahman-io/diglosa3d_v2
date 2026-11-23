@@ -79,6 +79,8 @@ export interface P2pTransportCallbacks {
   onLocalSpeakingChange?: (speaking: boolean) => void;
   onWorldEvent?: (fromUid: string, pkt: P2pReliableMessage) => void;
   onPeerChannelOpen?: (peerUid: string) => void;
+  onPeerDeparted?: (info: { uid: string; displayName: string; reason: 'left' | 'timeout' }) => void;
+  onPeerJoined?: (info: { uid: string; displayName: string }) => void;
 }
 
 function getUpdatedAtMs(val: unknown): number {
@@ -103,6 +105,11 @@ export class P2pMeshTransport {
   private memberMeta = new Map<string, MultiplayerMemberDoc>();
   private memberUpdatedAtMs = new Map<string, number>();
   private remoteStates = new Map<string, RemotePlayerState>();
+  private lastActivityMs = new Map<string, number>();
+  private disconnectedSinceMs = new Map<string, number>();
+  private departedPeers = new Set<string>();
+  private everHadLiveState = new Set<string>();
+  private lastHealthCheckMs = 0;
   private unsubSignals: (() => void) | null = null;
   private localMicStream: MediaStream | null = null;
   private localMicMuted = true;
@@ -137,29 +144,8 @@ export class P2pMeshTransport {
       activeUids.add(m.uid);
       this.memberMeta.set(m.uid, m);
 
-      // Seed remote player state from Firestore member metadata until P2P packet arrives
-      if (!this.remoteStates.has(m.uid)) {
-        this.remoteStates.set(m.uid, {
-          uid: m.uid,
-          displayName: m.displayName,
-          characterId: m.characterId,
-          worldMode: 'overworld',
-          x: -6,
-          y: 2.6,
-          z: 126,
-          yaw: Math.PI,
-          speed: 0,
-          walkCycle: 0,
-          onGround: true,
-          isSwimming: false,
-          activeWeapon: 'ketapel',
-          weaponOwned: false,
-          aimPitch: 0,
-          speaking: false,
-          updatedAtMs: Date.now(),
-        });
-      } else {
-        const cur = this.remoteStates.get(m.uid)!;
+      const cur = this.remoteStates.get(m.uid);
+      if (cur) {
         cur.displayName = m.displayName;
         cur.characterId = m.characterId;
       }
@@ -170,10 +156,19 @@ export class P2pMeshTransport {
         this.memberUpdatedAtMs.set(m.uid, nextUpdated);
       }
 
+      const memberUpdatedFresh = nextUpdated > prevUpdated && prevUpdated > 0;
+      if (memberUpdatedFresh && this.departedPeers.has(m.uid)) {
+        this.departedPeers.delete(m.uid);
+      }
+
+      if (this.departedPeers.has(m.uid)) {
+        continue;
+      }
+
       const existingSlot = this.peers.get(m.uid);
       if (!existingSlot) {
         this.createPeer(m.uid);
-      } else if (nextUpdated > prevUpdated && prevUpdated > 0) {
+      } else if (memberUpdatedFresh) {
         const dcOpen =
           existingSlot.dc?.readyState === 'open' ||
           existingSlot.reliableDc?.readyState === 'open';
@@ -190,13 +185,20 @@ export class P2pMeshTransport {
       }
     }
 
-    // Remove peers who left
-    for (const uid of Array.from(this.peers.keys())) {
+    // Remove peers who were deleted from Firestore members
+    const allTrackedUids = new Set<string>([
+      ...this.peers.keys(),
+      ...this.memberMeta.keys(),
+      ...this.remoteStates.keys(),
+    ]);
+    for (const uid of allTrackedUids) {
       if (!activeUids.has(uid)) {
-        this.closePeer(uid);
+        const meta = this.memberMeta.get(uid);
+        this.handlePeerDeparture(uid, meta?.displayName, 'left');
         this.memberMeta.delete(uid);
         this.memberUpdatedAtMs.delete(uid);
-        this.remoteStates.delete(uid);
+        this.departedPeers.delete(uid);
+        this.everHadLiveState.delete(uid);
       }
     }
 
@@ -215,6 +217,45 @@ export class P2pMeshTransport {
       }
     }
     return open;
+  }
+
+  public getActivePeerUids(): string[] {
+    const now = Date.now();
+    const active: string[] = [];
+    for (const [uid, p] of this.peers.entries()) {
+      if (this.departedPeers.has(uid)) continue;
+      const pcState = p.pc.connectionState;
+      if (pcState === 'closed' || pcState === 'failed') continue;
+      const dcOpen =
+        (p.dc && p.dc.readyState === 'open') ||
+        (p.reliableDc && p.reliableDc.readyState === 'open');
+      const lastAct = this.lastActivityMs.get(uid) ?? 0;
+      if (dcOpen || (lastAct > 0 && now - lastAct < 5500)) {
+        active.push(uid);
+      }
+    }
+    return active;
+  }
+
+  public broadcastLeave(displayName: string): void {
+    if (this.disposed || this.peers.size === 0) return;
+    const wire = JSON.stringify({
+      t: 'leave',
+      nm: displayName.trim().slice(0, 32) || undefined,
+    });
+    for (const peer of this.peers.values()) {
+      const channels = [peer.reliableDc, peer.dc];
+      for (const ch of channels) {
+        if (ch && ch.readyState === 'open') {
+          try {
+            ch.send(wire);
+            break;
+          } catch {
+            // ignore
+          }
+        }
+      }
+    }
   }
 
   public broadcastState(packet: LocalPlayerSyncPacket): void {
@@ -433,6 +474,64 @@ export class P2pMeshTransport {
     if (changed) {
       this.emitRemotePlayers();
     }
+
+    const nowMs = Date.now();
+    if (nowMs - this.lastHealthCheckMs >= 850) {
+      this.lastHealthCheckMs = nowMs;
+      this.checkPeerHealth(nowMs);
+    }
+  }
+
+  private checkPeerHealth(nowMs: number): void {
+    if (this.disposed) return;
+    for (const [uid, slot] of Array.from(this.peers.entries())) {
+      if (this.departedPeers.has(uid)) continue;
+      const pcState = slot.pc.connectionState;
+      if (pcState === 'failed' || pcState === 'closed') {
+        this.handlePeerDeparture(uid, undefined, 'timeout');
+        continue;
+      }
+      if (pcState === 'disconnected') {
+        const discAt = this.disconnectedSinceMs.get(uid);
+        if (!discAt) {
+          this.disconnectedSinceMs.set(uid, nowMs);
+        } else if (nowMs - discAt >= 3500) {
+          this.handlePeerDeparture(uid, undefined, 'timeout');
+          continue;
+        }
+      } else if (pcState === 'connected') {
+        this.disconnectedSinceMs.delete(uid);
+      }
+
+      const lastAct = this.lastActivityMs.get(uid);
+      if (this.remoteStates.has(uid) && typeof lastAct === 'number' && nowMs - lastAct >= 5500) {
+        this.handlePeerDeparture(uid, undefined, 'timeout');
+      }
+    }
+  }
+
+  private handlePeerDeparture(
+    uid: string,
+    explicitName?: string,
+    reason: 'left' | 'timeout' = 'left',
+  ): void {
+    if (this.departedPeers.has(uid)) return;
+    const prevState = this.remoteStates.get(uid);
+    const meta = this.memberMeta.get(uid);
+    const wasInWorld = Boolean(prevState) || this.everHadLiveState.has(uid);
+    const displayName = (explicitName || prevState?.displayName || meta?.displayName || 'Rekan Tim').slice(0, 32);
+
+    this.departedPeers.add(uid);
+    this.remoteStates.delete(uid);
+    this.lastActivityMs.delete(uid);
+    this.disconnectedSinceMs.delete(uid);
+    this.closePeer(uid);
+    this.emitRemotePlayers();
+    this.emitConnectionStats();
+
+    if (wasInWorld) {
+      this.callbacks.onPeerDeparted?.({ uid, displayName, reason });
+    }
   }
 
   private isPoliteFor(remoteUid: string): boolean {
@@ -524,6 +623,18 @@ export class P2pMeshTransport {
     };
 
     pc.onconnectionstatechange = () => {
+      const state = pc.connectionState;
+      if (state === 'connected') {
+        this.disconnectedSinceMs.delete(remoteUid);
+      } else if (state === 'disconnected') {
+        if (!this.disconnectedSinceMs.has(remoteUid)) {
+          this.disconnectedSinceMs.set(remoteUid, Date.now());
+        }
+      } else if (state === 'failed' || state === 'closed') {
+        if (this.remoteStates.has(remoteUid)) {
+          this.handlePeerDeparture(remoteUid, undefined, 'timeout');
+        }
+      }
       this.emitConnectionStats();
     };
 
@@ -541,10 +652,19 @@ export class P2pMeshTransport {
       slot.dc = dc;
     }
     dc.onopen = () => {
+      this.departedPeers.delete(slot.uid);
+      this.lastActivityMs.set(slot.uid, Date.now());
+      this.disconnectedSinceMs.delete(slot.uid);
       this.emitConnectionStats();
       this.callbacks.onPeerChannelOpen?.(slot.uid);
     };
     dc.onclose = () => {
+      const otherOpen =
+        (slot.dc && slot.dc !== dc && slot.dc.readyState === 'open') ||
+        (slot.reliableDc && slot.reliableDc !== dc && slot.reliableDc.readyState === 'open');
+      if (!otherOpen && this.remoteStates.has(slot.uid) && !this.disconnectedSinceMs.has(slot.uid)) {
+        this.disconnectedSinceMs.set(slot.uid, Date.now());
+      }
       this.emitConnectionStats();
     };
     dc.onmessage = (ev) => {
@@ -554,12 +674,23 @@ export class P2pMeshTransport {
           | LocalPlayerSyncPacket
           | { t: 'chat'; id?: string; nm?: string; tx?: string }
           | P2pReliableMessage;
+        if (parsed.t === 'leave') {
+          this.handlePeerDeparture(slot.uid, parsed.nm, 'left');
+          return;
+        }
+        this.lastActivityMs.set(slot.uid, Date.now());
+        this.disconnectedSinceMs.delete(slot.uid);
         if (parsed.t === 'state') {
           const meta = this.memberMeta.get(slot.uid);
           const prev = this.remoteStates.get(slot.uid);
+          const wasDepartedOrReturning =
+            !prev && (this.departedPeers.has(slot.uid) || this.everHadLiveState.has(slot.uid));
+          this.departedPeers.delete(slot.uid);
+          this.everHadLiveState.add(slot.uid);
+          const cleanName = (parsed.nm || meta?.displayName || 'Teman').slice(0, 32);
           this.remoteStates.set(slot.uid, {
             uid: slot.uid,
-            displayName: (parsed.nm || meta?.displayName || 'Teman').slice(0, 32),
+            displayName: cleanName,
             characterId: (parsed.ch || meta?.characterId || 'hoot_emerald') as CharacterPresetId,
             worldMode: parsed.w || 'overworld',
             x: Number.isFinite(parsed.x) ? parsed.x : -6,
@@ -583,6 +714,9 @@ export class P2pMeshTransport {
             updatedAtMs: Date.now(),
           });
           this.emitRemotePlayers();
+          if (wasDepartedOrReturning) {
+            this.callbacks.onPeerJoined?.({ uid: slot.uid, displayName: cleanName });
+          }
         } else if (parsed.t === 'chat' && parsed.tx) {
           const clean = filterChatProfanity(parsed.tx);
           if (!clean) return;
@@ -624,6 +758,9 @@ export class P2pMeshTransport {
 
   private async handleIncomingSignal(sig: WebRtcSignalDoc): Promise<void> {
     if (this.disposed || sig.fromUid === this.myUid) return;
+    if (sig.kind === 'offer') {
+      this.departedPeers.delete(sig.fromUid);
+    }
     let slot = this.peers.get(sig.fromUid);
     if (
       sig.kind === 'offer' &&
@@ -739,5 +876,9 @@ export class P2pMeshTransport {
     }
     this.memberMeta.clear();
     this.remoteStates.clear();
+    this.lastActivityMs.clear();
+    this.disconnectedSinceMs.clear();
+    this.departedPeers.clear();
+    this.everHadLiveState.clear();
   }
 }
