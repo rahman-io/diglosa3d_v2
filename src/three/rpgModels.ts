@@ -260,6 +260,7 @@ export interface AcademyHallRig {
   exitPadPos: THREE.Vector3;
   exitClickable: THREE.Object3D;
   cameraOccluders: THREE.Object3D[];
+  colliders: Array<{ x: number; z: number; halfW: number; halfD: number; maxY: number }>;
 }
 
 function addShadow(group: THREE.Group, palette: MaterialPalette, radius: number): void {
@@ -3898,7 +3899,15 @@ export function createAcademyHallEnvironment(palette: MaterialPalette): AcademyH
   exitGate.add(pad, ring);
   group.add(exitGate);
 
-  return { group, animatables, exitPadPos, exitClickable: exitGate, cameraOccluders };
+  const colliders: AcademyHallRig['colliders'] = [
+    { x: 0, z: -21.5, halfW: 22.0, halfD: 0.9, maxY: 6.8 },
+    { x: 0, z: -14.5, halfW: 4.75, halfD: 3.1, maxY: 0.65 },
+  ];
+  colPositions.forEach(([px, pz]) => {
+    colliders.push({ x: px, z: pz, halfW: 1.05, halfD: 1.05, maxY: 8.6 });
+  });
+
+  return { group, animatables, exitPadPos, exitClickable: exitGate, cameraOccluders, colliders };
 }
 
 // 12. First-Person Hand & Held Item Viewmodel (Minecraft-style bottom-right viewmodel)

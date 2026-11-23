@@ -140,6 +140,7 @@ export interface OceanSurvivalState {
   ridingTurtle: boolean;
   nearSurfaceExit: boolean;
   suffocating: boolean;
+  unlimitedOxygen?: boolean;
 }
 
 export type WeaponId =
@@ -459,6 +460,7 @@ export type RadarBlipKind =
   | 'boss'
   | 'craft'
   | 'chest'
+  | 'collectible'
   | 'door'
   | 'exit';
 

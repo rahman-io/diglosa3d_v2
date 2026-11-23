@@ -2098,3 +2098,153 @@ export function updateAndEvaluateObstacles(
     hazardHit,
   };
 }
+
+/**
+ * Prevents the Hero or entities from walking through solid structural posts, frames,
+ * cannons, volcano mounds, laser columns, turbine housings, crushing walls, and elevator pillar sides.
+ */
+export function resolveSolidObstacleCollisions(
+  rig: WorldObstaclesRig,
+  pos: { x: number; y?: number; z: number },
+  radius = 0.65,
+  heroHeight = 2.6,
+): void {
+  const posY = pos.y;
+  const pushLocalBox = (
+    lx: number,
+    lz: number,
+    bx: number,
+    bz: number,
+    halfW: number,
+    halfD: number,
+    minY: number,
+    maxY: number,
+    dy: number,
+    cosY: number,
+    sinY: number,
+    instX: number,
+    instZ: number,
+  ): { pushed: boolean; nx: number; nz: number } => {
+    if (dy + heroHeight <= minY || dy >= maxY - 0.12) {
+      return { pushed: false, nx: pos.x, nz: pos.z };
+    }
+    const cx = THREE.MathUtils.clamp(lx, bx - halfW, bx + halfW);
+    const cz = THREE.MathUtils.clamp(lz, bz - halfD, bz + halfD);
+    const dx = lx - cx;
+    const dz = lz - cz;
+    const distSq = dx * dx + dz * dz;
+    if (distSq >= radius * radius) {
+      return { pushed: false, nx: pos.x, nz: pos.z };
+    }
+    let nextLx = lx;
+    let nextLz = lz;
+    if (distSq > 0.0001) {
+      const d = Math.sqrt(distSq);
+      nextLx += (dx / d) * (radius - d);
+      nextLz += (dz / d) * (radius - d);
+    } else {
+      const penX = halfW + radius - Math.abs(lx - bx);
+      const penZ = halfD + radius - Math.abs(lz - bz);
+      if (penX < penZ) {
+        nextLx = bx + (lx >= bx ? halfW + radius : -(halfW + radius));
+      } else {
+        nextLz = bz + (lz >= bz ? halfD + radius : -(halfD + radius));
+      }
+    }
+    // Transform local XZ back to world XZ (inverse of toLocalXZ: wx = ox + lx*cosY + lz*sinY, wz = oz - lx*sinY + lz*cosY)
+    return {
+      pushed: true,
+      nx: instX + nextLx * cosY + nextLz * sinY,
+      nz: instZ - nextLx * sinY + nextLz * cosY,
+    };
+  };
+
+  for (let i = 0; i < rig.instances.length; i++) {
+    const inst = rig.instances[i];
+    if (Math.abs(pos.x - inst.def.x) > 10.5 || Math.abs(pos.z - inst.def.z) > 10.5) continue;
+    const dy = (posY ?? inst.baseY) - inst.baseY;
+    if (dy > 8.5 || dy + heroHeight < -0.5) continue;
+
+    const applyBox = (bx: number, bz: number, halfW: number, halfD: number, minY: number, maxY: number) => {
+      const { lx, lz } = toLocalXZ(pos.x, pos.z, inst.def.x, inst.def.z, inst.cosY, inst.sinY);
+      const res = pushLocalBox(lx, lz, bx, bz, halfW, halfD, minY, maxY, dy, inst.cosY, inst.sinY, inst.def.x, inst.def.z);
+      if (res.pushed) {
+        pos.x = res.nx;
+        pos.z = res.nz;
+      }
+    };
+
+    switch (inst.def.kind) {
+      case 'swinging_spike':
+      case 'falling_stalactites':
+        applyBox(-2.6, 0, 0.35, 0.35, 0, 6.2);
+        applyBox(2.6, 0, 0.35, 0.35, 0, 6.2);
+        break;
+      case 'crushing_piston':
+        applyBox(-2.1, 0, 0.35, 0.4, 0, 5.4);
+        applyBox(2.1, 0, 0.35, 0.4, 0, 5.4);
+        break;
+      case 'laser_barrier':
+        applyBox(-2.5, 0, 0.35, 0.35, 0, 3.8);
+        applyBox(2.5, 0, 0.35, 0.35, 0, 3.8);
+        break;
+      case 'laser_gate':
+        applyBox(-2.4, 0, 0.55, 0.55, 0, 4.6);
+        applyBox(2.4, 0, 0.55, 0.55, 0, 4.6);
+        break;
+      case 'fire_shooter':
+        applyBox(0, 0, 1.08, 1.15, 0, 2.2);
+        break;
+      case 'lava_volcano':
+        applyBox(0, 0, 1.65, 1.65, 0, 1.75);
+        break;
+      case 'acid_fount':
+        applyBox(0, -2.0, 0.52, 0.65, 0, 3.1);
+        break;
+      case 'gust_vent':
+        applyBox(0, 0, 1.85, 0.95, 0, 4.2);
+        break;
+      case 'wind_turbine':
+        applyBox(0, 0, 1.65, 1.1, 0, 3.8);
+        break;
+      case 'piston_pusher':
+        applyBox(-2.6, 0, 0.85, 1.65, 0, 2.9);
+        if (inst.pistons[0]) {
+          const px = inst.pistons[0].obj.position.x;
+          applyBox(px, 0, 0.45, 1.35, 0.1, 2.5);
+        }
+        break;
+      case 'crushing_walls':
+        for (let p = 0; p < inst.pistons.length; p++) {
+          const px = inst.pistons[p].obj.position.x;
+          applyBox(px, 0, 0.82, 1.82, 0.1, 3.4);
+        }
+        break;
+      case 'crushing_monoliths':
+        for (let p = 0; p < inst.pistons.length; p++) {
+          const px = inst.pistons[p].obj.position.x;
+          applyBox(px, 0, 1.08, 1.75, 0, 4.4);
+        }
+        break;
+      case 'spinning_fire_bar':
+        applyBox(0, 0, 0.72, 0.72, 0, 1.2);
+        break;
+      case 'rotating_blades':
+        applyBox(0, 0, 0.82, 0.82, 0, 0.7);
+        break;
+      case 'bouncy_pad':
+        applyBox(0, 0, 1.55, 1.55, 0, 1.2);
+        break;
+      case 'moving_platforms':
+        for (let p = 0; p < inst.movingPlatforms.length; p++) {
+          const mp = inst.movingPlatforms[p];
+          const topDy = mp.currentY - inst.baseY;
+          // Push horizontally if hero is below the platform's walkable top surface
+          if (dy < topDy - 0.55) {
+            applyBox(mp.localX, mp.localZ, mp.halfW - 0.15, mp.halfD - 0.15, -4, topDy);
+          }
+        }
+        break;
+    }
+  }
+}

@@ -312,7 +312,10 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                         Zona Saat Ini: {hud.oceanSurvival.zoneLabel}
                       </div>
                       <div className="text-[11px] font-semibold text-slate-300">
-                        Kedalaman -{hud.oceanSurvival.depthMeters}m · O₂ {Math.round(hud.oceanSurvival.oxygen)}/{hud.oceanSurvival.maxOxygen}
+                        Kedalaman -{hud.oceanSurvival.depthMeters}m ·{' '}
+                        {hud.oceanSurvival.unlimitedOxygen
+                          ? 'O₂ Tak Terbatas (∞ · Pakaian Renang)'
+                          : `O₂ ${Math.round(hud.oceanSurvival.oxygen)}/${hud.oceanSurvival.maxOxygen}`}
                       </div>
                     </div>
                     <span className="font-mono-nums text-xs font-black text-emerald-300">
@@ -324,7 +327,11 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
 
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-slate-200">
                     <span className="text-cyan-300">Perlengkapan Selam:</span>
-                    {hud.oceanSurvival.ownedGear.length === 0 ? (
+                    {hud.oceanSurvival.unlimitedOxygen && hud.oceanSurvival.ownedGear.length === 0 ? (
+                      <span className="rounded-lg border border-emerald-400/40 bg-emerald-950/60 px-2 py-0.5 text-[10px] font-extrabold text-emerald-200">
+                        ✓ Pakaian Renang Aktif (O₂ Tak Terbatas)
+                      </span>
+                    ) : hud.oceanSurvival.ownedGear.length === 0 ? (
                       <span className="text-amber-300">
                         Belum ada (Cepat kehabisan O₂ saat menyelam dalam!)
                       </span>

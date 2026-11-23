@@ -1333,7 +1333,17 @@ export interface ArchipelagoRig {
   windmillHub: THREE.Group;
   gears: Array<{ mesh: THREE.Object3D; speed: number }>;
   clockHands: THREE.Group[];
-  cars: Array<{ mesh: THREE.Group; baseX: number; rangeX: number; speed: number; phase: number }>;
+  cars: Array<{
+    mesh: THREE.Group;
+    baseX: number;
+    rangeX: number;
+    speed: number;
+    phase: number;
+    halfX: number;
+    halfZ: number;
+    height: number;
+  }>;
+  policeCar: THREE.Group;
   minecart: THREE.Group;
   minecartCurve: THREE.CatmullRomCurve3;
   crystalMeshes: THREE.Mesh[];
@@ -1718,7 +1728,8 @@ export function createArchipelagoWorld(
   const torchesFlame: THREE.Object3D[] = [];
   const gears: Array<{ mesh: THREE.Object3D; speed: number }> = [];
   const clockHands: THREE.Group[] = [];
-  const cars: Array<{ mesh: THREE.Group; baseX: number; rangeX: number; speed: number; phase: number }> = [];
+  const cars: ArchipelagoRig['cars'] = [];
+  let policeCar!: THREE.Group;
   const crystalMeshes: THREE.Mesh[] = [];
   const lavaMeshes: THREE.Mesh[] = [];
   const zooCritters: ArchipelagoRig['zooCritters'] = [];
@@ -3707,11 +3718,10 @@ export function createArchipelagoWorld(
     });
 
     // White & Blue Police Patrol SUV parked inside the Fortress Courtyard (6.4m x 3.1m x 3.95m!)
-    const policeCar = createVoxelCar(palette, 0xf8fafc, 'police');
+    policeCar = createVoxelCar(palette, 0xf8fafc, 'police');
     policeCar.position.set(-127.0, courtY + 0.04, -109.5);
     policeCar.rotation.y = -0.35;
     group.add(policeCar);
-    obstacles.push({ x: -127.0, z: -109.5, halfW: 2.9, halfD: 2.9 });
 
     // 4c. Terowongan Bawah Tanah (T: 12m / L: 14m) + 36m Cliff Overburden + Twin Traffic Lights!
     //     Tunnel Bore runs x=-172 to x=-138, z=-93 to z=-79 (14m wide!) at floor y=12m, ceiling y=24m!
@@ -3797,7 +3807,17 @@ export function createArchipelagoWorld(
       const car = createVoxelCar(palette, cfg.color, cfg.variant);
       car.position.set(cfg.baseX, hwyY + 0.06, cfg.z);
       group.add(car);
-      cars.push({ mesh: car, baseX: cfg.baseX, rangeX: cfg.range, speed: cfg.speed, phase: cfg.phase });
+      const isBus = cfg.variant === 'bus';
+      cars.push({
+        mesh: car,
+        baseX: cfg.baseX,
+        rangeX: cfg.range,
+        speed: cfg.speed,
+        phase: cfg.phase,
+        halfX: isBus ? 4.95 : 2.95,
+        halfZ: isBus ? 1.65 : 1.5,
+        height: isBus ? 4.65 : 3.55,
+      });
     });
   }
 
@@ -4481,6 +4501,7 @@ export function createArchipelagoWorld(
     gears,
     clockHands,
     cars,
+    policeCar,
     minecart,
     minecartCurve,
     crystalMeshes,
@@ -4618,5 +4639,164 @@ export function updateArchipelagoWorld(
     const t = elapsed * 1.4 + c.phase;
     c.head.rotation.y = Math.sin(t * 0.9) * 0.25;
     c.head.rotation.x = Math.max(0, Math.sin(t * 1.3)) * 0.16;
+  }
+}
+
+function pushEntityFromOBB(
+  pos: { x: number; y?: number; z: number },
+  vx: number,
+  vy: number,
+  vz: number,
+  rotY: number,
+  halfX: number,
+  halfZ: number,
+  height: number,
+  radius: number,
+  entityHeight: number,
+): { pushed: boolean; topY: number | null } {
+  const dx = pos.x - vx;
+  const dz = pos.z - vz;
+  if (Math.abs(dx) > halfX + halfZ + radius + 1.0 || Math.abs(dz) > halfX + halfZ + radius + 1.0) {
+    return { pushed: false, topY: null };
+  }
+  const cosY = Math.cos(rotY);
+  const sinY = Math.sin(rotY);
+  const lx = dx * cosY - dz * sinY;
+  const lz = dx * sinY + dz * cosY;
+
+  if (pos.y !== undefined) {
+    if (pos.y >= vy + height - 0.55) {
+      if (Math.abs(lx) <= halfX + radius * 0.45 && Math.abs(lz) <= halfZ + radius * 0.45) {
+        return { pushed: false, topY: vy + height };
+      }
+      return { pushed: false, topY: null };
+    }
+    if (pos.y + entityHeight <= vy - 0.25) {
+      return { pushed: false, topY: null };
+    }
+  }
+
+  const cx = THREE.MathUtils.clamp(lx, -halfX, halfX);
+  const cz = THREE.MathUtils.clamp(lz, -halfZ, halfZ);
+  const px = lx - cx;
+  const pz = lz - cz;
+  const distSq = px * px + pz * pz;
+  if (distSq >= radius * radius) {
+    return { pushed: false, topY: null };
+  }
+
+  let nextLx = lx;
+  let nextLz = lz;
+  if (distSq > 0.0001) {
+    const d = Math.sqrt(distSq);
+    nextLx += (px / d) * (radius - d);
+    nextLz += (pz / d) * (radius - d);
+  } else {
+    const penX = halfX + radius - Math.abs(lx);
+    const penZ = halfZ + radius - Math.abs(lz);
+    if (penX < penZ) {
+      nextLx = lx >= 0 ? halfX + radius : -(halfX + radius);
+    } else {
+      nextLz = lz >= 0 ? halfZ + radius : -(halfZ + radius);
+    }
+  }
+
+  pos.x = vx + nextLx * cosY + nextLz * sinY;
+  pos.z = vz - nextLx * sinY + nextLz * cosY;
+  return { pushed: true, topY: null };
+}
+
+export function resolveArchipelagoVehicleCollisions(
+  rig: ArchipelagoRig,
+  pos: { x: number; y?: number; z: number },
+  radius = 0.68,
+  entityHeight = 2.6,
+): { hitVehicle: boolean; supportY: number | null } {
+  let hitVehicle = false;
+  let supportY: number | null = null;
+
+  for (let i = 0; i < rig.cars.length; i++) {
+    const c = rig.cars[i];
+    const r = pushEntityFromOBB(
+      pos,
+      c.mesh.position.x,
+      c.mesh.position.y,
+      c.mesh.position.z,
+      c.mesh.rotation.y,
+      c.halfX,
+      c.halfZ,
+      c.height,
+      radius,
+      entityHeight,
+    );
+    if (r.pushed) hitVehicle = true;
+    if (r.topY !== null && (supportY === null || r.topY > supportY)) supportY = r.topY;
+  }
+
+  if (rig.policeCar) {
+    const r = pushEntityFromOBB(
+      pos,
+      rig.policeCar.position.x,
+      rig.policeCar.position.y,
+      rig.policeCar.position.z,
+      rig.policeCar.rotation.y,
+      3.25,
+      1.6,
+      3.75,
+      radius,
+      entityHeight,
+    );
+    if (r.pushed) hitVehicle = true;
+    if (r.topY !== null && (supportY === null || r.topY > supportY)) supportY = r.topY;
+  }
+
+  if (rig.minecart) {
+    const r = pushEntityFromOBB(
+      pos,
+      rig.minecart.position.x,
+      rig.minecart.position.y,
+      rig.minecart.position.z,
+      rig.minecart.rotation.y,
+      1.22,
+      1.82,
+      2.35,
+      radius,
+      entityHeight,
+    );
+    if (r.pushed) hitVehicle = true;
+    if (r.topY !== null && (supportY === null || r.topY > supportY)) supportY = r.topY;
+  }
+
+  return { hitVehicle, supportY };
+}
+
+export function appendVehicleVillageColliders(
+  rig: ArchipelagoRig,
+  out: VillageObstacle[],
+): void {
+  for (let i = 0; i < rig.cars.length; i++) {
+    const c = rig.cars[i];
+    out.push({
+      x: c.mesh.position.x,
+      z: c.mesh.position.z,
+      halfW: c.halfX + 0.15,
+      halfD: c.halfZ + 0.15,
+    });
+  }
+  if (rig.policeCar) {
+    out.push({
+      x: rig.policeCar.position.x,
+      z: rig.policeCar.position.z,
+      halfW: 3.1,
+      halfD: 2.2,
+    });
+  }
+  if (rig.minecart) {
+    out.push({
+      x: rig.minecart.position.x,
+      z: rig.minecart.position.z,
+      halfW: 1.9,
+      halfD: 1.9,
+    });
   }
 }

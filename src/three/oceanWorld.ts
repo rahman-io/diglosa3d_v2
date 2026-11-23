@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { DivingGearId, MonsterType, OceanMaterials, SeaBiotaId } from '../types/game';
+import { DivingGearId, MonsterType, OceanMaterials, SeaBiotaId, WeaponId } from '../types/game';
 import { MaterialPalette } from './materials';
 import {
   animateSeaBiotaRig,
@@ -8,6 +8,7 @@ import {
   SEA_BIOTA_CATALOG,
   SeaBiotaRig,
 } from './seaBiotaCatalog';
+import { createWeaponMesh } from './weaponModels';
 
 export interface DivingGearDef {
   id: DivingGearId;
@@ -105,6 +106,34 @@ export interface OceanBiotaNode {
   harvestCooldown: number;
   scale: number;
   lastDimScale?: number;
+  repelX?: number;
+  repelZ?: number;
+}
+
+export interface OceanSolidCollider {
+  x: number;
+  z: number;
+  minY: number;
+  maxY: number;
+  halfW: number;
+  halfD: number;
+  rotY?: number;
+  isSphere?: boolean;
+  radius?: number;
+}
+
+export interface OceanPickup {
+  id: string;
+  kind: 'heart' | 'diamond' | 'weapon';
+  weaponId?: WeaponId;
+  label: string;
+  x: number;
+  y: number;
+  z: number;
+  phase: number;
+  active: boolean;
+  respawnTimer: number;
+  mesh: THREE.Group;
 }
 
 export interface OceanAirVent {
@@ -142,8 +171,177 @@ export interface OceanWorldRig {
   biotaNodes: OceanBiotaNode[];
   airVents: OceanAirVent[];
   chests: OceanSupplyChest[];
+  colliders: OceanSolidCollider[];
+  pickups: OceanPickup[];
   clickables: THREE.Object3D[];
   disposables: Array<{ dispose: () => void }>;
+}
+
+export function getSeaBiotaSolidRadius(speciesId: SeaBiotaId, scale = 1): number {
+  switch (speciesId) {
+    case 'brain_coral':
+    case 'fire_coral':
+    case 'blue_staghorn':
+    case 'giant_clam':
+      return 0.85 * scale;
+    case 'sea_turtle':
+    case 'spotted_stingray':
+    case 'chameleon_octopus':
+    case 'glowing_jellyfish':
+      return 0.9 * scale;
+    case 'sea_anemone':
+    case 'sea_fan':
+    case 'bioluminescent_algae':
+      return 0.62 * scale;
+    case 'giant_kelp':
+    case 'seagrass':
+    case 'tiger_cowrie':
+    case 'spiny_lobster':
+    case 'box_crab':
+    case 'starfish':
+      return 0.52 * scale;
+    case 'clownfish':
+    case 'blue_tang':
+    case 'yellow_seahorse':
+    default:
+      return 0.56 * scale;
+  }
+}
+
+export function resolveOceanSolidCollisions(
+  pos: { x: number; y: number; z: number },
+  colliders: OceanSolidCollider[],
+  radius = 0.68,
+  entityHeight = 2.1,
+): boolean {
+  let pushed = false;
+  for (let i = 0; i < colliders.length; i++) {
+    const col = colliders[i];
+    if (pos.y >= col.maxY - 0.14 || pos.y + entityHeight <= col.minY + 0.14) continue;
+    const dx = pos.x - col.x;
+    const dz = pos.z - col.z;
+    if (col.isSphere && col.radius !== undefined) {
+      const minD = col.radius + radius;
+      const distSq = dx * dx + dz * dz;
+      if (distSq < minD * minD) {
+        if (distSq > 0.0001) {
+          const d = Math.sqrt(distSq);
+          pos.x += (dx / d) * (minD - d);
+          pos.z += (dz / d) * (minD - d);
+        } else {
+          pos.z = col.z + minD;
+        }
+        pushed = true;
+      }
+      continue;
+    }
+
+    const rotY = col.rotY ?? 0;
+    const cosY = rotY !== 0 ? Math.cos(rotY) : 1;
+    const sinY = rotY !== 0 ? Math.sin(rotY) : 0;
+    const lx = rotY !== 0 ? dx * cosY - dz * sinY : dx;
+    const lz = rotY !== 0 ? dx * sinY + dz * cosY : dz;
+    const cx = THREE.MathUtils.clamp(lx, -col.halfW, col.halfW);
+    const cz = THREE.MathUtils.clamp(lz, -col.halfD, col.halfD);
+    const px = lx - cx;
+    const pz = lz - cz;
+    const distSq = px * px + pz * pz;
+    if (distSq >= radius * radius) continue;
+
+    let nextLx = lx;
+    let nextLz = lz;
+    if (distSq > 0.0001) {
+      const d = Math.sqrt(distSq);
+      nextLx += (px / d) * (radius - d);
+      nextLz += (pz / d) * (radius - d);
+    } else {
+      const penX = col.halfW + radius - Math.abs(lx);
+      const penZ = col.halfD + radius - Math.abs(lz);
+      if (penX < penZ) {
+        nextLx = lx >= 0 ? col.halfW + radius : -(col.halfW + radius);
+      } else {
+        nextLz = lz >= 0 ? col.halfD + radius : -(col.halfD + radius);
+      }
+    }
+    if (rotY !== 0) {
+      pos.x = col.x + nextLx * cosY + nextLz * sinY;
+      pos.z = col.z - nextLx * sinY + nextLz * cosY;
+    } else {
+      pos.x = col.x + nextLx;
+      pos.z = col.z + nextLz;
+    }
+    pushed = true;
+  }
+  return pushed;
+}
+
+const OCEAN_WEAPON_LABELS: Record<WeaponId, string> = {
+  ketapel: 'Senjata Pemula',
+  kerikil: 'Ketapel Kerikil',
+  emas: 'Senjata Emas',
+  saus: 'Senjata Cepat',
+  biji: 'Senjata Hijau',
+  kertas: 'Senjata Langit',
+  jarum: 'Senjata Berat',
+  kristal: 'Senjata Kristal',
+};
+
+function createOceanPickupMesh(
+  kind: 'heart' | 'diamond' | 'weapon',
+  weaponId: WeaponId | undefined,
+  palette: MaterialPalette,
+  disposables: Array<{ dispose: () => void }>,
+): THREE.Group {
+  const g = new THREE.Group();
+  const ringMat = palette.getMat(
+    kind === 'heart' ? 0xfb7185 : kind === 'diamond' ? 0x38bdf8 : 0xfacc15,
+    'emissive',
+  );
+  const haloGeo = new THREE.TorusGeometry(kind === 'weapon' ? 0.72 : 0.56, 0.055, 6, 16);
+  const halo = new THREE.Mesh(haloGeo, ringMat);
+  halo.rotation.x = Math.PI / 2;
+  halo.position.y = -0.25;
+  disposables.push(haloGeo);
+  g.add(halo);
+
+  if (kind === 'heart') {
+    const heartMat = palette.createSurfaceMat({
+      color: 0xf43f5e,
+      emissive: 0xe11d48,
+      emissiveIntensity: 0.95,
+      roughness: 0.25,
+    });
+    const lobeGeo = new THREE.BoxGeometry(0.36, 0.36, 0.28);
+    const centerGeo = new THREE.OctahedronGeometry(0.36, 0);
+    const leftLobe = new THREE.Mesh(lobeGeo, heartMat);
+    leftLobe.position.set(-0.17, 0.16, 0);
+    const rightLobe = new THREE.Mesh(lobeGeo, heartMat);
+    rightLobe.position.set(0.17, 0.16, 0);
+    const tip = new THREE.Mesh(centerGeo, heartMat);
+    tip.position.set(0, -0.02, 0);
+    tip.scale.set(1.2, 1.05, 0.75);
+    disposables.push(heartMat, lobeGeo, centerGeo);
+    g.add(leftLobe, rightLobe, tip);
+  } else if (kind === 'diamond') {
+    const diaMat = palette.createSurfaceMat({
+      color: 0x38bdf8,
+      emissive: 0x0ea5e9,
+      emissiveIntensity: 1.0,
+      roughness: 0.15,
+      metalness: 0.25,
+    });
+    const diaGeo = new THREE.OctahedronGeometry(0.46, 0);
+    const dia = new THREE.Mesh(diaGeo, diaMat);
+    dia.scale.set(0.88, 1.28, 0.88);
+    disposables.push(diaMat, diaGeo);
+    g.add(dia);
+  } else {
+    const wMesh = createWeaponMesh(weaponId ?? 'emas', palette, 1.35);
+    wMesh.position.y = 0.16;
+    wMesh.rotation.z = 0.22;
+    g.add(wMesh);
+  }
+  return g;
 }
 
 /**
@@ -232,6 +430,8 @@ export function createOceanEnvironment(
   const group = new THREE.Group();
   const disposables: Array<{ dispose: () => void }> = [];
   const clickables: THREE.Object3D[] = [];
+  const colliders: OceanSolidCollider[] = [];
+  const pickups: OceanPickup[] = [];
 
   // 1. Voxelized 3-Zone Seabed Terrain
   const sandLightMat = palette.getMat(0xfde68a, 'matte');
@@ -322,6 +522,64 @@ export function createOceanEnvironment(
   ruins.matrixAutoUpdate = false;
   group.add(ruins);
 
+  // Colliders matching Sunken Temple Ruins at (-14, rBaseY, 10), rotY = 0.42
+  const rCos = Math.cos(0.42);
+  const rSin = Math.sin(0.42);
+  const ruinWorldPos = (lx: number, lz: number): [number, number] => [
+    -14 + lx * rCos + lz * rSin,
+    10 - lx * rSin + lz * rCos,
+  ];
+  const [colLX, colLZ] = ruinWorldPos(-2.6, 0);
+  const [colRX, colRZ] = ruinWorldPos(2.6, 0);
+  const [fallX, fallZ] = ruinWorldPos(3.8, 2.6);
+  colliders.push(
+    {
+      x: colLX,
+      z: colLZ,
+      minY: rBaseY - 0.4,
+      maxY: rBaseY + 7.4,
+      halfW: 0.88,
+      halfD: 0.88,
+      rotY: 0.42,
+    },
+    {
+      x: colRX,
+      z: colRZ,
+      minY: rBaseY - 0.4,
+      maxY: rBaseY + 7.4,
+      halfW: 0.88,
+      halfD: 0.88,
+      rotY: 0.42,
+    },
+    {
+      x: -14,
+      z: 10,
+      minY: rBaseY + 5.8,
+      maxY: rBaseY + 8.0,
+      halfW: 3.9,
+      halfD: 1.0,
+      rotY: 0.42,
+    },
+    {
+      x: -14,
+      z: 10,
+      minY: rBaseY - 0.8,
+      maxY: rBaseY + 0.68,
+      halfW: 4.4,
+      halfD: 2.1,
+      rotY: 0.42,
+    },
+    {
+      x: fallX,
+      z: fallZ,
+      minY: rBaseY - 0.4,
+      maxY: rBaseY + 1.45,
+      halfW: 0.72,
+      halfD: 2.15,
+      rotY: 0.42 + 0.75,
+    },
+  );
+
   // Additional sunken stone columns along reef ridge
   const extraPillars: Array<[number, number, number, number]> = [
     [-24, 22, 4.4, 0.18],
@@ -338,6 +596,14 @@ export function createOceanEnvironment(
     cap.updateMatrix();
     cap.matrixAutoUpdate = false;
     group.add(p, cap);
+    colliders.push({
+      x: px,
+      z: pz,
+      minY: py - 0.4,
+      maxY: py + h + 0.35,
+      halfW: 0.78,
+      halfD: 0.78,
+    });
   }
 
   // 3. Giant Abyssal Cavern Archway & Cliffs in Background Trench (matches right side of image_35a38232.png!)
@@ -365,6 +631,15 @@ export function createOceanEnvironment(
   freezeSubtreeMatrices(archGroup);
   archGroup.matrixAutoUpdate = false;
   group.add(archGroup);
+
+  colliders.push(
+    { x: -18, z: -40, minY: archBaseY - 2, maxY: archBaseY + 25, halfW: 5.0, halfD: 4.5 },
+    { x: 18, z: -40, minY: archBaseY - 2, maxY: archBaseY + 25, halfW: 5.0, halfD: 4.5 },
+    { x: 0, z: -40, minY: archBaseY + 19.2, maxY: archBaseY + 27.5, halfW: 23.0, halfD: 4.8 },
+    { x: -39, z: -36, minY: -32, maxY: 0, halfW: 8.0, halfD: 18.0 },
+    { x: 39, z: -36, minY: -32, maxY: 0, halfW: 8.0, halfD: 18.0 },
+    { x: 0, z: -54, minY: -32, maxY: 0, halfW: 47.0, halfD: 4.0 },
+  );
 
   // 4. Water Ceiling & Sunbeams (marked isMapHidden so top-down map captures seabed cleanly)
   const waterCeilGeo = new THREE.PlaneGeometry(110, 110, lowDetail ? 4 : 14, lowDetail ? 4 : 14);
@@ -454,6 +729,16 @@ export function createOceanEnvironment(
   buoyGroup.userData.oceanExit = true;
   group.add(buoyGroup);
   clickables.push(buoyGroup);
+  colliders.push({
+    x: 0,
+    z: 33,
+    minY: buoyPos.y - 0.4,
+    maxY: buoyPos.y + 1.4,
+    halfW: 1.25,
+    halfD: 1.25,
+    isSphere: true,
+    radius: 1.25,
+  });
 
   // 7. Four Underwater O₂ Air Bubble Vents (refill oxygen in reefs & trench!)
   const airVents: OceanAirVent[] = [];
@@ -495,6 +780,16 @@ export function createOceanEnvironment(
     }
     group.add(vGroup);
     airVents.push({ id: `vent_${idx}`, x: vx, y: vy, z: vz, group: vGroup, rings });
+    colliders.push({
+      x: vx,
+      z: vz,
+      minY: vy - 0.3,
+      maxY: vy + 0.9,
+      halfW: 1.35,
+      halfD: 1.35,
+      isSphere: true,
+      radius: 1.35,
+    });
   });
 
   // 8. Two Sunken Supply Chests (Snorkel in Temple Ruins & Twilight Reef Cache)
@@ -562,6 +857,14 @@ export function createOceanEnvironment(
       group: cGroup,
       lid,
       beacon,
+    });
+    colliders.push({
+      x: cd.x,
+      z: cd.z,
+      minY: cy - 0.3,
+      maxY: cy + 1.15,
+      halfW: 0.78,
+      halfD: 0.55,
     });
   });
 
@@ -836,6 +1139,80 @@ export function createOceanEnvironment(
     }
   }
 
+  // 9b. Scattered Underwater Hearts (❤️), Diamonds (💎), and Weapons across Reef & Abyssal Trench
+  const addOceanPickup = (
+    id: string,
+    kind: OceanPickup['kind'],
+    x: number,
+    z: number,
+    yOff: number,
+    weaponId?: WeaponId,
+  ) => {
+    const floorY = getOceanFloorY(x, z);
+    const y = THREE.MathUtils.clamp(floorY + yOff, floorY + 0.9, -1.6);
+    const mesh = createOceanPickupMesh(kind, weaponId, palette, disposables);
+    mesh.position.set(x, y, z);
+    mesh.userData.oceanPickupId = id;
+    group.add(mesh);
+    pickups.push({
+      id,
+      kind,
+      weaponId,
+      label:
+        kind === 'heart'
+          ? 'Nyawa Bawah Laut (❤️)'
+          : kind === 'diamond'
+          ? 'Berlian Bawah Laut (💎)'
+          : `${OCEAN_WEAPON_LABELS[weaponId ?? 'emas']} (+Ammo)`,
+      x,
+      y,
+      z,
+      phase: pickups.length * 1.17,
+      active: true,
+      respawnTimer: 0,
+      mesh,
+    });
+  };
+
+  // Hearts (❤️)
+  [
+    [-9, 25, 2.2],
+    [10, 22, 2.5],
+    [-18, 9, 2.2],
+    [16, 4, 2.8],
+    [-8, -11, 2.6],
+    [11, -15, 2.8],
+    [-12, -29, 3.0],
+    [10, -37, 3.2],
+  ].forEach(([px, pz, pyOff], i) => addOceanPickup(`oc_heart_${i}`, 'heart', px, pz, pyOff));
+
+  // Diamonds (💎)
+  [
+    [-14, 15, 2.3],
+    [6, 20, 2.4],
+    [-20, 4, 2.4],
+    [17, 15, 2.5],
+    [-4, -6, 2.6],
+    [13, -10, 2.6],
+    [-15, -22, 3.0],
+    [5, -27, 2.8],
+    [-11, -41, 3.2],
+    [12, -41, 3.2],
+  ].forEach(([px, pz, pyOff], i) => addOceanPickup(`oc_dia_${i}`, 'diamond', px, pz, pyOff));
+
+  // Weapons (Senjata Bawah Laut)
+  const oceanWeaponSpots: Array<[WeaponId, number, number, number]> = [
+    ['emas', -14, 7, 2.2],
+    ['saus', 14, 17, 2.4],
+    ['biji', -19, -5, 2.6],
+    ['kertas', 15, -18, 2.8],
+    ['jarum', -6, -28, 3.0],
+    ['kristal', 4, -39, 3.2],
+  ];
+  oceanWeaponSpots.forEach(([wid, wx, wz, wyOff], i) =>
+    addOceanPickup(`oc_wp_${i}_${wid}`, 'weapon', wx, wz, wyOff, wid),
+  );
+
   // 10. Hero Underwater Torch Light & Reef Bioluminescence Accent Light (<= 2 dynamic lights)
   const torchLight = new THREE.PointLight(0x7dd3fc, 1.4, 24, 1.4);
   torchLight.position.set(0, -4, 26);
@@ -857,9 +1234,213 @@ export function createOceanEnvironment(
     biotaNodes,
     airVents,
     chests,
+    colliders,
+    pickups,
     clickables,
     disposables,
   };
+}
+
+function updateAndSeparateOceanBiota(
+  biotaNodes: OceanBiotaNode[],
+  colliders: OceanSolidCollider[],
+  sampleFloorY: (x: number, z: number) => number,
+  dt: number,
+  elapsed: number,
+  heroPos: THREE.Vector3,
+  ridingTurtle: boolean,
+  maxDistSq: number,
+  isArchipelago = false,
+): void {
+  const heroRad = 0.68;
+  // Pass 1: Patrol & obstacle avoidance
+  for (let i = 0; i < biotaNodes.length; i++) {
+    const node = biotaNodes[i];
+    if (node.harvestCooldown > 0) {
+      node.harvestCooldown = Math.max(0, node.harvestCooldown - dt);
+    }
+    const dxH = node.x - heroPos.x;
+    const dzH = node.z - heroPos.z;
+    const distSqXZ = dxH * dxH + dzH * dzH;
+    if (isArchipelago) {
+      const visible = distSqXZ <= maxDistSq;
+      node.rig.root.visible = visible;
+      if (!visible) continue;
+    } else if (distSqXZ + (node.y - heroPos.y) * (node.y - heroPos.y) > maxDistSq) {
+      continue;
+    }
+
+    const nextScale = node.scale * (node.harvestCooldown > 0 ? 0.76 : 1.0);
+    if (node.lastDimScale !== nextScale) {
+      node.rig.root.scale.setScalar(nextScale);
+      node.lastDimScale = nextScale;
+    }
+
+    node.repelX = (node.repelX ?? 0) * Math.exp(-5.0 * dt);
+    node.repelZ = (node.repelZ ?? 0) * Math.exp(-5.0 * dt);
+
+    if (node.patrolMode === 'swim') {
+      const t = elapsed * node.patrolSpeed + node.phase;
+      const baseNx = node.homeX + Math.cos(t) * node.patrolRadius;
+      const baseNz = node.homeZ + Math.sin(t * 0.8) * (node.patrolRadius * 0.75);
+      const nx = baseNx + node.repelX;
+      const nz = baseNz + node.repelZ;
+      const minY = sampleFloorY(nx, nz) + 0.65;
+      const rawNy = node.homeY + Math.sin(elapsed * 1.6 + node.phase) * 0.35;
+      const ny = Math.max(minY, isArchipelago ? Math.min(-1.25, rawNy) : Math.min(-1.05, rawNy));
+      const tmp = { x: nx, y: ny, z: nz };
+      const rad = getSeaBiotaSolidRadius(node.speciesId, node.scale);
+      if (resolveOceanSolidCollisions(tmp, colliders, rad, 0.9)) {
+        node.repelX += tmp.x - nx;
+        node.repelZ += tmp.z - nz;
+      }
+      const dx = tmp.x - node.x;
+      const dz = tmp.z - node.z;
+      if (Math.hypot(dx, dz) > 0.002) {
+        node.rig.root.rotation.y = Math.atan2(dx, dz);
+      }
+      node.x = tmp.x;
+      node.y = tmp.y;
+      node.z = tmp.z;
+      node.rig.root.position.set(tmp.x, tmp.y, tmp.z);
+    } else if (node.patrolMode === 'hover') {
+      const t = elapsed * node.patrolSpeed + node.phase;
+      const nx = node.homeX + Math.cos(t) * node.patrolRadius * 0.5 + node.repelX;
+      const nz = node.homeZ + Math.sin(t) * node.patrolRadius * 0.5 + node.repelZ;
+      const minY = sampleFloorY(nx, nz) + 0.55;
+      const rawNy = node.homeY + Math.sin(elapsed * 1.3 + node.phase) * 0.55;
+      const ny = Math.max(minY, isArchipelago ? Math.min(-1.25, rawNy) : Math.min(-1.05, rawNy));
+      const tmp = { x: nx, y: ny, z: nz };
+      const rad = getSeaBiotaSolidRadius(node.speciesId, node.scale);
+      if (resolveOceanSolidCollisions(tmp, colliders, rad, 0.9)) {
+        node.repelX += tmp.x - nx;
+        node.repelZ += tmp.z - nz;
+      }
+      node.x = tmp.x;
+      node.y = tmp.y;
+      node.z = tmp.z;
+      node.rig.root.position.set(tmp.x, tmp.y, tmp.z);
+    } else if (node.patrolMode === 'crawl') {
+      const t = elapsed * node.patrolSpeed + node.phase;
+      const nx = node.homeX + Math.cos(t) * node.patrolRadius + node.repelX;
+      const nz = node.homeZ + Math.sin(t * 1.1) * (node.patrolRadius * 0.65) + node.repelZ;
+      const ny = sampleFloorY(nx, nz) + 0.05;
+      const tmp = { x: nx, y: ny, z: nz };
+      const rad = getSeaBiotaSolidRadius(node.speciesId, node.scale);
+      if (resolveOceanSolidCollisions(tmp, colliders, rad, 0.7)) {
+        node.repelX += tmp.x - nx;
+        node.repelZ += tmp.z - nz;
+      }
+      const dx = tmp.x - node.x;
+      const dz = tmp.z - node.z;
+      if (Math.hypot(dx, dz) > 0.002) {
+        node.rig.root.rotation.y = Math.atan2(dx, dz);
+      }
+      node.x = tmp.x;
+      node.y = sampleFloorY(tmp.x, tmp.z) + 0.05;
+      node.z = tmp.z;
+      node.rig.root.position.set(node.x, node.y, node.z);
+    }
+  }
+
+  // Pass 2: Prevent fish/creatures from passing through each other or corals
+  for (let i = 0; i < biotaNodes.length; i++) {
+    const a = biotaNodes[i];
+    if (isArchipelago && !a.rig.root.visible) continue;
+    const radA = getSeaBiotaSolidRadius(a.speciesId, a.scale);
+    for (let j = i + 1; j < biotaNodes.length; j++) {
+      const b = biotaNodes[j];
+      if (a.patrolMode === 'static' && b.patrolMode === 'static') continue;
+      if (isArchipelago && !b.rig.root.visible) continue;
+      if (Math.abs(a.y - b.y) > 1.35) continue;
+      const radB = getSeaBiotaSolidRadius(b.speciesId, b.scale);
+      const minD = radA + radB;
+      const dx = a.x - b.x;
+      const dz = a.z - b.z;
+      const distSq = dx * dx + dz * dz;
+      if (distSq >= minD * minD) continue;
+      const d = distSq > 0.0001 ? Math.sqrt(distSq) : 0.01;
+      const nx = distSq > 0.0001 ? dx / d : 1;
+      const nz = distSq > 0.0001 ? dz / d : 0;
+      const push = minD - d;
+      if (a.patrolMode !== 'static' && b.patrolMode === 'static') {
+        a.x += nx * push;
+        a.z += nz * push;
+        a.repelX = (a.repelX ?? 0) + nx * push;
+        a.repelZ = (a.repelZ ?? 0) + nz * push;
+        a.rig.root.position.set(a.x, a.y, a.z);
+      } else if (b.patrolMode !== 'static' && a.patrolMode === 'static') {
+        b.x -= nx * push;
+        b.z -= nz * push;
+        b.repelX = (b.repelX ?? 0) - nx * push;
+        b.repelZ = (b.repelZ ?? 0) - nz * push;
+        b.rig.root.position.set(b.x, b.y, b.z);
+      } else {
+        const half = push * 0.5;
+        a.x += nx * half;
+        a.z += nz * half;
+        a.repelX = (a.repelX ?? 0) + nx * half;
+        a.repelZ = (a.repelZ ?? 0) + nz * half;
+        b.x -= nx * half;
+        b.z -= nz * half;
+        b.repelX = (b.repelX ?? 0) - nx * half;
+        b.repelZ = (b.repelZ ?? 0) - nz * half;
+        a.rig.root.position.set(a.x, a.y, a.z);
+        b.rig.root.position.set(b.x, b.y, b.z);
+      }
+    }
+  }
+
+  // Pass 3: Solid separation between Hero and all fish/biota (so character & fish never clip)
+  for (let i = 0; i < biotaNodes.length; i++) {
+    const node = biotaNodes[i];
+    if (isArchipelago && !node.rig.root.visible) continue;
+    if (ridingTurtle && node.speciesId === 'sea_turtle') continue;
+    const nodeH =
+      node.speciesId === 'giant_kelp'
+        ? 4.6 * node.scale
+        : node.speciesId === 'starfish'
+        ? 0.42
+        : 1.45 * node.scale;
+    const heroCenterY = heroPos.y + 0.9;
+    if (heroCenterY + 1.05 < node.y - 0.35 || heroCenterY - 0.95 > node.y + nodeH) continue;
+    const minD = heroRad + getSeaBiotaSolidRadius(node.speciesId, node.scale);
+    const dx = heroPos.x - node.x;
+    const dz = heroPos.z - node.z;
+    const distSq = dx * dx + dz * dz;
+    if (distSq >= minD * minD) continue;
+    const d = distSq > 0.0001 ? Math.sqrt(distSq) : 0.01;
+    const nx = distSq > 0.0001 ? dx / d : 1;
+    const nz = distSq > 0.0001 ? dz / d : 0;
+    const push = minD - d;
+    if (node.patrolMode === 'static') {
+      heroPos.x += nx * push;
+      heroPos.z += nz * push;
+    } else {
+      // Push hero 55% and deflect fish/creature 45% so both bounce apart naturally
+      heroPos.x += nx * push * 0.55;
+      heroPos.z += nz * push * 0.55;
+      node.x -= nx * push * 0.45;
+      node.z -= nz * push * 0.45;
+      node.repelX = (node.repelX ?? 0) - nx * push * 0.45;
+      node.repelZ = (node.repelZ ?? 0) - nz * push * 0.45;
+      node.rig.root.position.set(node.x, node.y, node.z);
+    }
+  }
+
+  // Animate visual rigs after final positions
+  for (let i = 0; i < biotaNodes.length; i++) {
+    const node = biotaNodes[i];
+    if (isArchipelago) {
+      if (!node.rig.root.visible) continue;
+    } else {
+      const dxH = node.x - heroPos.x;
+      const dyH = node.y - heroPos.y;
+      const dzH = node.z - heroPos.z;
+      if (dxH * dxH + dyH * dyH + dzH * dzH > maxDistSq) continue;
+    }
+    animateSeaBiotaRig(node.rig, elapsed, node.phase);
+  }
 }
 
 export function updateOceanWorld(
@@ -870,6 +1451,7 @@ export function updateOceanWorld(
   heroYaw: number,
   ownedGear: Set<DivingGearId>,
   lowDetail = false,
+  ridingTurtle = false,
 ): void {
   // Subtle surface ripple & sunbeam sway
   rig.surfaceMesh.position.y = Math.sin(elapsed * 1.4) * 0.08;
@@ -931,62 +1513,35 @@ export function updateOceanWorld(
     heroPos.z + Math.cos(heroYaw) * 1.4,
   );
 
-  // Animate all 20 Sea Biota species with mobile distance culling & scale dirty-guard
-  const cullDistSq = lowDetail ? 40 * 40 : 68 * 68;
-  for (const node of rig.biotaNodes) {
-    if (node.harvestCooldown > 0) {
-      node.harvestCooldown = Math.max(0, node.harvestCooldown - dt);
-    }
-    const nextScale = node.scale * (node.harvestCooldown > 0 ? 0.76 : 1.0);
-    if (node.lastDimScale !== nextScale) {
-      node.rig.root.scale.setScalar(nextScale);
-      node.lastDimScale = nextScale;
-    }
-
-    const dxH = node.x - heroPos.x;
-    const dyH = node.y - heroPos.y;
-    const dzH = node.z - heroPos.z;
-    const distSq = dxH * dxH + dyH * dyH + dzH * dzH;
-    if (distSq > cullDistSq) continue;
-
-    if (node.patrolMode === 'swim') {
-      const t = elapsed * node.patrolSpeed + node.phase;
-      const nx = node.homeX + Math.cos(t) * node.patrolRadius;
-      const nz = node.homeZ + Math.sin(t * 0.8) * (node.patrolRadius * 0.75);
-      const ny = node.homeY + Math.sin(elapsed * 1.6 + node.phase) * 0.35;
-      const dx = nx - node.x;
-      const dz = nz - node.z;
-      if (Math.hypot(dx, dz) > 0.002) {
-        node.rig.root.rotation.y = Math.atan2(dx, dz);
+  // Animate pickups (bob + spin + respawn)
+  for (const pk of rig.pickups) {
+    if (!pk.active) {
+      pk.mesh.visible = false;
+      pk.respawnTimer -= dt;
+      if (pk.respawnTimer <= 0) {
+        pk.active = true;
+        pk.mesh.visible = true;
       }
-      node.x = nx;
-      node.y = ny;
-      node.z = nz;
-      node.rig.root.position.set(nx, ny, nz);
-    } else if (node.patrolMode === 'hover') {
-      const t = elapsed * node.patrolSpeed + node.phase;
-      node.x = node.homeX + Math.cos(t) * node.patrolRadius * 0.5;
-      node.z = node.homeZ + Math.sin(t) * node.patrolRadius * 0.5;
-      node.y = node.homeY + Math.sin(elapsed * 1.3 + node.phase) * 0.55;
-      node.rig.root.position.set(node.x, node.y, node.z);
-    } else if (node.patrolMode === 'crawl') {
-      const t = elapsed * node.patrolSpeed + node.phase;
-      const nx = node.homeX + Math.cos(t) * node.patrolRadius;
-      const nz = node.homeZ + Math.sin(t * 1.1) * (node.patrolRadius * 0.65);
-      const ny = getOceanFloorY(nx, nz) + 0.05;
-      const dx = nx - node.x;
-      const dz = nz - node.z;
-      if (Math.hypot(dx, dz) > 0.002) {
-        node.rig.root.rotation.y = Math.atan2(dx, dz);
-      }
-      node.x = nx;
-      node.y = ny;
-      node.z = nz;
-      node.rig.root.position.set(nx, ny, nz);
+      continue;
     }
-
-    animateSeaBiotaRig(node.rig, elapsed, node.phase);
+    pk.mesh.visible = true;
+    pk.mesh.position.y = pk.y + Math.sin(elapsed * 2.6 + pk.phase) * 0.24;
+    pk.mesh.rotation.y += dt * 1.8;
   }
+
+  // Separate & animate all 20 Sea Biota species
+  const cullDistSq = lowDetail ? 40 * 40 : 68 * 68;
+  updateAndSeparateOceanBiota(
+    rig.biotaNodes,
+    rig.colliders,
+    getOceanFloorY,
+    dt,
+    elapsed,
+    heroPos,
+    ridingTurtle,
+    cullDistSq,
+    false,
+  );
 }
 
 export function getArchipelagoOceanZoneInfo(y: number): {
@@ -1010,6 +1565,8 @@ export interface ArchipelagoUnderwaterRig {
   biotaNodes: OceanBiotaNode[];
   airVents: OceanAirVent[];
   chests: OceanSupplyChest[];
+  colliders: OceanSolidCollider[];
+  pickups: OceanPickup[];
   dynamicNodes: THREE.Object3D[];
   clickables: THREE.Object3D[];
   disposables: Array<{ dispose: () => void }>;
@@ -1026,6 +1583,8 @@ export function createArchipelagoUnderwaterProps(
   const disposables: Array<{ dispose: () => void }> = [];
   const clickables: THREE.Object3D[] = [];
   const dynamicNodes: THREE.Object3D[] = [];
+  const colliders: OceanSolidCollider[] = [];
+  const pickups: OceanPickup[] = [];
 
   const nudgeToWater = (x: number, z: number): [number, number] => {
     if (isWaterSpot(x, z)) return [x, z];
@@ -1066,6 +1625,47 @@ export function createArchipelagoUnderwaterProps(
     freezeSubtreeMatrices(ruins);
     ruins.matrixAutoUpdate = false;
     group.add(ruins);
+
+    const cosR = Math.cos(rotY);
+    const sinR = Math.sin(rotY);
+    colliders.push(
+      {
+        x: rx + -2.4 * cosR,
+        z: rz - -2.4 * sinR,
+        minY: ry - 0.3,
+        maxY: ry + 6.2,
+        halfW: 0.78,
+        halfD: 0.78,
+        rotY,
+      },
+      {
+        x: rx + 2.4 * cosR,
+        z: rz - 2.4 * sinR,
+        minY: ry - 0.3,
+        maxY: ry + 6.2,
+        halfW: 0.78,
+        halfD: 0.78,
+        rotY,
+      },
+      {
+        x: rx,
+        z: rz,
+        minY: ry + 4.9,
+        maxY: ry + 6.8,
+        halfW: 3.6,
+        halfD: 0.85,
+        rotY,
+      },
+      {
+        x: rx,
+        z: rz,
+        minY: ry - 0.6,
+        maxY: ry + 0.65,
+        halfW: 4.0,
+        halfD: 1.9,
+        rotY,
+      },
+    );
   });
 
   // 2. Hero-Following Volumetric Sunbeams & Rising Bubbles (hidden on dry land for zero FPS cost)
@@ -1180,6 +1780,16 @@ export function createArchipelagoUnderwaterProps(
     group.add(vGroup);
     dynamicNodes.push(vGroup);
     airVents.push({ id: `arch_vent_${idx}`, x: vx, y: vy, z: vz, group: vGroup, rings });
+    colliders.push({
+      x: vx,
+      z: vz,
+      minY: vy - 0.3,
+      maxY: vy + 0.9,
+      halfW: 1.35,
+      halfD: 1.35,
+      isSphere: true,
+      radius: 1.35,
+    });
   });
 
   // 4. Sunken Supply Chests (Snorkel near Desa South Reef & Twilight Cache toward Pasar)
@@ -1249,6 +1859,14 @@ export function createArchipelagoUnderwaterProps(
       group: cGroup,
       lid,
       beacon,
+    });
+    colliders.push({
+      x: cx,
+      z: cz,
+      minY: cy - 0.3,
+      maxY: cy + 1.15,
+      halfW: 0.78,
+      halfD: 0.55,
     });
   });
 
@@ -1523,6 +2141,87 @@ export function createArchipelagoUnderwaterProps(
     }
   }
 
+  // 5b. Scattered Underwater Hearts (❤️), Diamonds (💎), and Weapons across Archipelago Straits
+  const addArchPickup = (
+    id: string,
+    kind: OceanPickup['kind'],
+    rawX: number,
+    rawZ: number,
+    yOff: number,
+    weaponId?: WeaponId,
+  ) => {
+    const [x, z] = nudgeToWater(rawX, rawZ);
+    const floorY = sampleFloorY(x, z);
+    const safeOffset = Math.min(yOff, Math.max(0.85, Math.abs(floorY) - 1.45));
+    const y = Math.min(-1.55, floorY + safeOffset);
+    const mesh = createOceanPickupMesh(kind, weaponId, palette, disposables);
+    mesh.position.set(x, y, z);
+    mesh.userData.oceanPickupId = id;
+    group.add(mesh);
+    dynamicNodes.push(mesh);
+    pickups.push({
+      id,
+      kind,
+      weaponId,
+      label:
+        kind === 'heart'
+          ? 'Nyawa Bawah Laut (❤️)'
+          : kind === 'diamond'
+          ? 'Berlian Bawah Laut (💎)'
+          : `${OCEAN_WEAPON_LABELS[weaponId ?? 'emas']} (+Ammo)`,
+      x,
+      y,
+      z,
+      phase: pickups.length * 1.13,
+      active: true,
+      respawnTimer: 0,
+      mesh,
+    });
+  };
+
+  // Hearts (❤️) across straits
+  [
+    [-6, 192, 1.8],
+    [-32, 170, 2.0],
+    [34, 142, 2.0],
+    [-66, 98, 2.2],
+    [66, 98, 2.2],
+    [-82, 4, 2.4],
+    [82, 4, 2.4],
+    [-50, -108, 2.5],
+    [64, -112, 2.5],
+    [0, -48, 2.2],
+  ].forEach(([px, pz, pyOff], i) => addArchPickup(`arch_oc_heart_${i}`, 'heart', px, pz, pyOff));
+
+  // Diamonds (💎) across straits
+  [
+    [-18, 184, 1.9],
+    [16, 186, 1.9],
+    [-46, 132, 2.2],
+    [46, 128, 2.2],
+    [-76, 62, 2.4],
+    [72, 74, 2.4],
+    [-84, -16, 2.6],
+    [86, -12, 2.6],
+    [-42, -120, 2.6],
+    [70, -122, 2.6],
+    [-20, -68, 2.4],
+    [22, -66, 2.4],
+  ].forEach(([px, pz, pyOff], i) => addArchPickup(`arch_oc_dia_${i}`, 'diamond', px, pz, pyOff));
+
+  // Underwater Weapons (Senjata Bawah Laut)
+  const archWeaponSpots: Array<[WeaponId, number, number, number]> = [
+    ['emas', -14, 188, 2.0],
+    ['saus', -54, 122, 2.2],
+    ['biji', 54, 116, 2.2],
+    ['kertas', -80, -6, 2.4],
+    ['jarum', 80, -6, 2.4],
+    ['kristal', -46, -116, 2.6],
+  ];
+  archWeaponSpots.forEach(([wid, wx, wz, wyOff], i) =>
+    addArchPickup(`arch_oc_wp_${i}_${wid}`, 'weapon', wx, wz, wyOff, wid),
+  );
+
   // 6. Hero Underwater Torch Light (only lit when underwater!)
   const torchLight = new THREE.PointLight(0x7dd3fc, 0, 26, 1.4);
   torchLight.position.set(0, -4, 190);
@@ -1537,6 +2236,8 @@ export function createArchipelagoUnderwaterProps(
     biotaNodes,
     airVents,
     chests,
+    colliders,
+    pickups,
     dynamicNodes,
     clickables,
     disposables,
@@ -1554,6 +2255,7 @@ export function updateArchipelagoUnderwaterProps(
   ownedGear: Set<DivingGearId>,
   isUnderwater: boolean,
   lowDetail = false,
+  ridingTurtle = false,
 ): void {
   const showAtmosphereFx = isUnderwater || camY < 0.05;
   rig.bubblesPoints.visible = showAtmosphereFx;
@@ -1633,62 +2335,37 @@ export function updateArchipelagoUnderwaterProps(
     }
   }
 
-  // Distance-culled 20 Sea Biota Species
-  for (const node of rig.biotaNodes) {
-    if (node.harvestCooldown > 0) {
-      node.harvestCooldown = Math.max(0, node.harvestCooldown - dt);
-    }
-    const dxH = node.x - heroPos.x;
-    const dzH = node.z - heroPos.z;
-    const distSqXZ = dxH * dxH + dzH * dzH;
-    const visible = distSqXZ <= visDistSq;
-    node.rig.root.visible = visible;
-    if (!visible) continue;
-
-    const nextScale = node.scale * (node.harvestCooldown > 0 ? 0.76 : 1.0);
-    if (node.lastDimScale !== nextScale) {
-      node.rig.root.scale.setScalar(nextScale);
-      node.lastDimScale = nextScale;
-    }
-
-    if (node.patrolMode === 'swim') {
-      const t = elapsed * node.patrolSpeed + node.phase;
-      const nx = node.homeX + Math.cos(t) * node.patrolRadius;
-      const nz = node.homeZ + Math.sin(t * 0.8) * (node.patrolRadius * 0.75);
-      const ny = Math.min(-1.25, node.homeY + Math.sin(elapsed * 1.6 + node.phase) * 0.35);
-      const dx = nx - node.x;
-      const dz = nz - node.z;
-      if (Math.hypot(dx, dz) > 0.002) {
-        node.rig.root.rotation.y = Math.atan2(dx, dz);
+  // Underwater Pickups (Hearts, Diamonds, Weapons)
+  for (const pk of rig.pickups) {
+    if (!pk.active) {
+      pk.mesh.visible = false;
+      pk.respawnTimer -= dt;
+      if (pk.respawnTimer <= 0) {
+        pk.active = true;
       }
-      node.x = nx;
-      node.y = ny;
-      node.z = nz;
-      node.rig.root.position.set(nx, ny, nz);
-    } else if (node.patrolMode === 'hover') {
-      const t = elapsed * node.patrolSpeed + node.phase;
-      node.x = node.homeX + Math.cos(t) * node.patrolRadius * 0.5;
-      node.z = node.homeZ + Math.sin(t) * node.patrolRadius * 0.5;
-      node.y = Math.min(-1.25, node.homeY + Math.sin(elapsed * 1.3 + node.phase) * 0.55);
-      node.rig.root.position.set(node.x, node.y, node.z);
-    } else if (node.patrolMode === 'crawl') {
-      const t = elapsed * node.patrolSpeed + node.phase;
-      const nx = node.homeX + Math.cos(t) * node.patrolRadius;
-      const nz = node.homeZ + Math.sin(t * 1.1) * (node.patrolRadius * 0.65);
-      const ny = rig.sampleFloorY(nx, nz) + 0.05;
-      const dx = nx - node.x;
-      const dz = nz - node.z;
-      if (Math.hypot(dx, dz) > 0.002) {
-        node.rig.root.rotation.y = Math.atan2(dx, dz);
-      }
-      node.x = nx;
-      node.y = ny;
-      node.z = nz;
-      node.rig.root.position.set(nx, ny, nz);
+      continue;
     }
-
-    animateSeaBiotaRig(node.rig, elapsed, node.phase);
+    const dx = pk.x - heroPos.x;
+    const dz = pk.z - heroPos.z;
+    const vis = dx * dx + dz * dz <= visDistSq;
+    pk.mesh.visible = vis;
+    if (!vis) continue;
+    pk.mesh.position.y = pk.y + Math.sin(elapsed * 2.6 + pk.phase) * 0.24;
+    pk.mesh.rotation.y += dt * 1.8;
   }
+
+  // Distance-culled & Collision-Separated 20 Sea Biota Species
+  updateAndSeparateOceanBiota(
+    rig.biotaNodes,
+    rig.colliders,
+    rig.sampleFloorY,
+    dt,
+    elapsed,
+    heroPos,
+    ridingTurtle,
+    visDistSq,
+    true,
+  );
 }
 
 export function getBiotaActionLabel(speciesId: SeaBiotaId): string | null {

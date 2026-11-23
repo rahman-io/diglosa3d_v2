@@ -178,6 +178,14 @@ export const SpotLegendIcon: React.FC<{ kind: RadarBlipKind; className?: string 
       </svg>
     );
   }
+  if (kind === 'collectible') {
+    return (
+      <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+        <path d="M12 3l7 8-7 10-7-10 7-8z" fill="#38bdf8" stroke="#0f172a" strokeWidth="1.6" />
+        <path d="M12 3l3.2 8L12 21 8.8 11 12 3z" fill="#e0f2fe" opacity="0.65" />
+      </svg>
+    );
+  }
   if (kind === 'key') {
     return (
       <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -656,6 +664,22 @@ function drawIcon(
     ctx.fillRect(-5, -0.5, 10, 1.4);
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(-1.2, -1.2, 2.4, 2.4);
+  } else if (kind === 'collectible') {
+    ctx.fillStyle = color || '#38bdf8';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(0, -4.6);
+    ctx.lineTo(4.2, 0);
+    ctx.lineTo(0, 4.6);
+    ctx.lineTo(-4.2, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.arc(-0.9, -1.1, 1.1, 0, Math.PI * 2);
+    ctx.fill();
   } else if (kind === 'guardian') {
     ctx.fillStyle = liberated ? '#22c55e' : color;
     ctx.strokeStyle = '#0f172a';
@@ -1434,6 +1458,7 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
           }
           if (kind === 'craft') return 'Meja Craft';
           if (kind === 'chest') return 'Peti Senjata';
+          if (kind === 'collectible') return 'Item Bawah Laut';
           if (kind === 'guardian') return 'Penjaga Gua';
           if (kind === 'key') return 'Kunci Penjara';
           if (kind === 'prison') return 'Penjara';

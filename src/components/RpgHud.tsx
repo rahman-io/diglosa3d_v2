@@ -831,27 +831,38 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
             if (hud.oceanSurvival) {
               const oc = hud.oceanSurvival;
-              const o2Pct = Math.max(0, Math.min(100, Math.round((oc.oxygen / Math.max(1, oc.maxOxygen)) * 100)));
+              const isUnlimited = Boolean(oc.unlimitedOxygen);
+              const o2Pct = isUnlimited
+                ? 100
+                : Math.max(0, Math.min(100, Math.round((oc.oxygen / Math.max(1, oc.maxOxygen)) * 100)));
               return (
                 <div
                   className={`pointer-events-auto w-full rounded-xl border px-2.5 py-1.5 text-white shadow-md ${
-                    oc.suffocating
+                    oc.suffocating && !isUnlimited
                       ? 'animate-pulse border-rose-400 bg-rose-950/92'
+                      : isUnlimited
+                      ? 'border-emerald-400/50 bg-slate-950/92'
                       : 'border-cyan-400/40 bg-slate-950/92'
                   }`}
                 >
                   <div className="flex items-center justify-between gap-1.5 font-mono-nums text-[9.5px] font-extrabold sm:text-[10px]">
-                    <span className={oc.suffocating ? 'text-rose-200' : 'text-cyan-200'}>
-                      {oc.suffocating ? '⚠️ NAPAS HABIS!' : '🫧 Oksigen (O₂)'}
+                    <span className={oc.suffocating && !isUnlimited ? 'text-rose-200' : isUnlimited ? 'text-emerald-200' : 'text-cyan-200'}>
+                      {isUnlimited
+                        ? '🫧 O₂ Tak Terbatas'
+                        : oc.suffocating
+                        ? '⚠️ NAPAS HABIS!'
+                        : '🫧 Oksigen (O₂)'}
                     </span>
-                    <span className={o2Pct <= 25 ? 'text-rose-300' : 'text-cyan-200'}>
-                      {Math.round(oc.oxygen)}/{oc.maxOxygen}
+                    <span className={!isUnlimited && o2Pct <= 25 ? 'text-rose-300' : isUnlimited ? 'text-emerald-300' : 'text-cyan-200'}>
+                      {isUnlimited ? '∞ Selam' : `${Math.round(oc.oxygen)}/${oc.maxOxygen}`}
                     </span>
                   </div>
                   <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
                     <div
                       className={`h-full transition-all duration-200 ${
-                        o2Pct <= 25
+                        isUnlimited
+                          ? 'bg-gradient-to-r from-emerald-400 via-cyan-300 to-sky-400'
+                          : o2Pct <= 25
                           ? 'bg-gradient-to-r from-rose-600 to-amber-400'
                           : 'bg-gradient-to-r from-cyan-400 to-sky-300'
                       }`}
@@ -870,9 +881,9 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                       ⚔️ {stats.context === 'ocean' ? 'Palung' : 'Wilayah'} {stats.defeated}/{stats.total}
                     </span>
                   </div>
-                  {oc.ownedGear.length === 0 && oc.depthMeters >= 6 && (
+                  {!isUnlimited && oc.ownedGear.length === 0 && oc.depthMeters >= 6 && (
                     <div className="mt-1 text-[8.5px] font-extrabold text-amber-300">
-                      💡 Buat/beli Baju Selam agar O₂ awet di kedalaman!
+                      💡 Ambil Pakaian Renang atau buat Baju Selam agar O₂ tak terbatas!
                     </div>
                   )}
                 </div>

@@ -81,8 +81,10 @@ import {
   getOceanZoneInfo,
   OCEAN_SEA_MONSTER_SPAWNS,
   OceanBiotaNode,
+  OceanPickup,
   OceanSupplyChest,
   OceanWorldRig,
+  resolveOceanSolidCollisions,
   updateArchipelagoUnderwaterProps,
   updateOceanWorld,
 } from './oceanWorld';
@@ -97,6 +99,7 @@ import {
   VillageObstacle,
 } from './minecraftVillage';
 import {
+  appendVehicleVillageColliders,
   ArchipelagoRig,
   constrainHeroToWorldBounds,
   constrainToWalkableArchipelago,
@@ -107,6 +110,7 @@ import {
   IELTS_TEMPORARILY_LOCKED,
   isWalkableArchipelago,
   OVERWORLD_ANCHORS,
+  resolveArchipelagoVehicleCollisions,
   sampleArchipelagoTerrain,
   updateArchipelagoWorld,
   WORLD_OCEAN_LIMIT,
@@ -150,6 +154,7 @@ import {
 import {
   createWorldObstacles,
   getObstacleSupportHeight,
+  resolveSolidObstacleCollisions,
   updateAndEvaluateObstacles,
   WorldObstaclesRig,
 } from './worldObstacles';
@@ -2650,6 +2655,57 @@ export class RpgWorldEngine {
       if (hits.length > 0) {
         safeDist = Math.min(safeDist, Math.max(1.15, hits[0].distance - 0.52));
       }
+    } else if (this.worldMode === 'ocean' && this.oceanRig) {
+      if (dirY > 0.01 && originY + dirY * safeDist > -0.35) {
+        safeDist = Math.min(safeDist, Math.max(1.2, (-0.35 - originY) / dirY));
+      }
+      for (const frac of [0.5, 0.78, 1.0]) {
+        const sx = originX + dirX * safeDist * frac;
+        const sz = originZ + dirZ * safeDist * frac;
+        const seabedCamY = getOceanFloorY(sx, sz) + 0.72;
+        if (originY + dirY * safeDist * frac < seabedCamY) {
+          if (dirY < -0.01) {
+            safeDist = Math.min(safeDist, Math.max(1.25, (seabedCamY - originY) / (dirY * frac)));
+          }
+        }
+      }
+      for (const col of this.oceanRig.colliders) {
+        if (col.isSphere && col.radius !== undefined) {
+          const hit = this.rayIntersectAabbDist(
+            originX,
+            originY,
+            originZ,
+            dirX,
+            dirY,
+            dirZ,
+            safeDist + 0.45,
+            col.x - col.radius,
+            col.x + col.radius,
+            col.minY,
+            col.maxY,
+            col.z - col.radius,
+            col.z + col.radius,
+          );
+          if (hit !== null) safeDist = Math.min(safeDist, Math.max(1.25, hit - 0.48));
+        } else if (!col.rotY) {
+          const hit = this.rayIntersectAabbDist(
+            originX,
+            originY,
+            originZ,
+            dirX,
+            dirY,
+            dirZ,
+            safeDist + 0.45,
+            col.x - col.halfW,
+            col.x + col.halfW,
+            col.minY,
+            col.maxY,
+            col.z - col.halfD,
+            col.z + col.halfD,
+          );
+          if (hit !== null) safeDist = Math.min(safeDist, Math.max(1.25, hit - 0.48));
+        }
+      }
     } else if (this.worldMode === 'academy' && this.academyRig) {
       _v1.set(originX, originY, originZ);
       _v2.set(dirX, dirY, dirZ).normalize();
@@ -2989,6 +3045,11 @@ export class RpgWorldEngine {
         ch.opened = false;
         ch.lid.rotation.x = 0;
         ch.beacon.visible = true;
+      }
+      for (const pk of this.archipelagoUnderwaterRig.pickups) {
+        pk.active = true;
+        pk.respawnTimer = 0;
+        pk.mesh.visible = true;
       }
     }
     this.restoredWorldMode = 'overworld';
@@ -4645,6 +4706,10 @@ export class RpgWorldEngine {
     return 35 + bonus;
   }
 
+  private hasUnlimitedOceanOxygen(): boolean {
+    return this.swimSuitPicked || this.oceanGear.size > 0;
+  }
+
   public enterOceanWorld(resumeSavedPos = false, preserveDiveEntry = false): void {
     if (this.worldMode === 'overworld' && !resumeSavedPos) {
       this.savedOverworldHeroPos.copy(this.heroPos);
@@ -5030,6 +5095,52 @@ export class RpgWorldEngine {
     this.gainXp(25);
     this.addScore(180);
     this.showBanner(`🧰 ${ch.label} terbuka! ${parts.join(' · ')}`, 4.2);
+    this.saveProgress();
+    this.pushHud(true);
+  }
+
+  private collectOceanPickup(pk: OceanPickup): void {
+    if (!pk.active) return;
+    pk.active = false;
+    pk.mesh.visible = false;
+    pk.respawnTimer = TUNE.itemBackSec;
+
+    if (pk.kind === 'heart') {
+      this.hp = Math.min(this.maxHp, this.hp + 1);
+      this.addScore(40);
+      this.spawnBurst(pk.x, pk.y + 0.4, pk.z, 0xf43f5e, 14);
+      soundEngine.playPick();
+      this.showBanner('❤️ Nyawa Bawah Laut +1!', 2.2);
+    } else if (pk.kind === 'diamond') {
+      this.diamonds += 1;
+      this.addScore(80);
+      this.gainXp(15);
+      this.spawnBurst(pk.x, pk.y + 0.4, pk.z, 0x38bdf8, 14);
+      soundEngine.playPick();
+      this.showBanner('💎 Berlian Bawah Laut +1!', 2.2);
+    } else if (pk.kind === 'weapon' && pk.weaponId) {
+      const wid = pk.weaponId;
+      const wDef = WEAPONS[wid];
+      const newlyUnlocked = !this.ownedWeapons.has(wid);
+      this.ownedWeapons.add(wid);
+      this.activeWeapon = wid;
+      const slotIdx = WEAPON_ORDER.indexOf(wid);
+      if (slotIdx >= 0) {
+        this.activeHotbarSlot = slotIdx;
+      }
+      this.weaponAmmo[wid] = Math.min(MAX_AMMO, (this.weaponAmmo[wid] ?? 0) + wDef.packSize);
+      this.refreshWeaponVisual();
+      this.gainXp(newlyUnlocked ? 25 : 12);
+      this.addScore(newlyUnlocked ? 150 : 60);
+      this.spawnBurst(pk.x, pk.y + 0.4, pk.z, wDef.colorHex, 20);
+      soundEngine.playPick();
+      this.showBanner(
+        newlyUnlocked
+          ? `🔫 Senjata Bawah Laut Terbuka: ${wDef.name}! (+${wDef.packSize} Peluru)`
+          : `🔫 Isi Ulang ${wDef.name} (+${wDef.packSize} Peluru)`,
+        3.2,
+      );
+    }
     this.saveProgress();
     this.pushHud(true);
   }
@@ -6761,6 +6872,12 @@ export class RpgWorldEngine {
   }
 
   private getDungeonSupportHeight(x: number, z: number, refY: number): number {
+    if (this.worldMode === 'academy' && this.academyRig) {
+      if (Math.abs(x) <= 4.75 && Math.abs(z + 14.5) <= 3.1 && refY >= 0.0) {
+        return 0.65;
+      }
+      return 0;
+    }
     if (this.worldMode !== 'dungeon' || !this.dungeonRig) return 0;
     let supportY = 0;
     for (const p of this.dungeonRig.platforms) {
@@ -9131,6 +9248,10 @@ export class RpgWorldEngine {
             pushBrawlerBox(obs.x, obs.z, obs.halfW, obs.halfD);
           }
           const mobClamp = { x: nextMx, z: nextMz };
+          resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
+          if (this.worldObstaclesRig) {
+            resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
+          }
           constrainToWalkableArchipelago(mobClamp, 0.95);
           m.x = mobClamp.x;
           m.z = mobClamp.z;
@@ -9228,6 +9349,10 @@ export class RpgWorldEngine {
             }
           }
           const mobClamp = { x: nextMx, z: nextMz };
+          resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
+          if (this.worldObstaclesRig) {
+            resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
+          }
           constrainToWalkableArchipelago(mobClamp, 0.95);
           nextMx = mobClamp.x;
           nextMz = mobClamp.z;
@@ -9305,6 +9430,7 @@ export class RpgWorldEngine {
         this.oceanGear,
         this.isHeroUnderwater(),
         this.isMobileDevice || this.isLowEndMobile || this.settings.fxLevel !== 'full',
+        this.ridingTurtle,
       );
     }
 
@@ -9325,6 +9451,7 @@ export class RpgWorldEngine {
         halfD: 0.65,
       });
     }
+    appendVehicleVillageColliders(this.archipelagoRig, this.extraVillageColliders);
     updateMinecraftVillage(
       this.villageRig,
       dt,
@@ -9882,6 +10009,7 @@ export class RpgWorldEngine {
       this.heroPos.z = THREE.MathUtils.clamp(this.heroPos.z, -49, 36);
       const seabedY = getOceanFloorY(this.heroPos.x, this.heroPos.z) + 0.45;
       this.heroPos.y = THREE.MathUtils.clamp(this.heroPos.y, seabedY, -1.05);
+      resolveOceanSolidCollisions(this.heroPos, this.oceanRig.colliders, 0.68, 2.2);
 
       if (
         this.diveTransition?.active &&
@@ -9912,7 +10040,7 @@ export class RpgWorldEngine {
       this.hemiLight.intensity = THREE.MathUtils.lerp(1.12, 0.44, darkT);
       this.sunLight.intensity = THREE.MathUtils.lerp(1.28, 0.28, darkT);
 
-      // Update animated corals, bubbles, sunbeams, air vents, chests & 20 sea biota
+      // Update animated corals, bubbles, sunbeams, air vents, chests, pickups & 20 solid sea biota
       updateOceanWorld(
         this.oceanRig,
         dt,
@@ -9921,56 +10049,106 @@ export class RpgWorldEngine {
         this.heroYaw,
         this.oceanGear,
         this.isMobileDevice || this.isLowEndMobile || this.settings.fxLevel !== 'full',
+        this.ridingTurtle,
       );
 
-      // Oxygen survival check: surface & air vents refill O2; unequipped deep diving drains O2 then HP!
-      const maxO2 = this.getOceanMaxOxygen();
-      let nearAirRefill = this.heroPos.y >= -2.15;
-      if (!nearAirRefill) {
-        for (const vent of this.oceanRig.airVents) {
-          if (
-            Math.hypot(this.heroPos.x - vent.x, this.heroPos.z - vent.z) < 4.4 &&
-            this.heroPos.y <= vent.y + 8.5
-          ) {
-            nearAirRefill = true;
-            break;
-          }
+      // Separate Hero from abyssal sea predators so neither swims through the other's body
+      for (const m of this.oceanMonsters) {
+        if (!m.alive) continue;
+        const my = m.y ?? MONSTER_SPECS[m.type].hoverY;
+        if (Math.abs(this.heroPos.y + 0.6 - my) > 2.2) continue;
+        const spec = MONSTER_SPECS[m.type];
+        const minD = 0.68 + spec.hitRadius * 0.72;
+        const dx = this.heroPos.x - m.x;
+        const dz = this.heroPos.z - m.z;
+        const dSq = dx * dx + dz * dz;
+        if (dSq >= minD * minD) continue;
+        const d = dSq > 0.0001 ? Math.sqrt(dSq) : 0.01;
+        const nx = dSq > 0.0001 ? dx / d : 1;
+        const nz = dSq > 0.0001 ? dz / d : 0;
+        const push = minD - d;
+        if (m.type === 'charybdis_maw') {
+          this.heroPos.x += nx * push;
+          this.heroPos.z += nz * push;
+        } else {
+          this.heroPos.x += nx * push * 0.55;
+          this.heroPos.z += nz * push * 0.55;
+          m.x -= nx * push * 0.45;
+          m.z -= nz * push * 0.45;
+          m.mesh.position.set(m.x, my, m.z);
         }
       }
-      if (nearAirRefill) {
-        this.oceanOxygen = Math.min(maxO2, this.oceanOxygen + 44 * dt);
+      this.heroPos.x = THREE.MathUtils.clamp(this.heroPos.x, -42, 42);
+      this.heroPos.z = THREE.MathUtils.clamp(this.heroPos.z, -49, 36);
+      resolveOceanSolidCollisions(this.heroPos, this.oceanRig.colliders, 0.68, 2.2);
+      this.heroPos.y = THREE.MathUtils.clamp(
+        this.heroPos.y,
+        getOceanFloorY(this.heroPos.x, this.heroPos.z) + 0.45,
+        -1.05,
+      );
+
+      // Oxygen survival check: unlimited O₂ when wearing Swimsuit or Diving Gear; only drains if diving without equipment!
+      const maxO2 = this.getOceanMaxOxygen();
+      if (this.hasUnlimitedOceanOxygen()) {
+        this.oceanOxygen = maxO2;
         this.oceanSuffocateTimer = 0;
       } else {
-        let gearDrainMult = 1.0;
-        for (const gId of this.oceanGear) {
-          gearDrainMult *= DIVING_GEAR_DEFS[gId].drainMultiplier;
-        }
-        const depthPressure = 1.0 + Math.max(0, -this.heroPos.y - 3) * 0.085;
-        const drainRate = 3.8 * depthPressure * gearDrainMult;
-        this.oceanOxygen = Math.max(0, this.oceanOxygen - drainRate * dt);
-        if (this.oceanOxygen <= 0) {
-          this.oceanSuffocateTimer += dt;
-          if (this.oceanSuffocateTimer >= 2.0) {
-            this.oceanSuffocateTimer = 0;
-            this.hp = Math.max(0, this.hp - 1);
-            soundEngine.playHurt();
-            this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.2, this.heroPos.z, 0x38bdf8, 12);
-            this.showBanner(
-              '🫧 Kehabisan napas! Cari Gelembung O₂, naik ke permukaan, atau buat Baju Selam! (-1 ❤️)',
-              2.5,
-            );
-            if (this.hp <= 0) {
-              this.triggerDefeatExit();
-              return;
+        let nearAirRefill = this.heroPos.y >= -2.15;
+        if (!nearAirRefill) {
+          for (const vent of this.oceanRig.airVents) {
+            if (
+              Math.hypot(this.heroPos.x - vent.x, this.heroPos.z - vent.z) < 4.4 &&
+              this.heroPos.y <= vent.y + 8.5
+            ) {
+              nearAirRefill = true;
+              break;
             }
           }
-        } else {
+        }
+        if (nearAirRefill) {
+          this.oceanOxygen = Math.min(maxO2, this.oceanOxygen + 44 * dt);
           this.oceanSuffocateTimer = 0;
+        } else {
+          const depthPressure = 1.0 + Math.max(0, -this.heroPos.y - 3) * 0.085;
+          const drainRate = 3.8 * depthPressure;
+          this.oceanOxygen = Math.max(0, this.oceanOxygen - drainRate * dt);
+          if (this.oceanOxygen <= 0) {
+            this.oceanSuffocateTimer += dt;
+            if (this.oceanSuffocateTimer >= 2.0) {
+              this.oceanSuffocateTimer = 0;
+              this.hp = Math.max(0, this.hp - 1);
+              soundEngine.playHurt();
+              this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.2, this.heroPos.z, 0x38bdf8, 12);
+              this.showBanner(
+                '🫧 Kehabisan napas! Cari Gelembung O₂, naik ke permukaan, atau ambil Pakaian Renang! (-1 ❤️)',
+                2.5,
+              );
+              if (this.hp <= 0) {
+                this.triggerDefeatExit();
+                return;
+              }
+            }
+          } else {
+            this.oceanSuffocateTimer = 0;
+          }
         }
       }
 
       if (this.fireCoralStingTimer > 0) {
         this.fireCoralStingTimer = Math.max(0, this.fireCoralStingTimer - dt);
+      }
+
+      // Collect underwater Hearts, Diamonds, and Weapons
+      for (const pk of this.oceanRig.pickups) {
+        if (!pk.active) continue;
+        const dp = Math.hypot(
+          this.heroPos.x - pk.x,
+          this.heroPos.y + 0.85 - pk.y,
+          this.heroPos.z - pk.z,
+        );
+        if (dp < 2.25) {
+          this.collectOceanPickup(pk);
+        }
       }
 
       // Discover all 20 Sea Biota & detect nearest interactables
@@ -9995,7 +10173,7 @@ export class RpgWorldEngine {
           );
           this.saveProgress();
         }
-        if (node.speciesId === 'fire_coral' && d3 < 1.45 && this.fireCoralStingTimer <= 0) {
+        if (node.speciesId === 'fire_coral' && d3 < 1.9 && this.fireCoralStingTimer <= 0) {
           this.fireCoralStingTimer = 2.8;
           this.hp = Math.max(0, this.hp - 1);
           soundEngine.playHurt();
@@ -10030,7 +10208,7 @@ export class RpgWorldEngine {
           this.heroPos.y + 0.5 - ch.y,
           this.heroPos.z - ch.z,
         );
-        if (dc < 2.2) {
+        if (dc < 2.35) {
           this.interactWithOceanChest(ch);
           break;
         }
@@ -10044,10 +10222,76 @@ export class RpgWorldEngine {
       this.heroOnIce = false;
       this.isSwimming = false;
       this.swimLeapTimer = 0;
-      this.heroPos.x = THREE.MathUtils.clamp(this.heroPos.x, -18.5, 18.5);
-      this.heroPos.z = THREE.MathUtils.clamp(this.heroPos.z, -18.5, 18.5);
+      const roomBound = this.worldMode === 'academy' ? 23.0 : 18.5;
+      this.heroPos.x = THREE.MathUtils.clamp(this.heroPos.x, -roomBound, roomBound);
+      this.heroPos.z = THREE.MathUtils.clamp(this.heroPos.z, -roomBound, roomBound);
       if (this.worldMode === 'dungeon' && this.dungeonRig) {
         this.resolveCaveBlockCollisions();
+        for (const m of this.dungeonMonsters) {
+          if (!m.alive) continue;
+          if (!m.isCaveMob && !m.combatOnly && this.encounterGraceTimer <= 0) continue;
+          const minD = 0.68 + MONSTER_SPECS[m.type].hitRadius * 0.65;
+          const dx = this.heroPos.x - m.x;
+          const dz = this.heroPos.z - m.z;
+          const dSq = dx * dx + dz * dz;
+          if (dSq < minD * minD && dSq > 0.0001) {
+            const d = Math.sqrt(dSq);
+            const push = (minD - d) * 0.55;
+            this.heroPos.x += (dx / d) * push;
+            this.heroPos.z += (dz / d) * push;
+          }
+        }
+        for (const s of this.shooters) {
+          if (!s.alive) continue;
+          const dx = this.heroPos.x - s.x;
+          const dz = this.heroPos.z - s.z;
+          const dSq = dx * dx + dz * dz;
+          if (dSq < 1.05 * 1.05 && dSq > 0.0001) {
+            const d = Math.sqrt(dSq);
+            this.heroPos.x += (dx / d) * (1.05 - d);
+            this.heroPos.z += (dz / d) * (1.05 - d);
+          }
+        }
+      } else if (this.worldMode === 'academy' && this.academyRig) {
+        const heroRadAc = 0.72;
+        for (const col of this.academyRig.colliders) {
+          if (col.maxY <= 0.7 && prevHeroY >= col.maxY - 0.65) continue;
+          if (this.heroPos.y >= col.maxY - 0.15) continue;
+          const cx = THREE.MathUtils.clamp(this.heroPos.x, col.x - col.halfW, col.x + col.halfW);
+          const cz = THREE.MathUtils.clamp(this.heroPos.z, col.z - col.halfD, col.z + col.halfD);
+          const dx = this.heroPos.x - cx;
+          const dz = this.heroPos.z - cz;
+          const dSq = dx * dx + dz * dz;
+          if (dSq < heroRadAc * heroRadAc) {
+            if (dSq > 0.0001) {
+              const d = Math.sqrt(dSq);
+              this.heroPos.x += (dx / d) * (heroRadAc - d);
+              this.heroPos.z += (dz / d) * (heroRadAc - d);
+            } else {
+              this.heroPos.z = col.z + col.halfD + heroRadAc;
+            }
+          }
+        }
+        for (const npc of this.academyNpcs.values()) {
+          const dx = this.heroPos.x - npc.x;
+          const dz = this.heroPos.z - npc.z;
+          const dSq = dx * dx + dz * dz;
+          if (dSq < 1.05 * 1.05 && dSq > 0.0001) {
+            const d = Math.sqrt(dSq);
+            this.heroPos.x += (dx / d) * (1.05 - d);
+            this.heroPos.z += (dz / d) * (1.05 - d);
+          }
+        }
+        for (const cit of this.academyCitizens) {
+          const dx = this.heroPos.x - cit.x;
+          const dz = this.heroPos.z - cit.z;
+          const dSq = dx * dx + dz * dz;
+          if (dSq < 0.98 * 0.98 && dSq > 0.0001) {
+            const d = Math.sqrt(dSq);
+            this.heroPos.x += (dx / d) * (0.98 - d);
+            this.heroPos.z += (dz / d) * (0.98 - d);
+          }
+        }
       }
       const supportY = this.getDungeonSupportHeight(this.heroPos.x, this.heroPos.z, prevHeroY);
       if (this.heroPos.y <= supportY) {
@@ -10090,6 +10334,41 @@ export class RpgWorldEngine {
         }
       }
 
+      // 8-direction body-radius terrain cliff wall separation so limbs/weapon never clip into raised ledges
+      const rWall = 0.62;
+      const resolveHeroTerrainWalls = () => {
+        for (let iter = 0; iter < 2; iter++) {
+          let pushX = 0;
+          let pushZ = 0;
+          let blocked = 0;
+          for (let i = 0; i < 8; i++) {
+            const ang = (i / 8) * Math.PI * 2;
+            const dx = Math.cos(ang);
+            const dz = Math.sin(ang);
+            const s = sampleArchipelagoTerrain(this.heroPos.x + dx * rWall, this.heroPos.z + dz * rWall);
+            if (s.isLandOrBridge && !isUnderElevatedDeck(s) && s.groundY > climbLimit) {
+              pushX -= dx;
+              pushZ -= dz;
+              blocked++;
+            }
+          }
+          if (blocked === 0) break;
+          const len = Math.hypot(pushX, pushZ);
+          if (len > 0.001) {
+            const nx = pushX / len;
+            const nz = pushZ / len;
+            this.heroPos.x += nx * 0.24;
+            this.heroPos.z += nz * 0.24;
+            const dot = this.heroVel.x * nx + this.heroVel.z * nz;
+            if (dot < 0) {
+              this.heroVel.x -= nx * dot;
+              this.heroVel.z -= nz * dot;
+            }
+          }
+        }
+      };
+      resolveHeroTerrainWalls();
+
       // Resolve smooth collisions against cottages, rocks, fences, towers & walls
       const heroRad = 0.72;
       for (const obs of this.villageRig.obstacles) {
@@ -10108,20 +10387,82 @@ export class RpgWorldEngine {
           }
         }
       }
-      // Prevent Hero from walking straight through Quest NPCs
-      for (const npc of this.npcs.values()) {
-        const dx = this.heroPos.x - npc.x;
-        const dz = this.heroPos.z - npc.z;
-        const minD = 1.05;
+
+      // Prevent clipping through moving & parked vehicles (Bus, Sedan, Taxi, Police Car, Minecart)
+      const vehicleCol = resolveArchipelagoVehicleCollisions(
+        this.archipelagoRig,
+        this.heroPos,
+        heroRad,
+        2.55,
+      );
+
+      // Prevent clipping through solid obstacle housings (pistons, vents, turrets, lasers, moving platform sides)
+      if (this.worldObstaclesRig) {
+        resolveSolidObstacleCollisions(this.worldObstaclesRig, this.heroPos, 0.66, 2.55);
+      }
+
+      const pushHeroCircle = (ex: number, ey: number, ez: number, minD: number, verticalTol = 2.2) => {
+        if (Math.abs(this.heroPos.y - ey) > verticalTol) return;
+        const dx = this.heroPos.x - ex;
+        const dz = this.heroPos.z - ez;
         const dSq = dx * dx + dz * dz;
-        if (dSq < minD * minD && dSq > 0.0001) {
+        if (dSq >= minD * minD) return;
+        if (dSq > 0.0001) {
           const d = Math.sqrt(dSq);
           this.heroPos.x += (dx / d) * (minD - d);
           this.heroPos.z += (dz / d) * (minD - d);
+        } else {
+          this.heroPos.z += minD;
         }
+      };
+
+      // Prevent Hero from walking straight through Quest NPCs
+      for (const npc of this.npcs.values()) {
+        const ny = getArchipelagoGroundY(npc.x, npc.z);
+        pushHeroCircle(npc.x, ny, npc.z, 1.05, 2.4);
       }
 
-      // Ensure obstacle/NPC push never shoves hero inside an unclimbable steep cliff wall
+      // Prevent Hero from walking through Villagers, Golems, Llamas, Critters & Pillagers
+      for (const v of this.villageRig.villagers) {
+        if (!v.root.visible) continue;
+        pushHeroCircle(v.x, v.root.position.y, v.z, 1.02);
+      }
+      for (const g of this.villageRig.golems) {
+        if (!g.root.visible) continue;
+        pushHeroCircle(g.x, g.root.position.y, g.z, 1.32, 2.8);
+      }
+      for (const l of this.villageRig.llamas) {
+        if (!l.root.visible) continue;
+        pushHeroCircle(l.root.position.x, l.root.position.y, l.root.position.z, 1.12);
+      }
+      for (const c of this.villageRig.critters) {
+        if (!c.root.visible) continue;
+        pushHeroCircle(c.root.position.x, c.root.position.y, c.root.position.z, 0.88, 1.8);
+      }
+      for (const p of this.villageRig.pillagers) {
+        if (!p.root.visible) continue;
+        pushHeroCircle(p.root.position.x, p.root.position.y, p.root.position.z, 1.05);
+      }
+      for (const zc of this.archipelagoRig.zooCritters) {
+        if (!zc.root.visible) continue;
+        pushHeroCircle(zc.root.position.x, zc.root.position.y, zc.root.position.z, 1.38, 2.8);
+      }
+      for (const s of this.shooters) {
+        if (!s.alive) continue;
+        pushHeroCircle(s.x, getArchipelagoGroundY(s.x, s.z), s.z, 1.05);
+      }
+      for (const m of this.monsters) {
+        if (!m.alive) continue;
+        if (!m.isCaveMob && !m.combatOnly && this.encounterGraceTimer <= 0) continue;
+        const spec = MONSTER_SPECS[m.type];
+        const minD = 0.68 + spec.hitRadius * 0.65;
+        const my = m.y ?? getArchipelagoGroundY(m.x, m.z);
+        pushHeroCircle(m.x, my, m.z, minD, 2.4);
+      }
+
+      resolveHeroTerrainWalls();
+
+      // Ensure obstacle/vehicle/entity push never shoves hero inside an unclimbable steep cliff wall
       const postPushSample = sampleArchipelagoTerrain(this.heroPos.x, this.heroPos.z);
       if (
         postPushSample.isLandOrBridge &&
@@ -10138,10 +10479,15 @@ export class RpgWorldEngine {
       const obsSupportY = this.worldObstaclesRig
         ? getObstacleSupportHeight(this.worldObstaclesRig, this.heroPos.x, this.heroPos.z, prevHeroY)
         : null;
-      const hasObsSupport = obsSupportY !== null && this.heroPos.y >= obsSupportY - 1.35;
-      const effGroundY = hasObsSupport ? Math.max(curSample.groundY, obsSupportY!) : curSample.groundY;
+      let combinedSupportY: number | null = obsSupportY;
+      if (vehicleCol.supportY !== null) {
+        combinedSupportY =
+          combinedSupportY === null ? vehicleCol.supportY : Math.max(combinedSupportY, vehicleCol.supportY);
+      }
+      const hasObsSupport = combinedSupportY !== null && this.heroPos.y >= combinedSupportY - 1.35;
+      const effGroundY = hasObsSupport ? Math.max(curSample.groundY, combinedSupportY!) : curSample.groundY;
       const effLandOrBridge = curSample.isLandOrBridge || hasObsSupport;
-      const effSurface = hasObsSupport && obsSupportY! >= curSample.groundY ? 'bridge' : curSample.surface;
+      const effSurface = hasObsSupport && combinedSupportY! >= curSample.groundY ? 'bridge' : curSample.surface;
 
       const underDeckNow =
         curSample.isLandOrBridge &&
@@ -10401,55 +10747,102 @@ export class RpgWorldEngine {
       }
 
       if (this.archipelagoUnderwaterRig && this.isHeroUnderwater()) {
-        const maxO2 = this.getOceanMaxOxygen();
-        let nearAirRefill = this.heroPos.y >= -2.15;
-        if (!nearAirRefill) {
-          for (const vent of this.archipelagoUnderwaterRig.airVents) {
-            if (
-              Math.hypot(this.heroPos.x - vent.x, this.heroPos.z - vent.z) < 4.6 &&
-              this.heroPos.y <= vent.y + 9.0
-            ) {
-              nearAirRefill = true;
-              break;
-            }
-          }
+        resolveOceanSolidCollisions(
+          this.heroPos,
+          this.archipelagoUnderwaterRig.colliders,
+          0.68,
+          2.2,
+        );
+        for (const m of this.seaMonsters) {
+          if (!m.alive) continue;
+          const my = m.y ?? MONSTER_SPECS[m.type].hoverY;
+          if (Math.abs(this.heroPos.y + 0.6 - my) > 2.2) continue;
+          const spec = MONSTER_SPECS[m.type];
+          const minD = 0.68 + spec.hitRadius * 0.72;
+          const dx = this.heroPos.x - m.x;
+          const dz = this.heroPos.z - m.z;
+          const dSq = dx * dx + dz * dz;
+          if (dSq >= minD * minD) continue;
+          const d = dSq > 0.0001 ? Math.sqrt(dSq) : 0.01;
+          const nx = dSq > 0.0001 ? dx / d : 1;
+          const nz = dSq > 0.0001 ? dz / d : 0;
+          const push = minD - d;
+          this.heroPos.x += nx * push * 0.55;
+          this.heroPos.z += nz * push * 0.55;
+          m.x -= nx * push * 0.45;
+          m.z -= nz * push * 0.45;
+          m.mesh.position.set(m.x, my, m.z);
         }
-        if (nearAirRefill) {
-          this.oceanOxygen = Math.min(maxO2, this.oceanOxygen + 44 * dt);
+        resolveOceanSolidCollisions(
+          this.heroPos,
+          this.archipelagoUnderwaterRig.colliders,
+          0.68,
+          2.2,
+        );
+
+        const maxO2 = this.getOceanMaxOxygen();
+        if (this.hasUnlimitedOceanOxygen()) {
+          this.oceanOxygen = maxO2;
           this.oceanSuffocateTimer = 0;
         } else {
-          let gearDrainMult = 1.0;
-          for (const gId of this.oceanGear) {
-            gearDrainMult *= DIVING_GEAR_DEFS[gId].drainMultiplier;
-          }
-          const depthPressure = 1.0 + Math.max(0, -this.heroPos.y - 3) * 0.085;
-          const drainRate = 3.8 * depthPressure * gearDrainMult;
-          this.oceanOxygen = Math.max(0, this.oceanOxygen - drainRate * dt);
-          if (this.oceanOxygen <= 0) {
-            this.oceanSuffocateTimer += dt;
-            if (this.oceanSuffocateTimer >= 2.0) {
-              this.oceanSuffocateTimer = 0;
-              this.hp = Math.max(0, this.hp - 1);
-              soundEngine.playHurt();
-              this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.2, this.heroPos.z, 0x38bdf8, 12);
-              this.showBanner(
-                '🫧 Kehabisan napas! Cari Gelembung O₂, berenang naik, atau buat Baju Selam! (-1 ❤️)',
-                2.5,
-              );
-              if (this.hp <= 0) {
-                this.phase = 'gameover';
-                soundEngine.playLose();
-                this.pushHud(true);
-                return;
+          let nearAirRefill = this.heroPos.y >= -2.15;
+          if (!nearAirRefill) {
+            for (const vent of this.archipelagoUnderwaterRig.airVents) {
+              if (
+                Math.hypot(this.heroPos.x - vent.x, this.heroPos.z - vent.z) < 4.6 &&
+                this.heroPos.y <= vent.y + 9.0
+              ) {
+                nearAirRefill = true;
+                break;
               }
             }
-          } else {
+          }
+          if (nearAirRefill) {
+            this.oceanOxygen = Math.min(maxO2, this.oceanOxygen + 44 * dt);
             this.oceanSuffocateTimer = 0;
+          } else {
+            const depthPressure = 1.0 + Math.max(0, -this.heroPos.y - 3) * 0.085;
+            const drainRate = 3.8 * depthPressure;
+            this.oceanOxygen = Math.max(0, this.oceanOxygen - drainRate * dt);
+            if (this.oceanOxygen <= 0) {
+              this.oceanSuffocateTimer += dt;
+              if (this.oceanSuffocateTimer >= 2.0) {
+                this.oceanSuffocateTimer = 0;
+                this.hp = Math.max(0, this.hp - 1);
+                soundEngine.playHurt();
+                this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.2, this.heroPos.z, 0x38bdf8, 12);
+                this.showBanner(
+                  '🫧 Kehabisan napas! Cari Gelembung O₂, berenang naik, atau ambil Pakaian Renang! (-1 ❤️)',
+                  2.5,
+                );
+                if (this.hp <= 0) {
+                  this.phase = 'gameover';
+                  soundEngine.playLose();
+                  this.pushHud(true);
+                  return;
+                }
+              }
+            } else {
+              this.oceanSuffocateTimer = 0;
+            }
           }
         }
 
         if (this.fireCoralStingTimer > 0) {
           this.fireCoralStingTimer = Math.max(0, this.fireCoralStingTimer - dt);
+        }
+
+        // Collect underwater Hearts, Diamonds, and Weapons in Archipelago Straits
+        for (const pk of this.archipelagoUnderwaterRig.pickups) {
+          if (!pk.active) continue;
+          const dp = Math.hypot(
+            this.heroPos.x - pk.x,
+            this.heroPos.y + 0.85 - pk.y,
+            this.heroPos.z - pk.z,
+          );
+          if (dp < 2.25) {
+            this.collectOceanPickup(pk);
+          }
         }
 
         let bestBiota: OceanBiotaNode | null = null;
@@ -10473,7 +10866,7 @@ export class RpgWorldEngine {
             );
             this.saveProgress();
           }
-          if (node.speciesId === 'fire_coral' && d3 < 1.45 && this.fireCoralStingTimer <= 0) {
+          if (node.speciesId === 'fire_coral' && d3 < 1.9 && this.fireCoralStingTimer <= 0) {
             this.fireCoralStingTimer = 2.8;
             this.hp = Math.max(0, this.hp - 1);
             soundEngine.playHurt();
@@ -11026,11 +11419,13 @@ export class RpgWorldEngine {
         Math.abs(this.heroPos.y - ssY) < 3.2
       ) {
         this.swimSuitPicked = true;
+        this.oceanOxygen = this.getOceanMaxOxygen();
+        this.oceanSuffocateTimer = 0;
         this.refreshWeaponVisual();
         this.spawnBurst(ss.x, ssY + 1.5, ss.z, 0x22d3ee, 26);
         soundEngine.playPick();
         this.showBanner(
-          '🤿 Pakaian Renang Didapat! Tekan tombol Selam di sebelah tombol Loncat untuk berenang & menyelam ke dalam laut!',
+          '🤿 Pakaian Renang Didapat! O₂ kini Tak Terbatas di bawah laut — tekan Selam untuk menjelajah!',
           5.0,
         );
         this.saveProgress();
@@ -11835,6 +12230,10 @@ export class RpgWorldEngine {
           pushShooterBox(npc.x, npc.z, 0.7);
         }
         const sClamp = { x: nextSx, z: nextSz };
+        resolveArchipelagoVehicleCollisions(this.archipelagoRig, sClamp, sRad, 2.2);
+        if (this.worldObstaclesRig) {
+          resolveSolidObstacleCollisions(this.worldObstaclesRig, sClamp, sRad, 2.2);
+        }
         constrainToWalkableArchipelago(sClamp, 0.88);
         nextSx = sClamp.x;
         nextSz = sClamp.z;
@@ -11927,6 +12326,40 @@ export class RpgWorldEngine {
       }
       p.mesh.position.set(p.x, p.y, p.z);
       p.mesh.rotation.y += dt * 8;
+
+      if (this.worldMode === 'overworld') {
+        let hitSolid = false;
+        for (const obs of this.villageRig.obstacles) {
+          if (Math.abs(p.x - obs.x) < obs.halfW + 0.16 && Math.abs(p.z - obs.z) < obs.halfD + 0.16) {
+            const baseY = getArchipelagoGroundY(obs.x, obs.z);
+            const obsH = obs.halfW >= 2.2 ? 6.8 : 4.0;
+            if (p.y >= baseY - 0.2 && p.y <= baseY + obsH) {
+              hitSolid = true;
+              break;
+            }
+          }
+        }
+        if (!hitSolid && this.archipelagoUnderwaterRig && (p.y ?? 0) < -0.5) {
+          const pTmp = { x: p.x, y: p.y ?? 0, z: p.z };
+          if (resolveOceanSolidCollisions(pTmp, this.archipelagoUnderwaterRig.colliders, 0.18, 0.35)) {
+            hitSolid = true;
+          }
+        }
+        if (hitSolid) {
+          p.active = false;
+          p.mesh.visible = false;
+          this.spawnBurst(p.x, p.y, p.z, 0x94a3b8, 5);
+          continue;
+        }
+      } else if (this.worldMode === 'ocean' && this.oceanRig) {
+        const pTmp = { x: p.x, y: p.y ?? 0, z: p.z };
+        if (resolveOceanSolidCollisions(pTmp, this.oceanRig.colliders, 0.18, 0.35)) {
+          p.active = false;
+          p.mesh.visible = false;
+          this.spawnBurst(p.x, p.y, p.z, 0x38bdf8, 6);
+          continue;
+        }
+      }
 
       if (this.worldMode === 'dungeon' && this.dungeonRig) {
         let hitWall = false;
@@ -12278,6 +12711,21 @@ export class RpgWorldEngine {
             });
           }
         }
+        for (const pk of this.oceanRig.pickups) {
+          if (!pk.active) continue;
+          const dSq = (pk.x - this.heroPos.x) ** 2 + (pk.z - this.heroPos.z) ** 2;
+          if (dSq > 24 * 24) continue;
+          const pp = projectPoint(pk.x, pk.y + 1.3, pk.z);
+          if (pp) {
+            labels.push({
+              id: `opk_${pk.id}`,
+              x: pp.x,
+              y: pp.y,
+              title: pk.label,
+              kind: 'pickup',
+            });
+          }
+        }
         for (const m of this.oceanMonsters) {
           if (!m.alive) continue;
           const dSq = (m.x - this.heroPos.x) ** 2 + (m.z - this.heroPos.z) ** 2;
@@ -12475,6 +12923,21 @@ export class RpgWorldEngine {
             x: cp.x,
             y: cp.y,
             title: `🧰 ${ch.label}`,
+            kind: 'pickup',
+          });
+        }
+      }
+      for (const pk of this.archipelagoUnderwaterRig.pickups) {
+        if (!pk.active) continue;
+        const dSq = (pk.x - this.heroPos.x) ** 2 + (pk.z - this.heroPos.z) ** 2;
+        if (dSq > 24 * 24) continue;
+        const pp = projectPoint(pk.x, pk.y + 1.3, pk.z);
+        if (pp) {
+          labels.push({
+            id: `opk_${pk.id}`,
+            x: pp.x,
+            y: pp.y,
+            title: pk.label,
             kind: 'pickup',
           });
         }
@@ -12715,9 +13178,17 @@ export class RpgWorldEngine {
     const prevX = m.x;
     const prevZ = m.z;
     if (this.worldMode === 'ocean') {
-      // Strictly keep deep-sea predators inside Palung Abyssal (z <= -16) so Coral Sanctuary stays peaceful
-      m.x = THREE.MathUtils.clamp(nextMx, -40, 40);
-      m.z = THREE.MathUtils.clamp(nextMz, -49, -16);
+      // Strictly keep deep-sea predators inside Palung Abyssal (z <= -16) and outside cliff/ruin colliders
+      const ocPt = {
+        x: THREE.MathUtils.clamp(nextMx, -40, 40),
+        y: m.y ?? m.homeY ?? -18,
+        z: THREE.MathUtils.clamp(nextMz, -49, -16),
+      };
+      if (this.oceanRig) {
+        resolveOceanSolidCollisions(ocPt, this.oceanRig.colliders, spec.hitRadius * 0.72, 2.2);
+      }
+      m.x = THREE.MathUtils.clamp(ocPt.x, -40, 40);
+      m.z = THREE.MathUtils.clamp(ocPt.z, -49, -16);
       const seaSpd = Math.hypot(m.x - prevX, m.z - prevZ) / Math.max(0.001, dt);
       m.walkPhase = (m.walkPhase ?? m.patrolPhase) + dt * (2.6 + seaSpd * 0.8);
       const minMy = getOceanFloorY(m.x, m.z) + spec.hoverY + 0.8;
@@ -12741,7 +13212,15 @@ export class RpgWorldEngine {
       return;
     }
 
-    const seaPt = { x: nextMx, z: nextMz };
+    const seaPt = { x: nextMx, y: m.y ?? spec.hoverY, z: nextMz };
+    if (this.archipelagoUnderwaterRig) {
+      resolveOceanSolidCollisions(
+        seaPt,
+        this.archipelagoUnderwaterRig.colliders,
+        spec.hitRadius * 0.68,
+        2.0,
+      );
+    }
     this.constrainSeaMonsterToWater(seaPt, prevX, prevZ, 2.6);
     m.x = seaPt.x;
     m.z = seaPt.z;
@@ -13198,6 +13677,17 @@ export class RpgWorldEngine {
             label: ch.label,
           });
         }
+        for (const pk of this.archipelagoUnderwaterRig.pickups) {
+          if (!pk.active) continue;
+          blips.push({
+            id: `opk_${pk.id}`,
+            x: pk.x,
+            z: pk.z,
+            kind: pk.kind === 'weapon' ? 'chest' : 'collectible',
+            color: pk.kind === 'heart' ? '#fb7185' : pk.kind === 'diamond' ? '#38bdf8' : '#facc15',
+            label: pk.label,
+          });
+        }
       }
     } else if (this.worldMode === 'dungeon' && this.dungeonState) {
       blips.push({
@@ -13327,6 +13817,17 @@ export class RpgWorldEngine {
           kind: 'chest',
           color: '#facc15',
           label: ch.label,
+        });
+      }
+      for (const pk of this.oceanRig.pickups) {
+        if (!pk.active) continue;
+        blips.push({
+          id: `opk_${pk.id}`,
+          x: pk.x,
+          z: pk.z,
+          kind: pk.kind === 'weapon' ? 'chest' : 'collectible',
+          color: pk.kind === 'heart' ? '#fb7185' : pk.kind === 'diamond' ? '#38bdf8' : '#facc15',
+          label: pk.label,
         });
       }
       for (const m of this.oceanMonsters) {
@@ -13804,9 +14305,11 @@ export class RpgWorldEngine {
         ? getOceanZoneInfo(this.heroPos.z, this.heroPos.y)
         : getArchipelagoOceanZoneInfo(this.heroPos.y);
     const maxOxygen = this.getOceanMaxOxygen();
+    const unlimitedOxygen = this.hasUnlimitedOceanOxygen();
     return {
-      oxygen: Math.round(this.oceanOxygen),
+      oxygen: Math.round(unlimitedOxygen ? maxOxygen : this.oceanOxygen),
       maxOxygen,
+      unlimitedOxygen,
       depthMeters: Math.max(1, Math.round(-this.heroPos.y)),
       zoneKind: zone.kind,
       zoneLabel: zone.label,
@@ -13824,7 +14327,7 @@ export class RpgWorldEngine {
       nearTurtleMount: this.nearOceanTurtle,
       ridingTurtle: this.ridingTurtle,
       nearSurfaceExit: this.nearDungeonExit,
-      suffocating: this.oceanOxygen <= 0,
+      suffocating: !unlimitedOxygen && this.oceanOxygen <= 0,
     };
   }
 
