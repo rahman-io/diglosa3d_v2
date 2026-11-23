@@ -67,10 +67,15 @@ import {
   savePlayerName,
 } from './data/characterPresets';
 import {
+  checkSavedRoomMembership,
+  clearLastActiveRoomSession,
   createGroupRoom,
   findOrCreatePublicRoom,
+  JoinOrCreateRoomResult,
   joinRoomByCode,
   leaveMultiplayerRoom,
+  normalizeRoomCode,
+  rejoinRoomById,
   sendFallbackChatMessage,
   startMultiplayerMatch,
   subscribeFallbackChatMessages,
@@ -239,6 +244,7 @@ function DiglosaRpgApp() {
   const [characterId, setCharacterId] = useState<CharacterPresetId>(() => loadSavedCharacterId());
   const [playerName, setPlayerName] = useState<string>(() => loadSavedPlayerName());
   const [activeRoom, setActiveRoom] = useState<MultiplayerRoomDoc | null>(null);
+  const [resumableRoom, setResumableRoom] = useState<JoinOrCreateRoomResult | null>(null);
   const [roomMembers, setRoomMembers] = useState<MultiplayerMemberDoc[]>([]);
   const [mySpawnIndex, setMySpawnIndex] = useState<number>(0);
   const [isMultiplayerPlaying, setIsMultiplayerPlaying] = useState(false);
@@ -1066,6 +1072,8 @@ function DiglosaRpgApp() {
 
   const handleContinue = useCallback(() => {
     if (getAlwaysFullscreenPref()) void requestAppFullscreen();
+    setDifficultyPromptOpen(false);
+    setIsMultiplayerPlaying(false);
     setActiveBattle(null);
     setActiveLearning(null);
     setActiveAcademySkill(null);
@@ -1074,6 +1082,7 @@ function DiglosaRpgApp() {
     setDialogueNpcId(null);
     setSideTab(null);
     setCloudSyncNote(null);
+    engineRef.current?.setMultiplayerActive(false);
     engineRef.current?.continueGame();
   }, []);
 
@@ -1087,7 +1096,7 @@ function DiglosaRpgApp() {
   }, []);
 
   const enterMultiplayerMatch = useCallback(
-    (room: MultiplayerRoomDoc, spawnIdx: number) => {
+    (room: MultiplayerRoomDoc, spawnIdx: number, isRejoin = false) => {
       if (getAlwaysFullscreenPref()) void requestAppFullscreen();
       setDifficultyPromptOpen(false);
       setActiveBattle(null);
@@ -1107,6 +1116,7 @@ function DiglosaRpgApp() {
         engine.setLocalAppearance(characterId, playerName);
         engine.setMultiplayerActive(true, user?.uid);
         engine.setMultiplayerRole(room.hostUid === user?.uid, false);
+        engine.setAwaitingRejoinSync(isRejoin);
         engine.startNewGame(hud.settings.aimMode, room.difficulty, {
           spawnMode: 'random',
           spawnIndex: spawnIdx,
@@ -1125,6 +1135,7 @@ function DiglosaRpgApp() {
       transportRef.current?.dispose();
       transportRef.current = null;
       setActiveRoom(null);
+      setResumableRoom(null);
       setRoomMembers([]);
       setTeamStatsMap({});
       setIsMultiplayerPlaying(false);
@@ -1135,6 +1146,7 @@ function DiglosaRpgApp() {
       setP2pStats({ connectedPeers: 0, totalPeers: 0 });
       setChatMessages([]);
       chatSeenIdsRef.current.clear();
+      clearLastActiveRoomSession();
 
       engineRef.current?.setMultiplayerActive(false);
       if (returnToTitle) {
@@ -1150,6 +1162,25 @@ function DiglosaRpgApp() {
 
   const activeRoomId = activeRoom?.roomId ?? null;
   const activeUid = user?.uid ?? null;
+
+  // Detect active room session left open before refresh/unexpected exit
+  useEffect(() => {
+    if (!activeUid || !user?.emailVerified || activeRoomId) {
+      if (!activeUid || !user?.emailVerified) {
+        setResumableRoom(null);
+      }
+      return;
+    }
+    let cancelled = false;
+    void checkSavedRoomMembership(activeUid).then((found) => {
+      if (!cancelled) {
+        setResumableRoom(found);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeUid, user?.emailVerified, activeRoomId]);
 
   // Bind Firestore room + member + fallback chat listeners & WebRTC P2P Mesh when joined
   useEffect(() => {
@@ -1188,7 +1219,9 @@ function DiglosaRpgApp() {
         if (!engine) return;
         const statsPkt = engine.getLocalStatsPacket(activeUid);
         transport.sendReliableToPeer(peerUid, statsPkt);
-        if (engine.isMultiplayerWorldHost()) {
+        if (engine.isAwaitingRejoinSync()) {
+          transport.sendReliableToPeer(peerUid, { t: 'wreq' });
+        } else if (engine.isMultiplayerWorldHost()) {
           transport.sendReliableToPeer(peerUid, engine.buildWorldSyncPacket());
         }
       },
@@ -1295,7 +1328,14 @@ function DiglosaRpgApp() {
       ? window.setInterval(() => {
           const engine = engineRef.current;
           const transport = transportRef.current;
-          if (!engine || !transport || transport.getOpenChannelCount() === 0) return;
+          if (
+            !engine ||
+            !transport ||
+            transport.getOpenChannelCount() === 0 ||
+            engine.isAwaitingRejoinSync()
+          ) {
+            return;
+          }
           transport.sendReliableToAll(engine.buildMonsterMovePacket());
         }, 250)
       : null;
@@ -1304,7 +1344,14 @@ function DiglosaRpgApp() {
       ? window.setInterval(() => {
           const engine = engineRef.current;
           const transport = transportRef.current;
-          if (!engine || !transport || transport.getOpenChannelCount() === 0) return;
+          if (
+            !engine ||
+            !transport ||
+            transport.getOpenChannelCount() === 0 ||
+            engine.isAwaitingRejoinSync()
+          ) {
+            return;
+          }
           transport.sendReliableToAll(engine.buildWorldSyncPacket());
         }, 1800)
       : null;
@@ -1354,13 +1401,23 @@ function DiglosaRpgApp() {
     if (getAlwaysFullscreenPref()) void requestAppFullscreen();
     setPendingDifficulty(hud.settings.difficulty);
     setDifficultyPromptOpen(true);
-  }, [hud.settings.difficulty]);
+    if (user?.uid && user?.emailVerified && !activeRoom) {
+      void checkSavedRoomMembership(user.uid).then((found) => {
+        setResumableRoom(found);
+      });
+    }
+  }, [hud.settings.difficulty, user?.uid, user?.emailVerified, activeRoom]);
 
   const handleConfirmSolo = useCallback(
     (difficulty: DifficultyMode, spawnMode: SpawnPreference) => {
       if (getAlwaysFullscreenPref()) void requestAppFullscreen();
       if (activeRoom) {
         void handleLeaveMultiplayerRoom(false);
+      } else if (resumableRoom) {
+        const oldRoomId = resumableRoom.room.roomId;
+        setResumableRoom(null);
+        clearLastActiveRoomSession();
+        void leaveMultiplayerRoom(oldRoomId);
       }
       setIsMultiplayerPlaying(false);
       setPendingDifficulty(difficulty);
@@ -1384,6 +1441,7 @@ function DiglosaRpgApp() {
     },
     [
       activeRoom,
+      resumableRoom,
       handleLeaveMultiplayerRoom,
       characterId,
       playerName,
@@ -1391,8 +1449,37 @@ function DiglosaRpgApp() {
     ],
   );
 
+  const handleRejoinRoom = useCallback(async () => {
+    if (!resumableRoom) return;
+    const res = await rejoinRoomById({
+      roomId: resumableRoom.room.roomId,
+      displayName: playerName,
+      characterId,
+    });
+    setResumableRoom(null);
+    setMySpawnIndex(res.spawnIndex);
+    setActiveRoom(res.room);
+    if (res.room.status === 'playing') {
+      enterMultiplayerMatch(res.room, res.spawnIndex, true);
+    }
+  }, [resumableRoom, playerName, characterId, enterMultiplayerMatch]);
+
+  const handleDismissResumableRoom = useCallback(async () => {
+    const targetRoomId = resumableRoom?.room.roomId;
+    setResumableRoom(null);
+    clearLastActiveRoomSession();
+    if (targetRoomId) {
+      await leaveMultiplayerRoom(targetRoomId);
+    }
+  }, [resumableRoom]);
+
   const handleCreateGroupRoom = useCallback(
     async (difficulty: DifficultyMode) => {
+      if (resumableRoom) {
+        const oldRoomId = resumableRoom.room.roomId;
+        setResumableRoom(null);
+        await leaveMultiplayerRoom(oldRoomId);
+      }
       const res = await createGroupRoom({
         displayName: playerName,
         characterId,
@@ -1401,33 +1488,46 @@ function DiglosaRpgApp() {
       setMySpawnIndex(res.spawnIndex);
       setActiveRoom(res.room);
     },
-    [playerName, characterId],
+    [playerName, characterId, resumableRoom],
   );
 
   const handleJoinGroupRoom = useCallback(
     async (code: string) => {
+      const clean = normalizeRoomCode(code);
+      if (resumableRoom && resumableRoom.room.code !== clean) {
+        const oldRoomId = resumableRoom.room.roomId;
+        setResumableRoom(null);
+        await leaveMultiplayerRoom(oldRoomId);
+      }
       const res = await joinRoomByCode({
         code,
         displayName: playerName,
         characterId,
       });
+      setResumableRoom(null);
       setMySpawnIndex(res.spawnIndex);
       setActiveRoom(res.room);
     },
-    [playerName, characterId],
+    [playerName, characterId, resumableRoom],
   );
 
   const handleJoinPublicRoom = useCallback(
     async (difficulty: DifficultyMode) => {
+      if (resumableRoom && resumableRoom.room.mode !== 'public') {
+        const oldRoomId = resumableRoom.room.roomId;
+        setResumableRoom(null);
+        await leaveMultiplayerRoom(oldRoomId);
+      }
       const res = await findOrCreatePublicRoom({
         displayName: playerName,
         characterId,
         difficulty,
       });
+      setResumableRoom(null);
       setMySpawnIndex(res.spawnIndex);
       setActiveRoom(res.room);
     },
-    [playerName, characterId],
+    [playerName, characterId, resumableRoom],
   );
 
   const handleStartMultiplayerMatch = useCallback(async () => {
@@ -1531,8 +1631,10 @@ function DiglosaRpgApp() {
       {hud.phase === 'title' && (
         <TitleScreen
           hasSavedGame={hud.hasSavedGame}
+          hasResumableRoom={Boolean(resumableRoom)}
           onContinue={handleContinue}
           onStartNew={handleStartNew}
+          onPlayMenu={handleStartNew}
           onQuickLearn={(mode) => {
             if (getAlwaysFullscreenPref()) void requestAppFullscreen();
             engineRef.current?.startQuickLearning(mode);
@@ -1763,12 +1865,17 @@ function DiglosaRpgApp() {
         initialDifficulty={pendingDifficulty}
         characterId={characterId}
         playerName={playerName}
+        hasSavedGame={hud.hasSavedGame}
+        resumableRoom={resumableRoom}
         activeRoom={activeRoom}
         roomMembers={roomMembers}
         mySpawnIndex={mySpawnIndex}
         onPreviewCharacter={handlePreviewCharacter}
         onSignIn={handleSignIn}
+        onContinueSolo={handleContinue}
         onConfirmSolo={handleConfirmSolo}
+        onRejoinRoom={handleRejoinRoom}
+        onDismissResumableRoom={handleDismissResumableRoom}
         onCreateGroupRoom={handleCreateGroupRoom}
         onJoinGroupRoom={handleJoinGroupRoom}
         onJoinPublicRoom={handleJoinPublicRoom}

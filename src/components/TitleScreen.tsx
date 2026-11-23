@@ -17,8 +17,10 @@ import { PWAInstallButton } from './PwaControls';
 
 interface TitleScreenProps {
   hasSavedGame: boolean;
+  hasResumableRoom?: boolean;
   onContinue: () => void;
   onStartNew: () => void;
+  onPlayMenu?: () => void;
   onQuickLearn: (mode: LearningModeType) => void;
   onOpenLeaderboard: () => void;
   onOpenGuide: () => void;
@@ -34,8 +36,10 @@ interface TitleScreenProps {
 
 export const TitleScreen: React.FC<TitleScreenProps> = ({
   hasSavedGame,
+  hasResumableRoom = false,
   onContinue,
   onStartNew,
+  onPlayMenu,
   onQuickLearn,
   onOpenLeaderboard,
   onOpenGuide,
@@ -69,13 +73,14 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       if (disableShortcuts || showQuickMenu || showInfoSheet) return;
       if (e.code === 'Enter' || e.code === 'Space') {
         e.preventDefault();
-        if (hasSavedGame) onContinue();
+        if (onPlayMenu) onPlayMenu();
+        else if (hasSavedGame) onContinue();
         else onStartNew();
       }
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [disableShortcuts, hasSavedGame, onContinue, onStartNew, showQuickMenu, showInfoSheet]);
+  }, [disableShortcuts, hasSavedGame, onContinue, onStartNew, onPlayMenu, showQuickMenu, showInfoSheet]);
 
   return (
     <div className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-3 sm:p-6">
@@ -331,10 +336,16 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
           {/* Giant Centerpiece Play Button */}
           <button
             type="button"
-            onClick={hasSavedGame ? onContinue : onStartNew}
-            title={hasSavedGame ? 'Lanjutkan Petualangan' : 'Mulai Petualangan'}
-            aria-label={hasSavedGame ? 'Lanjutkan Petualangan' : 'Mulai Petualangan'}
-            className="flex h-[88px] w-[88px] items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:h-[108px] sm:w-[108px]"
+            onClick={onPlayMenu ? onPlayMenu : hasSavedGame ? onContinue : onStartNew}
+            title={
+              hasResumableRoom
+                ? 'Kembali ke Room Mabar atau Pilih Mode'
+                : hasSavedGame
+                  ? 'Pilih Mode (Lanjut Solo atau Mabar)'
+                  : 'Mulai Petualangan'
+            }
+            aria-label={hasSavedGame ? 'Pilih Mode Permainan' : 'Mulai Petualangan'}
+            className="relative flex h-[88px] w-[88px] items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:h-[108px] sm:w-[108px]"
           >
             <img
               src="./assets/ui/menu_play.png"
@@ -342,6 +353,9 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               className="pointer-events-none h-full w-full select-none object-contain drop-shadow-[0_10px_24px_rgba(34,197,94,0.55)]"
               draggable={false}
             />
+            {hasResumableRoom && (
+              <span className="pointer-events-none absolute right-1 top-1 h-4 w-4 animate-pulse rounded-full border-2 border-slate-950 bg-emerald-400 shadow-[0_0_12px_rgba(52,211,153,0.9)]" />
+            )}
           </button>
 
           {/* Quick Learn Spellbook Button */}

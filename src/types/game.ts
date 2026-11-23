@@ -912,6 +912,9 @@ export type P2pReliableMessage =
   | {
       t: 'stats';
       st: MultiplayerPlayerStats;
+    }
+  | {
+      t: 'wreq';
     };
 
 

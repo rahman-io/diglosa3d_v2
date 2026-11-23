@@ -81,6 +81,14 @@ export interface P2pTransportCallbacks {
   onPeerChannelOpen?: (peerUid: string) => void;
 }
 
+function getUpdatedAtMs(val: unknown): number {
+  if (!val || typeof val !== 'object') return 0;
+  const maybeTs = val as { toMillis?: () => number; seconds?: number };
+  if (typeof maybeTs.toMillis === 'function') return maybeTs.toMillis();
+  if (typeof maybeTs.seconds === 'number') return maybeTs.seconds * 1000;
+  return 0;
+}
+
 /**
  * Pure P2P WebRTC Mesh Transport (100% Rp 0 server cost):
  * - Coordinates / movement / chat packets run directly over RTCDataChannel (~12 Hz)
@@ -93,6 +101,7 @@ export class P2pMeshTransport {
   private readonly callbacks: P2pTransportCallbacks;
   private peers = new Map<string, PeerSlot>();
   private memberMeta = new Map<string, MultiplayerMemberDoc>();
+  private memberUpdatedAtMs = new Map<string, number>();
   private remoteStates = new Map<string, RemotePlayerState>();
   private unsubSignals: (() => void) | null = null;
   private localMicStream: MediaStream | null = null;
@@ -155,8 +164,29 @@ export class P2pMeshTransport {
         cur.characterId = m.characterId;
       }
 
-      if (!this.peers.has(m.uid)) {
+      const prevUpdated = this.memberUpdatedAtMs.get(m.uid) ?? 0;
+      const nextUpdated = getUpdatedAtMs(m.updatedAt);
+      if (nextUpdated > 0) {
+        this.memberUpdatedAtMs.set(m.uid, nextUpdated);
+      }
+
+      const existingSlot = this.peers.get(m.uid);
+      if (!existingSlot) {
         this.createPeer(m.uid);
+      } else if (nextUpdated > prevUpdated && prevUpdated > 0) {
+        const dcOpen =
+          existingSlot.dc?.readyState === 'open' ||
+          existingSlot.reliableDc?.readyState === 'open';
+        const pcState = existingSlot.pc.connectionState;
+        if (
+          !dcOpen ||
+          pcState === 'disconnected' ||
+          pcState === 'failed' ||
+          pcState === 'closed'
+        ) {
+          this.closePeer(m.uid);
+          this.createPeer(m.uid);
+        }
       }
     }
 
@@ -165,6 +195,7 @@ export class P2pMeshTransport {
       if (!activeUids.has(uid)) {
         this.closePeer(uid);
         this.memberMeta.delete(uid);
+        this.memberUpdatedAtMs.delete(uid);
         this.remoteStates.delete(uid);
       }
     }
@@ -580,7 +611,8 @@ export class P2pMeshTransport {
           parsed.t === 'shot' ||
           parsed.t === 'heal' ||
           parsed.t === 'prog' ||
-          parsed.t === 'stats'
+          parsed.t === 'stats' ||
+          parsed.t === 'wreq'
         ) {
           this.callbacks.onWorldEvent?.(slot.uid, parsed);
         }
@@ -593,6 +625,16 @@ export class P2pMeshTransport {
   private async handleIncomingSignal(sig: WebRtcSignalDoc): Promise<void> {
     if (this.disposed || sig.fromUid === this.myUid) return;
     let slot = this.peers.get(sig.fromUid);
+    if (
+      sig.kind === 'offer' &&
+      slot &&
+      (slot.pc.connectionState === 'failed' ||
+        slot.pc.connectionState === 'closed' ||
+        slot.pc.connectionState === 'disconnected')
+    ) {
+      this.closePeer(sig.fromUid);
+      slot = undefined;
+    }
     if (!slot) {
       slot = this.createPeer(sig.fromUid);
     }

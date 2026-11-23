@@ -38,12 +38,21 @@ interface PlayLobbyModalProps {
   initialDifficulty: DifficultyMode;
   characterId: CharacterPresetId;
   playerName: string;
+  hasSavedGame: boolean;
+  resumableRoom: {
+    room: MultiplayerRoomDoc;
+    spawnIndex: number;
+    isHost: boolean;
+  } | null;
   activeRoom: MultiplayerRoomDoc | null;
   roomMembers: MultiplayerMemberDoc[];
   mySpawnIndex: number;
   onPreviewCharacter: (id: CharacterPresetId, name: string) => void;
   onSignIn: () => Promise<void>;
+  onContinueSolo: () => void;
   onConfirmSolo: (difficulty: DifficultyMode, spawnMode: SpawnPreference) => void;
+  onRejoinRoom: () => Promise<void>;
+  onDismissResumableRoom: () => Promise<void>;
   onCreateGroupRoom: (difficulty: DifficultyMode) => Promise<void>;
   onJoinGroupRoom: (code: string) => Promise<void>;
   onJoinPublicRoom: (difficulty: DifficultyMode) => Promise<void>;
@@ -139,12 +148,17 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
   initialDifficulty,
   characterId,
   playerName,
+  hasSavedGame,
+  resumableRoom,
   activeRoom,
   roomMembers,
   mySpawnIndex,
   onPreviewCharacter,
   onSignIn,
+  onContinueSolo,
   onConfirmSolo,
+  onRejoinRoom,
+  onDismissResumableRoom,
   onCreateGroupRoom,
   onJoinGroupRoom,
   onJoinPublicRoom,
@@ -473,6 +487,75 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
           </div>
         ) : (
           <>
+            {resumableRoom && (
+              <div className="flex flex-col justify-between gap-3 rounded-2xl border-2 border-emerald-400/55 bg-gradient-to-r from-emerald-950/85 via-slate-900/90 to-cyan-950/85 p-3.5 shadow-[0_0_24px_rgba(16,185,129,0.22)] sm:flex-row sm:items-center">
+                <div className="min-w-0 space-y-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300/60 bg-emerald-500/20 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-emerald-200">
+                      <Users className="h-3 w-3" />
+                      <span>Room Mabar Masih Aktif</span>
+                    </span>
+                    <span className="rounded-lg border border-amber-300/50 bg-slate-950/85 px-2 py-0.5 font-mono-nums text-xs font-black tracking-widest text-amber-300">
+                      {resumableRoom.room.code}
+                    </span>
+                    <span className="text-[11px] font-bold text-slate-200">
+                      {resumableRoom.room.mode === 'group' ? 'Grup' : 'Publik'} ·{' '}
+                      {resumableRoom.room.memberCount}/{resumableRoom.room.maxPlayers} Pemain ·{' '}
+                      <span className="capitalize">{resumableRoom.room.difficulty}</span>
+                    </span>
+                  </div>
+                  <p className="text-xs font-medium text-slate-200">
+                    Kamu sempat keluar atau ke-refresh saat masih tergabung di room ini (
+                    {resumableRoom.room.status === 'playing'
+                      ? 'permainan sedang berjalan'
+                      : 'menunggu di lobi'}
+                    ). Mau masuk kembali bersama teman atau main sendiri?
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void runAction(onRejoinRoom)}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-emerald-300/75 bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2.5 text-xs font-black text-white shadow-lg transition hover:brightness-110 disabled:opacity-50"
+                  >
+                    <Play className="h-3.5 w-3.5" />
+                    <span>
+                      {busy ? 'Menghubungkan...' : `Gabung Kembali (${resumableRoom.room.code})`}
+                    </span>
+                  </button>
+
+                  {hasSavedGame && (
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() =>
+                        void runAction(async () => {
+                          await onDismissResumableRoom();
+                          onContinueSolo();
+                        })
+                      }
+                      className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-sky-300/50 bg-sky-950/75 px-3 py-2.5 text-xs font-black text-sky-100 transition hover:bg-sky-900/80 disabled:opacity-50"
+                    >
+                      <UserIcon className="h-3.5 w-3.5" />
+                      <span>Main Sendiri</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void runAction(onDismissResumableRoom)}
+                    className="inline-flex items-center justify-center gap-1 rounded-xl border border-rose-400/45 bg-rose-950/60 px-3 py-2.5 text-xs font-black text-rose-100 transition hover:bg-rose-900/75 disabled:opacity-50"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    <span>Keluar Room</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
             {/* 3 Game Mode Tabs: Solo / Group / Public */}
             <div className="grid grid-cols-3 gap-2">
               <button
@@ -626,14 +709,39 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                     </button>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => onConfirmSolo(difficulty, spawnPref)}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-sky-300/60 bg-gradient-to-r from-sky-500 to-blue-600 px-5 py-2.5 text-sm font-black text-white shadow-[0_6px_22px_rgba(14,165,233,0.4)] transition hover:brightness-110 active:translate-y-0.5 sm:w-auto sm:min-w-[230px]"
-                  >
-                    <span>Mulai Solo ({activeDiffSpec.title})</span>
-                    <ChevronRight className="h-4 w-4" />
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {hasSavedGame && (
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => {
+                          if (resumableRoom) {
+                            void runAction(async () => {
+                              await onDismissResumableRoom();
+                              onContinueSolo();
+                            });
+                          } else {
+                            onContinueSolo();
+                          }
+                        }}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300/65 bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2.5 text-sm font-black text-white shadow-[0_6px_22px_rgba(16,185,129,0.35)] transition hover:brightness-110 active:translate-y-0.5 disabled:opacity-50 sm:w-auto"
+                      >
+                        <Play className="h-4 w-4" />
+                        <span>Lanjutkan Save Solo</span>
+                      </button>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={() => onConfirmSolo(difficulty, spawnPref)}
+                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-sky-300/60 bg-gradient-to-r from-sky-500 to-blue-600 px-5 py-2.5 text-sm font-black text-white shadow-[0_6px_22px_rgba(14,165,233,0.4)] transition hover:brightness-110 active:translate-y-0.5 sm:w-auto sm:min-w-[200px]"
+                    >
+                      <span>
+                        {hasSavedGame ? `Mulai Baru (${activeDiffSpec.title})` : `Mulai Solo (${activeDiffSpec.title})`}
+                      </span>
+                      <ChevronRight className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
               </>
             ) : !isVerifiedUser ? (

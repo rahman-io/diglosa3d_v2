@@ -914,6 +914,8 @@ export class RpgWorldEngine {
   private localMultiplayerUid = '';
   private isMultiplayerHost = true;
   private hasConnectedPeers = false;
+  private awaitingRejoinWorldSync = false;
+  private rejoinSyncDeadlineMs = 0;
   private allyHelpCooldown = 0;
   private nearbyInjuredPeer: NearbyInjuredPeer | null = null;
   private localMabarStats = {
@@ -3126,6 +3128,8 @@ export class RpgWorldEngine {
       this.allyHelpCooldown = 0;
       this.isMultiplayerHost = true;
       this.hasConnectedPeers = false;
+      this.awaitingRejoinWorldSync = false;
+      this.rejoinSyncDeadlineMs = 0;
       this.localMultiplayerUid = '';
     }
   }
@@ -3135,12 +3139,27 @@ export class RpgWorldEngine {
     this.hasConnectedPeers = hasPeers;
   }
 
+  public setAwaitingRejoinSync(waiting: boolean): void {
+    this.awaitingRejoinWorldSync = waiting;
+    this.rejoinSyncDeadlineMs = waiting ? Date.now() + 3000 : 0;
+  }
+
+  public isAwaitingRejoinSync(): boolean {
+    if (!this.awaitingRejoinWorldSync) return false;
+    if (Date.now() > this.rejoinSyncDeadlineMs) {
+      this.awaitingRejoinWorldSync = false;
+      this.rejoinSyncDeadlineMs = 0;
+      return false;
+    }
+    return true;
+  }
+
   private isWorldAuthority(): boolean {
     return !this.multiplayerActive || this.isMultiplayerHost;
   }
 
   public isMultiplayerWorldHost(): boolean {
-    return this.multiplayerActive && this.isMultiplayerHost;
+    return this.multiplayerActive && this.isMultiplayerHost && !this.isAwaitingRejoinSync();
   }
 
   private emitMultiplayerPacket(pkt: P2pReliableMessage, targetUid?: string): void {
@@ -3573,7 +3592,9 @@ export class RpgWorldEngine {
     const myUid = this.localMultiplayerUid || localUid || 'local';
 
     if (pkt.t === 'wsync') {
-      if (this.isWorldAuthority()) return;
+      if (this.isWorldAuthority() && !this.isAwaitingRejoinSync()) return;
+      this.awaitingRejoinWorldSync = false;
+      this.rejoinSyncDeadlineMs = 0;
       this.dayCount = pkt.day;
       this.worldTimeTick = pkt.tick;
       this.surfaceWaveMode = pkt.mode;
@@ -3863,6 +3884,13 @@ export class RpgWorldEngine {
 
     if (pkt.t === 'prog') {
       this.applyProgressSync(pkt.lz, pkt.dbz, pkt.dc);
+      return;
+    }
+
+    if (pkt.t === 'wreq') {
+      if (this.multiplayerActive && this.phase === 'playing' && !this.isAwaitingRejoinSync()) {
+        this.emitMultiplayerPacket(this.buildWorldSyncPacket(), fromUid);
+      }
     }
   }
 

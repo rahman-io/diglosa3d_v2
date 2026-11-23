@@ -29,6 +29,49 @@ import {
 const ROOMS_COLLECTION = 'rooms';
 export const MAX_MULTIPLAYER_PLAYERS = 6;
 const ROOM_CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const ACTIVE_ROOM_STORAGE_KEY = 'diglosa_active_room_v1';
+
+interface StoredRoomSession {
+  uid: string;
+  roomId: string;
+  savedAt: number;
+}
+
+export function saveLastActiveRoomSession(uid: string, roomId: string): void {
+  try {
+    const payload: StoredRoomSession = { uid, roomId, savedAt: Date.now() };
+    localStorage.setItem(ACTIVE_ROOM_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore storage quota/privacy errors
+  }
+}
+
+export function clearLastActiveRoomSession(): void {
+  try {
+    localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
+
+export function getLastActiveRoomSession(uid: string): string | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_ROOM_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<StoredRoomSession>;
+    if (!parsed || parsed.uid !== uid || typeof parsed.roomId !== 'string' || !parsed.roomId) {
+      return null;
+    }
+    // Expire stale cached sessions older than 12 hours
+    if (typeof parsed.savedAt === 'number' && Date.now() - parsed.savedAt > 12 * 60 * 60 * 1000) {
+      localStorage.removeItem(ACTIVE_ROOM_STORAGE_KEY);
+      return null;
+    }
+    return parsed.roomId;
+  } catch {
+    return null;
+  }
+}
 
 function sanitizeDisplayName(raw: string | null | undefined, fallback = 'Petualang'): string {
   const cleaned = (raw || fallback).trim().replace(/\s+/g, ' ');
@@ -120,6 +163,7 @@ export async function createGroupRoom(params: {
     handleFirestoreError(error, OperationType.CREATE, memberPath);
   }
 
+  saveLastActiveRoomSession(user.uid, roomId);
   return { room: roomDoc, spawnIndex, isHost: true };
 }
 
@@ -230,6 +274,7 @@ export async function joinRoomByCode(params: {
     handleFirestoreError(error, OperationType.WRITE, memberPath);
   }
 
+  saveLastActiveRoomSession(user.uid, roomId);
   return {
     room: joinedRoom,
     spawnIndex,
@@ -320,6 +365,7 @@ export async function findOrCreatePublicRoom(params: {
           updatedAt: serverTimestamp(),
         });
       }
+      saveLastActiveRoomSession(user.uid, cand.roomId);
       return {
         room: joined,
         spawnIndex,
@@ -373,6 +419,7 @@ export async function findOrCreatePublicRoom(params: {
     handleFirestoreError(error, OperationType.CREATE, memberPath);
   }
 
+  saveLastActiveRoomSession(user.uid, roomId);
   return { room: roomDoc, spawnIndex, isHost: true };
 }
 
@@ -416,7 +463,146 @@ export async function startMultiplayerMatch(
   }
 }
 
+export async function checkSavedRoomMembership(
+  uid: string,
+): Promise<JoinOrCreateRoomResult | null> {
+  const savedRoomId = getLastActiveRoomSession(uid);
+  if (!savedRoomId) return null;
+  try {
+    const roomSnap = await getDoc(doc(db, ROOMS_COLLECTION, savedRoomId));
+    if (!roomSnap.exists()) {
+      clearLastActiveRoomSession();
+      return null;
+    }
+    const room = roomSnap.data() as MultiplayerRoomDoc;
+    const memberSnap = await getDoc(doc(db, ROOMS_COLLECTION, savedRoomId, 'members', uid));
+    if (!memberSnap.exists()) {
+      clearLastActiveRoomSession();
+      return null;
+    }
+    const member = memberSnap.data() as MultiplayerMemberDoc;
+    return {
+      room,
+      spawnIndex: member.spawnIndex,
+      isHost: room.hostUid === uid,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function rejoinRoomById(params: {
+  roomId: string;
+  displayName: string;
+  characterId: CharacterPresetId;
+}): Promise<JoinOrCreateRoomResult> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) {
+    throw new Error('Silakan masuk dengan akun Google terverifikasi terlebih dahulu.');
+  }
+
+  const roomId = params.roomId.trim();
+  const roomRef = doc(db, ROOMS_COLLECTION, roomId);
+  const roomPath = `${ROOMS_COLLECTION}/${roomId}`;
+  const displayName = sanitizeDisplayName(params.displayName, user.displayName || 'Petualang');
+
+  let roomSnap;
+  try {
+    roomSnap = await getDoc(roomRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, roomPath);
+  }
+
+  if (!roomSnap.exists()) {
+    clearLastActiveRoomSession();
+    throw new Error('Room sebelumnya sudah ditutup atau selesai.');
+  }
+
+  const existingMembersPath = `${ROOMS_COLLECTION}/${roomId}/members`;
+  let existingMembers: MultiplayerMemberDoc[] = [];
+  try {
+    const mSnap = await getDocs(
+      query(collection(db, existingMembersPath), where('roomId', '==', roomId), limit(10)),
+    );
+    existingMembers = mSnap.docs.map((d) => d.data() as MultiplayerMemberDoc);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.LIST, existingMembersPath);
+  }
+
+  const alreadyMember = existingMembers.find((m) => m.uid === user.uid);
+  const spawnIndex = alreadyMember
+    ? alreadyMember.spawnIndex
+    : pickUnusedSpawnIndex(existingMembers);
+
+  let joinedRoom: MultiplayerRoomDoc | null = null;
+  try {
+    joinedRoom = await runTransaction(db, async (tx) => {
+      const snap = await tx.get(roomRef);
+      if (!snap.exists()) {
+        throw new Error('Room sebelumnya sudah ditutup.');
+      }
+      const data = snap.data() as MultiplayerRoomDoc;
+      if (!alreadyMember && data.memberCount >= data.maxPlayers) {
+        throw new Error(`Room sudah penuh (${data.memberCount}/${data.maxPlayers} pemain).`);
+      }
+      const nextCount = alreadyMember ? data.memberCount : data.memberCount + 1;
+      if (!alreadyMember) {
+        tx.update(roomRef, {
+          memberCount: nextCount,
+          updatedAt: serverTimestamp(),
+        });
+      }
+      return {
+        ...data,
+        memberCount: nextCount,
+      };
+    });
+  } catch (error) {
+    if (error instanceof Error && (error.message.includes('penuh') || error.message.includes('ditutup'))) {
+      throw error;
+    }
+    handleFirestoreError(error, OperationType.UPDATE, roomPath);
+  }
+
+  const memberRef = doc(db, ROOMS_COLLECTION, roomId, 'members', user.uid);
+  const memberPath = `${ROOMS_COLLECTION}/${roomId}/members/${user.uid}`;
+  try {
+    if (alreadyMember) {
+      await updateDoc(memberRef, {
+        displayName,
+        characterId: params.characterId,
+        spawnIndex,
+        isHost: joinedRoom.hostUid === user.uid,
+        online: true,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      await setDoc(memberRef, {
+        uid: user.uid,
+        roomId,
+        displayName,
+        characterId: params.characterId,
+        spawnIndex,
+        isHost: joinedRoom.hostUid === user.uid,
+        online: true,
+        joinedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, memberPath);
+  }
+
+  saveLastActiveRoomSession(user.uid, roomId);
+  return {
+    room: joinedRoom,
+    spawnIndex,
+    isHost: joinedRoom.hostUid === user.uid,
+  };
+}
+
 export async function leaveMultiplayerRoom(roomId: string): Promise<void> {
+  clearLastActiveRoomSession();
   const user = auth.currentUser;
   if (!user) return;
 
