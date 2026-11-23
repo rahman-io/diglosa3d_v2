@@ -908,7 +908,12 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
     drawRoundedRectPath(ctx, pad, pad, viewSize, viewSize, cornerR - 2);
     ctx.clip();
 
-    ctx.fillStyle = radar.worldMode === 'dungeon' ? '#0b1220' : '#0f1e2e';
+    ctx.fillStyle =
+      radar.worldMode === 'dungeon'
+        ? '#0b1220'
+        : radar.worldMode === 'ocean'
+        ? '#042f4b'
+        : '#0f1e2e';
     ctx.fillRect(pad, pad, viewSize, viewSize);
 
     const fallbackBounds: LiveMapBounds =
@@ -919,6 +924,14 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
             centerZ: Math.max(-215, Math.min(175, radar.heroZ)),
             halfW: 36,
             halfH: 36,
+          }
+        : radar.worldMode === 'ocean'
+        ? {
+            worldMode: 'ocean',
+            centerX: Math.max(-28, Math.min(28, radar.heroX)),
+            centerZ: Math.max(-34, Math.min(24, radar.heroZ)),
+            halfW: 18,
+            halfH: 18,
           }
         : {
             worldMode: radar.worldMode,
@@ -1213,12 +1226,21 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, width, height);
 
-      ctx.fillStyle = worldMode === 'dungeon' ? '#090e1a' : worldMode === 'academy' ? '#17153b' : '#0b1824';
+      ctx.fillStyle =
+        worldMode === 'dungeon'
+          ? '#090e1a'
+          : worldMode === 'academy'
+          ? '#17153b'
+          : worldMode === 'ocean'
+          ? '#042f4b'
+          : '#0b1824';
       ctx.fillRect(0, 0, width, height);
 
       const fallbackBounds: LiveMapBounds =
         worldMode === 'overworld'
           ? { worldMode: 'overworld', centerX: -6, centerZ: -26, halfW: 368, halfH: 230 }
+          : worldMode === 'ocean'
+          ? { worldMode: 'ocean', centerX: 0, centerZ: -6, halfW: 48, halfH: 30 }
           : { worldMode, centerX: 0, centerZ: 0, halfW: 36.8, halfH: 23 };
       const bounds = snap ? snap.bounds : fallbackBounds;
 
@@ -1335,7 +1357,10 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
 
         for (const b of curRadar.blips) {
           const pt = worldToMapPx(b.x, b.z, bounds, 0, 0, width, height);
-          const isMob = b.kind === 'monster_brawl' || b.kind === 'monster_quiz';
+          const isMob =
+            b.kind === 'monster_brawl' ||
+            b.kind === 'monster_quiz' ||
+            b.kind === 'sea_monster';
           drawIcon(
             ctx,
             b.kind,
@@ -1396,6 +1421,8 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
           ? `GUA: ${dungeonName || 'WILAYAH'}`
           : worldMode === 'academy'
           ? 'ISTANA IELTS 3D'
+          : worldMode === 'ocean'
+          ? 'LAUTAN SURVIVAL 3D'
           : 'KERAJAAN KATA 3D';
       ctx.fillText(zoneTitle.slice(0, 26), 18, 22);
 
@@ -1524,6 +1551,26 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
             </div>
             <span className="text-[10px] font-extrabold text-cyan-300">
               Peta 3D Nyata Gua · Atap dibuka otomatis agar jalur terlihat
+            </span>
+          </>
+        ) : activeMode === 'ocean' ? (
+          <>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="inline-flex items-center gap-1">
+                <SpotLegendIcon kind="exit" className="h-4 w-4" />
+                <span>Pelampung Naik</span>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <SpotLegendIcon kind="chest" className="h-4 w-4" />
+                <span>Peti Selam</span>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <SpotLegendIcon kind="sea_monster" className="h-4 w-4" />
+                <span>Monster Palung</span>
+              </span>
+            </div>
+            <span className="text-[10px] font-extrabold text-cyan-300">
+              Peta 3D Nyata Bawah Laut · Karang Dangkal → Terumbu Senja → Palung Abyssal
             </span>
           </>
         ) : (

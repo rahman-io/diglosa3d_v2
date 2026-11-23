@@ -19,7 +19,9 @@ import {
   WEAPONS,
   ZONE_DOORS,
 } from '../data/diglosaCatalog';
-import { CameraMode, LiveMapSnapshot, RpgHudSnapshot, SwimStyleId, SwimStylePreference, WeaponId } from '../types/game';
+import { CameraMode, DivingGearId, LiveMapSnapshot, OceanMaterials, RpgHudSnapshot, SwimStyleId, SwimStylePreference, WeaponId } from '../types/game';
+import { DIVING_GEAR_DEFS } from '../three/oceanWorld';
+import { SEA_BIOTA_CATALOG } from '../three/seaBiotaCatalog';
 import { isFullscreenActive, toggleAppFullscreen } from '../utils/fullscreen';
 import { getWeaponThumbnails } from '../utils/weaponThumbnails';
 import { RadarMinimap, StarterWeaponPixelIcon } from './RadarMinimap';
@@ -78,6 +80,11 @@ interface RpgHudProps {
   onOpenCrafting: () => void;
   onVirtualMove: (vx: number, vz: number) => void;
   onExitDungeon: () => void;
+  onEnterOcean?: () => void;
+  onOceanVertical?: (dir: 'up' | 'down', held: boolean) => void;
+  onToggleOceanTurtle?: () => void;
+  onCraftDivingGear?: (gearId: DivingGearId, method: 'craft' | 'diamond') => void;
+  onEatOceanFood?: () => void;
   getLiveMapSnapshot?: (kind: 'minimap' | 'full') => LiveMapSnapshot | null;
   voiceListening?: boolean;
   voiceSupported?: boolean;
@@ -112,6 +119,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   onOpenCrafting,
   onVirtualMove,
   onExitDungeon,
+  onEnterOcean,
+  onOceanVertical,
+  onToggleOceanTurtle,
+  onCraftDivingGear,
+  onEatOceanFood,
   getLiveMapSnapshot,
   voiceListening = false,
   voiceSupported = true,
@@ -125,6 +137,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   const [menuOpen, setMenuOpen] = useState(false);
   const [hotbarOpen, setHotbarOpen] = useState(false);
   const [swimMenuOpen, setSwimMenuOpen] = useState(false);
+  const [oceanGearOpen, setOceanGearOpen] = useState(false);
   const [voiceHelpOpen, setVoiceHelpOpen] = useState(false);
   const [voiceSearch, setVoiceSearch] = useState('');
   const voiceModalVp = useVisualViewport(voiceHelpOpen);
@@ -144,6 +157,12 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   onVirtualMoveRef.current = onVirtualMove;
   const onSetFireHeldRef = useRef(onSetFireHeld);
   onSetFireHeldRef.current = onSetFireHeld;
+
+  useEffect(() => {
+    if (hud.phase !== 'playing' || hud.worldMode !== 'ocean') {
+      setOceanGearOpen(false);
+    }
+  }, [hud.phase, hud.worldMode]);
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
@@ -692,6 +711,30 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             </div>
           )}
 
+          {hud.worldMode === 'ocean' && hud.oceanSurvival && (
+            <div className="pointer-events-auto flex w-full items-center justify-between gap-1.5 rounded-full border border-cyan-400/45 bg-slate-950/92 px-2.5 py-0.5 text-white shadow-md">
+              <span className="min-w-0 truncate font-mono-nums text-[10px] font-extrabold text-cyan-200">
+                🌊 {hud.oceanSurvival.zoneLabel} · -{hud.oceanSurvival.depthMeters}m
+              </span>
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => setOceanGearOpen((v) => !v)}
+                  className="rounded-full border border-cyan-300/50 bg-cyan-700/85 px-2 py-0.5 text-[9px] font-black text-white hover:bg-cyan-600"
+                >
+                  🤿 Gear
+                </button>
+                <button
+                  type="button"
+                  onClick={onExitDungeon}
+                  className="rounded-full bg-amber-600/90 px-2 py-0.5 text-[9px] font-extrabold text-white hover:bg-amber-500"
+                >
+                  🫧 Naik
+                </button>
+              </div>
+            </div>
+          )}
+
           {(() => {
             const stats = hud.areaMonsterStats;
             const pct = stats.total > 0 ? Math.min(100, Math.round((stats.defeated / stats.total) * 100)) : 100;
@@ -759,6 +802,56 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                       style={{ width: `${pct}%` }}
                     />
                   </div>
+                </div>
+              );
+            }
+
+            if (hud.worldMode === 'ocean' && hud.oceanSurvival) {
+              const oc = hud.oceanSurvival;
+              const o2Pct = Math.max(0, Math.min(100, Math.round((oc.oxygen / Math.max(1, oc.maxOxygen)) * 100)));
+              return (
+                <div
+                  className={`pointer-events-auto w-full rounded-xl border px-2.5 py-1.5 text-white shadow-md ${
+                    oc.suffocating
+                      ? 'animate-pulse border-rose-400 bg-rose-950/92'
+                      : 'border-cyan-400/40 bg-slate-950/92'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-1.5 font-mono-nums text-[9.5px] font-extrabold sm:text-[10px]">
+                    <span className={oc.suffocating ? 'text-rose-200' : 'text-cyan-200'}>
+                      {oc.suffocating ? '⚠️ NAPAS HABIS!' : '🫧 Oksigen (O₂)'}
+                    </span>
+                    <span className={o2Pct <= 25 ? 'text-rose-300' : 'text-cyan-200'}>
+                      {Math.round(oc.oxygen)}/{oc.maxOxygen}
+                    </span>
+                  </div>
+                  <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-slate-800">
+                    <div
+                      className={`h-full transition-all duration-200 ${
+                        o2Pct <= 25
+                          ? 'bg-gradient-to-r from-rose-600 to-amber-400'
+                          : 'bg-gradient-to-r from-cyan-400 to-sky-300'
+                      }`}
+                      style={{ width: `${o2Pct}%` }}
+                    />
+                  </div>
+                  <div className="mt-1 flex items-center justify-between gap-1.5 font-mono-nums text-[8.5px] font-bold text-slate-200 sm:text-[9px]">
+                    <button
+                      type="button"
+                      onClick={() => setOceanGearOpen(true)}
+                      className="rounded bg-cyan-900/80 px-1.5 py-0.5 text-cyan-200 hover:bg-cyan-800"
+                    >
+                      🐠 Biota {oc.discoveredBiota.length}/20
+                    </button>
+                    <span>
+                      ⚔️ Palung {stats.defeated}/{stats.total}
+                    </span>
+                  </div>
+                  {oc.ownedGear.length === 0 && oc.depthMeters >= 6 && (
+                    <div className="mt-1 text-[8.5px] font-extrabold text-amber-300">
+                      💡 Buat/beli Baju Selam agar O₂ awet di kedalaman!
+                    </div>
+                  )}
                 </div>
               );
             }
@@ -943,6 +1036,16 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                   ↻
                 </button>
               )}
+              {hud.worldMode === 'overworld' && onEnterOcean && (
+                <button
+                  type="button"
+                  onClick={onEnterOcean}
+                  className="shrink-0 rounded-full border border-emerald-300/70 bg-emerald-600/90 px-2 py-0.5 text-[9px] font-black text-white transition hover:bg-emerald-500 sm:text-[10px]"
+                  title="Masuk ke Dunia Survival Bawah Laut (Tombol X)"
+                >
+                  🤿 Menyelam (X)
+                </button>
+              )}
             </div>
 
             {swimMenuOpen && (
@@ -1015,6 +1118,207 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           </div>
         );
       })()}
+
+      {/* UNDERWATER SURVIVAL: DIVING GEAR CRAFTING & 20 SEA BIOTA ENCYCLOPEDIA DRAWER */}
+      {hud.phase === 'playing' &&
+        hud.worldMode === 'ocean' &&
+        hud.oceanSurvival &&
+        oceanGearOpen && (() => {
+          const oc = hud.oceanSurvival!;
+          const mats = oc.materials;
+          const matEntries: Array<{ key: keyof OceanMaterials; label: string; icon: string }> = [
+            { key: 'pearl', label: 'Mutiara', icon: '⚪' },
+            { key: 'fiber', label: 'Serat', icon: '🌿' },
+            { key: 'calcium', label: 'Kalsium', icon: '🪸' },
+            { key: 'shell', label: 'Cangkang', icon: '🐚' },
+            { key: 'food', label: 'Makanan', icon: '🍤' },
+          ];
+          return (
+            <div className="pointer-events-auto fixed inset-0 z-40 flex items-center justify-center bg-black/75 p-2 sm:p-4">
+              <div className="flex max-h-[88dvh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-cyan-400/50 bg-slate-950/95 p-3 text-slate-100 shadow-2xl sm:p-4">
+                <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
+                  <div>
+                    <h3 className="text-sm font-black text-cyan-200 sm:text-base">
+                      🤿 Perlengkapan Selam &amp; Ensiklopedia 20 Biota Laut
+                    </h3>
+                    <p className="text-[11px] text-slate-300">
+                      Kumpulkan bahan dari biota &amp; peti karang untuk membuat Baju Selam menuju Palung Abyssal.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setOceanGearOpen(false)}
+                    aria-label="Tutup Panel Laut"
+                    className="rounded-lg border border-white/15 bg-slate-900 px-2.5 py-1 text-xs font-bold text-slate-200 hover:bg-slate-800"
+                  >
+                    ✕ Tutup
+                  </button>
+                </div>
+
+                {/* Materials + Quick Heal Bar */}
+                <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-cyan-400/25 bg-slate-900/90 px-3 py-2">
+                  <div className="flex flex-wrap items-center gap-2.5 font-mono-nums text-[11px] font-extrabold">
+                    {matEntries.map((m) => (
+                      <span key={m.key} className="inline-flex items-center gap-1 rounded-md bg-slate-950 px-2 py-0.5 text-cyan-100">
+                        <span>{m.icon}</span>
+                        <span>{m.label}:</span>
+                        <span className="text-amber-300">{mats[m.key]}</span>
+                      </span>
+                    ))}
+                  </div>
+                  <button
+                    type="button"
+                    disabled={mats.food <= 0 || hud.hp >= hud.maxHp || !onEatOceanFood}
+                    onClick={() => onEatOceanFood?.()}
+                    className="rounded-lg border border-emerald-400/60 bg-emerald-600/90 px-2.5 py-1 text-[10px] font-black text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    🍤 Makan (+1 ❤️)
+                  </button>
+                </div>
+
+                <div className="mt-2.5 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain touch-pan-y pr-1">
+                  {/* Section 1: Diving Gear Crafting */}
+                  <div>
+                    <h4 className="mb-1.5 text-xs font-black uppercase tracking-wider text-amber-300">
+                      Perlengkapan Selam ({oc.ownedGear.length}/3 Dimiliki)
+                    </h4>
+                    <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+                      {(Object.keys(DIVING_GEAR_DEFS) as DivingGearId[]).map((gId) => {
+                        const def = DIVING_GEAR_DEFS[gId];
+                        const owned = oc.ownedGear.includes(gId);
+                        const canCraft = (Object.entries(def.craftCost) as Array<[keyof OceanMaterials, number]>).every(
+                          ([k, req]) => mats[k] >= req,
+                        );
+                        const canDiamond = hud.diamonds >= def.diamondCost;
+                        const costText = (Object.entries(def.craftCost) as Array<[keyof OceanMaterials, number]>)
+                          .map(([k, req]) => {
+                            const labelMap: Record<keyof OceanMaterials, string> = {
+                              pearl: 'Mutiara',
+                              fiber: 'Serat',
+                              calcium: 'Kalsium',
+                              shell: 'Cangkang',
+                              food: 'Makanan',
+                            };
+                            return `${req} ${labelMap[k]}`;
+                          })
+                          .join(' · ');
+
+                        return (
+                          <div
+                            key={gId}
+                            className={`flex flex-col justify-between rounded-xl border p-2.5 ${
+                              owned
+                                ? 'border-emerald-400/60 bg-emerald-950/35'
+                                : 'border-cyan-400/25 bg-slate-900/85'
+                            }`}
+                          >
+                            <div>
+                              <div className="flex items-start justify-between gap-1">
+                                <span className="text-xs font-black text-white">{def.name}</span>
+                                {owned && (
+                                  <span className="shrink-0 rounded bg-emerald-500/25 px-1.5 py-0.5 text-[9px] font-black text-emerald-300">
+                                    ✓ Dipakai
+                                  </span>
+                                )}
+                              </div>
+                              <p className="mt-1 text-[10px] leading-snug text-cyan-100/85">{def.subtitle}</p>
+                              <p className="mt-1.5 font-mono-nums text-[9.5px] font-bold text-amber-200">
+                                Bahan: {costText}
+                              </p>
+                            </div>
+                            {!owned && (
+                              <div className="mt-2 flex gap-1.5">
+                                <button
+                                  type="button"
+                                  disabled={!canCraft || !onCraftDivingGear}
+                                  onClick={() => onCraftDivingGear?.(gId, 'craft')}
+                                  className="flex-1 rounded-lg bg-cyan-600 px-2 py-1 text-[10px] font-black text-white transition hover:bg-cyan-500 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  Buat (Bahan)
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={!canDiamond || !onCraftDivingGear}
+                                  onClick={() => onCraftDivingGear?.(gId, 'diamond')}
+                                  className="rounded-lg border border-amber-400/50 bg-amber-600/85 px-2 py-1 font-mono-nums text-[10px] font-black text-white transition hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-40"
+                                >
+                                  💎 {def.diamondCost}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Section 2: 20 Sea Biota Sheet Encyclopedia */}
+                  <div>
+                    <h4 className="mb-1.5 text-xs font-black uppercase tracking-wider text-cyan-300">
+                      20 Spesies Biota Laut ({oc.discoveredBiota.length}/20 Ditemukan)
+                    </h4>
+                    <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 md:grid-cols-4">
+                      {SEA_BIOTA_CATALOG.map((sp) => {
+                        const found = oc.discoveredBiota.includes(sp.id);
+                        return (
+                          <div
+                            key={sp.id}
+                            className={`rounded-xl border px-2.5 py-2 ${
+                              found
+                                ? 'border-emerald-400/50 bg-slate-900/90'
+                                : 'border-slate-800 bg-slate-900/55 opacity-80'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-1 text-[9.5px] font-black">
+                              <span className="font-mono-nums text-amber-300">
+                                #{sp.num} · {sp.rarity}
+                              </span>
+                              <span className={found ? 'text-emerald-300' : 'text-slate-400'}>
+                                {found ? '✓ Ditemukan' : '? Belum'}
+                              </span>
+                            </div>
+                            <div className="mt-0.5 truncate text-[11px] font-black text-white">
+                              {sp.indoName}
+                            </div>
+                            <div className="truncate text-[9.5px] font-semibold text-cyan-300">
+                              {sp.name} · {sp.category}
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-1 text-[8.5px] font-bold">
+                              {sp.mountable && (
+                                <span className="rounded bg-emerald-900/80 px-1 py-0.5 text-emerald-200">
+                                  MOUNT: Yes
+                                </span>
+                              )}
+                              {sp.yieldKind && (
+                                <span className="rounded bg-cyan-900/80 px-1 py-0.5 text-cyan-200">
+                                  YIELD: {sp.yieldKind}
+                                </span>
+                              )}
+                              {sp.lightRadius && (
+                                <span className="rounded bg-sky-900/80 px-1 py-0.5 text-sky-200">
+                                  LIGHT: {sp.lightRadius}m
+                                </span>
+                              )}
+                              <span
+                                className={`rounded px-1 py-0.5 ${
+                                  sp.id === 'fire_coral'
+                                    ? 'bg-rose-900/80 text-rose-200'
+                                    : 'bg-slate-800 text-slate-200'
+                                }`}
+                              >
+                                {sp.statText}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       {/* Dynamic Tactical Crosshair & Hit Marker in Bidik Bebas TPS & FPS Modes */}
       {hud.phase === 'playing' &&
@@ -1767,7 +2071,83 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               />
             </button>
           )}
+
+        {hud.worldMode === 'ocean' && hud.oceanSurvival?.nearChestLabel && (
+          <button
+            type="button"
+            onClick={onPrimaryAction}
+            title={hud.oceanSurvival.nearChestLabel}
+            className="flex h-[52px] items-center gap-1.5 rounded-full border-2 border-amber-300 bg-amber-600/95 px-3.5 text-xs font-black text-white shadow-[0_5px_14px_rgba(245,158,11,0.55)] transition-transform hover:scale-105 active:scale-90"
+          >
+            <span>🧰</span>
+            <span>Buka Peti</span>
+          </button>
+        )}
+
+        {hud.worldMode === 'ocean' && hud.oceanSurvival?.nearBiotaId && (
+          <button
+            type="button"
+            onClick={onPrimaryAction}
+            title={hud.oceanSurvival.nearBiotaAction || hud.oceanSurvival.nearBiotaName || 'Interaksi Biota'}
+            className="flex h-[52px] items-center gap-1.5 rounded-full border-2 border-cyan-300 bg-cyan-700/95 px-3.5 text-xs font-black text-white shadow-[0_5px_14px_rgba(34,211,238,0.55)] transition-transform hover:scale-105 active:scale-90"
+          >
+            <span>🌿</span>
+            <span className="max-w-[120px] truncate">
+              {hud.oceanSurvival.nearBiotaAction || hud.oceanSurvival.nearBiotaName}
+            </span>
+          </button>
+        )}
+
+        {hud.worldMode === 'ocean' &&
+          (hud.oceanSurvival?.nearTurtleMount || hud.oceanSurvival?.ridingTurtle) &&
+          onToggleOceanTurtle && (
+            <button
+              type="button"
+              onClick={onToggleOceanTurtle}
+              title={hud.oceanSurvival.ridingTurtle ? 'Turun dari Penyu' : 'Tunggangi Penyu Laut'}
+              className="flex h-[52px] items-center gap-1.5 rounded-full border-2 border-emerald-300 bg-emerald-600/95 px-3.5 text-xs font-black text-white shadow-[0_5px_14px_rgba(16,185,129,0.55)] transition-transform hover:scale-105 active:scale-90"
+            >
+              <span>🐢</span>
+              <span>{hud.oceanSurvival.ridingTurtle ? 'Turun Penyu' : 'Naik Penyu'}</span>
+            </button>
+          )}
       </div>
+
+      {/* OCEAN DEPTH CONTROLS (Holdable Naik / Turun buttons cleanly above Attack) */}
+      {hud.phase === 'playing' && hud.worldMode === 'ocean' && onOceanVertical && (
+        <div className="pointer-events-auto fixed bottom-[92px] right-3 z-20 flex flex-col gap-1.5 sm:bottom-[108px] sm:right-5">
+          <button
+            type="button"
+            data-no-click-sfx="true"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              onOceanVertical('up', true);
+            }}
+            onPointerUp={() => onOceanVertical('up', false)}
+            onPointerCancel={() => onOceanVertical('up', false)}
+            onPointerLeave={() => onOceanVertical('up', false)}
+            title="Berenang Naik (Spasi)"
+            className="flex h-8 w-[74px] touch-none select-none items-center justify-center gap-1 rounded-full border border-cyan-300/70 bg-cyan-800/95 text-[10px] font-black text-white shadow-lg transition active:scale-95 sm:h-9 sm:w-[82px] sm:text-[11px]"
+          >
+            <span>▲ Naik</span>
+          </button>
+          <button
+            type="button"
+            data-no-click-sfx="true"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              onOceanVertical('down', true);
+            }}
+            onPointerUp={() => onOceanVertical('down', false)}
+            onPointerCancel={() => onOceanVertical('down', false)}
+            onPointerLeave={() => onOceanVertical('down', false)}
+            title="Menyelam Turun (Z / Ctrl)"
+            className="flex h-8 w-[74px] touch-none select-none items-center justify-center gap-1 rounded-full border border-sky-300/70 bg-slate-900/95 text-[10px] font-black text-cyan-200 shadow-lg transition active:scale-95 sm:h-9 sm:w-[82px] sm:text-[11px]"
+          >
+            <span>▼ Turun</span>
+          </button>
+        </div>
+      )}
 
       {/* BOTTOM-RIGHT: Mobile Legends Style Thumb Cluster (Jump, Scope, Attack) */}
       <div className="pointer-events-none fixed bottom-3 right-3 z-20 h-[144px] w-[156px] sm:bottom-5 sm:right-5 sm:h-[168px] sm:w-[180px]">

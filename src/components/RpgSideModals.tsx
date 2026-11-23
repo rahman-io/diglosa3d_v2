@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { formatBytesMb, getLocalOfflineState } from '../services/offlineSyncService';
+import { DIVING_GEAR_DEFS } from '../three/oceanWorld';
 import {
   AMMO_COST,
   DIFF_CONFIG,
@@ -125,12 +126,16 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
         ? `Peta Gua: ${hud.dungeonState.zoneName}`
         : hud.worldMode === 'academy'
         ? 'Peta Istana IELTS 3D'
+        : hud.worldMode === 'ocean'
+        ? 'Peta Dunia Bawah Laut 3D'
         : 'Peta Wilayah Kerajaan Kata';
     const mapSubtitle =
       hud.worldMode === 'dungeon' && hud.dungeonState
         ? `Peta 3D Nyata Gua · Pintu ${hud.dungeonState.doorsCleared.length}/5`
         : hud.worldMode === 'academy'
         ? 'Peta 3D Nyata Aula Ujian Kerajaan'
+        : hud.worldMode === 'ocean'
+        ? 'Taman Karang Dangkal → Terumbu Senja → Palung Abyssal'
         : `Peta 3D Nyata · ${hud.liberatedZones.length}/6 Wilayah Bebas`;
 
     return (
@@ -285,6 +290,57 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                       className="w-full"
                     >
                       <span>Keluar ke Kerajaan Kata</span>
+                    </RpgPillButton>
+                  )}
+                </div>
+              )}
+
+              {hud.worldMode === 'ocean' && hud.oceanSurvival && (
+                <div className="space-y-2.5 rounded-2xl border border-cyan-400/35 bg-slate-950/85 p-3.5 shadow-inner">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
+                    <div>
+                      <div className="text-xs font-black text-cyan-200 sm:text-sm">
+                        Zona Saat Ini: {hud.oceanSurvival.zoneLabel}
+                      </div>
+                      <div className="text-[11px] font-semibold text-slate-300">
+                        Kedalaman -{hud.oceanSurvival.depthMeters}m · O₂ {Math.round(hud.oceanSurvival.oxygen)}/{hud.oceanSurvival.maxOxygen}
+                      </div>
+                    </div>
+                    <span className="font-mono-nums text-xs font-black text-emerald-300">
+                      Biota {hud.oceanSurvival.discoveredBiota.length}/20 · Monster Palung{' '}
+                      {hud.areaMonsterStats.defeated}/{hud.areaMonsterStats.total}
+                    </span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-slate-200">
+                    <span className="text-cyan-300">Perlengkapan Selam:</span>
+                    {hud.oceanSurvival.ownedGear.length === 0 ? (
+                      <span className="text-amber-300">
+                        Belum ada (Cepat kehabisan O₂ saat menyelam dalam!)
+                      </span>
+                    ) : (
+                      hud.oceanSurvival.ownedGear.map((gId) => (
+                        <span
+                          key={gId}
+                          className="rounded-lg border border-cyan-400/40 bg-cyan-950/60 px-2 py-0.5 text-[10px] font-extrabold text-cyan-200"
+                        >
+                          ✓ {DIVING_GEAR_DEFS[gId].name}
+                        </span>
+                      ))
+                    )}
+                  </div>
+
+                  {onExitDungeon && (
+                    <RpgPillButton
+                      variant="cream"
+                      size="sm"
+                      onClick={() => {
+                        onClose();
+                        onExitDungeon();
+                      }}
+                      className="w-full"
+                    >
+                      <span>Naik ke Permukaan (Keluar Laut)</span>
                     </RpgPillButton>
                   )}
                 </div>

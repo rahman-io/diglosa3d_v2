@@ -41,6 +41,7 @@ import {
   CaveSealContext,
   DayPhaseId,
   DifficultyMode,
+  DivingGearId,
   DungeonZoneState,
   GamePhase,
   GameSettings,
@@ -48,6 +49,8 @@ import {
   LiveMapBounds,
   LiveMapSnapshot,
   MonsterType,
+  OceanMaterials,
+  OceanSurvivalState,
   PickaxeTier,
   ProjectedLabel,
   RadarBlip,
@@ -56,6 +59,7 @@ import {
   RelicId,
   RpgHudSnapshot,
   RpgQuestState,
+  SeaBiotaId,
   StoryDialogState,
   SwimStyleId,
   SwimStylePreference,
@@ -65,6 +69,19 @@ import {
   WorldTimeState,
   ZoneId,
 } from '../types/game';
+import {
+  createOceanEnvironment,
+  DIVING_GEAR_DEFS,
+  getBiotaActionLabel,
+  getOceanFloorY,
+  getOceanZoneInfo,
+  OCEAN_SEA_MONSTER_SPAWNS,
+  OceanBiotaNode,
+  OceanSupplyChest,
+  OceanWorldRig,
+  updateOceanWorld,
+} from './oceanWorld';
+import { SEA_BIOTA_BY_ID } from './seaBiotaCatalog';
 import { createMaterialPalette, MaterialPalette } from './materials';
 import {
   createMinecraftVillageWorld,
@@ -156,6 +173,7 @@ interface RoamingMonster {
   name: string;
   zoneId: ZoneId;
   homeX: number;
+  homeY?: number;
   homeZ: number;
   x: number;
   y?: number;
@@ -372,6 +390,10 @@ interface SavedStatePayload {
   }>;
   savedCollectibles?: Array<{ active: boolean; respawnTimer: number }>;
   defeatedAcademyEnemyIds?: string[];
+  oceanGear?: DivingGearId[];
+  oceanMaterials?: OceanMaterials;
+  discoveredBiota?: SeaBiotaId[];
+  oceanOpenedChests?: string[];
 }
 
 const MAX_COLLECTIBLES = 56;
@@ -524,6 +546,7 @@ export class RpgWorldEngine {
   private mapHiddenOverworld: THREE.Object3D[] = [];
   private mapHiddenDungeon: THREE.Object3D[] = [];
   private mapHiddenAcademy: THREE.Object3D[] = [];
+  private mapHiddenOcean: THREE.Object3D[] = [];
 
   // Input & Raycasting
   private heldKeys = new Set<string>();
@@ -550,6 +573,7 @@ export class RpgWorldEngine {
   private overworldClickables: THREE.Object3D[] = [];
   private dungeonClickables: THREE.Object3D[] = [];
   private academyClickables: THREE.Object3D[] = [];
+  private oceanClickables: THREE.Object3D[] = [];
 
   // World containers & entities
   private worldMode: WorldLocationMode = 'overworld';
@@ -561,6 +585,7 @@ export class RpgWorldEngine {
   private extraVillageColliders: VillageObstacle[] = [];
   private dungeonRig: DungeonArenaRig | null = null;
   private academyRig: AcademyHallRig | null = null;
+  private oceanRig: OceanWorldRig | null = null;
   private dungeonAnimatables: THREE.Object3D[] = [];
   private dungeonExitPos = new THREE.Vector3(0, 0, 17);
   private dungeonState: DungeonZoneState | null = null;
@@ -639,6 +664,21 @@ export class RpgWorldEngine {
   private dungeonTotalSpawned = 0;
   private academyMonsters: RoamingMonster[] = [];
   private academyTotalSpawned = 0;
+  private oceanMonsters: RoamingMonster[] = [];
+  private oceanTotalSpawned = 0;
+  private oceanOxygen = 35;
+  private oceanSuffocateTimer = 0;
+  private fireCoralStingTimer = 0;
+  private oceanGear = new Set<DivingGearId>();
+  private oceanMaterials: OceanMaterials = { pearl: 0, fiber: 0, calcium: 0, shell: 0, food: 0 };
+  private discoveredBiota = new Set<SeaBiotaId>();
+  private openedOceanChests = new Set<string>();
+  private ridingTurtle = false;
+  private oceanAscendHeld = false;
+  private oceanDescendHeld = false;
+  private nearBiotaNode: OceanBiotaNode | null = null;
+  private nearOceanChest: OceanSupplyChest | null = null;
+  private nearOceanTurtle = false;
   private zoneCaveProgress: Partial<Record<ZoneId, { defeated: number; remaining: number; total: number }>> = {};
   private zoneCaveDetails: Partial<Record<ZoneId, SavedZoneCaveDetail>> = {};
   private defeatedAcademyEnemyIds = new Set<string>();
@@ -1339,6 +1379,10 @@ export class RpgWorldEngine {
           respawnTimer: c.respawnTimer,
         })),
         defeatedAcademyEnemyIds: Array.from(this.defeatedAcademyEnemyIds),
+        oceanGear: Array.from(this.oceanGear),
+        oceanMaterials: { ...this.oceanMaterials },
+        discoveredBiota: Array.from(this.discoveredBiota),
+        oceanOpenedChests: Array.from(this.openedOceanChests),
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
       this.hasSave = true;
@@ -1422,6 +1466,16 @@ export class RpgWorldEngine {
       this.zoneCaveProgress = data.zoneCaveProgress ? { ...data.zoneCaveProgress } : {};
       this.zoneCaveDetails = data.zoneCaveDetails ? { ...data.zoneCaveDetails } : {};
       this.defeatedAcademyEnemyIds = new Set(data.defeatedAcademyEnemyIds || []);
+      this.oceanGear = new Set(data.oceanGear || []);
+      this.oceanMaterials = {
+        pearl: data.oceanMaterials?.pearl || 0,
+        fiber: data.oceanMaterials?.fiber || 0,
+        calcium: data.oceanMaterials?.calcium || 0,
+        shell: data.oceanMaterials?.shell || 0,
+        food: data.oceanMaterials?.food || 0,
+      };
+      this.discoveredBiota = new Set(data.discoveredBiota || []);
+      this.openedOceanChests = new Set(data.oceanOpenedChests || []);
       this.worldTimeTick =
         typeof data.worldTimeTick === 'number' && Number.isFinite(data.worldTimeTick)
           ? ((data.worldTimeTick % TICKS_PER_DAY) + TICKS_PER_DAY) % TICKS_PER_DAY
@@ -2372,7 +2426,7 @@ export class RpgWorldEngine {
     const canHoldWeapon =
       this.activeHotbarSlot <= 7 &&
       this.ownedWeapons.has(this.activeWeapon) &&
-      (!this.isSwimming || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
+      (!this.isSwimming || this.worldMode === 'ocean' || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
     setHeroWeaponVisual(this.hero, this.activeWeapon, canHoldWeapon);
 
     if (this.isSwimming) {
@@ -2694,6 +2748,14 @@ export class RpgWorldEngine {
       return;
     }
 
+    if (this.restoredWorldMode === 'ocean') {
+      this.enterOceanWorld(true);
+      this.showBanner('🐠 Selamat datang kembali di Dunia Bawah Laut!', 3.6);
+      soundEngine.playWin();
+      this.pushHud(true);
+      return;
+    }
+
     this.syncShootersForDifficulty();
     this.syncOverworldMonstersByDiff();
     this.initSeaMonsters();
@@ -2816,6 +2878,12 @@ export class RpgWorldEngine {
     this.zoneCaveProgress = {};
     this.zoneCaveDetails = {};
     this.defeatedAcademyEnemyIds.clear();
+    this.oceanGear.clear();
+    this.oceanMaterials = { pearl: 0, fiber: 0, calcium: 0, shell: 0, food: 0 };
+    this.discoveredBiota.clear();
+    this.openedOceanChests.clear();
+    this.oceanOxygen = 35;
+    this.ridingTurtle = false;
     this.restoredWorldMode = 'overworld';
     this.restoredDungeonZoneId = null;
     this.restoredDungeonMixed = false;
@@ -3472,6 +3540,23 @@ export class RpgWorldEngine {
       this.rimLight.intensity = 0.45;
       if (!this.preferLiteShader) this.scene.environmentIntensity = 0.85;
       this.playerCaveLight.intensity = 0;
+    } else if (mode === 'ocean') {
+      (this.scene.background as THREE.Color).setHex(0x0c4a6e);
+      if (this.scene.fog instanceof THREE.FogExp2) {
+        this.scene.fog.color.setHex(0x0c4a6e);
+        this.scene.fog.density = 0.014;
+      }
+      this.hemiLight.color.setHex(0x7dd3fc);
+      this.hemiLight.groundColor.setHex(0x0f172a);
+      this.hemiLight.intensity = 1.05 + liteBoost;
+      this.sunLight.target.position.set(0, -10, 0);
+      this.sunLight.target.updateMatrixWorld();
+      this.sunLight.color.setHex(0xe0f2fe);
+      this.sunLight.position.set(22, 68, 42);
+      this.sunLight.intensity = 1.25;
+      this.rimLight.intensity = 0.45;
+      if (!this.preferLiteShader) this.scene.environmentIntensity = 0.78;
+      this.playerCaveLight.intensity = 0;
     } else {
       this.updateOverworldDayNightAtmosphere(0, false);
     }
@@ -3495,6 +3580,15 @@ export class RpgWorldEngine {
       this.academyRig = null;
       this.mapHiddenAcademy = [];
     }
+    if (this.oceanRig) {
+      this.scene.remove(this.oceanRig.group);
+      this.oceanRig.disposables.forEach((d) => d.dispose());
+      this.oceanRig.group.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+      });
+      this.oceanRig = null;
+      this.mapHiddenOcean = [];
+    }
     this.clearCaveBoulders();
     this.activeTnts.forEach((t) => {
       if (t.mesh.parent) t.mesh.parent.remove(t.mesh);
@@ -3510,6 +3604,15 @@ export class RpgWorldEngine {
     this.dungeonTotalSpawned = 0;
     this.academyMonsters = [];
     this.academyTotalSpawned = 0;
+    this.oceanMonsters = [];
+    this.oceanTotalSpawned = 0;
+    this.oceanClickables = [];
+    this.ridingTurtle = false;
+    this.oceanAscendHeld = false;
+    this.oceanDescendHeld = false;
+    this.nearBiotaNode = null;
+    this.nearOceanChest = null;
+    this.nearOceanTurtle = false;
     this.dungeonClickables = [];
     this.academyClickables = [];
     this.academyNpcs.clear();
@@ -4389,6 +4492,330 @@ export class RpgWorldEngine {
     this.setSwimStylePreference(next);
   }
 
+  private getOceanMaxOxygen(): number {
+    let bonus = 0;
+    for (const gId of this.oceanGear) {
+      bonus += DIVING_GEAR_DEFS[gId].maxOxygenBonus;
+    }
+    return 35 + bonus;
+  }
+
+  public enterOceanWorld(resumeSavedPos = false): void {
+    if (this.worldMode === 'overworld' && !resumeSavedPos) {
+      this.savedOverworldHeroPos.copy(this.heroPos);
+    }
+    this.clearSubScenes();
+
+    this.overworldGroup.visible = false;
+    this.worldMode = 'ocean';
+    this.phase = 'playing';
+    this.isSwimming = true;
+    this.heroOnGround = false;
+    this.heldKeys.clear();
+
+    const rig = createOceanEnvironment(
+      this.palette,
+      this.isLowEndMobile || this.settings.fxLevel !== 'full',
+    );
+    this.oceanRig = rig;
+    this.dungeonExitPos.copy(rig.buoyPos);
+
+    for (const ch of rig.chests) {
+      if (this.openedOceanChests.has(ch.id)) {
+        ch.opened = true;
+        ch.lid.rotation.x = -1.25;
+        ch.beacon.visible = false;
+      }
+    }
+
+    this.oceanClickables.push(...rig.clickables);
+
+    const diff = this.settings.difficulty;
+    const diffHpMult = diff === 'santai' ? 0.8 : diff === 'pendekar' ? 1.25 : 1.0;
+    for (let i = 0; i < OCEAN_SEA_MONSTER_SPAWNS.length; i++) {
+      const tpl = OCEAN_SEA_MONSTER_SPAWNS[i];
+      const spec = MONSTER_SPECS[tpl.type];
+      const mesh = createMonsterMesh(tpl.type, this.palette);
+      mesh.position.set(tpl.x, tpl.y, tpl.z);
+
+      const ringRadius = Math.max(1.2, spec.hitRadius * 0.85);
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(ringRadius, ringRadius + 0.45, 24),
+        new THREE.MeshBasicMaterial({
+          color: 0x22d3ee,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.72,
+        }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.08 - spec.hoverY;
+      mesh.add(ring);
+      mesh.userData.combatRing = ring;
+      mesh.userData.monsterId = tpl.id;
+      rig.group.add(mesh);
+      this.oceanClickables.push(mesh);
+
+      const maxMobHp = Math.max(3, Math.round(tpl.maxHp * diffHpMult));
+      this.oceanMonsters.push({
+        id: tpl.id,
+        type: tpl.type,
+        name: tpl.name,
+        zoneId: 'gua_portal',
+        homeX: tpl.x,
+        homeY: tpl.y,
+        homeZ: tpl.z,
+        x: tpl.x,
+        y: tpl.y,
+        z: tpl.z,
+        maxHp: spec.quizHp,
+        mobHp: maxMobHp,
+        maxMobHp,
+        rewardXp: tpl.rewardXp + (diff === 'pendekar' ? 10 : 0),
+        rewardDiamonds: tpl.rewardDiamonds,
+        rewardScore: tpl.rewardScore,
+        combatOnly: true,
+        isSeaMonster: true,
+        aggroActive: false,
+        attackCooldown: 1.0 + Math.random() * 0.8,
+        windupTimer: -1,
+        lungeTimer: 0,
+        hitFlashTimer: 0,
+        mesh,
+        alive: true,
+        respawnTimer: 0,
+        patrolPhase: Math.random() * Math.PI * 2,
+        angryTimer: 0,
+      });
+    }
+    this.oceanTotalSpawned = this.oceanMonsters.length;
+
+    this.scene.add(rig.group);
+    this.mapHiddenOcean = this.collectMapHidden(rig.group);
+    this.applyAtmosphere('ocean');
+
+    if (resumeSavedPos && this.restoredHeroPos && this.restoredWorldMode === 'ocean') {
+      const rx = THREE.MathUtils.clamp(this.restoredHeroPos.x, -40, 40);
+      const rz = THREE.MathUtils.clamp(this.restoredHeroPos.z, -48, 35);
+      const floorY = getOceanFloorY(rx, rz) + 0.6;
+      const ry = THREE.MathUtils.clamp(this.restoredHeroPos.y, floorY, -1.2);
+      this.heroPos.set(rx, ry, rz);
+      this.heroYaw = this.restoredHeroPos.yaw;
+    } else {
+      this.heroPos.set(0, -5.2, 26);
+      this.heroYaw = Math.PI;
+    }
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.body.rotation.y = this.heroYaw;
+    this.heroVel.set(0, 0, 0);
+    this.heroVelY = 0;
+    this.oceanOxygen = this.getOceanMaxOxygen();
+    this.oceanSuffocateTimer = 0;
+    this.fireCoralStingTimer = 0;
+    this.ridingTurtle = false;
+    this.activeSwimStyle = this.oceanGear.has('wetsuit_tank') ? 'scuba_explore' : 'underwater_glide';
+    this.encounterGraceTimer = 2.0;
+
+    this.refreshWeaponVisual();
+    if (this.cameraMode === 'orbit') this.cameraMode = 'third_back';
+    this.applyCameraVisibilityAndControls();
+    this.snapCameraBehindHero();
+
+    soundEngine.playSplash(1.0);
+    this.showBanner(
+      '🐠 Selamat datang di Taman Karang Dangkal! Temukan 20 Biota Laut & cari Baju Selam sebelum turun ke Palung Abyssal!',
+      5.0,
+    );
+    this.saveProgress();
+    this.pushHud(true);
+  }
+
+  public setOceanVerticalInput(dir: 'up' | 'down', held: boolean): void {
+    this.lastInputActivityMs = performance.now();
+    if (dir === 'up') this.oceanAscendHeld = held;
+    else this.oceanDescendHeld = held;
+  }
+
+  public toggleOceanTurtleMount(): void {
+    if (this.worldMode !== 'ocean') return;
+    if (this.ridingTurtle) {
+      this.ridingTurtle = false;
+      soundEngine.playSplash(0.6);
+      this.showBanner('🐢 Turun dari Penyu Hijau.', 1.8);
+      this.pushHud(true);
+      return;
+    }
+    if (!this.nearOceanTurtle) {
+      soundEngine.playNo();
+      this.showBanner('🐢 Dekati Penyu Hijau di Taman Karang untuk menungganginya!', 2.2);
+      return;
+    }
+    this.ridingTurtle = true;
+    this.discoveredBiota.add('sea_turtle');
+    soundEngine.playPick();
+    this.spawnBurst(this.heroPos.x, this.heroPos.y + 0.5, this.heroPos.z, 0x22c55e, 14);
+    this.showBanner('🐢 Menunggangi Penyu Hijau! Kecepatan renang meningkat pesat!', 2.8);
+    this.saveProgress();
+    this.pushHud(true);
+  }
+
+  private interactWithOceanChest(ch: OceanSupplyChest): void {
+    if (ch.opened) return;
+    ch.opened = true;
+    this.openedOceanChests.add(ch.id);
+    ch.beacon.visible = false;
+    soundEngine.playWin();
+    this.spawnBurst(ch.x, ch.y + 0.8, ch.z, 0xfacc15, 24);
+
+    const parts: string[] = [];
+    if (ch.rewardGear && !this.oceanGear.has(ch.rewardGear)) {
+      this.oceanGear.add(ch.rewardGear);
+      const def = DIVING_GEAR_DEFS[ch.rewardGear];
+      this.oceanOxygen = this.getOceanMaxOxygen();
+      parts.push(`🦺 Dapat ${def.name}!`);
+      if (ch.rewardGear === 'wetsuit_tank') {
+        this.activeSwimStyle = 'scuba_explore';
+      }
+    }
+    if (ch.rewardMaterials.pearl) {
+      this.oceanMaterials.pearl += ch.rewardMaterials.pearl;
+      parts.push(`+${ch.rewardMaterials.pearl} Mutiara`);
+    }
+    if (ch.rewardMaterials.fiber) {
+      this.oceanMaterials.fiber += ch.rewardMaterials.fiber;
+      parts.push(`+${ch.rewardMaterials.fiber} Serat`);
+    }
+    if (ch.rewardMaterials.calcium) {
+      this.oceanMaterials.calcium += ch.rewardMaterials.calcium;
+      parts.push(`+${ch.rewardMaterials.calcium} Kalsium`);
+    }
+    if (ch.rewardMaterials.shell) {
+      this.oceanMaterials.shell += ch.rewardMaterials.shell;
+      parts.push(`+${ch.rewardMaterials.shell} Cangkang`);
+    }
+    if (ch.rewardMaterials.food) {
+      this.oceanMaterials.food += ch.rewardMaterials.food;
+      parts.push(`+${ch.rewardMaterials.food} Makanan`);
+    }
+    this.gainXp(25);
+    this.addScore(180);
+    this.showBanner(`🧰 ${ch.label} terbuka! ${parts.join(' · ')}`, 4.2);
+    this.saveProgress();
+    this.pushHud(true);
+  }
+
+  private interactWithBiotaNode(node: OceanBiotaNode): void {
+    const entry = SEA_BIOTA_BY_ID[node.speciesId];
+    if (!entry) return;
+    if (!this.discoveredBiota.has(node.speciesId)) {
+      this.discoveredBiota.add(node.speciesId);
+      this.gainXp(10);
+      this.addScore(35);
+    }
+    if (entry.mountable) {
+      this.toggleOceanTurtleMount();
+      return;
+    }
+    if (node.harvestCooldown > 0) {
+      soundEngine.playNo();
+      this.showBanner(`⏳ ${entry.indoName} sedang memulihkan diri (${Math.ceil(node.harvestCooldown)}d).`, 1.8);
+      return;
+    }
+    if (!entry.yieldKind) {
+      soundEngine.playPick();
+      this.showBanner(`🐠 ${entry.indoName} (${entry.rarity}) tercatat di Ensiklopedia Laut!`, 2.4);
+      this.saveProgress();
+      this.pushHud(true);
+      return;
+    }
+    node.harvestCooldown = 14;
+    this.oceanMaterials[entry.yieldKind] += 1;
+    if (entry.yieldKind === 'shell') {
+      this.addScore(25);
+    }
+    this.gainXp(8);
+    this.addScore(30);
+    soundEngine.playPick();
+    this.spawnBurst(node.x, node.y + 0.5, node.z, 0x22d3ee, 10);
+    const labelMap: Record<keyof OceanMaterials, string> = {
+      pearl: '⚪ Mutiara +1',
+      fiber: '🌿 Serat Kelp +1',
+      calcium: '🪸 Kalsium Karang +1',
+      shell: '🐚 Cangkang +1',
+      food: '🍤 Makanan Laut +1',
+    };
+    this.showBanner(`✨ Panen ${entry.indoName}: ${labelMap[entry.yieldKind]}!`, 2.4);
+    this.saveProgress();
+    this.pushHud(true);
+  }
+
+  public craftOrBuyDivingGear(gearId: DivingGearId, method: 'craft' | 'diamond'): void {
+    const def = DIVING_GEAR_DEFS[gearId];
+    if (!def) return;
+    if (this.oceanGear.has(gearId)) {
+      soundEngine.playNo();
+      this.showBanner(`✓ ${def.name} sudah kamu miliki!`, 2.0);
+      return;
+    }
+    if (method === 'craft') {
+      const need = def.craftCost;
+      if (
+        (need.pearl && this.oceanMaterials.pearl < need.pearl) ||
+        (need.fiber && this.oceanMaterials.fiber < need.fiber) ||
+        (need.calcium && this.oceanMaterials.calcium < need.calcium) ||
+        (need.shell && this.oceanMaterials.shell < need.shell) ||
+        (need.food && this.oceanMaterials.food < need.food)
+      ) {
+        soundEngine.playNo();
+        this.showBanner('Bahan laut belum cukup! Panen Karang, Kelp, atau Kerang dulu.', 2.4);
+        return;
+      }
+      if (need.pearl) this.oceanMaterials.pearl -= need.pearl;
+      if (need.fiber) this.oceanMaterials.fiber -= need.fiber;
+      if (need.calcium) this.oceanMaterials.calcium -= need.calcium;
+      if (need.shell) this.oceanMaterials.shell -= need.shell;
+      if (need.food) this.oceanMaterials.food -= need.food;
+    } else {
+      if (this.diamonds < def.diamondCost) {
+        soundEngine.playNo();
+        this.showBanner(`Butuh ${def.diamondCost} 💎 untuk membuka ${def.name}!`, 2.4);
+        return;
+      }
+      this.diamonds -= def.diamondCost;
+    }
+
+    this.oceanGear.add(gearId);
+    this.oceanOxygen = this.getOceanMaxOxygen();
+    if (gearId === 'wetsuit_tank') {
+      this.activeSwimStyle = 'scuba_explore';
+    }
+    soundEngine.playWin();
+    this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.0, this.heroPos.z, 0x38bdf8, 22);
+    this.showBanner(`🤿 Perlengkapan Dibuat: ${def.name}! Max O₂ sekarang ${this.oceanOxygen}!`, 3.6);
+    this.saveProgress();
+    this.pushHud(true);
+  }
+
+  public eatOceanFood(): void {
+    if (this.oceanMaterials.food <= 0) {
+      soundEngine.playNo();
+      this.showBanner('Makanan Laut habis! Tangkap Lobster Berduri atau Kepiting Kotak.', 2.2);
+      return;
+    }
+    if (this.hp >= this.maxHp) {
+      soundEngine.playNo();
+      this.showBanner('Nyawa (❤️) sudah penuh!', 1.8);
+      return;
+    }
+    this.oceanMaterials.food -= 1;
+    this.hp = Math.min(this.maxHp, this.hp + 1);
+    soundEngine.playPick();
+    this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.1, this.heroPos.z, 0xf43f5e, 14);
+    this.showBanner(`🍤 Memakan hasil laut segar! Nyawa pulih (${this.hp}/${this.maxHp} ❤️)`, 2.4);
+    this.saveProgress();
+    this.pushHud(true);
+  }
+
   public equipWeapon(id: WeaponId): void {
     if (!this.ownedWeapons.has(id)) return;
     this.activeWeapon = id;
@@ -5151,6 +5578,25 @@ export class RpgWorldEngine {
     this.lastInputActivityMs = performance.now();
     if (this.phase !== 'playing') return;
 
+    if (this.worldMode === 'ocean') {
+      if (this.nearDungeonExit) {
+        this.exitDungeon();
+        return;
+      }
+      if (this.nearOceanChest && !this.nearOceanChest.opened) {
+        this.interactWithOceanChest(this.nearOceanChest);
+        return;
+      }
+      if (this.nearBiotaNode) {
+        this.interactWithBiotaNode(this.nearBiotaNode);
+        return;
+      }
+      if (this.nearOceanTurtle || this.ridingTurtle) {
+        this.toggleOceanTurtleMount();
+        return;
+      }
+    }
+
     if (this.worldMode === 'dungeon' && this.nearPrisonKey) {
       this.collectPrisonKey();
       return;
@@ -5686,7 +6132,10 @@ export class RpgWorldEngine {
     }
 
     const len = Math.max(0.25, Math.hypot(dirX, dirZ));
-    if (m.isSeaMonster && this.worldMode === 'overworld') {
+    if (m.isSeaMonster && this.worldMode === 'ocean') {
+      m.x = THREE.MathUtils.clamp(m.x + (dirX / len) * 1.45, -40, 40);
+      m.z = THREE.MathUtils.clamp(m.z + (dirZ / len) * 1.45, -49, -16);
+    } else if (m.isSeaMonster && this.worldMode === 'overworld') {
       const knockPt = {
         x: m.x + (dirX / len) * 1.35,
         z: m.z + (dirZ / len) * 1.35,
@@ -5734,7 +6183,8 @@ export class RpgWorldEngine {
 
   private handleRealTimeMonsterDefeated(m: RoamingMonster): void {
     m.alive = false;
-    m.respawnTimer = m.isSeaMonster ? 45 : m.isSkyMonster ? 50 : 0;
+    m.respawnTimer =
+      this.worldMode === 'ocean' ? 0 : m.isSeaMonster ? 45 : m.isSkyMonster ? 50 : 0;
     m.aggroActive = false;
     m.windupTimer = -1;
     m.lungeTimer = 0;
@@ -6005,6 +6455,12 @@ export class RpgWorldEngine {
   public jumpHero(): void {
     this.lastInputActivityMs = performance.now();
     if (this.phase !== 'playing') return;
+    if (this.worldMode === 'ocean') {
+      this.heroVelY = Math.min(7.2, this.heroVelY + 4.8);
+      soundEngine.playSplash(0.65);
+      this.spawnBurst(this.heroPos.x, this.heroPos.y + 0.3, this.heroPos.z, 0xbae6fd, 8);
+      return;
+    }
     if (this.isSwimming) {
       this.jumpBufferTimer = 0;
       this.jumpLandTimer = 0;
@@ -6402,7 +6858,7 @@ export class RpgWorldEngine {
 
   public fireActiveWeapon(fromHold = false, skipTurnWait = false): void {
     if (this.phase !== 'playing') return;
-    if (this.isSwimming) {
+    if (this.isSwimming && this.worldMode !== 'ocean') {
       const slotWpn = this.activeHotbarSlot <= 7 ? WEAPON_ORDER[this.activeHotbarSlot] : undefined;
       const canShootWater = Boolean(
         slotWpn && this.ownedWeapons.has(slotWpn) && SEA_CAPABLE_WEAPONS.has(slotWpn),
@@ -6730,6 +7186,7 @@ export class RpgWorldEngine {
   private getActiveMonsters(): RoamingMonster[] {
     if (this.worldMode === 'dungeon') return this.dungeonMonsters;
     if (this.worldMode === 'academy') return this.academyMonsters;
+    if (this.worldMode === 'ocean') return this.oceanMonsters;
     return this.overworldAllMonsters;
   }
 
@@ -6900,6 +7357,9 @@ export class RpgWorldEngine {
       } else if (e.code === 'KeyG' && this.isSwimming) {
         e.preventDefault();
         this.cycleSwimStyle();
+      } else if (e.code === 'KeyX' && this.worldMode === 'overworld' && this.isSwimming) {
+        e.preventDefault();
+        this.enterOceanWorld();
       } else if (e.code === 'KeyC' || e.code === 'F5') {
         e.preventDefault();
         this.toggleCameraMode();
@@ -7059,6 +7519,8 @@ export class RpgWorldEngine {
         ? this.dungeonClickables
         : this.worldMode === 'academy'
         ? this.academyClickables
+        : this.worldMode === 'ocean'
+        ? this.oceanClickables
         : this.overworldClickables;
     const hits = this.raycaster.intersectObjects(targets, true);
     if (hits.length > 0) {
@@ -7070,6 +7532,9 @@ export class RpgWorldEngine {
         !obj.userData.portal &&
         !obj.userData.dungeonExit &&
         !obj.userData.academyExit &&
+        !obj.userData.oceanExit &&
+        !obj.userData.oceanChestId &&
+        !obj.userData.biotaNodeId &&
         !obj.userData.caveBlockId &&
         !obj.userData.caveWeaponChest &&
         !obj.userData.craftingTable &&
@@ -7081,6 +7546,47 @@ export class RpgWorldEngine {
         obj = obj.parent;
       }
       if (obj) {
+        if (obj.userData.oceanExit && this.worldMode === 'ocean' && this.oceanRig) {
+          if (
+            Math.hypot(
+              this.heroPos.x - this.oceanRig.buoyPos.x,
+              this.heroPos.z - this.oceanRig.buoyPos.z,
+            ) < 7.5
+          ) {
+            this.exitDungeon();
+          } else {
+            this.tapMoveTarget = this.oceanRig.buoyPos.clone();
+            this.showBanner('🫧 Berenang menuju Pelampung Naik ke Permukaan...', 2.2);
+          }
+          return;
+        }
+        if (obj.userData.oceanChestId && this.worldMode === 'ocean' && this.oceanRig) {
+          const ch = this.oceanRig.chests.find((item) => item.id === obj!.userData.oceanChestId);
+          if (ch && !ch.opened) {
+            if (Math.hypot(this.heroPos.x - ch.x, this.heroPos.z - ch.z) < 5.0) {
+              this.interactWithOceanChest(ch);
+            } else {
+              this.tapMoveTarget = new THREE.Vector3(ch.x, ch.y, ch.z);
+              this.showBanner(`🧰 Menuju ${ch.label}...`, 2.0);
+            }
+          }
+          return;
+        }
+        if (obj.userData.biotaNodeId && this.worldMode === 'ocean' && this.oceanRig) {
+          const node = this.oceanRig.biotaNodes.find(
+            (item) => item.id === obj!.userData.biotaNodeId,
+          );
+          if (node) {
+            if (Math.hypot(this.heroPos.x - node.x, this.heroPos.z - node.z) < 5.2) {
+              this.interactWithBiotaNode(node);
+            } else {
+              this.tapMoveTarget = new THREE.Vector3(node.x, node.y, node.z);
+              const entry = SEA_BIOTA_BY_ID[node.speciesId];
+              this.showBanner(`🐠 Mendekati ${entry?.indoName ?? 'Biota Laut'}...`, 1.8);
+            }
+          }
+          return;
+        }
         if (obj.userData.prisonKey && this.worldMode === 'dungeon' && this.dungeonState) {
           if (Math.hypot(this.heroPos.x, this.heroPos.z + 9) < 6.5) {
             this.collectPrisonKey();
@@ -7767,7 +8273,7 @@ export class RpgWorldEngine {
           m.angryTimer > 0;
         m.mesh.matrixAutoUpdate = isAwake;
       }
-      if (m.isSeaMonster && this.worldMode === 'overworld') {
+      if (m.isSeaMonster && (this.worldMode === 'overworld' || this.worldMode === 'ocean')) {
         this.updateSeaMonster(m, dt, baseSpeedMult);
         continue;
       }
@@ -8918,7 +9424,186 @@ export class RpgWorldEngine {
     this.heroPos.addScaledVector(this.heroVel, dt);
     this.heroPos.y += this.heroVelY * dt;
 
-    if (this.worldMode !== 'overworld') {
+    if (this.worldMode === 'ocean' && this.oceanRig) {
+      this.heroOnIce = false;
+      this.isSwimming = true;
+      this.heroOnGround = false;
+      this.swimLeapTimer = 0;
+
+      // Boost movement speed from equipped diving gear & turtle mount
+      let oceanSpeedMult = this.ridingTurtle ? 1.48 : 1.0;
+      for (const gId of this.oceanGear) {
+        oceanSpeedMult += DIVING_GEAR_DEFS[gId].speedBonus;
+      }
+      this.heroPos.x += this.heroVel.x * Math.max(0, oceanSpeedMult - 1) * dt;
+      this.heroPos.z += this.heroVel.z * Math.max(0, oceanSpeedMult - 1) * dt;
+
+      const upHeld =
+        this.heldKeys.has('Space') || this.heldKeys.has('KeyJ') || this.oceanAscendHeld;
+      const downHeld =
+        this.heldKeys.has('ControlLeft') ||
+        this.heldKeys.has('ControlRight') ||
+        this.heldKeys.has('KeyZ') ||
+        this.oceanDescendHeld;
+      let targetVelY = 0;
+      if (upHeld && !downHeld) {
+        targetVelY = 6.4 * (this.ridingTurtle ? 1.2 : 1.0);
+      } else if (downHeld && !upHeld) {
+        targetVelY = -6.4 * (this.ridingTurtle ? 1.2 : 1.0);
+      } else if (Math.hypot(mx, mz) > 0.12 && this.cameraMode !== 'orbit') {
+        targetVelY = THREE.MathUtils.clamp(-Math.sin(this.cameraPitch) * 3.8, -3.5, 3.5);
+      }
+      this.heroVelY = THREE.MathUtils.damp(this.heroVelY, targetVelY, 8.5, dt);
+      this.heroPos.y += this.heroVelY * dt;
+
+      this.heroPos.x = THREE.MathUtils.clamp(this.heroPos.x, -42, 42);
+      this.heroPos.z = THREE.MathUtils.clamp(this.heroPos.z, -49, 36);
+      const seabedY = getOceanFloorY(this.heroPos.x, this.heroPos.z) + 0.45;
+      this.heroPos.y = THREE.MathUtils.clamp(this.heroPos.y, seabedY, -1.05);
+
+      // Dynamic underwater lighting & fog transitioning smoothly from sunny Coral Sanctuary to Abyssal Trench
+      const depthRatio = THREE.MathUtils.clamp((-this.heroPos.y - 2) / 23, 0, 1);
+      const zAbyssRatio = THREE.MathUtils.clamp((-this.heroPos.z + 2) / 42, 0, 1);
+      const darkT = Math.min(1, Math.max(depthRatio * 0.72, zAbyssRatio * 0.85));
+      _skyColorScratch.setHex(0x0e7490).lerp(_skyNightCol, darkT * 0.86);
+      if (this.scene.background instanceof THREE.Color) {
+        this.scene.background.copy(_skyColorScratch);
+      }
+      if (this.scene.fog instanceof THREE.FogExp2) {
+        this.scene.fog.color.copy(_skyColorScratch);
+        this.scene.fog.density = 0.011 + darkT * 0.021;
+      }
+      this.hemiLight.intensity = THREE.MathUtils.lerp(1.12, 0.44, darkT);
+      this.sunLight.intensity = THREE.MathUtils.lerp(1.28, 0.28, darkT);
+
+      // Update animated corals, bubbles, sunbeams, air vents, chests & 20 sea biota
+      updateOceanWorld(
+        this.oceanRig,
+        dt,
+        this.elapsed,
+        this.heroPos,
+        this.heroYaw,
+        this.oceanGear,
+      );
+
+      // Oxygen survival check: surface & air vents refill O2; unequipped deep diving drains O2 then HP!
+      const maxO2 = this.getOceanMaxOxygen();
+      let nearAirRefill = this.heroPos.y >= -2.15;
+      if (!nearAirRefill) {
+        for (const vent of this.oceanRig.airVents) {
+          if (
+            Math.hypot(this.heroPos.x - vent.x, this.heroPos.z - vent.z) < 4.4 &&
+            this.heroPos.y <= vent.y + 8.5
+          ) {
+            nearAirRefill = true;
+            break;
+          }
+        }
+      }
+      if (nearAirRefill) {
+        this.oceanOxygen = Math.min(maxO2, this.oceanOxygen + 44 * dt);
+        this.oceanSuffocateTimer = 0;
+      } else {
+        let gearDrainMult = 1.0;
+        for (const gId of this.oceanGear) {
+          gearDrainMult *= DIVING_GEAR_DEFS[gId].drainMultiplier;
+        }
+        const depthPressure = 1.0 + Math.max(0, -this.heroPos.y - 3) * 0.085;
+        const drainRate = 3.8 * depthPressure * gearDrainMult;
+        this.oceanOxygen = Math.max(0, this.oceanOxygen - drainRate * dt);
+        if (this.oceanOxygen <= 0) {
+          this.oceanSuffocateTimer += dt;
+          if (this.oceanSuffocateTimer >= 2.0) {
+            this.oceanSuffocateTimer = 0;
+            this.hp = Math.max(0, this.hp - 1);
+            soundEngine.playHurt();
+            this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.2, this.heroPos.z, 0x38bdf8, 12);
+            this.showBanner(
+              '🫧 Kehabisan napas! Cari Gelembung O₂, naik ke permukaan, atau buat Baju Selam! (-1 ❤️)',
+              2.5,
+            );
+            if (this.hp <= 0) {
+              this.triggerDefeatExit();
+              return;
+            }
+          }
+        } else {
+          this.oceanSuffocateTimer = 0;
+        }
+      }
+
+      if (this.fireCoralStingTimer > 0) {
+        this.fireCoralStingTimer = Math.max(0, this.fireCoralStingTimer - dt);
+      }
+
+      // Discover all 20 Sea Biota & detect nearest interactables
+      let bestBiota: OceanBiotaNode | null = null;
+      let bestBiotaDist = 4.0;
+      let nearTurtle = false;
+      for (const node of this.oceanRig.biotaNodes) {
+        const d3 = Math.hypot(
+          this.heroPos.x - node.x,
+          this.heroPos.y + 0.6 - node.y,
+          this.heroPos.z - node.z,
+        );
+        if (d3 < 6.5 && !this.discoveredBiota.has(node.speciesId)) {
+          this.discoveredBiota.add(node.speciesId);
+          this.gainXp(10);
+          this.addScore(35);
+          soundEngine.playPick();
+          const info = SEA_BIOTA_BY_ID[node.speciesId];
+          this.showBanner(
+            `🐠 Biota Baru Ditemukan: ${info?.indoName ?? node.speciesId} (${this.discoveredBiota.size}/20)!`,
+            3.0,
+          );
+          this.saveProgress();
+        }
+        if (node.speciesId === 'fire_coral' && d3 < 1.45 && this.fireCoralStingTimer <= 0) {
+          this.fireCoralStingTimer = 2.8;
+          this.hp = Math.max(0, this.hp - 1);
+          soundEngine.playHurt();
+          this.spawnBurst(this.heroPos.x, this.heroPos.y + 0.9, this.heroPos.z, 0xf97316, 12);
+          this.showBanner('🔥 Tersengat Karang Api! Menjauh sedikit dari koral jingga (-1 ❤️)', 2.4);
+          if (this.hp <= 0) {
+            this.triggerDefeatExit();
+            return;
+          }
+        }
+        if (node.speciesId === 'sea_turtle' && d3 < 4.4) {
+          nearTurtle = true;
+        }
+        const entry = SEA_BIOTA_BY_ID[node.speciesId];
+        const canInteract =
+          Boolean(entry?.mountable) ||
+          (Boolean(entry?.yieldKind) && node.harvestCooldown <= 0);
+        if (canInteract && d3 < bestBiotaDist) {
+          bestBiotaDist = d3;
+          bestBiota = node;
+        }
+      }
+      this.nearBiotaNode = bestBiota;
+      this.nearOceanTurtle = nearTurtle;
+
+      let bestChest: OceanSupplyChest | null = null;
+      let bestChestDist = 4.2;
+      for (const ch of this.oceanRig.chests) {
+        if (ch.opened) continue;
+        const dc = Math.hypot(
+          this.heroPos.x - ch.x,
+          this.heroPos.y + 0.5 - ch.y,
+          this.heroPos.z - ch.z,
+        );
+        if (dc < 2.2) {
+          this.interactWithOceanChest(ch);
+          break;
+        }
+        if (dc < bestChestDist) {
+          bestChestDist = dc;
+          bestChest = ch;
+        }
+      }
+      this.nearOceanChest = bestChest;
+    } else if (this.worldMode !== 'overworld') {
       this.heroOnIce = false;
       this.isSwimming = false;
       this.swimLeapTimer = 0;
@@ -9226,6 +9911,12 @@ export class RpgWorldEngine {
     if (this.isSwimming) {
       if (this.swimStylePreference !== 'auto') {
         this.activeSwimStyle = this.swimStylePreference;
+      } else if (this.worldMode === 'ocean' && this.oceanGear.has('wetsuit_tank')) {
+        this.activeSwimStyle = 'scuba_explore';
+      } else if (this.worldMode === 'ocean' && (this.heroVelY < -1.8 || this.heroPos.y < -12)) {
+        this.activeSwimStyle = 'deep_submerge';
+      } else if (this.worldMode === 'ocean' && speed > 0.8) {
+        this.activeSwimStyle = 'underwater_glide';
       } else if (this.swimDiveTimer > 0) {
         this.activeSwimStyle = 'jump_dive';
       } else if (speed <= 0.6) {
@@ -9323,7 +10014,8 @@ export class RpgWorldEngine {
         : 0;
 
     const canHoldInCurrentEnv =
-      hasEquippedWeapon && (!this.isSwimming || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
+      hasEquippedWeapon &&
+      (!this.isSwimming || this.worldMode === 'ocean' || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
     applyHeroWeaponPose(this.hero, this.activeWeapon, canHoldInCurrentEnv, {
       speed,
       walkCycle: this.walkCycle,
@@ -9339,11 +10031,14 @@ export class RpgWorldEngine {
       isSwimming: this.isSwimming,
       swimStyle: effectivePoseSwimStyle,
       swimBankRoll: this.swimDodgeTimer > 0 ? this.swimDodgeRoll : 0,
+      divingGear: this.worldMode === 'ocean' ? Array.from(this.oceanGear) : [],
+      ridingTurtle: this.worldMode === 'ocean' && this.ridingTurtle,
     });
 
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
-    this.hero.swimRing.visible = this.isSwimming;
-    if (this.isSwimming) {
+    this.hero.swimRing.visible =
+      this.isSwimming && (this.worldMode === 'overworld' || this.heroPos.y > -2.0);
+    if (this.hero.swimRing.visible) {
       this.hero.swimRing.position.y = Math.max(0.05, -this.heroPos.y + 0.05);
       const rScale = (speed > 0.6 ? 1.08 : 0.92) + Math.sin(this.elapsed * 5.2) * 0.08;
       this.hero.swimRing.scale.setScalar(rScale);
@@ -9419,7 +10114,11 @@ export class RpgWorldEngine {
       const goalX = pivotX + dirX * desiredDist;
       const goalZ = pivotZ + dirZ * desiredDist;
       const camFloorY =
-        (this.worldMode === 'overworld' ? getArchipelagoGroundY(goalX, goalZ) : 0) + 0.55;
+        (this.worldMode === 'overworld'
+          ? getArchipelagoGroundY(goalX, goalZ)
+          : this.worldMode === 'ocean'
+          ? getOceanFloorY(goalX, goalZ)
+          : 0) + 0.55;
       const goalY = Math.max(camFloorY, pivotY + dirY * desiredDist);
       const rx = goalX - this.heroPos.x;
       const ry = goalY - pivotY;
@@ -9445,8 +10144,15 @@ export class RpgWorldEngine {
       const camX = this.heroPos.x + (rx / rayLen) * this.currentCamDist;
       const camZ = this.heroPos.z + (rz / rayLen) * this.currentCamDist;
       const liveCamFloorY =
-        (this.worldMode === 'overworld' ? getArchipelagoGroundY(camX, camZ) : 0) + 0.55;
-      const camY = Math.max(liveCamFloorY, pivotY + (ry / rayLen) * this.currentCamDist);
+        (this.worldMode === 'overworld'
+          ? getArchipelagoGroundY(camX, camZ)
+          : this.worldMode === 'ocean'
+          ? getOceanFloorY(camX, camZ)
+          : 0) + 0.55;
+      let camY = Math.max(liveCamFloorY, pivotY + (ry / rayLen) * this.currentCamDist);
+      if (this.worldMode === 'ocean') {
+        camY = Math.min(-0.45, camY);
+      }
 
       _v1.set(camX, camY, camZ);
       this.camera.position.lerp(_v1, 1 - Math.exp(-28 * dt));
@@ -9700,6 +10406,20 @@ export class RpgWorldEngine {
         }
       }
       this.nearbyNpcId = bestNpc;
+    } else if (this.worldMode === 'ocean' && this.oceanRig) {
+      this.nearbyNpcId = null;
+      this.nearbyDoorIndex = null;
+      this.nearbyDungeonGuardian = false;
+      this.nearPrisonKey = false;
+      this.nearHiddenPrison = false;
+      this.nearPortal = false;
+      this.nearCraftingTable = false;
+      this.nearDungeonExit =
+        Math.hypot(
+          this.heroPos.x - this.oceanRig.buoyPos.x,
+          this.heroPos.z - this.oceanRig.buoyPos.z,
+        ) < 5.2 ||
+        (this.heroPos.y > -1.75 && this.heroPos.z > 24);
     } else {
       this.nearCraftingTable = false;
       this.nearbyDungeonGuardian = false;
@@ -10402,6 +11122,8 @@ export class RpgWorldEngine {
       const projFloor =
         this.worldMode === 'overworld' && isWalkableArchipelago(p.x, p.z, 0)
           ? getArchipelagoGroundY(p.x, p.z)
+          : this.worldMode === 'ocean'
+          ? getOceanFloorY(p.x, p.z)
           : 0;
       if (p.y < projFloor + 0.06) {
         p.active = false;
@@ -10554,7 +11276,7 @@ export class RpgWorldEngine {
             p.active = false;
             p.mesh.visible = false;
 
-            if (m.isSeaMonster) {
+            if (m.isSeaMonster && this.worldMode === 'overworld') {
               const eff = spec.effectiveWeapons;
               if (eff && (!p.weaponId || !eff.includes(p.weaponId))) {
                 soundEngine.playNo();
@@ -10728,6 +11450,62 @@ export class RpgWorldEngine {
 
     if (this.worldMode === 'dungeon') {
       // Cave spots, doors, chests, crafting tables, and monsters are tracked cleanly on the 3D Radar Minimap
+      return labels;
+    }
+
+    if (this.worldMode === 'ocean') {
+      if (this.oceanRig) {
+        const bp = projectPoint(
+          this.oceanRig.buoyPos.x,
+          this.oceanRig.buoyPos.y + 3.2,
+          this.oceanRig.buoyPos.z,
+        );
+        if (bp) {
+          labels.push({
+            id: 'ocean_buoy',
+            x: bp.x,
+            y: bp.y,
+            title: '🫧 Pelampung Permukaan (Keluar)',
+            kind: 'portal',
+          });
+        }
+        for (const ch of this.oceanRig.chests) {
+          if (ch.opened) continue;
+          const dSq = (ch.x - this.heroPos.x) ** 2 + (ch.z - this.heroPos.z) ** 2;
+          if (dSq > 32 * 32) continue;
+          const cp = projectPoint(ch.x, ch.y + 2.4, ch.z);
+          if (cp) {
+            labels.push({
+              id: `och_${ch.id}`,
+              x: cp.x,
+              y: cp.y,
+              title: `🧰 ${ch.label}`,
+              kind: 'pickup',
+            });
+          }
+        }
+        for (const m of this.oceanMonsters) {
+          if (!m.alive) continue;
+          const dSq = (m.x - this.heroPos.x) ** 2 + (m.z - this.heroPos.z) ** 2;
+          if (dSq > 34 * 34) continue;
+          const spec = MONSTER_SPECS[m.type];
+          const mp = projectPoint(
+            m.x,
+            (m.y ?? spec.hoverY) + Math.max(2.6, spec.hitHalfH * 1.9),
+            m.z,
+          );
+          if (mp) {
+            labels.push({
+              id: `oc_mob_${m.id}`,
+              x: mp.x,
+              y: mp.y,
+              title: `🦈 ${m.name} (${m.mobHp ?? spec.hitHp}/${m.maxMobHp ?? spec.hitHp})`,
+              subtext: 'Monster Palung Abyssal',
+              kind: 'monster',
+            });
+          }
+        }
+      }
       return labels;
     }
 
@@ -10962,7 +11740,10 @@ export class RpgWorldEngine {
         const pullStrength = (m.type === 'charybdis_maw' ? 3.8 : 2.3) * (1 - distH / pullRad);
         const pullPtX = this.heroPos.x - (dxHero / distH) * pullStrength * dt;
         const pullPtZ = this.heroPos.z - (dzHero / distH) * pullStrength * dt;
-        if (!sampleArchipelagoTerrain(pullPtX, pullPtZ).isLandOrBridge) {
+        if (this.worldMode === 'ocean') {
+          this.heroPos.x = THREE.MathUtils.clamp(pullPtX, -41, 41);
+          this.heroPos.z = THREE.MathUtils.clamp(pullPtZ, -48, 34);
+        } else if (!sampleArchipelagoTerrain(pullPtX, pullPtZ).isLandOrBridge) {
           this.heroPos.x = pullPtX;
           this.heroPos.z = pullPtZ;
         }
@@ -10975,6 +11756,10 @@ export class RpgWorldEngine {
     let monMode: 'idle' | 'patrol' | 'windup' | 'attack' | 'shoot' | 'hit' = 'patrol';
     let monAttackProg = 0;
     const meleeReach = 2.2 + spec.hitRadius * 0.55;
+    const inOceanVerticalRange =
+      this.worldMode === 'ocean'
+        ? Math.abs(this.heroPos.y - (m.y ?? spec.hoverY)) < 4.5
+        : this.heroPos.y < 2.2;
 
     if (m.lungeTimer && m.lungeTimer > 0) {
       m.lungeTimer = Math.max(0, m.lungeTimer - dt);
@@ -10991,7 +11776,7 @@ export class RpgWorldEngine {
         this.phase === 'playing' &&
         this.encounterGraceTimer <= 0 &&
         distH < meleeReach &&
-        this.heroPos.y < 2.2
+        inOceanVerticalRange
       ) {
         const dmg = spec.atkDamageHearts;
         this.hp = Math.max(0, this.hp - dmg);
@@ -10999,10 +11784,12 @@ export class RpgWorldEngine {
         soundEngine.playHurt();
         const len = Math.max(0.2, distH);
         this.heroVel.set((dxHero / len) * 16, 0, (dzHero / len) * 16);
-        this.heroVelY = 4.2;
-        this.spawnBurst(this.heroPos.x, Math.max(0.4, this.heroPos.y + 1.1), this.heroPos.z, 0x22d3ee, 16);
+        this.heroVelY = this.worldMode === 'ocean' ? 2.6 : 4.2;
+        this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.1, this.heroPos.z, 0x22d3ee, 16);
         this.showBanner(
-          `🌊 Diserang ${m.name}! Pakai senjata wilayah untuk membunuhnya (-${dmg} ❤️)`,
+          this.worldMode === 'ocean'
+            ? `🦈 Diserang ${m.name}! Bidik & tembak balik (-${dmg} ❤️)`
+            : `🌊 Diserang ${m.name}! Pakai senjata wilayah untuk membunuhnya (-${dmg} ❤️)`,
           2.6,
         );
         if (this.hp <= 0) {
@@ -11023,7 +11810,7 @@ export class RpgWorldEngine {
       }
     } else if (this.phase === 'playing' && m.aggroActive && distH > 0.2) {
       m.mesh.rotation.y = Math.atan2(dxHero, dzHero);
-      if (distH < meleeReach + 0.6 && (m.attackCooldown ?? 0) <= 0 && this.heroPos.y < 2.4) {
+      if (distH < meleeReach + 0.6 && (m.attackCooldown ?? 0) <= 0 && inOceanVerticalRange) {
         m.windupTimer = 0.48;
         m.attackCooldown = this.settings.difficulty === 'pendekar' ? 1.7 : 2.2;
         soundEngine.playMonster();
@@ -11081,7 +11868,7 @@ export class RpgWorldEngine {
       m.patrolClock = (m.patrolClock ?? m.patrolPhase) + dt * 0.62 * spec.speedMult * baseSpeedMult;
       if (!isCharybdis) {
         const p = m.patrolClock;
-        const patrolRad = spec.tier === 'giant' ? 8.5 : 10.5;
+        const patrolRad = this.worldMode === 'ocean' ? 6.5 : spec.tier === 'giant' ? 8.5 : 10.5;
         nextMx = m.homeX + Math.cos(p) * patrolRad;
         nextMz = m.homeZ + Math.sin(p * 0.78) * (patrolRad * 0.78);
         m.mesh.rotation.y = Math.atan2(
@@ -11100,6 +11887,33 @@ export class RpgWorldEngine {
 
     const prevX = m.x;
     const prevZ = m.z;
+    if (this.worldMode === 'ocean') {
+      // Strictly keep deep-sea predators inside Palung Abyssal (z <= -16) so Coral Sanctuary stays peaceful
+      m.x = THREE.MathUtils.clamp(nextMx, -40, 40);
+      m.z = THREE.MathUtils.clamp(nextMz, -49, -16);
+      const seaSpd = Math.hypot(m.x - prevX, m.z - prevZ) / Math.max(0.001, dt);
+      m.walkPhase = (m.walkPhase ?? m.patrolPhase) + dt * (2.6 + seaSpd * 0.8);
+      const minMy = getOceanFloorY(m.x, m.z) + spec.hoverY + 0.8;
+      const targetMy = m.aggroActive
+        ? THREE.MathUtils.clamp(this.heroPos.y + 0.8, minMy, -4.5)
+        : Math.max(minMy, (m.homeY ?? -18) + Math.sin(this.elapsed * 2.1 + m.patrolPhase) * 0.45);
+      m.y = THREE.MathUtils.damp(m.y ?? targetMy, targetMy, 4.5, dt);
+      m.mesh.position.set(m.x, m.y, m.z);
+      m.mesh.scale.setScalar(spec.baseScale);
+      if (distSqHero <= 66 * 66) {
+        animateMonsterRig(m.mesh, {
+          mode: monMode,
+          speed: seaSpd,
+          walkPhase: m.walkPhase,
+          elapsed: this.elapsed,
+          phase: m.patrolPhase,
+          attackProgress: monAttackProg,
+          dt,
+        });
+      }
+      return;
+    }
+
     const seaPt = { x: nextMx, z: nextMz };
     this.constrainSeaMonsterToWater(seaPt, prevX, prevZ, 2.6);
     m.x = seaPt.x;
@@ -11638,6 +12452,37 @@ export class RpgWorldEngine {
           color: '#a855f7',
         });
       }
+    } else if (this.worldMode === 'ocean' && this.oceanRig) {
+      blips.push({
+        id: 'ocean_exit',
+        x: this.oceanRig.buoyPos.x,
+        z: this.oceanRig.buoyPos.z,
+        kind: 'exit',
+        color: '#22d3ee',
+        label: 'Pelampung Naik',
+      });
+      for (const ch of this.oceanRig.chests) {
+        if (ch.opened) continue;
+        blips.push({
+          id: `och_${ch.id}`,
+          x: ch.x,
+          z: ch.z,
+          kind: 'chest',
+          color: '#facc15',
+          label: ch.label,
+        });
+      }
+      for (const m of this.oceanMonsters) {
+        if (!m.alive) continue;
+        blips.push({
+          id: `oc_${m.id}`,
+          x: m.x,
+          z: m.z,
+          kind: 'sea_monster',
+          color: '#f43f5e',
+          label: m.name,
+        });
+      }
     }
 
     return {
@@ -11679,6 +12524,22 @@ export class RpgWorldEngine {
               centerZ: -26,
               halfW: 368,
               halfH: 230,
+            }
+        : this.worldMode === 'ocean'
+        ? isMini
+          ? {
+              worldMode: 'ocean',
+              centerX: THREE.MathUtils.clamp(this.heroPos.x, -28, 28),
+              centerZ: THREE.MathUtils.clamp(this.heroPos.z, -34, 24),
+              halfW: 18,
+              halfH: 18,
+            }
+          : {
+              worldMode: 'ocean',
+              centerX: 0,
+              centerZ: -6,
+              halfW: 48,
+              halfH: 30,
             }
         : isMini
         ? {
@@ -11759,6 +12620,8 @@ export class RpgWorldEngine {
         ? this.mapHiddenDungeon
         : this.worldMode === 'academy' && this.academyRig
         ? this.mapHiddenAcademy
+        : this.worldMode === 'ocean' && this.oceanRig
+        ? this.mapHiddenOcean
         : this.mapHiddenOverworld;
     const hiddenTemp: THREE.Object3D[] = [];
     for (let i = 0; i < mapHiddenList.length; i++) {
@@ -11789,6 +12652,14 @@ export class RpgWorldEngine {
       this.sunLight.intensity = Math.max(prevSun, 1.42);
       this.rimLight.intensity = Math.max(prevRim, 0.55);
       this.scene.environmentIntensity = Math.max(prevEnv, 0.85);
+    } else if (this.worldMode === 'ocean') {
+      if (this.scene.background instanceof THREE.Color) {
+        this.scene.background.setHex(0x072c48);
+      }
+      this.hemiLight.intensity = 1.45;
+      this.sunLight.intensity = 1.4;
+      this.rimLight.intensity = 0.55;
+      this.scene.environmentIntensity = 0.85;
     } else if (this.worldMode === 'overworld' && prevHemi < 0.74) {
       this.hemiLight.intensity = 0.74;
       this.sunLight.intensity = Math.max(prevSun, 0.88);
@@ -11964,7 +12835,12 @@ export class RpgWorldEngine {
       wordProgress: wordProgressCopy,
       wordMastery: legacyMastery,
       activeZoneId: zoneId,
-      activeZoneName: this.worldMode === 'academy' ? 'Istana IELTS' : ZONE_INFO[zoneId].name,
+      activeZoneName:
+        this.worldMode === 'academy'
+          ? 'Istana IELTS'
+          : this.worldMode === 'ocean'
+          ? getOceanZoneInfo(this.heroPos.z, this.heroPos.y).label
+          : ZONE_INFO[zoneId].name,
       rankTitle: getRankTitle(this.xp, this.ribbons.size, this.ieltsCleared),
       nearbyNpcId: this.nearbyNpcId,
       nearbyMonsterId: this.nearbyMonsterId,
@@ -12021,8 +12897,37 @@ export class RpgWorldEngine {
       isSwimming: this.isSwimming,
       swimStylePreference: this.swimStylePreference,
       activeSwimStyle: this.activeSwimStyle,
+      oceanSurvival: this.buildOceanSurvivalState(),
       worldTime: this.getWorldTimeState(),
     });
+  }
+
+  private buildOceanSurvivalState(): OceanSurvivalState | null {
+    if (this.worldMode !== 'ocean') return null;
+    const zone = getOceanZoneInfo(this.heroPos.z, this.heroPos.y);
+    const maxOxygen = this.getOceanMaxOxygen();
+    return {
+      oxygen: Math.round(this.oceanOxygen),
+      maxOxygen,
+      depthMeters: Math.max(1, Math.round(-this.heroPos.y)),
+      zoneKind: zone.kind,
+      zoneLabel: zone.label,
+      discoveredBiota: Array.from(this.discoveredBiota),
+      ownedGear: Array.from(this.oceanGear),
+      materials: { ...this.oceanMaterials },
+      nearBiotaId: this.nearBiotaNode?.speciesId ?? null,
+      nearBiotaName: this.nearBiotaNode
+        ? SEA_BIOTA_BY_ID[this.nearBiotaNode.speciesId]?.indoName ?? null
+        : null,
+      nearBiotaAction: this.nearBiotaNode
+        ? getBiotaActionLabel(this.nearBiotaNode.speciesId)
+        : null,
+      nearChestLabel: this.nearOceanChest?.label ?? null,
+      nearTurtleMount: this.nearOceanTurtle,
+      ridingTurtle: this.ridingTurtle,
+      nearSurfaceExit: this.nearDungeonExit,
+      suffocating: this.oceanOxygen <= 0,
+    };
   }
 
   private buildAreaMonsterStats(zoneId: ZoneId): AreaMonsterStats {
@@ -12046,6 +12951,19 @@ export class RpgWorldEngine {
         bossPending: !this.dungeonState.bossSpawned && !this.dungeonState.bossDefeated,
         bossActive: this.dungeonState.bossSpawned && !this.dungeonState.bossDefeated,
         bossDefeated: this.dungeonState.bossDefeated,
+      };
+    }
+
+    if (this.worldMode === 'ocean') {
+      const remaining = this.oceanMonsters.filter((m) => m.alive).length;
+      const total = Math.max(this.oceanTotalSpawned, remaining);
+      const defeated = Math.max(0, total - remaining);
+      return {
+        context: 'ocean',
+        areaName: getOceanZoneInfo(this.heroPos.z, this.heroPos.y).label,
+        defeated,
+        remaining,
+        total,
       };
     }
 

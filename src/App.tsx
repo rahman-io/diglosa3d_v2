@@ -1124,6 +1124,11 @@ function DiglosaRpgApp() {
           onOpenCrafting={() => engineRef.current?.openCraftingTable()}
           onVirtualMove={(vx, vz) => engineRef.current?.setVirtualMove(vx, vz)}
           onExitDungeon={() => engineRef.current?.exitDungeon()}
+          onEnterOcean={() => engineRef.current?.enterOceanWorld()}
+          onOceanVertical={(dir, held) => engineRef.current?.setOceanVerticalInput(dir, held)}
+          onToggleOceanTurtle={() => engineRef.current?.toggleOceanTurtleMount()}
+          onCraftDivingGear={(gearId, method) => engineRef.current?.craftOrBuyDivingGear(gearId, method)}
+          onEatOceanFood={() => engineRef.current?.eatOceanFood()}
           getLiveMapSnapshot={(kind) => engineRef.current?.getLiveMapSnapshot(kind) ?? null}
           voiceListening={voiceListening}
           voiceSupported={isVoiceCommandSupported()}

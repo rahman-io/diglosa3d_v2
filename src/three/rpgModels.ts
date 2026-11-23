@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { WEAPON_ORDER, ZONE_CAVE_STORIES, ZONE_DOORS, ZONE_INFO } from '../data/diglosaCatalog';
-import { CaveBlockKind, DoorDef, MonsterType, SwimStyleId, WeaponId, ZoneId } from '../types/game';
+import { CaveBlockKind, DivingGearId, DoorDef, MonsterType, SwimStyleId, WeaponId, ZoneId } from '../types/game';
 import { MaterialPalette, SurfaceMaterial } from './materials';
 import {
   getArchipelagoGroundY,
@@ -36,6 +36,9 @@ export interface HeroAvatarRig {
   scubaMask: THREE.Group;
   scubaTanks: THREE.Group;
   scubaTorch: THREE.Group;
+  wetsuitAccents: THREE.Mesh[];
+  flippers: THREE.Group[];
+  turtleMount: THREE.Group;
   weaponGroup: THREE.Group;
   weaponMeshes: Record<WeaponId, THREE.Group>;
   weaponTipMat: SurfaceMaterial;
@@ -465,6 +468,50 @@ export function createHeroAvatar(palette: MaterialPalette): HeroAvatarRig {
   dashRing.position.y = 0.08;
   root.add(dashRing);
 
+  // Diving Wetsuit Vest + Cyan Trim + Flippers + Turtle Mount (toggled via worn DivingGear / mount)
+  const wetsuitSlate = palette.getMat(0x0f172a, 'matte');
+  const wetsuitTrim = palette.getMat(0x06b6d4, 'emissive');
+  const finYellow = palette.getMat(0xfacc15, 'matte');
+
+  const wetsuitChest = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.96, 0.64), wetsuitSlate);
+  wetsuitChest.position.y = 0.5;
+  wetsuitChest.visible = false;
+  const wetsuitStripe = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.16, 0.66), wetsuitTrim);
+  wetsuitStripe.position.y = 0.72;
+  wetsuitStripe.visible = false;
+  upperBody.add(wetsuitChest, wetsuitStripe);
+  const wetsuitAccents: THREE.Mesh[] = [wetsuitChest, wetsuitStripe];
+
+  const flippers: THREE.Group[] = [];
+  for (const leg of [leftLeg, rightLeg]) {
+    const fin = new THREE.Group();
+    fin.position.set(0, -0.98, 0.34);
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.1, 0.68), finYellow);
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.14, 0.22), wetsuitSlate);
+    strap.position.z = -0.22;
+    fin.add(blade, strap);
+    fin.visible = false;
+    leg.add(fin);
+    flippers.push(fin);
+  }
+
+  // Rideable Sea Turtle Mount ("MOUNT: Yes")
+  const turtleMount = new THREE.Group();
+  const tShell = new THREE.Mesh(new THREE.BoxGeometry(1.52, 0.56, 1.72), palette.getMat(0x166534, 'matte'));
+  tShell.position.y = 0.42;
+  const tShellCap = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.22, 1.32), palette.getMat(0x22c55e, 'matte'));
+  tShellCap.position.y = 0.78;
+  const tHead = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.46, 0.68), palette.getMat(0x4ade80, 'matte'));
+  tHead.position.set(0, 0.48, 1.08);
+  const tFlapL = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.14, 0.48), palette.getMat(0x22c55e, 'matte'));
+  tFlapL.position.set(1.08, 0.32, 0.42);
+  const tFlapR = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.14, 0.48), palette.getMat(0x22c55e, 'matte'));
+  tFlapR.position.set(-1.08, 0.32, 0.42);
+  turtleMount.add(tShell, tShellCap, tHead, tFlapL, tFlapR);
+  turtleMount.userData.flaps = [tFlapL, tFlapR];
+  turtleMount.visible = false;
+  root.add(turtleMount);
+
   // Water surface swim ripple ring (positioned dynamically at water y=0 in engine)
   const swimRing = new THREE.Mesh(
     new THREE.RingGeometry(0.78, 1.12, 24),
@@ -497,6 +544,9 @@ export function createHeroAvatar(palette: MaterialPalette): HeroAvatarRig {
     scubaMask,
     scubaTanks,
     scubaTorch,
+    wetsuitAccents,
+    flippers,
+    turtleMount,
     weaponGroup,
     weaponMeshes,
     weaponTipMat,
@@ -550,6 +600,8 @@ export interface HeroWeaponPoseInput {
   isSwimming?: boolean;
   swimStyle?: SwimStyleId;
   swimBankRoll?: number;
+  divingGear?: DivingGearId[];
+  ridingTurtle?: boolean;
 }
 
 /**
@@ -577,6 +629,8 @@ export function applyHeroWeaponPose(
     isSwimming = false,
     swimStyle,
     swimBankRoll = 0,
+    divingGear = [],
+    ridingTurtle = false,
   } = input;
   const clampedAimPitch = THREE.MathUtils.clamp(aimPitch, -0.68, 1.32);
   const moving = speed > 0.6;
@@ -1095,9 +1149,44 @@ export function applyHeroWeaponPose(
     }
   }
 
-  rig.scubaMask.visible = showScuba;
-  rig.scubaTanks.visible = showScuba;
-  rig.scubaTorch.visible = showScuba;
+  if (isSwimming && ridingTurtle) {
+    targetBodyRotX = 0.36;
+    targetBodyY = 0.72 + Math.sin(elapsed * 3.2) * 0.05;
+    targetUpperX = 0.18;
+    targetHeadX = -0.32;
+    targetRightArmX = -0.78;
+    targetRightArmZ = -0.25;
+    targetLeftArmX = -0.78;
+    targetLeftArmZ = 0.25;
+    targetLeftLegX = -0.35;
+    targetRightLegX = -0.35;
+    targetLeftLegZ = 0.48;
+    targetRightLegZ = -0.48;
+  }
+
+  const showMask = showScuba || divingGear.includes('snorkel');
+  const showTank = showScuba || divingGear.includes('wetsuit_tank');
+  const showTorchFins = showScuba || divingGear.includes('fins_torch');
+
+  rig.scubaMask.visible = showMask;
+  rig.scubaTanks.visible = showTank;
+  for (const acc of rig.wetsuitAccents) {
+    acc.visible = showTank;
+  }
+  rig.scubaTorch.visible = showTorchFins;
+  for (const fin of rig.flippers) {
+    fin.visible = showTorchFins;
+  }
+  rig.turtleMount.visible = ridingTurtle && isSwimming;
+  if (rig.turtleMount.visible) {
+    rig.turtleMount.rotation.y = rig.body.rotation.y;
+    const flaps = rig.turtleMount.userData.flaps as THREE.Mesh[] | undefined;
+    if (flaps) {
+      const f = Math.sin(elapsed * 4.2) * 0.32;
+      if (flaps[0]) flaps[0].rotation.z = f;
+      if (flaps[1]) flaps[1].rotation.z = -f;
+    }
+  }
 
   rig.body.rotation.x = THREE.MathUtils.damp(rig.body.rotation.x, targetBodyRotX, 14, dt);
   rig.body.rotation.z = THREE.MathUtils.damp(rig.body.rotation.z, targetBodyRotZ, 14, dt);

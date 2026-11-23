@@ -6,7 +6,7 @@ export type ZoneId =
   | 'menara_waktu'
   | 'gua_portal';
 
-export type WorldLocationMode = 'overworld' | 'dungeon' | 'academy';
+export type WorldLocationMode = 'overworld' | 'dungeon' | 'academy' | 'ocean';
 
 export type MonsterType =
   | 'forest_slime'
@@ -82,6 +82,57 @@ export type SwimStyleId =
   | 'backstroke';
 
 export type SwimStylePreference = 'auto' | SwimStyleId;
+
+export type DivingGearId = 'snorkel' | 'wetsuit_tank' | 'fins_torch';
+
+export type SeaBiotaId =
+  | 'brain_coral'
+  | 'fire_coral'
+  | 'blue_staghorn'
+  | 'sea_anemone'
+  | 'giant_kelp'
+  | 'seagrass'
+  | 'bioluminescent_algae'
+  | 'sea_fan'
+  | 'tiger_cowrie'
+  | 'giant_clam'
+  | 'clownfish'
+  | 'blue_tang'
+  | 'sea_turtle'
+  | 'spotted_stingray'
+  | 'yellow_seahorse'
+  | 'chameleon_octopus'
+  | 'spiny_lobster'
+  | 'box_crab'
+  | 'starfish'
+  | 'glowing_jellyfish';
+
+export interface OceanMaterials {
+  pearl: number;
+  fiber: number;
+  calcium: number;
+  shell: number;
+  food: number;
+}
+
+export interface OceanSurvivalState {
+  oxygen: number;
+  maxOxygen: number;
+  depthMeters: number;
+  zoneKind: 'sanctuary' | 'twilight' | 'abyss';
+  zoneLabel: string;
+  discoveredBiota: SeaBiotaId[];
+  ownedGear: DivingGearId[];
+  materials: OceanMaterials;
+  nearBiotaId: SeaBiotaId | null;
+  nearBiotaName: string | null;
+  nearBiotaAction: string | null;
+  nearChestLabel: string | null;
+  nearTurtleMount: boolean;
+  ridingTurtle: boolean;
+  nearSurfaceExit: boolean;
+  suffocating: boolean;
+}
 
 export type WeaponId =
   | 'ketapel'
@@ -321,7 +372,7 @@ export interface DungeonZoneState {
 }
 
 export interface AreaMonsterStats {
-  context: 'overworld_day' | 'overworld_night' | 'dungeon' | 'academy';
+  context: 'overworld_day' | 'overworld_night' | 'dungeon' | 'academy' | 'ocean';
   areaName: string;
   defeated: number;
   remaining: number;
@@ -531,6 +582,7 @@ export interface RpgHudSnapshot {
   isSwimming?: boolean;
   swimStylePreference?: SwimStylePreference;
   activeSwimStyle?: SwimStyleId;
+  oceanSurvival?: OceanSurvivalState | null;
   worldTime: WorldTimeState;
 }
 
