@@ -790,6 +790,9 @@ export class RpgWorldEngine {
   private shootAimYaw: number | null = null;
   private shootAimPitch = 0;
   private shootAimTargetId: string | null = null;
+  private shootTargetPos: { x: number; y: number; z: number } | null = null;
+  private autoCamPitchActive = false;
+  private manualLookHoldTimer = 0;
   private pendingTurnShot: { fromHold: boolean } | null = null;
   private isAiming = false;
   private aimToggled = false;
@@ -2547,6 +2550,7 @@ export class RpgWorldEngine {
       this.shootAimYaw = null;
       this.shootAimPitch = 0;
       this.shootAimTargetId = null;
+      this.shootTargetPos = null;
     }
     this.fpSwingTimer = 0.16;
     this.refreshWeaponVisual();
@@ -3082,6 +3086,8 @@ export class RpgWorldEngine {
     this.initSkyMonsters();
     this.shootAimPitch = 0;
     this.shootAimTargetId = null;
+    this.shootTargetPos = null;
+    this.autoCamPitchActive = false;
     this.updateOverworldDayNightAtmosphere(0, false);
 
     const sp = OVERWORLD_ANCHORS.desaSpawn;
@@ -4651,6 +4657,8 @@ export class RpgWorldEngine {
           // ignore
         }
       }
+    } else if (partial.aimMode === 'manual') {
+      this.autoCamPitchActive = false;
     }
     if (partial.difficulty && partial.difficulty !== prevDiff) {
       this.syncShootersForDifficulty();
@@ -7436,6 +7444,7 @@ export class RpgWorldEngine {
     let aimYaw = this.heroYaw;
     let aimPitch = 0;
     let lockedTargetId: string | null = null;
+    let lockedTargetPos: { x: number; y: number; z: number } | null = null;
     let dirX = Math.sin(aimYaw);
     let dirY = 0;
     let dirZ = Math.cos(aimYaw);
@@ -7510,6 +7519,7 @@ export class RpgWorldEngine {
       }
 
       if (foundTarget) {
+        lockedTargetPos = { x: targetX, y: targetY, z: targetZ };
         aimYaw = Math.atan2(targetX - this.heroPos.x, targetZ - this.heroPos.z);
         const mx0 =
           this.heroPos.x + Math.sin(aimYaw) * muzzleDist - Math.cos(aimYaw) * muzzleRight;
@@ -7563,6 +7573,10 @@ export class RpgWorldEngine {
       }
     }
 
+    if (!isManualAim && !fromHold) {
+      this.manualLookHoldTimer = 0;
+    }
+
     let turnDiff = aimYaw - this.heroYaw;
     while (turnDiff > Math.PI) turnDiff -= Math.PI * 2;
     while (turnDiff < -Math.PI) turnDiff += Math.PI * 2;
@@ -7570,6 +7584,7 @@ export class RpgWorldEngine {
       this.shootAimYaw = aimYaw;
       this.shootAimPitch = aimPitch;
       this.shootAimTargetId = lockedTargetId;
+      this.shootTargetPos = lockedTargetPos;
       this.shootAimTimer = Math.max(this.shootAimTimer, 1.25);
       this.pendingTurnShot = { fromHold };
       return;
@@ -7581,6 +7596,7 @@ export class RpgWorldEngine {
     this.shootAimYaw = aimYaw;
     this.shootAimPitch = aimPitch;
     this.shootAimTargetId = lockedTargetId;
+    this.shootTargetPos = lockedTargetPos;
 
     this.weaponAmmo[this.activeWeapon] -= 1;
     this.fireCooldown = wDef.cooldown;
@@ -7917,6 +7933,10 @@ export class RpgWorldEngine {
     const sensScale = this.isAiming ? 0.65 : 1.0;
 
     if (document.pointerLockElement === this.renderer.domElement) {
+      if (Math.hypot(e.movementX, e.movementY) > 2.5) {
+        this.manualLookHoldTimer = 0.55;
+        this.autoCamPitchActive = false;
+      }
       this.cameraYaw -= e.movementX * 0.0042 * sensScale;
       const minP = this.cameraMode === 'first_person' ? -1.25 : -1.18;
       this.cameraPitch = THREE.MathUtils.clamp(
@@ -7942,6 +7962,8 @@ export class RpgWorldEngine {
 
     if (this.lookPointer.moved) {
       this.lastInputActivityMs = performance.now();
+      this.manualLookHoldTimer = 0.55;
+      this.autoCamPitchActive = false;
       const sens = (e.pointerType === 'touch' ? 0.0072 : 0.0048) * sensScale;
       this.cameraYaw -= dx * sens;
       const minP = this.cameraMode === 'first_person' ? -1.25 : -1.18;
@@ -10977,6 +10999,10 @@ export class RpgWorldEngine {
       this.jumpHero();
     }
 
+    if (this.manualLookHoldTimer > 0) {
+      this.manualLookHoldTimer = Math.max(0, this.manualLookHoldTimer - dt);
+    }
+
     if (this.shootAimTimer > 0) {
       if (!isManualAim && this.shootAimTargetId) {
         let tx: number | null = null;
@@ -11002,10 +11028,14 @@ export class RpgWorldEngine {
           }
         }
         if (tx !== null) {
+          this.shootTargetPos = { x: tx, y: ty, z: tz };
           this.shootAimYaw = Math.atan2(tx - this.heroPos.x, tz - this.heroPos.z);
           const horiz = Math.max(0.25, Math.hypot(tx - this.heroPos.x, tz - this.heroPos.z));
           const targetPitch = Math.atan2(ty - (this.heroPos.y + 1.9), horiz);
           this.shootAimPitch = THREE.MathUtils.damp(this.shootAimPitch, targetPitch, 16, dt);
+        } else {
+          this.shootAimTargetId = null;
+          this.shootTargetPos = null;
         }
       }
       this.shootAimTimer = Math.max(0, this.shootAimTimer - dt);
@@ -11013,6 +11043,7 @@ export class RpgWorldEngine {
         this.shootAimYaw = null;
         this.shootAimPitch = 0;
         this.shootAimTargetId = null;
+        this.shootTargetPos = null;
       }
     }
     if (this.shootRecoilTimer > 0) {
@@ -11221,6 +11252,51 @@ export class RpgWorldEngine {
       this.fpSwingTimer = Math.max(0, this.fpSwingTimer - dt);
     }
 
+    // Auto-Aim Camera Follow: in Bidik Otomatis, smoothly rotate & pitch camera toward locked sky/ground/sea target (or firing direction)
+    const userDraggingCam = Boolean(this.lookPointer?.moved) || this.manualLookHoldTimer > 0;
+    if (
+      !isManualAim &&
+      !userDraggingCam &&
+      (this.cameraMode === 'third_back' || this.cameraMode === 'first_person')
+    ) {
+      if ((this.shootAimTimer > 0 || Boolean(this.pendingTurnShot)) && this.shootAimYaw !== null) {
+        const desiredCamYaw = this.shootAimYaw + Math.PI;
+        let camYawDiff = desiredCamYaw - this.cameraYaw;
+        while (camYawDiff > Math.PI) camYawDiff -= Math.PI * 2;
+        while (camYawDiff < -Math.PI) camYawDiff += Math.PI * 2;
+        const yawRate =
+          this.cameraMode === 'first_person' ? 16 : this.shootTargetPos ? 11.5 : 8.5;
+        this.cameraYaw += camYawDiff * (1 - Math.exp(-yawRate * dt));
+
+        if (this.cameraMode === 'first_person') {
+          const desiredCamPitch = THREE.MathUtils.clamp(-this.shootAimPitch, -1.25, 1.12);
+          this.cameraPitch = THREE.MathUtils.damp(this.cameraPitch, desiredCamPitch, 14, dt);
+          this.autoCamPitchActive = true;
+        } else if (this.shootAimPitch > 0.06) {
+          // Target is elevated / in the sky: pitch camera up smoothly so sky & target are clearly framed
+          const desiredCamPitch = THREE.MathUtils.clamp(-this.shootAimPitch - 0.05, -1.18, -0.08);
+          this.cameraPitch = THREE.MathUtils.damp(this.cameraPitch, desiredCamPitch, 10.5, dt);
+          this.autoCamPitchActive = true;
+        } else if (this.shootAimPitch < -0.14) {
+          // Target is below Hero (cliff edge / deep underwater): tilt camera slightly downward
+          const desiredCamPitch = THREE.MathUtils.clamp(-this.shootAimPitch + 0.12, 0.18, 1.05);
+          this.cameraPitch = THREE.MathUtils.damp(this.cameraPitch, desiredCamPitch, 10, dt);
+          this.autoCamPitchActive = true;
+        } else if (this.shootTargetPos) {
+          if (this.cameraPitch < 0.06 || this.cameraPitch > 0.48) {
+            this.cameraPitch = THREE.MathUtils.damp(this.cameraPitch, 0.18, 8.5, dt);
+          }
+          this.autoCamPitchActive = true;
+        }
+      } else if (this.autoCamPitchActive && (hasMoveInput || speed > 0.8 || this.cameraPitch < -0.18)) {
+        this.cameraPitch = THREE.MathUtils.damp(this.cameraPitch, 0.22, 4.2, dt);
+        if (Math.abs(this.cameraPitch - 0.22) < 0.02) {
+          this.cameraPitch = 0.22;
+          this.autoCamPitchActive = false;
+        }
+      }
+    }
+
     // Update Camera Rig (Over-the-Shoulder TPS + ADS Scope Zoom when Bidik Bebas, or Centered Classic RPG when Bidik Otomatis)
     const sinY = Math.sin(this.cameraYaw);
     const cosY = Math.cos(this.cameraYaw);
@@ -11253,7 +11329,7 @@ export class RpgWorldEngine {
         this.cameraMode === 'third_back' && effPitch < -0.15
           ? THREE.MathUtils.clamp((-effPitch - 0.15) / 0.88, 0, 1)
           : 0;
-      const skyShortenDist = THREE.MathUtils.lerp(baseDist, Math.min(baseDist, 4.4), skyUpT);
+      const skyShortenDist = THREE.MathUtils.lerp(baseDist, Math.min(baseDist, 4.8), skyUpT);
       const desiredDist =
         isManualAim && this.cameraMode === 'third_back'
           ? THREE.MathUtils.lerp(skyShortenDist, Math.min(skyShortenDist, 3.45), this.aimBlend)
@@ -11329,6 +11405,28 @@ export class RpgWorldEngine {
           pivotX - dirX * 24,
           pivotY - dirY * 24,
           pivotZ - dirZ * 24,
+        );
+      } else if (
+        this.cameraMode === 'third_back' &&
+        !isManualAim &&
+        (this.shootAimTimer > 0 || Boolean(this.pendingTurnShot)) &&
+        this.shootTargetPos
+      ) {
+        const tdx = this.shootTargetPos.x - this.heroPos.x;
+        const tdy = this.shootTargetPos.y - targetY;
+        const tdz = this.shootTargetPos.z - this.heroPos.z;
+        const tDist = Math.hypot(tdx, tdy, tdz) || 1;
+        const clampDist = Math.min(tDist, 14);
+        const refX = this.heroPos.x + (tdx / tDist) * clampDist;
+        const refY = targetY + (tdy / tDist) * clampDist;
+        const refZ = this.heroPos.z + (tdz / tDist) * clampDist;
+        const elevAlpha = THREE.MathUtils.clamp(this.shootAimPitch / 0.85, 0, 1);
+        const fade = this.pendingTurnShot ? 1 : Math.min(1, this.shootAimTimer * 2.5);
+        const lookBlend = THREE.MathUtils.lerp(0.32, 0.72, elevAlpha) * fade;
+        this.camera.lookAt(
+          THREE.MathUtils.lerp(this.heroPos.x, refX, lookBlend),
+          THREE.MathUtils.lerp(targetY, refY, lookBlend),
+          THREE.MathUtils.lerp(this.heroPos.z, refZ, lookBlend),
         );
       } else if (this.cameraMode === 'third_back' && effPitch < -0.04) {
         const skyLookT = THREE.MathUtils.clamp((-effPitch - 0.04) / 0.5, 0, 1);
@@ -14845,6 +14943,8 @@ export class RpgWorldEngine {
       this.hero.body.rotation.y = aimYaw;
       this.shootAimYaw = aimYaw;
       this.shootAimTargetId = bestTarget.id;
+      this.shootTargetPos = { x: bestTarget.x, y: bestTarget.y, z: bestTarget.z };
+      this.autoCamPitchActive = true;
       // Arahkan kamera agar langsung menghadap target yang dibidik
       this.cameraYaw = aimYaw + Math.PI;
       const horiz = Math.max(0.5, bestTarget.dist);
