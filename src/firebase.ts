@@ -1,3 +1,4 @@
+import { Analytics, getAnalytics, isSupported } from 'firebase/analytics';
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import {
@@ -12,8 +13,19 @@ import firebaseConfig from '../firebase-applet-config.json';
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 
+export let analytics: Analytics | null = null;
+if (typeof window !== 'undefined' && firebaseConfig.measurementId) {
+  void isSupported()
+    .then((supported) => {
+      if (supported) {
+        analytics = getAnalytics(app);
+      }
+    })
+    .catch(() => undefined);
+}
+
 function createFirestoreInstance(): Firestore {
-  const databaseId = firebaseConfig.firestoreDatabaseId;
+  const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
   if (typeof window === 'undefined') {
     return getFirestore(app, databaseId);
   }

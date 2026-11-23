@@ -1,12 +1,10 @@
 {
-  "projectId": "mandalaway",
-  "appId": "1:337630987494:web:a7f4466e4cc460af9de727",
-  "apiKey": "AIzaSyCGSvoVCo_nyBV6MSBYNAouMLg4TtCzZvU",
-  "authDomain": "mandalaway.firebaseapp.com",
-  "firestoreDatabaseId": "ai-studio-fb1fe74c-5747-4a45-a85a-a0f22ac78918",
-  "storageBucket": "mandalaway.firebasestorage.app",
-  "messagingSenderId": "337630987494",
-  "measurementId": "",
-  "oAuthClientId": "337630987494-m9crsf4172pbqbr9uh8nv1b8maapahp7.apps.googleusercontent.com",
-  "recaptchaSiteKey": ""
+  "projectId": "diglosa-2e185",
+  "appId": "1:566886587984:web:6e622bb4bf66e2cc66fb55",
+  "apiKey": "AIzaSyASwMzLo2uCss8klBgCp-8EW7qvb5FRZQ0",
+  "authDomain": "diglosa-2e185.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "diglosa-2e185.firebasestorage.app",
+  "messagingSenderId": "566886587984",
+  "measurementId": "G-DQV9G9QEJV"
 }
