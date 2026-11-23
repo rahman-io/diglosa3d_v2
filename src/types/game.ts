@@ -83,6 +83,14 @@ export type SwimStyleId =
 
 export type SwimStylePreference = 'auto' | SwimStyleId;
 
+export type JumpDiveTrick =
+  | 'backflip'
+  | 'cannonball'
+  | 'spreadeagle'
+  | 'swan_dive'
+  | 'front_flip'
+  | 'corkscrew';
+
 export type DivingGearId = 'snorkel' | 'wetsuit_tank' | 'fins_torch';
 
 export type SeaBiotaId =

@@ -14,9 +14,10 @@ type AudioClipKey =
   | 'shoot_1'
   | 'shoot_2'
   | 'grunt'
-  | 'boom';
+  | 'boom'
+  | 'jump_to_swim';
 
-type AmbientMode = 'none' | 'day' | 'night';
+type AmbientMode = 'none' | 'day' | 'night' | 'deep_sea';
 
 const AUDIO_CLIP_PATHS: Record<AudioClipKey, string> = {
   collect: './assets/aistudio/collect_e2cd5af7.mp3',
@@ -31,6 +32,7 @@ const AUDIO_CLIP_PATHS: Record<AudioClipKey, string> = {
   shoot_2: './assets/aistudio/shoot_2_c4b4b097.mp3',
   grunt: './assets/aistudio/grunt_1342944e.mp3',
   boom: './assets/aistudio/boom_630ba31f.mp3',
+  jump_to_swim: './assets/aistudio/jump_to_swim_63f1e6ac.mp3',
 };
 
 const WEAPON_SHOOT_CLIP: Record<WeaponId, 'shoot_1' | 'shoot_2'> = {
@@ -46,9 +48,11 @@ const WEAPON_SHOOT_CLIP: Record<WeaponId, 'shoot_1' | 'shoot_2'> = {
 
 const INTRO_AUDIO_PATH = './assets/aistudio/game_intro_1db79a4e.mp3';
 const WALK_AUDIO_PATH = './assets/aistudio/walk_adce5e54.mp3';
+const SWIM_AUDIO_PATH = './assets/aistudio/swimming_1e6d979c.mp3';
 const AMBIENT_AUDIO_PATHS: Record<Exclude<AmbientMode, 'none'>, string> = {
   day: './assets/aistudio/morning_afternoon_f080cd3e.mp3',
   night: './assets/aistudio/evening_night_cbbbc15c.mp3',
+  deep_sea: './assets/aistudio/deep_sea_44a86af6.mp3',
 };
 
 class SoundEngine {
@@ -60,6 +64,8 @@ class SoundEngine {
   private lastClipAt: Partial<Record<AudioClipKey | 'monster_any', number>> = {};
   private walkAudio: HTMLAudioElement | null = null;
   private isWalking = false;
+  private swimAudio: HTMLAudioElement | null = null;
+  private isSwimmingSound = false;
   private introAudio: HTMLAudioElement | null = null;
   private introActive = false;
   private ambientAudios: Partial<Record<Exclude<AmbientMode, 'none'>, HTMLAudioElement>> = {};
@@ -84,11 +90,17 @@ class SoundEngine {
       walk.volume = 0.45;
       this.walkAudio = walk;
 
-      (['day', 'night'] as const).forEach((mode) => {
+      const swim = new Audio(SWIM_AUDIO_PATH);
+      swim.preload = 'auto';
+      swim.loop = true;
+      swim.volume = 0.44;
+      this.swimAudio = swim;
+
+      (['day', 'night', 'deep_sea'] as const).forEach((mode) => {
         const amb = new Audio(AMBIENT_AUDIO_PATHS[mode]);
         amb.preload = 'auto';
         amb.loop = true;
-        amb.volume = mode === 'day' ? 0.24 : 0.26;
+        amb.volume = mode === 'day' ? 0.24 : mode === 'deep_sea' ? 0.3 : 0.26;
         this.ambientAudios[mode] = amb;
       });
 
@@ -106,11 +118,13 @@ class SoundEngine {
         this.syncIntroPlayback();
         this.syncAmbientPlayback();
         this.syncWalkPlayback();
+        this.syncSwimPlayback();
       };
       const onKeyDownGlobal = () => {
         this.syncIntroPlayback();
         this.syncAmbientPlayback();
         this.syncWalkPlayback();
+        this.syncSwimPlayback();
       };
       window.addEventListener('pointerdown', onPointerDownGlobal, { capture: true, passive: true });
       window.addEventListener('keydown', onKeyDownGlobal, { capture: true, passive: true });
@@ -146,8 +160,22 @@ class SoundEngine {
     }
   }
 
+  private syncSwimPlayback(): void {
+    const el = this.swimAudio;
+    if (!el) return;
+    if (this.muted || !this.isSwimmingSound) {
+      if (!el.paused) {
+        el.pause();
+      }
+      return;
+    }
+    if (el.paused) {
+      el.play().catch(() => {});
+    }
+  }
+
   private syncAmbientPlayback(): void {
-    (['day', 'night'] as const).forEach((mode) => {
+    (['day', 'night', 'deep_sea'] as const).forEach((mode) => {
       const el = this.ambientAudios[mode];
       if (!el) return;
       const shouldPlay = !this.muted && !this.introActive && this.ambientMode === mode;
@@ -178,6 +206,14 @@ class SoundEngine {
       this.walkAudio.playbackRate = playbackRate;
     }
     this.syncWalkPlayback();
+  }
+
+  public setSwimmingAudio(swimming: boolean, playbackRate = 1.0): void {
+    this.isSwimmingSound = swimming;
+    if (this.swimAudio) {
+      this.swimAudio.playbackRate = playbackRate;
+    }
+    this.syncSwimPlayback();
   }
 
   public setAmbientMode(mode: AmbientMode): void {
@@ -245,6 +281,7 @@ class SoundEngine {
     }
     this.syncIntroPlayback();
     this.syncWalkPlayback();
+    this.syncSwimPlayback();
     this.syncAmbientPlayback();
   }
 
@@ -400,6 +437,10 @@ class SoundEngine {
   public playDash(): void {
     this.beep(320, 0.14, 'sawtooth', 0.05, 140);
     this.beep(520, 0.14, 'sine', 0.07, 880, 0.02);
+  }
+
+  public playJumpToSwim(): void {
+    this.playClip('jump_to_swim', 0.85, 750);
   }
 
   public playSplash(intensity = 1.0): void {

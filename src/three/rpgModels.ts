@@ -1,6 +1,15 @@
 import * as THREE from 'three';
 import { WEAPON_ORDER, ZONE_CAVE_STORIES, ZONE_DOORS, ZONE_INFO } from '../data/diglosaCatalog';
-import { CaveBlockKind, DivingGearId, DoorDef, MonsterType, SwimStyleId, WeaponId, ZoneId } from '../types/game';
+import {
+  CaveBlockKind,
+  DivingGearId,
+  DoorDef,
+  JumpDiveTrick,
+  MonsterType,
+  SwimStyleId,
+  WeaponId,
+  ZoneId,
+} from '../types/game';
 import { MaterialPalette, SurfaceMaterial } from './materials';
 import {
   getArchipelagoGroundY,
@@ -602,6 +611,8 @@ export interface HeroWeaponPoseInput {
   swimBankRoll?: number;
   divingGear?: DivingGearId[];
   ridingTurtle?: boolean;
+  jumpDiveTrick?: JumpDiveTrick | null;
+  jumpDiveElapsed?: number;
 }
 
 /**
@@ -631,6 +642,8 @@ export function applyHeroWeaponPose(
     swimBankRoll = 0,
     divingGear = [],
     ridingTurtle = false,
+    jumpDiveTrick = null,
+    jumpDiveElapsed = 0,
   } = input;
   const clampedAimPitch = THREE.MathUtils.clamp(aimPitch, -0.68, 1.32);
   const moving = speed > 0.6;
@@ -941,9 +954,98 @@ export function applyHeroWeaponPose(
   let targetBodyRotX = 0;
   let targetBodyRotZ = 0;
   let showScuba = false;
+  const activeJumpTrick = !isSwimming && airborne ? jumpDiveTrick : null;
 
-  if (!isSwimming && airborne && swimStyle === 'jump_dive') {
-    // 4. Jump Dive (Terjun Bebas) while airborne plunging toward water
+  if (activeJumpTrick === 'backflip') {
+    // 1. Backflip: backward 360° somersault into the sea
+    targetBodyRotX = -Math.min(Math.PI * 2.15, jumpDiveElapsed * 8.4);
+    targetBodyY = 0.45;
+    targetUpperX = 0.22;
+    targetHeadX = 0.24;
+    targetRightArmX = -2.15;
+    targetRightArmZ = -0.28;
+    targetLeftArmX = -2.15;
+    targetLeftArmZ = 0.28;
+    targetLeftLegX = -1.25;
+    targetRightLegX = -1.25;
+    targetLeftLegZ = 0.08;
+    targetRightLegZ = -0.08;
+  } else if (activeJumpTrick === 'cannonball') {
+    // 2. Cannonball: tight curled knee-hug ball plunge
+    const t = Math.min(1, jumpDiveElapsed * 2.4);
+    targetBodyRotX = 0.42 + Math.sin(t * Math.PI) * 0.36;
+    targetBodyRotZ = 0.14;
+    targetBodyY = 0.26;
+    targetUpperX = 0.46;
+    targetHeadX = 0.44;
+    targetRightArmX = -1.24;
+    targetRightArmZ = 0.34;
+    targetLeftArmX = -1.24;
+    targetLeftArmZ = -0.34;
+    targetLeftLegX = -1.56;
+    targetRightLegX = -1.56;
+    targetLeftLegZ = 0.12;
+    targetRightLegZ = -0.12;
+  } else if (activeJumpTrick === 'spreadeagle') {
+    // 3. Spreadeagle: wide X-shape star jump above the waves
+    targetBodyRotX = 0.48;
+    targetBodyY = 0.42;
+    targetUpperX = -0.1;
+    targetHeadX = -0.36;
+    targetRightArmX = -2.35;
+    targetRightArmZ = -1.06;
+    targetLeftArmX = -2.35;
+    targetLeftArmZ = 1.06;
+    targetLeftLegX = -0.14;
+    targetRightLegX = -0.14;
+    targetLeftLegZ = 0.58;
+    targetRightLegZ = -0.58;
+  } else if (activeJumpTrick === 'swan_dive') {
+    // 4. Swan Dive: proud arched wings pitching into a clean dive
+    const noseT = Math.min(1, jumpDiveElapsed * 1.65);
+    targetBodyRotX = THREE.MathUtils.lerp(0.66, 1.48, noseT);
+    targetBodyY = 0.48;
+    targetUpperX = -0.26;
+    targetHeadX = -0.68;
+    targetRightArmX = -1.35;
+    targetRightArmZ = -1.18;
+    targetLeftArmX = -1.35;
+    targetLeftArmZ = 1.18;
+    targetLeftLegX = 0.36;
+    targetRightLegX = 0.36;
+    targetLeftLegZ = 0.03;
+    targetRightLegZ = -0.03;
+  } else if (activeJumpTrick === 'front_flip') {
+    // 5. Front Flip: crisp forward tucked somersault
+    targetBodyRotX = Math.min(Math.PI * 2.32, jumpDiveElapsed * 8.6);
+    targetBodyY = 0.44;
+    targetUpperX = 0.36;
+    targetHeadX = 0.32;
+    targetRightArmX = -1.45;
+    targetRightArmZ = -0.22;
+    targetLeftArmX = -1.45;
+    targetLeftArmZ = 0.22;
+    targetLeftLegX = -1.18;
+    targetRightLegX = -1.18;
+    targetLeftLegZ = 0.06;
+    targetRightLegZ = -0.06;
+  } else if (activeJumpTrick === 'corkscrew') {
+    // 6. Corkscrew Dive: streamlined dive with mid-air spiral spin
+    targetBodyRotX = 1.06;
+    targetBodyY = 0.46;
+    targetUpperX = 0.08;
+    targetHeadX = -0.68;
+    targetRightArmX = -2.72;
+    targetRightArmZ = -0.16;
+    targetLeftArmX = -2.72;
+    targetLeftArmZ = 0.16;
+    targetLeftLegX = 0.24;
+    targetRightLegX = 0.2;
+    targetLeftLegZ = 0.04;
+    targetRightLegZ = -0.04;
+    rig.body.rotation.y += jumpDiveElapsed * 9.5;
+  } else if (!isSwimming && airborne && swimStyle === 'jump_dive') {
+    // Fallback Jump Dive (Terjun Bebas) while airborne plunging toward water
     targetBodyRotX = 0.86;
     targetBodyY = 0.35;
     targetUpperX = 0.08;
@@ -1188,8 +1290,18 @@ export function applyHeroWeaponPose(
     }
   }
 
-  rig.body.rotation.x = THREE.MathUtils.damp(rig.body.rotation.x, targetBodyRotX, 14, dt);
-  rig.body.rotation.z = THREE.MathUtils.damp(rig.body.rotation.z, targetBodyRotZ, 14, dt);
+  if (!activeJumpTrick) {
+    // Normalize wrapped rotations cleanly after 360° flips so returning to swim/stand never unwinds backward
+    if (Math.abs(rig.body.rotation.x) > Math.PI) {
+      rig.body.rotation.x = THREE.MathUtils.euclideanModulo(rig.body.rotation.x + Math.PI, Math.PI * 2) - Math.PI;
+    }
+    if (Math.abs(rig.body.rotation.z) > Math.PI) {
+      rig.body.rotation.z = THREE.MathUtils.euclideanModulo(rig.body.rotation.z + Math.PI, Math.PI * 2) - Math.PI;
+    }
+  }
+  const bodyRotDamp = activeJumpTrick ? 28 : 14;
+  rig.body.rotation.x = THREE.MathUtils.damp(rig.body.rotation.x, targetBodyRotX, bodyRotDamp, dt);
+  rig.body.rotation.z = THREE.MathUtils.damp(rig.body.rotation.z, targetBodyRotZ, bodyRotDamp, dt);
   rig.leftLeg.rotation.x = THREE.MathUtils.damp(rig.leftLeg.rotation.x, targetLeftLegX, dampRate, dt);
   rig.rightLeg.rotation.x = THREE.MathUtils.damp(rig.rightLeg.rotation.x, targetRightLegX, dampRate, dt);
   rig.leftLeg.rotation.z = THREE.MathUtils.damp(rig.leftLeg.rotation.z, targetLeftLegZ, dampRate, dt);

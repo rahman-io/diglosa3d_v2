@@ -45,6 +45,7 @@ import {
   DungeonZoneState,
   GamePhase,
   GameSettings,
+  JumpDiveTrick,
   LearningSessionContext,
   LiveMapBounds,
   LiveMapSnapshot,
@@ -725,6 +726,10 @@ export class RpgWorldEngine {
   private swimDiveTimer = 0;
   private swimDodgeTimer = 0;
   private swimDodgeRoll = 0;
+  private activeJumpTrick: JumpDiveTrick | null = null;
+  private lastJumpTrick: JumpDiveTrick | null = null;
+  private jumpTrickElapsed = 0;
+  private jumpToSwimPlayedForAir = false;
   private prevHeroYaw = OVERWORLD_ANCHORS.desaSpawn.yaw;
   private coyoteTimer = 0;
   private jumpBufferTimer = 0;
@@ -1209,7 +1214,13 @@ export class RpgWorldEngine {
 
   private applyEffectivePixelRatio(forceResize = false): void {
     const baseDpr = this.getBaseTargetDpr();
-    const minFloor = this.isSoftwareGl ? 1 : this.isMobileDevice ? 1.0 : 1.1;
+    const minFloor = this.isSoftwareGl
+      ? 1
+      : this.worldMode === 'ocean' && this.isMobileDevice
+      ? 0.78
+      : this.isMobileDevice
+      ? 1.0
+      : 1.1;
     const scaled =
       this.settings.fxLevel === 'full' && !this.isSoftwareGl
         ? Math.max(minFloor, Math.round(baseDpr * this.activeDprScale * 100) / 100)
@@ -3467,6 +3478,12 @@ export class RpgWorldEngine {
 
   private applyAtmosphere(mode: WorldLocationMode, zoneId?: ZoneId, dungeonBright = false): void {
     const liteBoost = this.preferLiteShader ? 0.2 : 0;
+    const shadowsDesired = mode !== 'ocean' && !this.isSoftwareGl && this.settings.fxLevel !== 'off';
+    this.renderer.shadowMap.enabled = shadowsDesired;
+    this.sunLight.castShadow = shadowsDesired;
+    if (shadowsDesired) {
+      this.renderer.shadowMap.needsUpdate = true;
+    }
     if (mode === 'dungeon') {
       if (dungeonBright) {
         const brightHex =
@@ -3560,6 +3577,7 @@ export class RpgWorldEngine {
     } else {
       this.updateOverworldDayNightAtmosphere(0, false);
     }
+    this.applyEffectivePixelRatio();
   }
 
   private clearSubScenes(): void {
@@ -3584,11 +3602,17 @@ export class RpgWorldEngine {
       this.scene.remove(this.oceanRig.group);
       this.oceanRig.disposables.forEach((d) => d.dispose());
       this.oceanRig.group.traverse((obj) => {
-        if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+        if (obj instanceof THREE.Mesh && !obj.geometry.userData?.shared) {
+          obj.geometry.dispose();
+        }
       });
       this.oceanRig = null;
       this.mapHiddenOcean = [];
     }
+    this.activeJumpTrick = null;
+    this.jumpTrickElapsed = 0;
+    this.jumpToSwimPlayedForAir = false;
+    soundEngine.setSwimmingAudio(false);
     this.clearCaveBoulders();
     this.activeTnts.forEach((t) => {
       if (t.mesh.parent) t.mesh.parent.remove(t.mesh);
@@ -4513,10 +4537,9 @@ export class RpgWorldEngine {
     this.heroOnGround = false;
     this.heldKeys.clear();
 
-    const rig = createOceanEnvironment(
-      this.palette,
-      this.isLowEndMobile || this.settings.fxLevel !== 'full',
-    );
+    const oceanLowDetail =
+      this.isMobileDevice || this.isLowEndMobile || this.settings.fxLevel !== 'full';
+    const rig = createOceanEnvironment(this.palette, oceanLowDetail);
     this.oceanRig = rig;
     this.dungeonExitPos.copy(rig.buoyPos);
 
@@ -4536,11 +4559,17 @@ export class RpgWorldEngine {
       const tpl = OCEAN_SEA_MONSTER_SPAWNS[i];
       const spec = MONSTER_SPECS[tpl.type];
       const mesh = createMonsterMesh(tpl.type, this.palette);
+      mesh.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.castShadow = false;
+          o.receiveShadow = false;
+        }
+      });
       mesh.position.set(tpl.x, tpl.y, tpl.z);
 
       const ringRadius = Math.max(1.2, spec.hitRadius * 0.85);
       const ring = new THREE.Mesh(
-        new THREE.RingGeometry(ringRadius, ringRadius + 0.45, 24),
+        new THREE.RingGeometry(ringRadius, ringRadius + 0.45, 14),
         new THREE.MeshBasicMaterial({
           color: 0x22d3ee,
           side: THREE.DoubleSide,
@@ -4621,7 +4650,7 @@ export class RpgWorldEngine {
     this.applyCameraVisibilityAndControls();
     this.snapCameraBehindHero();
 
-    soundEngine.playSplash(1.0);
+    soundEngine.playJumpToSwim();
     this.showBanner(
       '🐠 Selamat datang di Taman Karang Dangkal! Temukan 20 Biota Laut & cari Baju Selam sebelum turun ke Palung Abyssal!',
       5.0,
@@ -6452,6 +6481,33 @@ export class RpgWorldEngine {
     return supportY;
   }
 
+  private pickRandomJumpTrick(): JumpDiveTrick {
+    const tricks: JumpDiveTrick[] = [
+      'backflip',
+      'cannonball',
+      'spreadeagle',
+      'swan_dive',
+      'front_flip',
+      'corkscrew',
+    ];
+    const pool = this.lastJumpTrick ? tricks.filter((t) => t !== this.lastJumpTrick) : tricks;
+    const picked = pool[Math.floor(Math.random() * pool.length)]!;
+    this.lastJumpTrick = picked;
+    return picked;
+  }
+
+  private isHeadingTowardWater(x: number, z: number, yaw: number): boolean {
+    const sinY = Math.sin(yaw);
+    const cosY = Math.cos(yaw);
+    for (const dist of [0, 2.4, 4.4, 6.4]) {
+      const s = sampleArchipelagoTerrain(x + sinY * dist, z + cosY * dist);
+      if (!s.isLandOrBridge || s.groundY < -0.15) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   public jumpHero(): void {
     this.lastInputActivityMs = performance.now();
     if (this.phase !== 'playing') return;
@@ -6483,9 +6539,20 @@ export class RpgWorldEngine {
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
     this.jumpLandTimer = 0;
-    this.heroVelY = 11.8;
     this.heroOnGround = false;
-    soundEngine.playDash();
+    if (this.worldMode === 'overworld' && this.isHeadingTowardWater(this.heroPos.x, this.heroPos.z, this.heroYaw)) {
+      this.activeJumpTrick = this.pickRandomJumpTrick();
+      this.jumpTrickElapsed = 0;
+      this.jumpToSwimPlayedForAir = true;
+      this.heroVelY = 12.6;
+      soundEngine.playJumpToSwim();
+    } else {
+      this.activeJumpTrick = null;
+      this.jumpTrickElapsed = 0;
+      this.jumpToSwimPlayedForAir = false;
+      this.heroVelY = 11.8;
+      soundEngine.playDash();
+    }
   }
 
   public openCraftingTable(): void {
@@ -7950,11 +8017,12 @@ export class RpgWorldEngine {
 
     // Adaptive resolution scaling on mobile Full mode: keep sharp DPR by default, step down only under sustained load
     if (this.isMobileDevice && this.phase === 'playing' && this.settings.fxLevel === 'full') {
+      const minDprScale = this.worldMode === 'ocean' ? 0.72 : 0.85;
       if (workMs > 13.5) {
         this.slowFrameStreak += 1;
         this.fastFrameStreak = 0;
-        if (this.slowFrameStreak >= 45 && this.activeDprScale > 0.85) {
-          this.activeDprScale = Math.max(0.85, this.activeDprScale - 0.08);
+        if (this.slowFrameStreak >= 45 && this.activeDprScale > minDprScale) {
+          this.activeDprScale = Math.max(minDprScale, this.activeDprScale - 0.08);
           this.slowFrameStreak = 0;
           this.applyEffectivePixelRatio();
         }
@@ -8084,10 +8152,11 @@ export class RpgWorldEngine {
     this.updateOverworldDayNightAtmosphere(dt, this.worldMode === 'overworld');
     this.sunburnFxTimer += dt;
     const ambientMode =
-      this.worldMode === 'overworld' &&
-      this.phase !== 'title' &&
-      this.phase !== 'paused' &&
-      this.phase !== 'gameover'
+      this.phase === 'title' || this.phase === 'paused' || this.phase === 'gameover'
+        ? 'none'
+        : this.worldMode === 'ocean'
+        ? 'deep_sea'
+        : this.worldMode === 'overworld'
         ? this.getCurrentDayPhase() === 'malam'
           ? 'night'
           : 'day'
@@ -8095,6 +8164,7 @@ export class RpgWorldEngine {
     soundEngine.setAmbientMode(ambientMode);
     if (this.phase !== 'playing') {
       soundEngine.setWalking(false);
+      soundEngine.setSwimmingAudio(false);
     }
 
     // Keep Hero breathing, blinking & alive even on title/story/dialogue/pause screens!
@@ -9484,6 +9554,7 @@ export class RpgWorldEngine {
         this.heroPos,
         this.heroYaw,
         this.oceanGear,
+        this.isMobileDevice || this.isLowEndMobile || this.settings.fxLevel !== 'full',
       );
 
       // Oxygen survival check: surface & air vents refill O2; unequipped deep diving drains O2 then HP!
@@ -9729,11 +9800,25 @@ export class RpgWorldEngine {
         this.heroOnGround = false;
         this.swimLeapTimer = 0;
         if (!wasSwimming) {
-          soundEngine.playSplash(Math.min(1.3, 0.72 + Math.abs(this.heroVelY) * 0.06));
-          this.spawnBurst(this.heroPos.x, 0.12, this.heroPos.z, 0xbae6fd, 14);
+          const wasCannonball = this.activeJumpTrick === 'cannonball';
+          if (!this.jumpToSwimPlayedForAir) {
+            soundEngine.playSplash(
+              wasCannonball ? 1.3 : Math.min(1.3, 0.72 + Math.abs(this.heroVelY) * 0.06),
+            );
+          }
+          this.spawnBurst(
+            this.heroPos.x,
+            0.14,
+            this.heroPos.z,
+            0xbae6fd,
+            wasCannonball ? 26 : 15,
+          );
           if (prevHeroY > -0.25 && this.heroVelY < -2.2) {
             this.swimDiveTimer = 0.72;
           }
+          this.activeJumpTrick = null;
+          this.jumpTrickElapsed = 0;
+          this.jumpToSwimPlayedForAir = false;
           this.heroVelY *= 0.25;
         }
         const waveBobY = SWIM_FLOAT_Y + Math.sin(this.elapsed * 3.1 + this.heroPos.x * 0.2) * 0.07;
@@ -9930,13 +10015,32 @@ export class RpgWorldEngine {
       }
     }
 
+    if (this.heroOnGround || this.isSwimming || this.worldMode !== 'overworld') {
+      this.activeJumpTrick = null;
+      this.jumpTrickElapsed = 0;
+      this.jumpToSwimPlayedForAir = false;
+    }
+
     let effectivePoseSwimStyle: SwimStyleId | undefined = this.isSwimming
       ? this.activeSwimStyle
       : undefined;
-    if (!this.isSwimming && !this.heroOnGround && this.worldMode === 'overworld' && this.heroVelY < -1.8) {
+    if (!this.isSwimming && !this.heroOnGround && this.worldMode === 'overworld') {
       const airSample = sampleArchipelagoTerrain(this.heroPos.x, this.heroPos.z);
-      if ((!airSample.isLandOrBridge || airSample.groundY < -0.15) && this.heroPos.y > 0.15) {
-        effectivePoseSwimStyle = 'jump_dive';
+      if ((!airSample.isLandOrBridge || airSample.groundY < -0.15) && this.heroPos.y > -0.15) {
+        if (!this.activeJumpTrick) {
+          this.activeJumpTrick = this.pickRandomJumpTrick();
+          this.jumpTrickElapsed = 0;
+        }
+        if (!this.jumpToSwimPlayedForAir) {
+          soundEngine.playJumpToSwim();
+          this.jumpToSwimPlayedForAir = true;
+        }
+        if (this.heroVelY < -1.8) {
+          effectivePoseSwimStyle = 'jump_dive';
+        }
+      }
+      if (this.activeJumpTrick) {
+        this.jumpTrickElapsed += dt;
       }
     }
 
@@ -9948,6 +10052,18 @@ export class RpgWorldEngine {
     soundEngine.setWalking(
       speed > 0.8 && this.heroOnGround && !this.isSwimming,
       speed > 10.5 ? 1.2 : 1.0,
+    );
+    const isMovingInWater =
+      this.isSwimming &&
+      (speed > 0.35 ||
+        Math.abs(this.heroVelY) > 0.35 ||
+        this.oceanAscendHeld ||
+        this.oceanDescendHeld ||
+        this.swimDiveTimer > 0 ||
+        (this.swimStylePreference !== 'auto' && this.swimStylePreference !== 'water_tread'));
+    soundEngine.setSwimmingAudio(
+      isMovingInWater,
+      isSprintingSwim || speed > 8.6 || this.activeSwimStyle === 'water_dash' ? 1.18 : 1.0,
     );
 
     // Track Hero idle state: any joystick/key/tap move, jump, aim, or shoot immediately cancels idle pose & thought bubble
@@ -10033,6 +10149,8 @@ export class RpgWorldEngine {
       swimBankRoll: this.swimDodgeTimer > 0 ? this.swimDodgeRoll : 0,
       divingGear: this.worldMode === 'ocean' ? Array.from(this.oceanGear) : [],
       ridingTurtle: this.worldMode === 'ocean' && this.ridingTurtle,
+      jumpDiveTrick: this.activeJumpTrick,
+      jumpDiveElapsed: this.jumpTrickElapsed,
     });
 
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
@@ -13520,6 +13638,7 @@ export class RpgWorldEngine {
     this.onPageHideSave();
     this.disposed = true;
     soundEngine.setWalking(false);
+    soundEngine.setSwimmingAudio(false);
     soundEngine.setAmbientMode('none');
     cancelAnimationFrame(this.frameId);
     clearTimeout(this.frameId);
@@ -13543,6 +13662,7 @@ export class RpgWorldEngine {
     this.archipelagoRig?.disposables.forEach((d) => d.dispose());
     this.villageRig?.disposables.forEach((d) => d.dispose());
     this.worldObstaclesRig?.disposables.forEach((d) => d.dispose());
+    this.oceanRig?.disposables.forEach((d) => d.dispose());
     this.palette.dispose();
     this.mapRtMinimap.dispose();
     this.mapRtFull.dispose();
@@ -13553,7 +13673,7 @@ export class RpgWorldEngine {
     this.particleMesh.geometry.dispose();
     (this.particleMesh.material as THREE.Material).dispose();
     this.scene.traverse((obj) => {
-      if (obj instanceof THREE.Mesh) {
+      if (obj instanceof THREE.Mesh && !obj.geometry.userData?.shared) {
         obj.geometry.dispose();
       }
     });

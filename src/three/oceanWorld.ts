@@ -104,6 +104,7 @@ export interface OceanBiotaNode {
   patrolSpeed: number;
   harvestCooldown: number;
   scale: number;
+  lastDimScale?: number;
 }
 
 export interface OceanAirVent {
@@ -197,6 +198,9 @@ export function getOceanZoneInfo(z: number, y: number): {
   return { kind: 'sanctuary', label: 'Taman Karang Dangkal' };
 }
 
+const SHARED_UNIT_BOX_GEO = new THREE.BoxGeometry(1, 1, 1);
+SHARED_UNIT_BOX_GEO.userData.shared = true;
+
 function makeVoxelBox(
   sx: number,
   sy: number,
@@ -206,9 +210,19 @@ function makeVoxelBox(
   y: number,
   z: number,
 ): THREE.Mesh {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), mat);
+  const m = new THREE.Mesh(SHARED_UNIT_BOX_GEO, mat);
+  m.scale.set(sx, sy, sz);
   m.position.set(x, y, z);
   return m;
+}
+
+function freezeSubtreeMatrices(root: THREE.Object3D): void {
+  root.traverse((obj) => {
+    obj.updateMatrix();
+    if (obj !== root || root instanceof THREE.Mesh) {
+      obj.matrixAutoUpdate = false;
+    }
+  });
 }
 
 export function createOceanEnvironment(
@@ -264,10 +278,12 @@ export function createOceanEnvironment(
   const addTerrainInstances = (mats: THREE.Matrix4[], mat: THREE.Material) => {
     if (mats.length === 0) return;
     const im = new THREE.InstancedMesh(tileGeo, mat, mats.length);
-    im.receiveShadow = true;
+    im.receiveShadow = !lowDetail;
     mats.forEach((m, i) => im.setMatrixAt(i, m));
     im.instanceMatrix.needsUpdate = true;
     im.computeBoundingSphere();
+    im.matrixAutoUpdate = false;
+    im.updateMatrix();
     group.add(im);
   };
   addTerrainInstances(sandMatrices, sandLightMat);
@@ -301,6 +317,9 @@ export function createOceanEnvironment(
   fallenPillar.rotation.y = 0.75;
   const stepBase = makeVoxelBox(8.8, 0.8, 4.2, tealReefMat, 0, 0.25, 0);
   ruins.add(colL, colR, lintel, lintelTop, mossCapL, mossCapR, fallenPillar, stepBase);
+  ruins.updateMatrixWorld(true);
+  freezeSubtreeMatrices(ruins);
+  ruins.matrixAutoUpdate = false;
   group.add(ruins);
 
   // Additional sunken stone columns along reef ridge
@@ -313,7 +332,11 @@ export function createOceanEnvironment(
     const py = getOceanFloorY(px, pz);
     const p = makeVoxelBox(1.25, h, 1.25, mossStoneMat, px, py + h * 0.48, pz);
     p.rotation.z = tilt;
+    p.updateMatrix();
+    p.matrixAutoUpdate = false;
     const cap = makeVoxelBox(1.4, 0.5, 1.4, mossGreenMat, px, py + h * 0.92, pz);
+    cap.updateMatrix();
+    cap.matrixAutoUpdate = false;
     group.add(p, cap);
   }
 
@@ -338,10 +361,13 @@ export function createOceanEnvironment(
   const rightCliff = makeVoxelBox(16, 28, 36, abyssRockMat, 39, -15, -36);
   const backCliff = makeVoxelBox(94, 30, 8, abyssRockMat, 0, -16, -54);
   archGroup.add(leftCliff, rightCliff, backCliff);
+  archGroup.updateMatrixWorld(true);
+  freezeSubtreeMatrices(archGroup);
+  archGroup.matrixAutoUpdate = false;
   group.add(archGroup);
 
   // 4. Water Ceiling & Sunbeams (marked isMapHidden so top-down map captures seabed cleanly)
-  const waterCeilGeo = new THREE.PlaneGeometry(110, 110, 18, 18);
+  const waterCeilGeo = new THREE.PlaneGeometry(110, 110, lowDetail ? 4 : 14, lowDetail ? 4 : 14);
   const waterCeilMat = new THREE.MeshBasicMaterial({
     color: 0x38bdf8,
     transparent: true,
@@ -358,7 +384,7 @@ export function createOceanEnvironment(
 
   // Volumetric Sunbeams piercing into the sunlit Foreground Coral Sanctuary
   const sunbeams: THREE.Mesh[] = [];
-  const beamGeo = new THREE.ConeGeometry(4.8, 22, 10, 1, true);
+  const beamGeo = new THREE.ConeGeometry(4.8, 22, lowDetail ? 7 : 10, 1, true);
   const beamMat = new THREE.MeshBasicMaterial({
     color: 0xbae6fd,
     transparent: true,
@@ -376,7 +402,8 @@ export function createOceanEnvironment(
     [18, -9.0, 6],
     [-8, -10.0, -1],
   ];
-  beamCoords.forEach(([bx, by, bz], idx) => {
+  const activeBeamCoords = lowDetail ? beamCoords.slice(0, 3) : beamCoords;
+  activeBeamCoords.forEach(([bx, by, bz], idx) => {
     const beam = new THREE.Mesh(beamGeo, beamMat);
     beam.position.set(bx, by, bz);
     beam.rotation.z = 0.22 + (idx % 2 === 0 ? 0.04 : -0.04);
@@ -387,7 +414,7 @@ export function createOceanEnvironment(
   });
 
   // 5. Floating Underwater Bubbles Particle Field
-  const bubbleCount = lowDetail ? 140 : 280;
+  const bubbleCount = lowDetail ? 80 : 240;
   const bubblePositions = new Float32Array(bubbleCount * 3);
   for (let i = 0; i < bubbleCount; i++) {
     bubblePositions[i * 3] = (Math.random() - 0.5) * 84;
@@ -398,7 +425,7 @@ export function createOceanEnvironment(
   bubbleGeo.setAttribute('position', new THREE.BufferAttribute(bubblePositions, 3));
   const bubbleMat = new THREE.PointsMaterial({
     color: 0xe0f2fe,
-    size: 0.32,
+    size: lowDetail ? 0.38 : 0.32,
     transparent: true,
     opacity: 0.72,
     depthWrite: false,
@@ -414,7 +441,7 @@ export function createOceanEnvironment(
   buoyGroup.position.copy(buoyPos);
   const buoyGold = palette.getMat(0xfacc15, 'emissive');
   const buoyCyan = palette.getMat(0x22d3ee, 'emissive');
-  const buoyBase = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.35, 0.7, 12), buoyGold);
+  const buoyBase = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.35, 0.7, lowDetail ? 8 : 12), buoyGold);
   const buoyBeacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.65, 0), buoyCyan);
   buoyBeacon.position.y = 1.15;
   const chainDepth = Math.abs(getOceanFloorY(0, 33) - buoyPos.y);
@@ -443,20 +470,22 @@ export function createOceanEnvironment(
     emissiveIntensity: 1.4,
     roughness: 0.2,
   });
+  disposables.push(ventGlowMat);
   ventCoords.forEach(([vx, vz], idx) => {
     const vy = getOceanFloorY(vx, vz);
     const vGroup = new THREE.Group();
     vGroup.position.set(vx, vy, vz);
-    const crater = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.4, 0.8, 8), ventStoneMat);
+    const crater = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.4, 0.8, 7), ventStoneMat);
     crater.position.y = 0.4;
-    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.2, 8), ventGlowMat);
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.62, 0.2, 7), ventGlowMat);
     core.position.y = 0.82;
     vGroup.add(crater, core);
 
     const rings: THREE.Mesh[] = [];
-    for (let r = 0; r < 3; r++) {
+    const ringCount = lowDetail ? 2 : 3;
+    for (let r = 0; r < ringCount; r++) {
       const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(0.55 + r * 0.15, 0.08, 6, 12),
+        new THREE.TorusGeometry(0.55 + r * 0.15, 0.08, 5, lowDetail ? 9 : 12),
         ventGlowMat,
       );
       ring.rotation.x = Math.PI / 2;
@@ -563,6 +592,9 @@ export function createOceanEnvironment(
       rig.root.rotation.y = opts.yaw;
     }
     rig.root.userData.oceanBiotaSpecies = speciesId;
+    if ((opts?.patrolMode ?? 'static') === 'static' && rig.parts.length === 0) {
+      freezeSubtreeMatrices(rig.root);
+    }
     group.add(rig.root);
     clickables.push(rig.root);
     biotaNodes.push({
@@ -581,28 +613,32 @@ export function createOceanEnvironment(
       patrolSpeed: opts?.patrolSpeed ?? 0.65,
       harvestCooldown: 0,
       scale,
+      lastDimScale: scale,
     });
   };
 
+  const pickList = <T>(items: T[], mobileMax: number): T[] =>
+    lowDetail ? items.slice(0, Math.min(items.length, mobileMax)) : items;
+
   // Foreground Coral Garden & Reef Terraces (guaranteed peaceful & colorful start!)
   // #1 Brain Coral
-  [[-6, 22, 1.15], [7, 17, 1.05], [-18, 16, 1.25], [2, 6, 1.1], [-10, -1, 1.0]].forEach(
+  pickList([[-6, 22, 1.15], [7, 17, 1.05], [-18, 16, 1.25], [2, 6, 1.1], [-10, -1, 1.0]], 3).forEach(
     ([x, z, sc]) => placeBiota('brain_coral', x, z, { scale: sc }),
   );
   // #2 Fire Coral (DAMAGE: +2 sting if brushed right up against it)
-  [[-19, 20, 1.1], [15, 22, 1.15], [-3, 10, 1.05], [12, -2, 1.2]].forEach(([x, z, sc]) =>
+  pickList([[-19, 20, 1.1], [15, 22, 1.15], [-3, 10, 1.05], [12, -2, 1.2]], 2).forEach(([x, z, sc]) =>
     placeBiota('fire_coral', x, z, { scale: sc }),
   );
   // #3 Blue Staghorn (Calcium yield)
-  [[5, 25, 1.1], [-12, 18, 1.15], [18, 13, 1.2], [-6, 4, 1.15], [10, -10, 1.1]].forEach(
+  pickList([[5, 25, 1.1], [-12, 18, 1.15], [18, 13, 1.2], [-6, 4, 1.15], [10, -10, 1.1]], 3).forEach(
     ([x, z, sc]) => placeBiota('blue_staghorn', x, z, { scale: sc }),
   );
   // #4 Sea Anemone
-  [[4, 21, 1.05], [-8, 15, 1.1], [9, 14, 1.0], [-16, 4, 1.15]].forEach(([x, z, sc]) =>
+  pickList([[4, 21, 1.05], [-8, 15, 1.1], [9, 14, 1.0], [-16, 4, 1.15]], 2).forEach(([x, z, sc]) =>
     placeBiota('sea_anemone', x, z, { scale: sc }),
   );
   // #5 Giant Kelp Forests (tall emerald pillars framing Sanctuary & Reef edge)
-  [
+  pickList([
     [-11, 6, 1.35],
     [-9, 3, 1.5],
     [-14, 1, 1.4],
@@ -611,9 +647,9 @@ export function createOceanEnvironment(
     [11, -3, 1.3],
     [-22, 12, 1.25],
     [22, 16, 1.25],
-  ].forEach(([x, z, sc]) => placeBiota('giant_kelp', x, z, { scale: sc }));
+  ], 4).forEach(([x, z, sc]) => placeBiota('giant_kelp', x, z, { scale: sc }));
   // #6 Seagrass beds
-  [
+  pickList([
     [-3, 24, 1.1],
     [8, 22, 1.1],
     [-15, 23, 1.05],
@@ -621,37 +657,37 @@ export function createOceanEnvironment(
     [-2, 12, 1.05],
     [6, 1, 1.1],
     [-18, -3, 1.1],
-  ].forEach(([x, z, sc]) => placeBiota('seagrass', x, z, { scale: sc }));
+  ], 3).forEach(([x, z, sc]) => placeBiota('seagrass', x, z, { scale: sc }));
   // #7 Bioluminescent Algae (lights up Twilight Slope & Cave Ruins!)
-  [
+  pickList([
     [-8, -5, 1.2],
     [7, -8, 1.25],
     [-16, -12, 1.3],
     [14, -15, 1.25],
     [-3, -17, 1.3],
     [20, -18, 1.2],
-  ].forEach(([x, z, sc]) => placeBiota('bioluminescent_algae', x, z, { scale: sc }));
+  ], 3).forEach(([x, z, sc]) => placeBiota('bioluminescent_algae', x, z, { scale: sc }));
   // #8 Sea Fan
-  [[11, 20, 1.15], [-17, 14, 1.1], [3, 13, 1.1], [-12, 0, 1.2], [17, -6, 1.15]].forEach(
+  pickList([[11, 20, 1.15], [-17, 14, 1.1], [3, 13, 1.1], [-12, 0, 1.2], [17, -6, 1.15]], 3).forEach(
     ([x, z, sc]) => placeBiota('sea_fan', x, z, { scale: sc, yaw: x * 0.2 }),
   );
   // #9 Tiger Cowrie (Shell)
-  [[-5, 26, 1.05], [10, 24, 1.0], [-11, 12, 1.1], [14, 4, 1.05]].forEach(([x, z, sc]) =>
+  pickList([[-5, 26, 1.05], [10, 24, 1.0], [-11, 12, 1.1], [14, 4, 1.05]], 2).forEach(([x, z, sc]) =>
     placeBiota('tiger_cowrie', x, z, { scale: sc, yaw: z * 0.4 }),
   );
   // #10 Giant Clam (Pearl yield!)
-  [[-4, 19, 1.15], [12, 15, 1.2], [-18, 7, 1.25], [4, -4, 1.2], [-14, -15, 1.25]].forEach(
+  pickList([[-4, 19, 1.15], [12, 15, 1.2], [-18, 7, 1.25], [4, -4, 1.2], [-14, -15, 1.25]], 3).forEach(
     ([x, z, sc]) => placeBiota('giant_clam', x, z, { scale: sc, yaw: x * 0.15 }),
   );
   // #11 Clownfish (Cute schools swimming around anemones right where player spawns!)
-  [
+  pickList([
     [3, 21, 3.2],
     [5, 22, 3.8],
     [-7, 16, 3.4],
     [-9, 15, 4.1],
     [8, 14, 3.5],
     [-15, 5, 3.6],
-  ].forEach(([x, z, yOff]) =>
+  ], 3).forEach(([x, z, yOff]) =>
     placeBiota('clownfish', x, z, {
       yOffset: yOff,
       patrolMode: 'swim',
@@ -661,13 +697,13 @@ export function createOceanEnvironment(
     }),
   );
   // #12 Blue Tang (Cute Dory-blue school gliding above the reef!)
-  [
+  pickList([
     [-2, 23, 3.6],
     [6, 18, 4.2],
     [-12, 9, 4.5],
     [11, 8, 4.0],
     [0, 3, 4.4],
-  ].forEach(([x, z, yOff]) =>
+  ], 3).forEach(([x, z, yOff]) =>
     placeBiota('blue_tang', x, z, {
       yOffset: yOff,
       patrolMode: 'swim',
@@ -677,11 +713,11 @@ export function createOceanEnvironment(
     }),
   );
   // #13 Sea Turtle (RARE, MOUNT: Yes — gracefully swimming in Foreground Sanctuary!)
-  [
+  pickList([
     [-3, 18, 4.4],
     [9, 11, 4.8],
     [-11, -3, 5.2],
-  ].forEach(([x, z, yOff]) =>
+  ], 2).forEach(([x, z, yOff]) =>
     placeBiota('sea_turtle', x, z, {
       yOffset: yOff,
       patrolMode: 'swim',
@@ -691,11 +727,11 @@ export function createOceanEnvironment(
     }),
   );
   // #14 Spotted Stingray (Gliding gracefully over sandy reef & twilight slope)
-  [
+  pickList([
     [7, 19, 2.2],
     [-13, 3, 2.6],
     [4, -8, 2.8],
-  ].forEach(([x, z, yOff]) =>
+  ], 2).forEach(([x, z, yOff]) =>
     placeBiota('spotted_stingray', x, z, {
       yOffset: yOff,
       patrolMode: 'swim',
@@ -705,12 +741,12 @@ export function createOceanEnvironment(
     }),
   );
   // #15 Yellow Seahorse (Bobbing gently near Seagrass & Kelp)
-  [
+  pickList([
     [-2, 24, 1.5],
     [9, 21, 1.6],
     [-13, 8, 1.8],
     [13, 3, 1.7],
-  ].forEach(([x, z, yOff]) =>
+  ], 2).forEach(([x, z, yOff]) =>
     placeBiota('yellow_seahorse', x, z, {
       yOffset: yOff,
       patrolMode: 'hover',
@@ -720,11 +756,11 @@ export function createOceanEnvironment(
     }),
   );
   // #16 Chameleon Octopus (RARE)
-  [
+  pickList([
     [-15, 11, 0.25],
     [15, -7, 0.25],
     [-6, -14, 0.25],
-  ].forEach(([x, z, yOff]) =>
+  ], 2).forEach(([x, z, yOff]) =>
     placeBiota('chameleon_octopus', x, z, {
       yOffset: yOff,
       patrolMode: 'crawl',
@@ -734,12 +770,12 @@ export function createOceanEnvironment(
     }),
   );
   // #17 Spiny Lobster (Food yield)
-  [
+  pickList([
     [-12, 13, 0.05],
     [11, 7, 0.05],
     [-9, -8, 0.05],
     [12, -13, 0.05],
-  ].forEach(([x, z, yOff]) =>
+  ], 2).forEach(([x, z, yOff]) =>
     placeBiota('spiny_lobster', x, z, {
       yOffset: yOff,
       patrolMode: 'crawl',
@@ -749,12 +785,12 @@ export function createOceanEnvironment(
     }),
   );
   // #18 Box Crab (Food yield)
-  [
+  pickList([
     [2, 24, 0.05],
     [-7, 20, 0.05],
     [14, 16, 0.05],
     [-4, 5, 0.05],
-  ].forEach(([x, z, yOff]) =>
+  ], 2).forEach(([x, z, yOff]) =>
     placeBiota('box_crab', x, z, {
       yOffset: yOff,
       patrolMode: 'crawl',
@@ -764,24 +800,24 @@ export function createOceanEnvironment(
     }),
   );
   // #19 Starfish (Shell yield)
-  [
+  pickList([
     [-1, 25, 0.04],
     [6, 23, 0.04],
     [-9, 17, 0.04],
     [12, 11, 0.04],
     [-5, 2, 0.04],
-  ].forEach(([x, z, yOff]) =>
+  ], 3).forEach(([x, z, yOff]) =>
     placeBiota('starfish', x, z, { yOffset: yOff, scale: 1.05, yaw: x * 0.4 }),
   );
   // #20 Glowing Jellyfish (RARE, LIGHT: 8m — floating softly across Reef & Twilight Slope)
-  [
+  pickList([
     [-16, 19, 5.2],
     [8, 9, 5.8],
     [-4, -6, 6.2],
     [12, -11, 6.0],
     [-14, -18, 6.6],
     [2, -21, 6.4],
-  ].forEach(([x, z, yOff]) =>
+  ], 3).forEach(([x, z, yOff]) =>
     placeBiota('glowing_jellyfish', x, z, {
       yOffset: yOff,
       patrolMode: 'hover',
@@ -831,6 +867,7 @@ export function updateOceanWorld(
   heroPos: THREE.Vector3,
   heroYaw: number,
   ownedGear: Set<DivingGearId>,
+  lowDetail = false,
 ): void {
   // Subtle surface ripple & sunbeam sway
   rig.surfaceMesh.position.y = Math.sin(elapsed * 1.4) * 0.08;
@@ -856,6 +893,10 @@ export function updateOceanWorld(
 
   // Air Vents rising rings
   for (const vent of rig.airVents) {
+    const ventDistSq =
+      (vent.x - heroPos.x) * (vent.x - heroPos.x) +
+      (vent.z - heroPos.z) * (vent.z - heroPos.z);
+    if (lowDetail && ventDistSq > 46 * 46) continue;
     vent.rings.forEach((ring, idx) => {
       const cycle = ((elapsed * 0.75 + idx * 0.33) % 1);
       ring.position.y = 1.0 + cycle * 4.5;
@@ -888,19 +929,23 @@ export function updateOceanWorld(
     heroPos.z + Math.cos(heroYaw) * 1.4,
   );
 
-  // Animate all 20 Sea Biota species
+  // Animate all 20 Sea Biota species with mobile distance culling & scale dirty-guard
+  const cullDistSq = lowDetail ? 40 * 40 : 68 * 68;
   for (const node of rig.biotaNodes) {
     if (node.harvestCooldown > 0) {
       node.harvestCooldown = Math.max(0, node.harvestCooldown - dt);
     }
-    const dim = node.harvestCooldown > 0 ? 0.76 : 1.0;
-    node.rig.root.scale.setScalar(node.scale * dim);
+    const nextScale = node.scale * (node.harvestCooldown > 0 ? 0.76 : 1.0);
+    if (node.lastDimScale !== nextScale) {
+      node.rig.root.scale.setScalar(nextScale);
+      node.lastDimScale = nextScale;
+    }
 
-    const distSq =
-      (node.x - heroPos.x) ** 2 +
-      (node.y - heroPos.y) ** 2 +
-      (node.z - heroPos.z) ** 2;
-    if (distSq > 75 * 75) continue;
+    const dxH = node.x - heroPos.x;
+    const dyH = node.y - heroPos.y;
+    const dzH = node.z - heroPos.z;
+    const distSq = dxH * dxH + dyH * dyH + dzH * dzH;
+    if (distSq > cullDistSq) continue;
 
     if (node.patrolMode === 'swim') {
       const t = elapsed * node.patrolSpeed + node.phase;
