@@ -95,6 +95,7 @@ import {
   createNpcGuardPost,
   GuardPostRig,
   MinecraftVillageRig,
+  resolveObstacleBoxes,
   updateMinecraftVillage,
   VillageObstacle,
 } from './minecraftVillage';
@@ -598,6 +599,11 @@ export class RpgWorldEngine {
   private worldObstaclesRig!: WorldObstaclesRig;
   private heroOnIce = false;
   private extraVillageColliders: VillageObstacle[] = [];
+  private _desaColScratch = { x: 0, z: 0 };
+  private _desaPickupBoxes: VillageObstacle[] = [
+    { x: OVERWORLD_ANCHORS.starterWeapon.x, z: OVERWORLD_ANCHORS.starterWeapon.z, halfW: 0.78, halfD: 0.78 },
+    { x: OVERWORLD_ANCHORS.swimSuit.x, z: OVERWORLD_ANCHORS.swimSuit.z, halfW: 0.78, halfD: 0.78 },
+  ];
   private dungeonRig: DungeonArenaRig | null = null;
   private academyRig: AcademyHallRig | null = null;
   private oceanRig: OceanWorldRig | null = null;
@@ -1618,9 +1624,9 @@ export class RpgWorldEngine {
     const px = OVERWORLD_ANCHORS.portal.x;
     const pz = OVERWORLD_ANCHORS.portal.z;
     this.villageRig.obstacles.push(
-      // Desa Sapaan 12m x 10m Village Houses (left stepped terraces)
-      { x: -13.5, z: 84.0, halfW: 6.0, halfD: 5.0 },
-      { x: -20.0, z: 118.0, halfW: 5.5, halfD: 6.2 },
+      // Desa Sapaan 12m x 10m Village Houses (left stepped terraces, exact OBB rotation)
+      { x: -13.5, z: 84.0, halfW: 6.15, halfD: 5.15, rotY: 0.35 },
+      { x: -20.0, z: 118.0, halfW: 6.15, halfD: 5.15, rotY: 1.15 },
       // Portal Arch stone piers in Gua Portal (center doorway stays passable)
       { x: px - 3.9, z: pz, halfW: 1.15, halfD: 1.25 },
       { x: px + 3.9, z: pz, halfW: 1.15, halfD: 1.25 },
@@ -2026,28 +2032,110 @@ export class RpgWorldEngine {
         sz = pt.z + Math.sin(angle) * (pt.minR + 2.5);
       }
     }
-    // Nudge out of village buildings/trees/obstacles
-    for (let pass = 0; pass < 2; pass++) {
-      for (const obs of this.villageRig.obstacles) {
-        const cx = THREE.MathUtils.clamp(sx, obs.x - obs.halfW, obs.x + obs.halfW);
-        const cz = THREE.MathUtils.clamp(sz, obs.z - obs.halfD, obs.z + obs.halfD);
-        const dx = sx - cx;
-        const dz = sz - cz;
-        const distSq = dx * dx + dz * dz;
-        if (distSq < 1.8 * 1.8) {
-          if (distSq > 0.001) {
-            const d = Math.sqrt(distSq);
-            sx += (dx / d) * (1.85 - d);
-            sz += (dz / d) * (1.85 - d);
-          } else {
-            sx += obs.halfW + 1.8;
-          }
-        }
-      }
-    }
+    // Nudge out of village buildings/trees/obstacles (supports rotated OBBs)
     const clampPt = { x: sx, z: sz };
+    resolveObstacleBoxes(clampPt, 1.85, this.villageRig.obstacles);
     constrainToWalkableArchipelago(clampPt, 1.3);
     return clampPt;
+  }
+
+  private isInDesaSapaanArea(x: number, z: number): boolean {
+    return z >= 52 && z <= 185 && x >= -68 && x <= 68;
+  }
+
+  private resolveActiveDesaPickupBoxes(pos: { x: number; z: number }, radius: number): void {
+    if (pos.z < 119 || pos.z > 144 || pos.x < -16 || pos.x > 0) return;
+    if (!this.starterWeaponPicked && this.starterPickupMesh.visible) {
+      this._desaPickupBoxes[0].halfW = 0.78;
+      this._desaPickupBoxes[0].halfD = 0.78;
+    } else {
+      this._desaPickupBoxes[0].halfW = -10;
+      this._desaPickupBoxes[0].halfD = -10;
+    }
+    if (!this.swimSuitPicked && this.swimSuitPickupMesh.visible) {
+      this._desaPickupBoxes[1].halfW = 0.78;
+      this._desaPickupBoxes[1].halfD = 0.78;
+    } else {
+      this._desaPickupBoxes[1].halfW = -10;
+      this._desaPickupBoxes[1].halfD = -10;
+    }
+    if (this._desaPickupBoxes[0].halfW > 0 || this._desaPickupBoxes[1].halfW > 0) {
+      resolveObstacleBoxes(pos, radius, this._desaPickupBoxes);
+    }
+  }
+
+  private pushCircle2d(
+    pos: { x: number; z: number },
+    ex: number,
+    ez: number,
+    minD: number,
+    scale = 1.0,
+  ): void {
+    const dx = pos.x - ex;
+    if (dx > minD || dx < -minD) return;
+    const dz = pos.z - ez;
+    if (dz > minD || dz < -minD) return;
+    const dSq = dx * dx + dz * dz;
+    if (dSq >= minD * minD) return;
+    if (dSq > 0.0001) {
+      const d = Math.sqrt(dSq);
+      const push = (minD - d) * scale;
+      pos.x += (dx / d) * push;
+      pos.z += (dz / d) * push;
+    } else {
+      pos.z += minD * scale;
+    }
+  }
+
+  private resolveDesaLivingSeparation(
+    pos: { x: number; z: number },
+    selfRad: number,
+    groundY: number,
+    selfMonster?: RoamingMonster,
+    selfShooter?: EnemyShooter,
+    selfNpcId?: string,
+    skipHero = false,
+    heroMinDistOverride?: number,
+  ): void {
+    for (let i = 0; i < this.monsters.length; i++) {
+      const om = this.monsters[i];
+      if (!om.alive || om === selfMonster || om.isSkyMonster || om.isSeaMonster) continue;
+      if (!this.isInDesaSapaanArea(om.x, om.z)) continue;
+      const oRad = 0.78 * MONSTER_SPECS[om.type].baseScale;
+      this.pushCircle2d(pos, om.x, om.z, selfRad + oRad, 0.55);
+    }
+    for (let i = 0; i < this.shooters.length; i++) {
+      const os = this.shooters[i];
+      if (!os.alive || os === selfShooter || !this.isInDesaSapaanArea(os.x, os.z)) continue;
+      this.pushCircle2d(pos, os.x, os.z, selfRad + 0.85, 0.55);
+    }
+    for (const [nid, npc] of this.npcs.entries()) {
+      if (nid === selfNpcId || !this.isInDesaSapaanArea(npc.x, npc.z)) continue;
+      this.pushCircle2d(pos, npc.x, npc.z, selfRad + 0.62, 0.85);
+    }
+    for (let i = 0; i < this.villageRig.villagers.length; i++) {
+      const v = this.villageRig.villagers[i];
+      if (v.isInsideHouse || !this.isInDesaSapaanArea(v.x, v.z)) continue;
+      this.pushCircle2d(pos, v.x, v.z, selfRad + 0.56, 0.65);
+    }
+    for (let i = 0; i < this.villageRig.golems.length; i++) {
+      const g = this.villageRig.golems[i];
+      if (!this.isInDesaSapaanArea(g.x, g.z)) continue;
+      this.pushCircle2d(pos, g.x, g.z, selfRad + 0.92, 0.85);
+    }
+    if (
+      !skipHero &&
+      Math.abs(this.heroPos.y - groundY) <= 2.4 &&
+      this.isInDesaSapaanArea(this.heroPos.x, this.heroPos.z)
+    ) {
+      this.pushCircle2d(
+        pos,
+        this.heroPos.x,
+        this.heroPos.z,
+        heroMinDistOverride ?? selfRad + 0.72,
+        0.75,
+      );
+    }
   }
 
   private restoreNightMonstersFromSave(): void {
@@ -9266,13 +9354,34 @@ export class RpgWorldEngine {
           m.x = THREE.MathUtils.clamp(nextMx, -18, 18);
           m.z = THREE.MathUtils.clamp(nextMz, -18, 18);
         } else {
-          for (const obs of this.villageRig.obstacles) {
-            pushBrawlerBox(obs.x, obs.z, obs.halfW, obs.halfD);
-          }
-          const mobClamp = { x: nextMx, z: nextMz };
+          const mobClamp = this._desaColScratch;
+          mobClamp.x = nextMx;
+          mobClamp.z = nextMz;
+          resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles);
+          this.resolveActiveDesaPickupBoxes(mobClamp, mRad);
           resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
           if (this.worldObstaclesRig) {
             resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
+          }
+          if (this.isInDesaSapaanArea(mobClamp.x, mobClamp.z)) {
+            const bGroundY = getArchipelagoGroundY(mobClamp.x, mobClamp.z);
+            const heroMinD = Math.min(2.0, 0.65 + spec.hitRadius * 0.62);
+            this.resolveDesaLivingSeparation(
+              mobClamp,
+              mRad,
+              bGroundY,
+              m,
+              undefined,
+              undefined,
+              false,
+              heroMinD,
+            );
+            resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles);
+            this.resolveActiveDesaPickupBoxes(mobClamp, mRad);
+            resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
+            if (this.worldObstaclesRig) {
+              resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
+            }
           }
           constrainToWalkableArchipelago(mobClamp, 0.95);
           m.x = mobClamp.x;
@@ -9358,22 +9467,34 @@ export class RpgWorldEngine {
           }
         } else if (this.worldMode === 'overworld') {
           const mRad = 0.85 * spec.baseScale;
-          for (const obs of this.villageRig.obstacles) {
-            const cx = THREE.MathUtils.clamp(nextMx, obs.x - obs.halfW, obs.x + obs.halfW);
-            const cz = THREE.MathUtils.clamp(nextMz, obs.z - obs.halfD, obs.z + obs.halfD);
-            const dx = nextMx - cx;
-            const dz = nextMz - cz;
-            const distSq = dx * dx + dz * dz;
-            if (distSq < mRad * mRad && distSq > 0.0001) {
-              const d = Math.sqrt(distSq);
-              nextMx += (dx / d) * (mRad - d);
-              nextMz += (dz / d) * (mRad - d);
-            }
-          }
-          const mobClamp = { x: nextMx, z: nextMz };
+          const mobClamp = this._desaColScratch;
+          mobClamp.x = nextMx;
+          mobClamp.z = nextMz;
+          resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles);
+          this.resolveActiveDesaPickupBoxes(mobClamp, mRad);
           resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
           if (this.worldObstaclesRig) {
             resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
+          }
+          if (this.isInDesaSapaanArea(mobClamp.x, mobClamp.z)) {
+            const qGroundY = getArchipelagoGroundY(mobClamp.x, mobClamp.z);
+            const heroMinD = Math.min(2.05, 0.68 + spec.hitRadius * 0.65);
+            this.resolveDesaLivingSeparation(
+              mobClamp,
+              mRad,
+              qGroundY,
+              m,
+              undefined,
+              undefined,
+              false,
+              heroMinD,
+            );
+            resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles);
+            this.resolveActiveDesaPickupBoxes(mobClamp, mRad);
+            resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
+            if (this.worldObstaclesRig) {
+              resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
+            }
           }
           constrainToWalkableArchipelago(mobClamp, 0.95);
           nextMx = mobClamp.x;
@@ -9472,6 +9593,35 @@ export class RpgWorldEngine {
         halfW: 0.65,
         halfD: 0.65,
       });
+    }
+    if (!this.starterWeaponPicked && this.starterPickupMesh.visible) {
+      this.extraVillageColliders.push({
+        x: OVERWORLD_ANCHORS.starterWeapon.x,
+        z: OVERWORLD_ANCHORS.starterWeapon.z,
+        halfW: 0.78,
+        halfD: 0.78,
+      });
+    }
+    if (!this.swimSuitPicked && this.swimSuitPickupMesh.visible) {
+      this.extraVillageColliders.push({
+        x: OVERWORLD_ANCHORS.swimSuit.x,
+        z: OVERWORLD_ANCHORS.swimSuit.z,
+        halfW: 0.78,
+        halfD: 0.78,
+      });
+    }
+    for (let i = 0; i < this.monsters.length; i++) {
+      const m = this.monsters[i];
+      if (!m.alive || m.isSkyMonster || m.isSeaMonster || !this.isInDesaSapaanArea(m.x, m.z)) {
+        continue;
+      }
+      const r = 0.75 * MONSTER_SPECS[m.type].baseScale;
+      this.extraVillageColliders.push({ x: m.x, z: m.z, halfW: r, halfD: r });
+    }
+    for (let i = 0; i < this.shooters.length; i++) {
+      const s = this.shooters[i];
+      if (!s.alive || !this.isInDesaSapaanArea(s.x, s.z)) continue;
+      this.extraVillageColliders.push({ x: s.x, z: s.z, halfW: 0.82, halfD: 0.82 });
     }
     appendVehicleVillageColliders(this.archipelagoRig, this.extraVillageColliders);
     updateMinecraftVillage(
@@ -9624,6 +9774,46 @@ export class RpgWorldEngine {
             npc.mesh.position.set(bedX, npc.guardPost.bedY, bedZ);
           }
         }
+      }
+
+      if (npc.poseMode === 'walk' && this.isInDesaSapaanArea(npc.x, npc.z)) {
+        const npcCol = this._desaColScratch;
+        npcCol.x = npc.x;
+        npcCol.z = npc.z;
+        const nRad = 0.62;
+        const ownPostObs = npc.guardPost.obstacles[0];
+        const nearOwnBed =
+          Math.hypot(npcCol.x - npc.guardPost.bedX, npcCol.z - npc.guardPost.bedZ) < 2.6;
+        const prevObsHw = ownPostObs ? ownPostObs.halfW : 0;
+        const prevObsHd = ownPostObs ? ownPostObs.halfD : 0;
+        if (ownPostObs && nearOwnBed) {
+          ownPostObs.halfW = -10;
+          ownPostObs.halfD = -10;
+        }
+        resolveObstacleBoxes(npcCol, nRad, this.villageRig.obstacles);
+        this.resolveActiveDesaPickupBoxes(npcCol, nRad);
+        resolveArchipelagoVehicleCollisions(this.archipelagoRig, npcCol, nRad, 2.2);
+        if (this.worldObstaclesRig) {
+          resolveSolidObstacleCollisions(this.worldObstaclesRig, npcCol, nRad, 2.2);
+        }
+        this.resolveDesaLivingSeparation(
+          npcCol,
+          nRad,
+          getArchipelagoGroundY(npcCol.x, npcCol.z),
+          undefined,
+          undefined,
+          npcId,
+        );
+        resolveObstacleBoxes(npcCol, nRad, this.villageRig.obstacles);
+        this.resolveActiveDesaPickupBoxes(npcCol, nRad);
+        if (ownPostObs && nearOwnBed) {
+          ownPostObs.halfW = prevObsHw;
+          ownPostObs.halfD = prevObsHd;
+        }
+        constrainToWalkableArchipelago(npcCol, nRad);
+        npc.x = npcCol.x;
+        npc.z = npcCol.z;
+        npc.mesh.position.set(npc.x, getArchipelagoGroundY(npc.x, npc.z), npc.z);
       }
 
       const npcGroundY =
@@ -10393,22 +10583,8 @@ export class RpgWorldEngine {
 
       // Resolve smooth collisions against cottages, rocks, fences, towers & walls
       const heroRad = 0.72;
-      for (const obs of this.villageRig.obstacles) {
-        const cx = THREE.MathUtils.clamp(this.heroPos.x, obs.x - obs.halfW, obs.x + obs.halfW);
-        const cz = THREE.MathUtils.clamp(this.heroPos.z, obs.z - obs.halfD, obs.z + obs.halfD);
-        const dx = this.heroPos.x - cx;
-        const dz = this.heroPos.z - cz;
-        const distSq = dx * dx + dz * dz;
-        if (distSq < heroRad * heroRad) {
-          if (distSq > 0.0001) {
-            const d = Math.sqrt(distSq);
-            this.heroPos.x += (dx / d) * (heroRad - d);
-            this.heroPos.z += (dz / d) * (heroRad - d);
-          } else {
-            this.heroPos.z = obs.z + obs.halfD + heroRad;
-          }
-        }
-      }
+      resolveObstacleBoxes(this.heroPos, heroRad, this.villageRig.obstacles);
+      this.resolveActiveDesaPickupBoxes(this.heroPos, heroRad);
 
       // Prevent clipping through moving & parked vehicles (Bus, Sedan, Taxi, Police Car, Minecart)
       const vehicleCol = resolveArchipelagoVehicleCollisions(
@@ -10426,7 +10602,9 @@ export class RpgWorldEngine {
       const pushHeroCircle = (ex: number, ey: number, ez: number, minD: number, verticalTol = 2.2) => {
         if (Math.abs(this.heroPos.y - ey) > verticalTol) return;
         const dx = this.heroPos.x - ex;
+        if (dx > minD || dx < -minD) return;
         const dz = this.heroPos.z - ez;
+        if (dz > minD || dz < -minD) return;
         const dSq = dx * dx + dz * dz;
         if (dSq >= minD * minD) return;
         if (dSq > 0.0001) {
@@ -10475,11 +10653,24 @@ export class RpgWorldEngine {
       }
       for (const m of this.monsters) {
         if (!m.alive) continue;
-        if (!m.isCaveMob && !m.combatOnly && this.encounterGraceTimer <= 0) continue;
+        const inDesa = this.isInDesaSapaanArea(m.x, m.z);
+        if (!m.isCaveMob && !m.combatOnly && this.encounterGraceTimer <= 0 && !inDesa) continue;
         const spec = MONSTER_SPECS[m.type];
-        const minD = 0.68 + spec.hitRadius * 0.65;
+        const minD =
+          !m.combatOnly && inDesa
+            ? Math.min(2.05, 0.68 + spec.hitRadius * 0.65)
+            : 0.68 + spec.hitRadius * 0.65;
         const my = m.y ?? getArchipelagoGroundY(m.x, m.z);
         pushHeroCircle(m.x, my, m.z, minD, 2.4);
+      }
+
+      if (this.isInDesaSapaanArea(this.heroPos.x, this.heroPos.z)) {
+        resolveObstacleBoxes(this.heroPos, heroRad, this.villageRig.obstacles);
+        this.resolveActiveDesaPickupBoxes(this.heroPos, heroRad);
+        resolveArchipelagoVehicleCollisions(this.archipelagoRig, this.heroPos, heroRad, 2.55);
+        if (this.worldObstaclesRig) {
+          resolveSolidObstacleCollisions(this.worldObstaclesRig, this.heroPos, 0.66, 2.55);
+        }
       }
 
       resolveHeroTerrainWalls();
@@ -12321,16 +12512,33 @@ export class RpgWorldEngine {
       };
 
       if (this.worldMode === 'overworld') {
-        for (const obs of this.villageRig.obstacles) {
-          pushShooterBox(obs.x, obs.z, obs.halfW, obs.halfD);
-        }
-        for (const npc of this.npcs.values()) {
-          pushShooterBox(npc.x, npc.z, 0.7);
-        }
-        const sClamp = { x: nextSx, z: nextSz };
+        const sClamp = this._desaColScratch;
+        sClamp.x = nextSx;
+        sClamp.z = nextSz;
+        resolveObstacleBoxes(sClamp, sRad, this.villageRig.obstacles);
+        this.resolveActiveDesaPickupBoxes(sClamp, sRad);
         resolveArchipelagoVehicleCollisions(this.archipelagoRig, sClamp, sRad, 2.2);
         if (this.worldObstaclesRig) {
           resolveSolidObstacleCollisions(this.worldObstaclesRig, sClamp, sRad, 2.2);
+        }
+        if (this.isInDesaSapaanArea(sClamp.x, sClamp.z)) {
+          this.resolveDesaLivingSeparation(
+            sClamp,
+            sRad,
+            getArchipelagoGroundY(sClamp.x, sClamp.z),
+            undefined,
+            s,
+          );
+          resolveObstacleBoxes(sClamp, sRad, this.villageRig.obstacles);
+          this.resolveActiveDesaPickupBoxes(sClamp, sRad);
+          resolveArchipelagoVehicleCollisions(this.archipelagoRig, sClamp, sRad, 2.2);
+          if (this.worldObstaclesRig) {
+            resolveSolidObstacleCollisions(this.worldObstaclesRig, sClamp, sRad, 2.2);
+          }
+        } else {
+          for (const npc of this.npcs.values()) {
+            this.pushCircle2d(sClamp, npc.x, npc.z, sRad + 0.7);
+          }
         }
         constrainToWalkableArchipelago(sClamp, 0.88);
         nextSx = sClamp.x;
@@ -12428,7 +12636,22 @@ export class RpgWorldEngine {
       if (this.worldMode === 'overworld') {
         let hitSolid = false;
         for (const obs of this.villageRig.obstacles) {
-          if (Math.abs(p.x - obs.x) < obs.halfW + 0.16 && Math.abs(p.z - obs.z) < obs.halfD + 0.16) {
+          let insideObs = false;
+          if (obs.rotY) {
+            const span = obs.halfW + obs.halfD + 0.16;
+            const rx = p.x - obs.x;
+            const rz = p.z - obs.z;
+            if (Math.abs(rx) <= span && Math.abs(rz) <= span) {
+              const cos = Math.cos(obs.rotY);
+              const sin = Math.sin(obs.rotY);
+              const lx = rx * cos - rz * sin;
+              const lz = rx * sin + rz * cos;
+              insideObs = Math.abs(lx) < obs.halfW + 0.16 && Math.abs(lz) < obs.halfD + 0.16;
+            }
+          } else {
+            insideObs = Math.abs(p.x - obs.x) < obs.halfW + 0.16 && Math.abs(p.z - obs.z) < obs.halfD + 0.16;
+          }
+          if (insideObs) {
             const baseY = getArchipelagoGroundY(obs.x, obs.z);
             const obsH = obs.halfW >= 2.2 ? 6.8 : 4.0;
             if (p.y >= baseY - 0.2 && p.y <= baseY + obsH) {

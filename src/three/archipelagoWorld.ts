@@ -2748,7 +2748,11 @@ export function createArchipelagoWorld(
     }
     mill.add(mPlinth, mBase, mTrim, mTower, mDoor, windmillHub);
     group.add(mill);
-    obstacles.push({ x: millX, z: millZ, halfW: 3.4, halfD: 3.4 });
+    obstacles.push(
+      { x: millX, z: millZ, halfW: 3.15, halfD: 3.2, rotY: 0.65 },
+      { x: -28.5, z: 99.5, halfW: 0.62, halfD: 0.62 },
+      { x: -27.2, z: 100.6, halfW: 0.5, halfD: 0.5 },
+    );
 
     // Wooden crates beside the windmill
     [
@@ -2811,10 +2815,14 @@ export function createArchipelagoWorld(
       torchesFlame.push(tFlame);
       group.add(tFlame);
     });
-    // Arch pillar + cavern backwall colliders (central wooden deck & mouth stay walkable!)
+    // Arch pillar, inner cheeks, torch pedestals + cavern backwall colliders (central wooden deck & mouth stay walkable!)
     obstacles.push(
       { x: 28.0, z: 110.2, halfW: 2.4, halfD: 1.8 },
       { x: 28.0, z: 125.8, halfW: 2.4, halfD: 1.8 },
+      { x: 26.8, z: 111.7, halfW: 1.45, halfD: 0.95 },
+      { x: 26.8, z: 124.3, halfW: 1.45, halfD: 0.95 },
+      { x: 20.5, z: 111.5, halfW: 0.72, halfD: 0.72 },
+      { x: 20.5, z: 124.5, halfW: 0.72, halfD: 0.72 },
       { x: 32.0, z: 118.0, halfW: 2.6, halfD: 5.5 },
     );
 
@@ -2822,6 +2830,7 @@ export function createArchipelagoWorld(
     const signY = getArchipelagoGroundY(-1.5, 131.5);
     cliffBlocks.push({ x: -1.5, y: signY + 1.1, z: 131.5, sx: 0.35, sy: 2.2, sz: 0.35, color: 0x5c3a1e });
     cliffBlocks.push({ x: -1.5, y: signY + 1.85, z: 131.5, sx: 1.8, sy: 0.95, sz: 0.28, color: 0xb88a4c });
+    obstacles.push({ x: -1.5, z: 131.5, halfW: 0.92, halfD: 0.32 });
 
     // Pohon Desa (T: 6m - 10m!) stylized voxel oak trees across terraces & meadow
     const desaTreeSpots: Array<[number, number, number, number]> = [

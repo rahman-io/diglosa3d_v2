@@ -2235,6 +2235,10 @@ export function resolveSolidObstacleCollisions(
       case 'bouncy_pad':
         applyBox(0, 0, 1.55, 1.55, 0, 1.2);
         break;
+      case 'treadmill_spikes':
+        applyBox(-2.2, 0, 0.22, 3.2, 0, 0.55);
+        applyBox(2.2, 0, 0.22, 3.2, 0, 0.55);
+        break;
       case 'moving_platforms':
         for (let p = 0; p < inst.movingPlatforms.length; p++) {
           const mp = inst.movingPlatforms[p];
