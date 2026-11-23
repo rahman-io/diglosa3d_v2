@@ -25,6 +25,10 @@ import {
   RoomChatMessage,
   WebRtcSignalDoc,
 } from '../types/game';
+import {
+  generateRandomWaveSeed,
+  rollRandomWaveCount,
+} from '../three/waveGenerator';
 
 const ROOMS_COLLECTION = 'rooms';
 export const MAX_MULTIPLAYER_PLAYERS = 6;
@@ -78,6 +82,12 @@ function sanitizeDisplayName(raw: string | null | undefined, fallback = 'Petuala
   return (cleaned || fallback).slice(0, 40);
 }
 
+export function sanitizeGroupName(raw: string | null | undefined, fallback = 'ELITE SQUAD'): string {
+  const cleaned = (raw || fallback).trim().replace(/\s+/g, ' ');
+  const sliced = (cleaned || fallback).slice(0, 32);
+  return sliced.length >= 2 ? sliced : fallback;
+}
+
 export function generateRoomCode(length = 6): string {
   let code = '';
   for (let i = 0; i < length; i++) {
@@ -110,6 +120,7 @@ export interface JoinOrCreateRoomResult {
 
 export async function createGroupRoom(params: {
   displayName: string;
+  groupName?: string;
   characterId: CharacterPresetId;
   difficulty: DifficultyMode;
 }): Promise<JoinOrCreateRoomResult> {
@@ -119,6 +130,10 @@ export async function createGroupRoom(params: {
   }
 
   const hostName = sanitizeDisplayName(params.displayName, user.displayName || 'Host');
+  const firstWord = hostName.split(' ')[0]?.toUpperCase() || 'ELITE';
+  const groupName = sanitizeGroupName(params.groupName, `${firstWord} SQUAD`);
+  const waveSeed = generateRandomWaveSeed();
+  const waveCount = rollRandomWaveCount(waveSeed);
   const code = generateRoomCode(6);
   const roomId = code;
   const roomPath = `${ROOMS_COLLECTION}/${roomId}`;
@@ -132,9 +147,12 @@ export async function createGroupRoom(params: {
     status: 'waiting',
     hostUid: user.uid,
     hostName,
+    groupName,
     difficulty: params.difficulty,
     maxPlayers: MAX_MULTIPLAYER_PLAYERS,
     memberCount: 1,
+    waveSeed,
+    waveCount,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -284,6 +302,7 @@ export async function joinRoomByCode(params: {
 
 export async function findOrCreatePublicRoom(params: {
   displayName: string;
+  groupName?: string;
   characterId: CharacterPresetId;
   difficulty: DifficultyMode;
 }): Promise<JoinOrCreateRoomResult> {
@@ -381,6 +400,9 @@ export async function findOrCreatePublicRoom(params: {
   const roomId = `PUB_${code}`;
   const roomPath = `${ROOMS_COLLECTION}/${roomId}`;
   const spawnIndex = Math.floor(Math.random() * 8);
+  const groupName = sanitizeGroupName(params.groupName, `SKUAD ${code}`);
+  const waveSeed = generateRandomWaveSeed();
+  const waveCount = rollRandomWaveCount(waveSeed);
 
   const roomDoc: MultiplayerRoomDoc = {
     roomId,
@@ -389,9 +411,12 @@ export async function findOrCreatePublicRoom(params: {
     status: 'waiting',
     hostUid: user.uid,
     hostName: displayName,
+    groupName,
     difficulty: params.difficulty,
     maxPlayers: MAX_MULTIPLAYER_PLAYERS,
     memberCount: 1,
+    waveSeed,
+    waveCount,
     createdAt: serverTimestamp(),
     updatedAt: serverTimestamp(),
   };
@@ -442,16 +467,38 @@ export async function updateMyMemberProfile(params: {
   }
 }
 
-export async function startMultiplayerMatch(
+export async function updateRoomGroupName(
   roomId: string,
-  difficulty?: DifficultyMode,
+  groupName: string,
 ): Promise<void> {
   const user = auth.currentUser;
   if (!user || !user.emailVerified) return;
   const roomPath = `${ROOMS_COLLECTION}/${roomId}`;
   try {
+    await updateDoc(doc(db, ROOMS_COLLECTION, roomId), {
+      groupName: sanitizeGroupName(groupName, 'ELITE SQUAD'),
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    handleFirestoreError(error, OperationType.UPDATE, roomPath);
+  }
+}
+
+export async function startMultiplayerMatch(
+  roomId: string,
+  difficulty?: DifficultyMode,
+  presetWave?: { waveSeed: number; waveCount: number },
+): Promise<{ waveSeed: number; waveCount: number }> {
+  const waveSeed = presetWave?.waveSeed || generateRandomWaveSeed();
+  const waveCount = presetWave?.waveCount || rollRandomWaveCount(waveSeed);
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return { waveSeed, waveCount };
+  const roomPath = `${ROOMS_COLLECTION}/${roomId}`;
+  try {
     const payload: Record<string, unknown> = {
       status: 'playing',
+      waveSeed,
+      waveCount,
       updatedAt: serverTimestamp(),
     };
     if (difficulty) {
@@ -461,6 +508,7 @@ export async function startMultiplayerMatch(
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, roomPath);
   }
+  return { waveSeed, waveCount };
 }
 
 export async function checkSavedRoomMembership(

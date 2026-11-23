@@ -79,6 +79,8 @@ import {
   SwimStylePreference,
   SyncMonsterSnapshot,
   SyncShooterSnapshot,
+  WaveMissionState,
+  WaveMonsterGroupSummary,
   WeaponId,
   WordProgress,
   WorldLocationMode,
@@ -184,6 +186,10 @@ import {
   SEA_MONSTER_SPAWNS,
   SKY_MONSTER_SPAWNS,
 } from './monstersCatalog';
+import {
+  generateRandomSurfaceWave,
+  summarizeWaveMonsters,
+} from './waveGenerator';
 
 interface CollectibleItem {
   active: boolean;
@@ -406,6 +412,10 @@ interface SavedStatePayload {
   dayWaveDaySpawned?: number;
   surfaceWaveMode?: 'day' | 'night';
   nightWaveTotal?: number;
+  missionWaveSeed?: number;
+  missionWaveCount?: number;
+  missionWaveCompleted?: boolean;
+  currentSquadName?: string;
   nightZoneTotals?: Partial<Record<ZoneId, number>>;
   nightMonsterSeq?: number;
   savedNightMonsters?: SavedOverworldNightMonster[];
@@ -680,6 +690,11 @@ export class RpgWorldEngine {
   private surfaceWaveMode: 'day' | 'night' = 'day';
   private pendingDayWaveTimer = -1;
   private nightWaveTotal = 0;
+  private missionWaveSeed = 0;
+  private missionWaveCount = 0;
+  private missionWaveCompleted = false;
+  private missionWaveSummary: WaveMonsterGroupSummary[] = [];
+  private currentSquadName = '';
   private nightZoneTotals: Partial<Record<ZoneId, number>> = {};
   private nightShooterSaved: Array<{
     id: string;
@@ -1485,6 +1500,10 @@ export class RpgWorldEngine {
         dayWaveDaySpawned: this.dayWaveDaySpawned,
         surfaceWaveMode: this.surfaceWaveMode,
         nightWaveTotal: this.nightWaveTotal,
+        missionWaveSeed: this.missionWaveSeed,
+        missionWaveCount: this.missionWaveCount,
+        missionWaveCompleted: this.missionWaveCompleted,
+        currentSquadName: this.currentSquadName,
         nightZoneTotals: { ...this.nightZoneTotals },
         nightMonsterSeq: this.nightMonsterSeq,
         savedNightMonsters,
@@ -1650,6 +1669,18 @@ export class RpgWorldEngine {
       this.dayWaveDaySpawned = data.dayWaveDaySpawned || 0;
       this.surfaceWaveMode = data.surfaceWaveMode || 'night';
       this.nightWaveTotal = data.nightWaveTotal || 0;
+      this.missionWaveSeed = data.missionWaveSeed || 0;
+      this.missionWaveCount = data.missionWaveCount || 0;
+      this.missionWaveCompleted = Boolean(data.missionWaveCompleted);
+      this.currentSquadName = data.currentSquadName || '';
+      if (this.missionWaveSeed > 0 && this.missionWaveCount >= 20) {
+        this.missionWaveSummary = generateRandomSurfaceWave(
+          this.missionWaveSeed,
+          this.missionWaveCount,
+        ).summary;
+      } else {
+        this.missionWaveSummary = [];
+      }
       this.nightZoneTotals = data.nightZoneTotals ? { ...data.nightZoneTotals } : {};
       this.nightMonsterSeq = data.nightMonsterSeq || 0;
       this.restoredNightMonsters = Array.isArray(data.savedNightMonsters)
@@ -2026,8 +2057,12 @@ export class RpgWorldEngine {
       if (s.alive && s.isNightShooter) activeNightShooters++;
     }
     const activeNightCount = activeNightMobs + activeNightShooters;
-    const expectedTotal = phase === 'malam' ? 50 : 30;
-    const waveTotal = Math.max(this.nightWaveTotal || expectedTotal, activeSurfaceCount);
+    const expectedTotal =
+      this.missionWaveCount > 0 ? this.missionWaveCount : phase === 'malam' ? 50 : 30;
+    const waveTotal = Math.max(
+      this.missionWaveCount || this.nightWaveTotal || expectedTotal,
+      activeSurfaceCount,
+    );
     const waveDefeated = Math.max(0, waveTotal - activeSurfaceCount);
     return {
       tick: Math.round(t),
@@ -2277,6 +2312,181 @@ export class RpgWorldEngine {
     this.spawnOverworldSurfaceWave('night');
   }
 
+  public getWaveMissionState(): WaveMissionState | null {
+    const total = this.missionWaveCount || this.nightWaveTotal;
+    if (total <= 0) return null;
+    const remaining = this.monsters.filter((m) => m.alive).length;
+    const defeated = Math.max(0, total - remaining);
+    const summary =
+      this.missionWaveSummary.length > 0
+        ? this.missionWaveSummary
+        : summarizeWaveMonsters(
+            this.monsters.map((m) => ({ type: m.type, combatOnly: Boolean(m.combatOnly) })),
+          );
+    let quizTotal = 0;
+    let combatTotal = 0;
+    for (const g of summary) {
+      quizTotal += g.quizCount;
+      combatTotal += g.combatCount;
+    }
+    return {
+      seed: this.missionWaveSeed,
+      squadName: this.currentSquadName || `${this.localPlayerName || 'HOOT'} SQUAD`,
+      total,
+      defeated,
+      remaining,
+      quizTotal,
+      combatTotal,
+      completed: this.missionWaveCompleted || (total > 0 && remaining === 0),
+      monsterGroups: summary,
+    };
+  }
+
+  public startNewRandomMissionWave(
+    seedInput?: number,
+    countInput?: number,
+    squadName?: string,
+  ): WaveMissionState {
+    this.spawnRandomMissionWave(seedInput, countInput, squadName);
+    this.saveProgress();
+    const state = this.getWaveMissionState()!;
+    this.showBanner(
+      `🎯 Misi Baru: Habisi ${state.total} Monster Acak (${state.quizTotal} Kata A1 · ${state.combatTotal} Duel)!`,
+      4.8,
+    );
+    this.pushHud(true);
+    return state;
+  }
+
+  private checkMissionWaveCompletion(): void {
+    if (this.missionWaveCount <= 0 || this.missionWaveCompleted) return;
+    const remaining = this.monsters.filter((m) => m.alive).length;
+    if (remaining > 0) return;
+
+    this.missionWaveCompleted = true;
+    this.gainXp(150);
+    this.diamonds += 5;
+    this.addScore(500);
+    soundEngine.playFanfare();
+    this.showBanner(
+      `🏆 MISI SELESAI! Seluruh ${this.missionWaveCount}/${this.missionWaveCount} monster acak berhasil dihabisi! +150 XP · +5 💎 · +500 Skor!`,
+      6.0,
+    );
+    this.saveProgress();
+    if (this.multiplayerActive && this.hasConnectedPeers && this.isWorldAuthority()) {
+      this.emitMultiplayerPacket(this.buildWorldSyncPacket());
+    }
+  }
+
+  private spawnRandomMissionWave(
+    seedInput?: number,
+    countInput?: number,
+    squadName?: string,
+  ): void {
+    this.clearOverworldNightMonsters();
+    this.pendingDayWaveTimer = -1;
+    const wave = generateRandomSurfaceWave(seedInput, countInput);
+    this.missionWaveSeed = wave.seed;
+    this.missionWaveCount = wave.count;
+    this.missionWaveCompleted = false;
+    this.missionWaveSummary = wave.summary;
+    if (squadName) {
+      this.currentSquadName = squadName;
+    }
+
+    const diff = this.settings.difficulty;
+    const diffHpMult = diff === 'santai' ? 0.8 : diff === 'pendekar' ? 1.25 : 1.0;
+    const isNight = this.getCurrentDayPhase() === 'malam';
+    this.surfaceWaveMode = isNight ? 'night' : 'day';
+
+    for (let i = 0; i < wave.spawns.length; i++) {
+      const template = wave.spawns[i];
+      const spec = MONSTER_SPECS[template.type];
+      const safe = this.resolveSafeOverworldMonsterSpot(template.x, template.z);
+      const sx = safe.x;
+      const sz = safe.z;
+      const groundY = getArchipelagoGroundY(sx, sz);
+      const sy = groundY + spec.hoverY;
+
+      const mesh = createMonsterMesh(template.type, this.palette);
+      mesh.position.set(sx, sy, sz);
+
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(0.85 * spec.baseScale, 1.15 * spec.baseScale, 20),
+        new THREE.MeshBasicMaterial({
+          color: template.combatOnly ? 0xef4444 : 0xa855f7,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.78,
+        }),
+      );
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.y = 0.06 - spec.hoverY;
+      mesh.add(ring);
+      mesh.userData.combatRing = ring;
+
+      this.nightMonsterSeq += 1;
+      const mId = `wave_${wave.seed}_${this.nightMonsterSeq}`;
+      mesh.userData.monsterId = mId;
+      this.overworldGroup.add(mesh);
+      this.overworldClickables.push(mesh);
+
+      const maxMobHp = Math.max(2, Math.round(spec.hitHp * diffHpMult));
+      const wordIds = template.combatOnly
+        ? undefined
+        : this.pickZoneChallengeWords(template.zoneId, spec.tier === 'giant' ? 5 : 4);
+
+      this.monsters.push({
+        id: mId,
+        type: template.type,
+        name: template.name,
+        zoneId: template.zoneId,
+        homeX: sx,
+        homeZ: sz,
+        x: sx,
+        y: sy,
+        z: sz,
+        maxHp: spec.quizHp,
+        mobHp: maxMobHp,
+        maxMobHp,
+        stanceHp: template.combatOnly ? undefined : spec.stanceHp,
+        rewardXp: spec.rewardXp + (diff === 'pendekar' ? 5 : 0),
+        rewardDiamonds: spec.rewardDiamonds,
+        rewardScore: spec.rewardScore,
+        combatOnly: template.combatOnly,
+        isNightMonster: isNight,
+        wordIds,
+        aggroActive: false,
+        attackCooldown: 0.9 + Math.random() * 0.9,
+        windupTimer: -1,
+        lungeTimer: 0,
+        hitFlashTimer: 0,
+        mesh,
+        alive: true,
+        respawnTimer: 0,
+        patrolPhase: Math.random() * Math.PI * 2,
+        angryTimer: 0,
+      });
+    }
+
+    this.nightWaveDaySpawned = this.dayCount;
+    this.dayWaveDaySpawned = this.dayCount;
+    this.syncShootersForDifficulty(true);
+    const zoneTotals: Partial<Record<ZoneId, number>> = {};
+    for (const m of this.monsters) {
+      if (m.alive) {
+        zoneTotals[m.zoneId] = (zoneTotals[m.zoneId] || 0) + 1;
+      }
+    }
+    this.nightZoneTotals = zoneTotals;
+    this.nightWaveTotal = wave.count;
+    this.rebuildOverworldMonsterPool();
+    if (this.multiplayerActive && this.hasConnectedPeers && this.isWorldAuthority()) {
+      this.emitMultiplayerPacket(this.buildWorldSyncPacket());
+    }
+    this.pushHud(true);
+  }
+
   private spawnOverworldSurfaceWave(mode: 'day' | 'night'): void {
     this.clearOverworldNightMonsters();
     this.pendingDayWaveTimer = -1;
@@ -2395,6 +2605,13 @@ export class RpgWorldEngine {
   }
 
   private triggerMorningSunlightDestruction(): void {
+    if (
+      this.missionWaveCount > 0 &&
+      !this.missionWaveCompleted &&
+      this.monsters.some((m) => m.alive)
+    ) {
+      return;
+    }
     let anyDoomed = false;
     for (const m of this.monsters) {
       if (!m.alive || !m.isNightMonster || m.sunburnTimer !== undefined) continue;
@@ -2995,6 +3212,10 @@ export class RpgWorldEngine {
     this.refreshAreaMists();
     this.refreshWeaponVisual();
 
+    const hasSavedWaveMission =
+      this.missionWaveCount > 0 &&
+      !this.missionWaveCompleted &&
+      this.restoredNightMonsters.length > 0;
     const curPhase = this.getCurrentDayPhase();
     const canRestoreNight =
       curPhase === 'malam' &&
@@ -3006,7 +3227,7 @@ export class RpgWorldEngine {
       this.surfaceWaveMode === 'day' &&
       this.dayWaveDaySpawned === this.dayCount &&
       this.restoredNightMonsters.length > 0;
-    if (canRestoreNight || canRestoreDay) {
+    if (hasSavedWaveMission || canRestoreNight || canRestoreDay) {
       this.restoreNightMonstersFromSave();
     } else {
       this.clearOverworldNightMonsters();
@@ -3247,6 +3468,10 @@ export class RpgWorldEngine {
       tick: Math.round(this.worldTimeTick),
       mode: this.surfaceWaveMode,
       wtot: this.nightWaveTotal,
+      ws: this.missionWaveSeed || undefined,
+      wc: this.missionWaveCount || undefined,
+      wcmp: this.missionWaveCompleted || undefined,
+      sq: this.currentSquadName || undefined,
       nseq: this.nightMonsterSeq,
       m: snapshots,
       s: shooterSnaps,
@@ -3546,6 +3771,9 @@ export class RpgWorldEngine {
       if (killerUid !== myUid) {
         this.showBanner(`📘 ${killerName} menaklukkan ${m.name} lewat tantangan Inggris!`, 2.8);
       }
+      if (!m.isSeaMonster && !m.isSkyMonster && this.worldMode === 'overworld') {
+        this.checkMissionWaveCompletion();
+      }
       this.pushHud(true);
       return;
     }
@@ -3582,6 +3810,9 @@ export class RpgWorldEngine {
       soundEngine.playBoom();
       this.showBanner(`⚔️ ${killerName} mengalahkan ${m.name}!`, 2.2);
     }
+    if (!m.isSeaMonster && !m.isSkyMonster && this.worldMode === 'overworld') {
+      this.checkMissionWaveCompletion();
+    }
     this.pushHud(true);
   }
 
@@ -3604,6 +3835,18 @@ export class RpgWorldEngine {
       this.surfaceWaveMode = pkt.mode;
       this.lastOverworldDayPhase = this.getDayPhaseForTick(pkt.tick);
       this.nightWaveTotal = pkt.wtot;
+      this.missionWaveSeed = pkt.ws ?? this.missionWaveSeed;
+      this.missionWaveCount = pkt.wc ?? pkt.wtot;
+      this.missionWaveCompleted = Boolean(pkt.wcmp);
+      if (pkt.sq) {
+        this.currentSquadName = pkt.sq;
+      }
+      if (this.missionWaveSeed > 0 && this.missionWaveCount >= 20) {
+        this.missionWaveSummary = generateRandomSurfaceWave(
+          this.missionWaveSeed,
+          this.missionWaveCount,
+        ).summary;
+      }
       this.nightMonsterSeq = Math.max(this.nightMonsterSeq, pkt.nseq);
       if (pkt.mode === 'night') {
         this.nightWaveDaySpawned = pkt.day;
@@ -3619,8 +3862,14 @@ export class RpgWorldEngine {
       if (!sameWave) {
         this.clearOverworldNightMonsters();
         this.nightWaveTotal = pkt.wtot;
+        this.missionWaveCount = pkt.wc ?? pkt.wtot;
         for (const snap of incomingSurface) {
           this.monsters.push(this.spawnSyncedSurfaceMonster(snap));
+        }
+        if (this.missionWaveSummary.length === 0 && incomingSurface.length > 0) {
+          this.missionWaveSummary = summarizeWaveMonsters(
+            incomingSurface.map((s) => ({ type: s.tp, combatOnly: s.cmb })),
+          );
         }
         this.rebuildOverworldMonsterPool();
       } else {
@@ -4084,6 +4333,9 @@ export class RpgWorldEngine {
       skipStory?: boolean;
       characterId?: CharacterPresetId;
       playerName?: string;
+      waveSeed?: number;
+      waveCount?: number;
+      squadName?: string;
     },
   ): void {
     this.clearSubScenes();
@@ -4202,6 +4454,11 @@ export class RpgWorldEngine {
     this.surfaceWaveMode = this.lastOverworldDayPhase === 'malam' ? 'night' : 'day';
     this.pendingDayWaveTimer = -1;
     this.nightWaveTotal = 0;
+    this.missionWaveSeed = 0;
+    this.missionWaveCount = 0;
+    this.missionWaveCompleted = false;
+    this.missionWaveSummary = [];
+    this.currentSquadName = options?.squadName || '';
     this.nightZoneTotals = {};
     this.nightShooterSaved = [];
     this.nightMonsterSeq = 0;
@@ -4223,7 +4480,11 @@ export class RpgWorldEngine {
     this.refreshAreaMists();
     this.refreshWeaponVisual();
     this.syncShootersForDifficulty(true);
-    this.syncOverworldMonstersByDiff();
+    if (!this.multiplayerActive || this.isWorldAuthority() || options?.waveSeed) {
+      this.spawnRandomMissionWave(options?.waveSeed, options?.waveCount, options?.squadName);
+    } else {
+      this.syncOverworldMonstersByDiff();
+    }
     this.initSeaMonsters();
     this.initSkyMonsters();
     this.shootAimPitch = 0;
@@ -4667,6 +4928,13 @@ export class RpgWorldEngine {
 
   private syncOverworldMonstersByDiff(): void {
     if (this.multiplayerActive && !this.isWorldAuthority()) return;
+    if (
+      this.missionWaveCount > 0 &&
+      !this.missionWaveCompleted &&
+      this.monsters.some((m) => m.alive)
+    ) {
+      return;
+    }
     const phase = this.getCurrentDayPhase();
     if (phase === 'malam') {
       if (this.nightWaveDaySpawned !== this.dayCount) {
@@ -4689,27 +4957,37 @@ export class RpgWorldEngine {
       this.lastOverworldDayPhase = nextPhase;
 
       if (prevPhase !== nextPhase) {
+        const activeMissionWave =
+          this.missionWaveCount > 0 &&
+          !this.missionWaveCompleted &&
+          this.monsters.some((m) => m.alive);
         if (nextPhase === 'sore') {
           this.showBanner(
             '🌇 Sore tiba! Warga pulang ke rumah & penjaga bersiap istirahat di pos...',
             4.5,
           );
         } else if (nextPhase === 'malam') {
-          if (this.isWorldAuthority()) {
+          if (this.isWorldAuthority() && !activeMissionWave) {
             this.spawnNightSurfaceWave();
           }
         } else if (nextPhase === 'pagi') {
           if (this.isWorldAuthority()) {
-            this.triggerMorningSunlightDestruction();
+            if (!activeMissionWave) {
+              this.triggerMorningSunlightDestruction();
+            }
             this.syncShootersForDifficulty();
           }
           this.showBanner(
-            '🌅 Fajar menyingsing! Panas matahari menghancurkan monster malam & warga keluar kembali!',
+            activeMissionWave
+              ? '🌅 Fajar menyingsing! Monster misi aktif tetap bertahan untuk kamu habisi!'
+              : '🌅 Fajar menyingsing! Panas matahari menghancurkan monster malam & warga keluar kembali!',
             5.0,
           );
         } else if (nextPhase === 'siang') {
           if (this.isWorldAuthority()) {
-            this.clearOverworldNightMonsters();
+            if (!activeMissionWave) {
+              this.clearOverworldNightMonsters();
+            }
             this.syncShootersForDifficulty();
           }
         }
@@ -7135,6 +7413,9 @@ export class RpgWorldEngine {
           `Menang melawan ${battle.monsterName}! +${m.rewardXp} XP · +${m.rewardDiamonds} 💎 · +${4 + m.rewardDiamonds} Peluru`,
           3.0,
         );
+        if (!m.isSkyMonster && this.worldMode === 'overworld') {
+          this.checkMissionWaveCompletion();
+        }
       } else {
         soundEngine.playWin();
         this.showBanner(`Menang melawan ${battle.monsterName}!`, 2.8);
@@ -7976,6 +8257,9 @@ export class RpgWorldEngine {
         `⚔️ ${m.name} kalah! +${m.rewardXp} XP · +${diamondDrop} 💎 · +${ammoDrop} Peluru${healed ? ' · +1 ❤️' : ''}!`,
         3.0,
       );
+    }
+    if (this.worldMode === 'overworld' && !m.isSeaMonster && !m.isSkyMonster) {
+      this.checkMissionWaveCompletion();
     }
     this.syncDungeonMonsterStats();
     this.saveProgress();
@@ -16216,6 +16500,8 @@ export class RpgWorldEngine {
       worldTime: this.getWorldTimeState(),
       nearbyInjuredPeer: this.nearbyInjuredPeer,
       allyHelpCooldownSec: Math.ceil(this.allyHelpCooldown),
+      squadName: this.currentSquadName || undefined,
+      waveMission: this.getWaveMissionState(),
       localMabarStats: { ...this.localMabarStats },
     });
   }
@@ -16321,7 +16607,10 @@ export class RpgWorldEngine {
 
     const remainingAll = this.monsters.filter((m) => m.alive).length;
     const expectedTotal = this.getCurrentDayPhase() === 'malam' ? 50 : 30;
-    const totalAll = Math.max(this.nightWaveTotal || expectedTotal, remainingAll);
+    const totalAll = Math.max(
+      this.missionWaveCount || this.nightWaveTotal || expectedTotal,
+      remainingAll,
+    );
     const defeatedAll = Math.max(0, totalAll - remainingAll);
 
     const zoneSurfaceRemaining = this.monsters.filter((m) => m.alive && m.zoneId === zoneId).length;

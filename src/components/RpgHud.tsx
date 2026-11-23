@@ -897,87 +897,76 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               );
             }
 
-            // Overworld (Luar Gua / Area Penyelamatan — Siang 30 Monster & Malam 50 Monster)
-            if (stats.context === 'overworld_night') {
-              return (
-                <div className="w-full rounded-xl border border-rose-400/35 bg-slate-950/88 px-2.5 py-1 text-white shadow-md">
-                  <div className="flex items-center justify-between gap-1.5 font-mono-nums text-[9.5px] font-extrabold sm:text-[10px]">
-                    <span className="truncate text-rose-200">⚔️ Monster Malam</span>
-                    <span className="shrink-0">
-                      <span className="text-emerald-300">
-                        Kalah {stats.defeated}/{stats.total}
-                      </span>
-                      <span className="mx-1 text-slate-500">·</span>
-                      <span className={stats.remaining > 0 ? 'text-rose-300' : 'text-emerald-300'}>
-                        {stats.remaining > 0 ? `Sisa ${stats.remaining}` : 'Semua Kalah ✓'}
-                      </span>
-                    </span>
-                  </div>
-                  <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-800/90">
-                    <div
-                      className="h-full bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-400 transition-all duration-200"
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-1.5 font-mono-nums text-[8.5px] font-bold text-slate-300 sm:text-[9px]">
-                    <span className="truncate">
-                      📍 {stats.areaName}
-                      {(stats.zoneSurfaceTotal ?? stats.zoneNightTotal ?? 0) > 0
-                        ? ` · Pulau: ${stats.zoneSurfaceDefeated ?? stats.zoneNightDefeated ?? 0}/${stats.zoneSurfaceTotal ?? stats.zoneNightTotal}`
-                        : ''}
-                    </span>
-                    <span className="text-slate-300">
-                      <span className="text-rose-300">⚔️{stats.surfaceCombatRemaining ?? 0}</span>
-                      {' · '}
-                      <span className="text-purple-300">📘{stats.surfaceQuizRemaining ?? 0}</span>
-                      {' · '}
-                      <span className={stats.caveLiberated ? 'text-emerald-300' : 'text-amber-200'}>
-                        {stats.caveLiberated
-                          ? 'Gua ✓'
-                          : `Gua ${stats.caveRemaining ?? 0}`}
-                      </span>
-                    </span>
-                  </div>
-                </div>
-              );
-            }
+            // Overworld (Luar Gua / Gelombang Misi Acak 20-50 Monster)
+            const wm = hud.waveMission;
+            const missionLabel = wm
+              ? `🎯 ${wm.squadName}`
+              : stats.context === 'overworld_night'
+              ? '⚔️ Monster Malam'
+              : '⚔️ Monster Wilayah';
+            const displayDefeated = wm ? wm.defeated : stats.defeated;
+            const displayTotal = wm ? wm.total : stats.total;
+            const displayRemaining = wm ? wm.remaining : stats.remaining;
+            const displayPct =
+              displayTotal > 0 ? Math.min(100, Math.round((displayDefeated / displayTotal) * 100)) : pct;
+            const isNightCtx = stats.context === 'overworld_night';
 
             return (
-              <div className="w-full rounded-xl border border-amber-300/30 bg-slate-950/88 px-2.5 py-1 text-white shadow-md">
+              <div
+                className={`w-full rounded-xl border bg-slate-950/88 px-2.5 py-1 text-white shadow-md ${
+                  isNightCtx ? 'border-rose-400/35' : 'border-amber-300/30'
+                }`}
+              >
                 <div className="flex items-center justify-between gap-1.5 font-mono-nums text-[9.5px] font-extrabold sm:text-[10px]">
-                  <span className="truncate text-amber-100">⚔️ Monster Wilayah</span>
+                  <span
+                    className={`truncate ${
+                      wm ? 'text-cyan-200' : isNightCtx ? 'text-rose-200' : 'text-amber-100'
+                    }`}
+                  >
+                    {missionLabel}
+                  </span>
                   <span className="shrink-0">
                     <span className="text-emerald-300">
-                      Kalah {stats.defeated}/{stats.total}
+                      Kalah {displayDefeated}/{displayTotal}
                     </span>
                     <span className="mx-1 text-slate-500">·</span>
-                    <span className={stats.remaining > 0 ? 'text-amber-300' : 'text-emerald-300'}>
-                      {stats.remaining > 0 ? `Sisa ${stats.remaining}` : 'Aman ✓'}
+                    <span
+                      className={
+                        displayRemaining > 0
+                          ? isNightCtx
+                            ? 'text-rose-300'
+                            : 'text-amber-300'
+                          : 'text-emerald-300'
+                      }
+                    >
+                      {displayRemaining > 0 ? `Sisa ${displayRemaining}` : 'Misi Tuntas ✓'}
                     </span>
                   </span>
                 </div>
                 <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-slate-800/90">
                   <div
-                    className="h-full bg-gradient-to-r from-amber-400 to-emerald-400 transition-all duration-200"
-                    style={{ width: `${pct}%` }}
+                    className={`h-full transition-all duration-200 ${
+                      isNightCtx
+                        ? 'bg-gradient-to-r from-rose-500 via-amber-400 to-emerald-400'
+                        : 'bg-gradient-to-r from-amber-400 to-emerald-400'
+                    }`}
+                    style={{ width: `${displayPct}%` }}
                   />
                 </div>
                 <div className="mt-0.5 flex flex-wrap items-center justify-between gap-x-1.5 font-mono-nums text-[8.5px] font-bold text-slate-300 sm:text-[9px]">
                   <span className="truncate">
                     📍 {stats.areaName}
-                    {(stats.zoneSurfaceTotal ?? 0) > 0
-                      ? ` · Pulau: ${stats.zoneSurfaceDefeated ?? 0}/${stats.zoneSurfaceTotal}`
+                    {(stats.zoneSurfaceTotal ?? stats.zoneNightTotal ?? 0) > 0
+                      ? ` · Pulau: ${stats.zoneSurfaceDefeated ?? stats.zoneNightDefeated ?? 0}/${stats.zoneSurfaceTotal ?? stats.zoneNightTotal}`
                       : ''}
                   </span>
-                  <span>
+                  <span className="text-slate-300">
                     <span className="text-rose-300">⚔️{stats.surfaceCombatRemaining ?? 0}</span>
                     {' · '}
                     <span className="text-purple-300">📘{stats.surfaceQuizRemaining ?? 0}</span>
                     {' · '}
                     <span className={stats.caveLiberated ? 'text-emerald-300' : 'text-amber-200'}>
-                      {stats.caveLiberated
-                        ? 'Gua ✓'
-                        : `Gua ${stats.caveRemaining ?? 0}`}
+                      {stats.caveLiberated ? 'Gua ✓' : `Gua ${stats.caveRemaining ?? 0}`}
                     </span>
                   </span>
                 </div>

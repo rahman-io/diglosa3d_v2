@@ -177,6 +177,11 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
             }`}
           />
           <Users className="h-3 w-3 shrink-0 text-cyan-300" />
+          {room.groupName && (
+            <span className="hidden max-w-[108px] truncate text-emerald-200 sm:inline">
+              {room.groupName} ·
+            </span>
+          )}
           <span className="font-mono-nums">
             {room.mode === 'group' ? room.code : 'PUBLIK'} · {members.length}/{room.maxPlayers}
           </span>
@@ -306,7 +311,7 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
             <div className="flex items-center gap-1.5">
               <Trophy className="h-3.5 w-3.5 text-amber-300" />
               <span className="text-[10.5px] font-black uppercase tracking-wider text-amber-200">
-                Nilai &amp; Kontribusi Tim
+                {room.groupName ? `Tim · ${room.groupName}` : 'Nilai & Kontribusi Tim'}
               </span>
             </div>
             <button

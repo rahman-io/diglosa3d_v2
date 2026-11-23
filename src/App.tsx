@@ -26,6 +26,7 @@ import { RpgHud } from './components/RpgHud';
 import { RpgSideModals, SideModalTab } from './components/RpgSideModals';
 import { StoryOverlayModal } from './components/StoryOverlayModal';
 import { TitleScreen } from './components/TitleScreen';
+import { VsMatchIntroModal, VsSquadMember } from './components/VsMatchIntroModal';
 import { auth, probeFirestoreReachable, signInWithGoogleAccount } from './firebase';
 import {
   fetchPublicLeaderboard,
@@ -77,13 +78,20 @@ import {
   leaveMultiplayerRoom,
   normalizeRoomCode,
   rejoinRoomById,
+  sanitizeGroupName,
   sendFallbackChatMessage,
   startMultiplayerMatch,
   subscribeFallbackChatMessages,
   subscribeRoom,
   subscribeRoomMembers,
   updateMyMemberProfile,
+  updateRoomGroupName,
 } from './services/multiplayerRoomService';
+import {
+  generateRandomSurfaceWave,
+  generateRandomWaveSeed,
+  rollRandomWaveCount,
+} from './three/waveGenerator';
 import {
   filterChatProfanity,
   P2pMeshTransport,
@@ -102,6 +110,7 @@ import {
   RpgHudSnapshot,
   SpawnPreference,
   UserProfileRecord,
+  WaveMissionState,
 } from './types/game';
 
 const INITIAL_HUD: RpgHudSnapshot = {
@@ -244,6 +253,14 @@ function DiglosaRpgApp() {
 
   const [characterId, setCharacterId] = useState<CharacterPresetId>(() => loadSavedCharacterId());
   const [playerName, setPlayerName] = useState<string>(() => loadSavedPlayerName());
+  const [groupName, setGroupName] = useState<string>('ELITE SQUAD');
+  const [vsIntroData, setVsIntroData] = useState<{
+    squadName: string;
+    isMultiplayer: boolean;
+    members: VsSquadMember[];
+    wave: WaveMissionState;
+  } | null>(null);
+  const [dismissedVictorySeed, setDismissedVictorySeed] = useState<number>(0);
   const [activeRoom, setActiveRoom] = useState<MultiplayerRoomDoc | null>(null);
   const [resumableRoom, setResumableRoom] = useState<JoinOrCreateRoomResult | null>(null);
   const [roomMembers, setRoomMembers] = useState<MultiplayerMemberDoc[]>([]);
@@ -795,6 +812,12 @@ function DiglosaRpgApp() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
       if (e.code === 'Escape') {
+        if (vsIntroData) {
+          const wasMp = vsIntroData.isMultiplayer;
+          setVsIntroData(null);
+          if (wasMp) engineRef.current?.setPhase('playing');
+          return;
+        }
         if (difficultyPromptOpen) {
           if (!activeRoom) setDifficultyPromptOpen(false);
           return;
@@ -853,6 +876,7 @@ function DiglosaRpgApp() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
+    vsIntroData,
     difficultyPromptOpen,
     activeRoom,
     hud.phase,
@@ -1099,6 +1123,30 @@ function DiglosaRpgApp() {
     });
   }, []);
 
+  const buildWaveMissionPreview = useCallback(
+    (waveSeed: number, waveCount: number, squadLabel: string): WaveMissionState => {
+      const wavePreview = generateRandomSurfaceWave(waveSeed, waveCount);
+      let quizTotal = 0;
+      let combatTotal = 0;
+      for (const g of wavePreview.summary) {
+        quizTotal += g.quizCount;
+        combatTotal += g.combatCount;
+      }
+      return {
+        seed: wavePreview.seed,
+        squadName: squadLabel,
+        total: wavePreview.count,
+        defeated: 0,
+        remaining: wavePreview.count,
+        quizTotal,
+        combatTotal,
+        completed: false,
+        monsterGroups: wavePreview.summary,
+      };
+    },
+    [],
+  );
+
   const enterMultiplayerMatch = useCallback(
     (room: MultiplayerRoomDoc, spawnIdx: number, isRejoin = false) => {
       if (getAlwaysFullscreenPref()) void requestAppFullscreen();
@@ -1113,7 +1161,12 @@ function DiglosaRpgApp() {
       setCloudSyncNote(null);
       setSyncStatus(null);
       setTeamStatsMap({});
+      setDismissedVictorySeed(0);
       setIsMultiplayerPlaying(true);
+
+      const waveSeed = room.waveSeed || generateRandomWaveSeed();
+      const waveCount = room.waveCount || rollRandomWaveCount(waveSeed);
+      const squadName = room.groupName || sanitizeGroupName(groupName, 'ELITE SQUAD');
 
       const engine = engineRef.current;
       if (engine) {
@@ -1127,10 +1180,56 @@ function DiglosaRpgApp() {
           skipStory: true,
           characterId,
           playerName,
+          waveSeed,
+          waveCount,
+          squadName,
         });
+        if (!isRejoin) {
+          engine.setPhase('paused');
+        }
+      }
+
+      if (!isRejoin) {
+        const myUid = user?.uid || 'local';
+        const baseMembers: VsSquadMember[] =
+          roomMembers.length > 0
+            ? [...roomMembers]
+                .sort((a, b) => (a.isHost === b.isHost ? a.spawnIndex - b.spawnIndex : a.isHost ? -1 : 1))
+                .map((m) => ({
+                  uid: m.uid,
+                  displayName: m.displayName,
+                  characterId: m.characterId,
+                  isHost: m.isHost,
+                  isMe: m.uid === myUid,
+                }))
+            : [
+                {
+                  uid: myUid,
+                  displayName: playerName || 'Petualang',
+                  characterId,
+                  isHost: room.hostUid === myUid,
+                  isMe: true,
+                },
+              ];
+        setVsIntroData({
+          squadName,
+          isMultiplayer: true,
+          members: baseMembers,
+          wave: buildWaveMissionPreview(waveSeed, waveCount, squadName),
+        });
+      } else {
+        setVsIntroData(null);
       }
     },
-    [characterId, playerName, hud.settings.aimMode, user?.uid],
+    [
+      characterId,
+      playerName,
+      groupName,
+      hud.settings.aimMode,
+      user?.uid,
+      roomMembers,
+      buildWaveMissionPreview,
+    ],
   );
 
   const handleLeaveMultiplayerRoom = useCallback(
@@ -1142,6 +1241,7 @@ function DiglosaRpgApp() {
       setResumableRoom(null);
       setRoomMembers([]);
       setTeamStatsMap({});
+      setVsIntroData(null);
       setIsMultiplayerPlaying(false);
       setMicEnabled(false);
       setMuteAllVoice(false);
@@ -1435,12 +1535,38 @@ function DiglosaRpgApp() {
       setSideTab(null);
       setCloudSyncNote(null);
       setSyncStatus(null);
+      setDismissedVictorySeed(0);
+
+      const cleanPlayer = (playerName || 'HOOT').trim() || 'HOOT';
+      const firstToken = cleanPlayer.split(/\s+/)[0].toUpperCase();
+      const soloSquadName = `${firstToken} SQUAD`;
+      const waveSeed = generateRandomWaveSeed();
+      const waveCount = rollRandomWaveCount(waveSeed);
+
       engineRef.current?.setLocalAppearance(characterId, playerName);
       engineRef.current?.setMultiplayerActive(false);
       engineRef.current?.startNewGame(hud.settings.aimMode, difficulty, {
         spawnMode,
         characterId,
         playerName,
+        waveSeed,
+        waveCount,
+        squadName: soloSquadName,
+      });
+
+      setVsIntroData({
+        squadName: soloSquadName,
+        isMultiplayer: false,
+        members: [
+          {
+            uid: user?.uid || 'solo',
+            displayName: cleanPlayer,
+            characterId,
+            isHost: true,
+            isMe: true,
+          },
+        ],
+        wave: buildWaveMissionPreview(waveSeed, waveCount, soloSquadName),
       });
     },
     [
@@ -1449,7 +1575,9 @@ function DiglosaRpgApp() {
       handleLeaveMultiplayerRoom,
       characterId,
       playerName,
+      user?.uid,
       hud.settings.aimMode,
+      buildWaveMissionPreview,
     ],
   );
 
@@ -1478,21 +1606,24 @@ function DiglosaRpgApp() {
   }, [resumableRoom]);
 
   const handleCreateGroupRoom = useCallback(
-    async (difficulty: DifficultyMode) => {
+    async (difficulty: DifficultyMode, customGroupName: string) => {
       if (resumableRoom) {
         const oldRoomId = resumableRoom.room.roomId;
         setResumableRoom(null);
         await leaveMultiplayerRoom(oldRoomId);
       }
+      const cleanGroup = sanitizeGroupName(customGroupName, groupName);
+      setGroupName(cleanGroup);
       const res = await createGroupRoom({
         displayName: playerName,
+        groupName: cleanGroup,
         characterId,
         difficulty,
       });
       setMySpawnIndex(res.spawnIndex);
       setActiveRoom(res.room);
     },
-    [playerName, characterId, resumableRoom],
+    [playerName, groupName, characterId, resumableRoom],
   );
 
   const handleJoinGroupRoom = useCallback(
@@ -1516,14 +1647,17 @@ function DiglosaRpgApp() {
   );
 
   const handleJoinPublicRoom = useCallback(
-    async (difficulty: DifficultyMode) => {
+    async (difficulty: DifficultyMode, customGroupName: string) => {
       if (resumableRoom && resumableRoom.room.mode !== 'public') {
         const oldRoomId = resumableRoom.room.roomId;
         setResumableRoom(null);
         await leaveMultiplayerRoom(oldRoomId);
       }
+      const cleanGroup = sanitizeGroupName(customGroupName, groupName);
+      setGroupName(cleanGroup);
       const res = await findOrCreatePublicRoom({
         displayName: playerName,
+        groupName: cleanGroup,
         characterId,
         difficulty,
       });
@@ -1531,13 +1665,39 @@ function DiglosaRpgApp() {
       setMySpawnIndex(res.spawnIndex);
       setActiveRoom(res.room);
     },
-    [playerName, characterId, resumableRoom],
+    [playerName, groupName, characterId, resumableRoom],
+  );
+
+  const handleUpdateRoomGroupName = useCallback(
+    async (nextGroupName: string) => {
+      if (!activeRoom) return;
+      const cleaned = sanitizeGroupName(nextGroupName);
+      setGroupName(cleaned);
+      await updateRoomGroupName(activeRoom.roomId, cleaned);
+    },
+    [activeRoom],
   );
 
   const handleStartMultiplayerMatch = useCallback(async () => {
     if (!activeRoom) return;
-    await startMultiplayerMatch(activeRoom.roomId, activeRoom.difficulty);
-    enterMultiplayerMatch(activeRoom, mySpawnIndex);
+    const presetWave =
+      activeRoom.waveSeed && activeRoom.waveCount
+        ? { waveSeed: activeRoom.waveSeed, waveCount: activeRoom.waveCount }
+        : undefined;
+    const wave = await startMultiplayerMatch(
+      activeRoom.roomId,
+      activeRoom.difficulty,
+      presetWave,
+    );
+    enterMultiplayerMatch(
+      {
+        ...activeRoom,
+        status: 'playing',
+        waveSeed: wave.waveSeed,
+        waveCount: wave.waveCount,
+      },
+      mySpawnIndex,
+    );
   }, [activeRoom, mySpawnIndex, enterMultiplayerMatch]);
 
   const handleSendChat = useCallback(
@@ -1648,6 +1808,68 @@ function DiglosaRpgApp() {
   }, [hud]);
 
   const isAuthenticatedUser = Boolean(user && user.emailVerified);
+  const waveVictoryOpen =
+    !vsIntroData &&
+    hud.phase === 'playing' &&
+    Boolean(hud.waveMission?.completed) &&
+    (hud.waveMission?.seed ?? 0) > 0 &&
+    hud.waveMission?.seed !== dismissedVictorySeed;
+
+  const currentSquadMembers: VsSquadMember[] =
+    isMultiplayerPlaying && roomMembers.length > 0
+      ? [...roomMembers]
+          .sort((a, b) => (a.isHost === b.isHost ? a.spawnIndex - b.spawnIndex : a.isHost ? -1 : 1))
+          .map((m) => ({
+            uid: m.uid,
+            displayName: m.displayName,
+            characterId: m.characterId,
+            isHost: m.isHost,
+            isMe: m.uid === (user?.uid || ''),
+          }))
+      : [
+          {
+            uid: user?.uid || 'solo',
+            displayName: playerName || 'Petualang',
+            characterId,
+            isHost: true,
+            isMe: true,
+          },
+        ];
+
+  const handleStartNewRandomWave = useCallback(async () => {
+    const engine = engineRef.current;
+    if (!engine) return;
+    const waveSeed = generateRandomWaveSeed();
+    const waveCount = rollRandomWaveCount(waveSeed);
+    const activeSquadName =
+      activeRoom?.groupName ||
+      hud.waveMission?.squadName ||
+      `${(playerName || 'HOOT').trim().split(/\s+/)[0].toUpperCase()} SQUAD`;
+    if (isMultiplayerPlaying && activeRoom && isHostInRoom) {
+      await startMultiplayerMatch(activeRoom.roomId, activeRoom.difficulty, {
+        waveSeed,
+        waveCount,
+      });
+    }
+    const nextWave = engine.startNewRandomMissionWave(waveSeed, waveCount, activeSquadName);
+    setDismissedVictorySeed(0);
+    if (isMultiplayerPlaying) {
+      engine.setPhase('paused');
+    }
+    setVsIntroData({
+      squadName: activeSquadName,
+      isMultiplayer: isMultiplayerPlaying,
+      members: currentSquadMembers,
+      wave: nextWave,
+    });
+  }, [
+    activeRoom,
+    hud.waveMission?.squadName,
+    playerName,
+    isMultiplayerPlaying,
+    isHostInRoom,
+    currentSquadMembers,
+  ]);
 
   return (
     <div className="relative h-[100dvh] w-[100dvw] overflow-hidden">
@@ -1768,7 +1990,7 @@ function DiglosaRpgApp() {
       )}
 
       <StoryOverlayModal
-        story={hud.phase === 'story' ? hud.storyDialog : null}
+        story={hud.phase === 'story' && !vsIntroData ? hud.storyDialog : null}
         onAdvance={() => engineRef.current?.advanceStory()}
         onSkip={() => engineRef.current?.skipStory()}
         onDefeatChoice={(returnToZone) => engineRef.current?.resolveDefeatExitChoice(returnToZone)}
@@ -1885,19 +2107,53 @@ function DiglosaRpgApp() {
         onSignOut={handleSignOut}
       />
 
-      <GameOverModal
-        hud={hud}
-        onResume={() => engineRef.current?.setPhase('playing')}
-        onRestart={handleStartNew}
-        onQuitToTitle={() => {
-          if (activeRoom) {
-            void handleLeaveMultiplayerRoom(true);
-          } else {
-            window.location.reload();
+      {!vsIntroData && (
+        <GameOverModal
+          hud={hud}
+          onResume={() => engineRef.current?.setPhase('playing')}
+          onRestart={handleStartNew}
+          onQuitToTitle={() => {
+            if (activeRoom) {
+              void handleLeaveMultiplayerRoom(true);
+            } else {
+              window.location.reload();
+            }
+          }}
+          onOpenLeaderboard={() => setLeaderboardOpen(true)}
+          cloudSyncNote={cloudSyncNote}
+        />
+      )}
+
+      <VsMatchIntroModal
+        open={Boolean(vsIntroData)}
+        variant="intro"
+        squadName={vsIntroData?.squadName || ''}
+        isMultiplayer={Boolean(vsIntroData?.isMultiplayer)}
+        members={vsIntroData?.members || []}
+        wave={vsIntroData?.wave || null}
+        onEnterBattle={() => {
+          const wasMp = vsIntroData?.isMultiplayer;
+          setVsIntroData(null);
+          if (wasMp) {
+            engineRef.current?.setPhase('playing');
           }
         }}
-        onOpenLeaderboard={() => setLeaderboardOpen(true)}
-        cloudSyncNote={cloudSyncNote}
+      />
+
+      <VsMatchIntroModal
+        open={waveVictoryOpen}
+        variant="victory"
+        squadName={hud.waveMission?.squadName || groupName}
+        isMultiplayer={isMultiplayerPlaying}
+        canStartNewWave={!isMultiplayerPlaying || isHostInRoom}
+        members={currentSquadMembers}
+        wave={hud.waveMission || null}
+        onContinueWorld={() => {
+          if (hud.waveMission?.seed) {
+            setDismissedVictorySeed(hud.waveMission.seed);
+          }
+        }}
+        onNewWave={() => void handleStartNewRandomWave()}
       />
 
       <PlayLobbyModal
@@ -1906,12 +2162,15 @@ function DiglosaRpgApp() {
         initialDifficulty={pendingDifficulty}
         characterId={characterId}
         playerName={playerName}
+        groupName={groupName}
         hasSavedGame={hud.hasSavedGame}
         resumableRoom={resumableRoom}
         activeRoom={activeRoom}
         roomMembers={roomMembers}
         mySpawnIndex={mySpawnIndex}
         onPreviewCharacter={handlePreviewCharacter}
+        onChangeGroupName={setGroupName}
+        onUpdateRoomGroupName={handleUpdateRoomGroupName}
         onSignIn={handleSignIn}
         onContinueSolo={handleContinue}
         onConfirmSolo={handleConfirmSolo}

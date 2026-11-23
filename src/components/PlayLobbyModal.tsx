@@ -48,6 +48,7 @@ interface PlayLobbyModalProps {
   initialDifficulty: DifficultyMode;
   characterId: CharacterPresetId;
   playerName: string;
+  groupName: string;
   hasSavedGame: boolean;
   resumableRoom: {
     room: MultiplayerRoomDoc;
@@ -58,14 +59,16 @@ interface PlayLobbyModalProps {
   roomMembers: MultiplayerMemberDoc[];
   mySpawnIndex: number;
   onPreviewCharacter: (id: CharacterPresetId, name: string) => void;
+  onChangeGroupName: (name: string) => void;
+  onUpdateRoomGroupName?: (groupName: string) => Promise<void>;
   onSignIn: () => Promise<void>;
   onContinueSolo: () => void;
   onConfirmSolo: (difficulty: DifficultyMode, spawnMode: SpawnPreference) => void;
   onRejoinRoom: () => Promise<void>;
   onDismissResumableRoom: () => Promise<void>;
-  onCreateGroupRoom: (difficulty: DifficultyMode) => Promise<void>;
+  onCreateGroupRoom: (difficulty: DifficultyMode, groupName: string) => Promise<void>;
   onJoinGroupRoom: (code: string) => Promise<void>;
-  onJoinPublicRoom: (difficulty: DifficultyMode) => Promise<void>;
+  onJoinPublicRoom: (difficulty: DifficultyMode, groupName: string) => Promise<void>;
   onStartMultiplayerMatch: () => Promise<void>;
   onEnterPlayingRoom: () => void;
   onLeaveRoom: () => Promise<void>;
@@ -158,12 +161,15 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
   initialDifficulty,
   characterId,
   playerName,
+  groupName,
   hasSavedGame,
   resumableRoom,
   activeRoom,
   roomMembers,
   mySpawnIndex,
   onPreviewCharacter,
+  onChangeGroupName,
+  onUpdateRoomGroupName,
   onSignIn,
   onContinueSolo,
   onConfirmSolo,
@@ -182,6 +188,8 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
   const [difficulty, setDifficulty] = useState<DifficultyMode>(initialDifficulty);
   const [spawnPref, setSpawnPref] = useState<SpawnPreference>('random');
   const [joinCode, setJoinCode] = useState('');
+  const [editingRoomGroup, setEditingRoomGroup] = useState(false);
+  const [roomGroupDraft, setRoomGroupDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
@@ -191,6 +199,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
       setDifficulty(initialDifficulty);
       setErrorMsg(null);
       setWizardStep('character');
+      setEditingRoomGroup(false);
     }
   }, [open, initialDifficulty]);
 
@@ -378,6 +387,54 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                 <span className="rounded-full border border-white/15 bg-slate-950/80 px-2.5 py-1 text-[11px] font-bold text-slate-200">
                   Level: <strong className="capitalize text-white">{activeRoom.difficulty}</strong>
                 </span>
+
+                {editingRoomGroup && isHost && onUpdateRoomGroupName ? (
+                  <form
+                    className="flex items-center gap-1"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const clean = roomGroupDraft.trim();
+                      if (clean.length < 2) return;
+                      void runAction(async () => {
+                        await onUpdateRoomGroupName(clean);
+                        setEditingRoomGroup(false);
+                      });
+                    }}
+                  >
+                    <input
+                      type="text"
+                      maxLength={32}
+                      value={roomGroupDraft}
+                      onChange={(e) => setRoomGroupDraft(e.target.value)}
+                      placeholder="Nama Grup (2–32)"
+                      className="w-36 rounded-lg border border-amber-300/60 bg-slate-950 px-2 py-0.5 text-xs font-black text-white outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={busy || roomGroupDraft.trim().length < 2}
+                      className="rounded-lg bg-emerald-600 px-2 py-0.5 text-[10px] font-black text-white disabled:opacity-45"
+                    >
+                      Simpan
+                    </button>
+                  </form>
+                ) : (
+                  <div className="inline-flex items-center gap-1.5 rounded-full border border-emerald-400/45 bg-emerald-950/60 px-2.5 py-1 text-[11px] font-black text-emerald-200">
+                    <span>🛡️ {activeRoom.groupName || 'ELITE SQUAD'}</span>
+                    {isHost && onUpdateRoomGroupName && activeRoom.status === 'waiting' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRoomGroupDraft(activeRoom.groupName || groupName || 'ELITE SQUAD');
+                          setEditingRoomGroup(true);
+                        }}
+                        title="Ubah Nama Grup"
+                        className="rounded p-0.5 text-amber-200 hover:bg-white/10"
+                      >
+                        <Edit3 className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
               </div>
 
               <span className="font-mono-nums text-xs font-black text-emerald-300">
@@ -436,8 +493,8 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
             <div className="flex flex-col justify-between gap-2 rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2.5 sm:flex-row sm:items-center">
               <div className="text-[11px] font-medium text-slate-300">
                 <strong className="text-cyan-200">Titik Spawn Kamu:</strong>{' '}
-                {getMultiplayerGroupSpawnPoint(mySpawnIndex).label} ·
-                Waktu, progres dunia &amp; Chat P2P sinkron otomatis.
+                {getMultiplayerGroupSpawnPoint(mySpawnIndex).label} ·{' '}
+                Misi acak 20–50 monster &amp; 608 kata A1 sinkron untuk seluruh tim.
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
@@ -1099,7 +1156,24 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                           Buat kode room 6 huruf lalu bagikan ke teman (maks 6 pemain, spawn bersama
                           di Alun-Alun Desa Sapaan dengan jarak formasi aman).
                         </p>
-                        <div className="mt-3 flex flex-wrap gap-1.5">
+                        <div className="mt-2.5">
+                          <label
+                            htmlFor="group-squad-name-input"
+                            className="block text-[11px] font-extrabold text-amber-200"
+                          >
+                            Nama Grup / Squad (2–32 karakter)
+                          </label>
+                          <input
+                            id="group-squad-name-input"
+                            type="text"
+                            maxLength={32}
+                            value={groupName}
+                            onChange={(e) => onChangeGroupName(e.target.value)}
+                            placeholder="CONTOH: ELITE SQUAD"
+                            className="mt-1 w-full rounded-xl border border-amber-300/35 bg-slate-950 px-3 py-2 text-xs font-black uppercase tracking-wide text-white outline-none focus:border-amber-300"
+                          />
+                        </div>
+                        <div className="mt-2.5 flex flex-wrap gap-1.5">
                           {DIFFICULTY_CARDS.map((d) => (
                             <button
                               key={d.id}
@@ -1119,8 +1193,8 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
 
                       <button
                         type="button"
-                        disabled={busy}
-                        onClick={() => void runAction(() => onCreateGroupRoom(difficulty))}
+                        disabled={busy || groupName.trim().length < 2}
+                        onClick={() => void runAction(() => onCreateGroupRoom(difficulty, groupName))}
                         className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-amber-300/60 bg-gradient-to-r from-amber-500 to-orange-600 px-4 py-2.5 text-xs font-black text-white shadow-lg transition hover:brightness-110 disabled:opacity-50"
                       >
                         <Users className="h-4 w-4" />
@@ -1176,9 +1250,18 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                         membuat room terbuka baru. Semua pemain muncul bersama di Alun-Alun Desa
                         Sapaan dengan waktu, progres dunia, Chat Teks &amp; Suara sinkron.
                       </p>
-                      <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <input
+                          type="text"
+                          maxLength={32}
+                          value={groupName}
+                          onChange={(e) => onChangeGroupName(e.target.value)}
+                          placeholder="Nama Squad (cth: ELITE SQUAD)"
+                          aria-label="Nama Squad Publik"
+                          className="w-52 rounded-lg border border-emerald-300/35 bg-slate-950 px-2.5 py-1 text-[11px] font-black uppercase text-white outline-none focus:border-emerald-300"
+                        />
                         <span className="text-[11px] font-bold text-slate-300">
-                          Preferensi jika buat room baru:
+                          Level jika buat baru:
                         </span>
                         {DIFFICULTY_CARDS.map((d) => (
                           <button
@@ -1200,7 +1283,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                     <button
                       type="button"
                       disabled={busy}
-                      onClick={() => void runAction(() => onJoinPublicRoom(difficulty))}
+                      onClick={() => void runAction(() => onJoinPublicRoom(difficulty, groupName))}
                       className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-emerald-300/65 bg-gradient-to-r from-emerald-500 to-teal-600 px-5 py-3 text-xs font-black text-white shadow-lg transition hover:brightness-110 disabled:opacity-50"
                     >
                       <Globe className="h-4 w-4" />

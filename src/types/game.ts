@@ -605,6 +605,8 @@ export interface RpgHudSnapshot {
   worldTime: WorldTimeState;
   nearbyInjuredPeer?: NearbyInjuredPeer | null;
   allyHelpCooldownSec?: number;
+  squadName?: string;
+  waveMission?: WaveMissionState | null;
   localMabarStats?: {
     kills: number;
     assists: number;
@@ -612,6 +614,28 @@ export interface RpgHudSnapshot {
     challenges: number;
     zonesCleared: number;
   };
+}
+
+export interface WaveMonsterGroupSummary {
+  type: MonsterType;
+  name: string;
+  tier: 'small' | 'medium' | 'large' | 'giant';
+  tierLabel: string;
+  count: number;
+  quizCount: number;
+  combatCount: number;
+}
+
+export interface WaveMissionState {
+  seed: number;
+  squadName: string;
+  total: number;
+  defeated: number;
+  remaining: number;
+  quizTotal: number;
+  combatTotal: number;
+  completed: boolean;
+  monsterGroups: WaveMonsterGroupSummary[];
 }
 
 export interface LeaderboardRecord {
@@ -687,9 +711,12 @@ export interface MultiplayerRoomDoc {
   status: MultiplayerRoomStatus;
   hostUid: string;
   hostName: string;
+  groupName?: string;
   difficulty: DifficultyMode;
   maxPlayers: number;
   memberCount: number;
+  waveSeed?: number;
+  waveCount?: number;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -846,6 +873,10 @@ export type P2pReliableMessage =
       tick: number;
       mode: 'day' | 'night';
       wtot: number;
+      ws?: number;
+      wc?: number;
+      wcmp?: boolean;
+      sq?: string;
       nseq: number;
       m: SyncMonsterSnapshot[];
       s: SyncShooterSnapshot[];
