@@ -1,8 +1,25 @@
 /node_modules/
 /build/
 /dist/
+/dev-dist/
 /coverage/
 .DS_Store
 *.log
 .env*
 !.env.example
+
+# Blokir screenshot & file sementara di mana pun agar tidak ikut ter-upload ke Git
+**/Screenshot_*
+**/Screenshot\ *
+
+# Blokir seluruh upload chat/screenshot/dokumen/aset draft di public/assets/aistudio/
+# Kecuali 19 audio (.mp3) dan 7 gambar aktif (.jpeg) yang dipakai game
+public/assets/aistudio/*
+!public/assets/aistudio/*.mp3
+!public/assets/aistudio/Easy_e28c90a2.jpeg
+!public/assets/aistudio/Medium_868df2a3.jpeg
+!public/assets/aistudio/Hard_9eb17eeb.jpeg
+!public/assets/aistudio/Gemini_Generated_Image_aoej87aoej87aoej_de96d052.jpeg
+!public/assets/aistudio/Gemini_Generated_Image_o4clnqo4clnqo4cl_c0838042.jpeg
+!public/assets/aistudio/Gemini_Generated_Image_p9qrl3p9qrl3p9qr_c81c9878.jpeg
+!public/assets/aistudio/Gemini_Generated_Image_q4s0n7q4s0n7q4s0_03737224.jpeg
