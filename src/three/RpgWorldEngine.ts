@@ -113,7 +113,9 @@ import {
   createNpcGuardPost,
   GuardPostRig,
   MinecraftVillageRig,
+  resolveOBBvsOBB,
   resolveObstacleBoxes,
+  resolveVehicleOBBvsObstacles,
   updateMinecraftVillage,
   VehicleHazard,
   VillageObstacle,
@@ -132,7 +134,10 @@ import {
   OVERWORLD_ANCHORS,
   pushEntityFromOBB,
   resolveArchipelagoVehicleCollisions,
+  resolveCircleDesaVisualTerrain,
+  resolveVehicleOBBDesaVisualTerrain,
   sampleArchipelagoTerrain,
+  sampleDesaVisualVehicleGroundY,
   updateArchipelagoWorld,
   WORLD_OCEAN_LIMIT,
 } from './archipelagoWorld';
@@ -182,6 +187,7 @@ import {
   createWorldObstacles,
   getObstacleSupportHeight,
   resolveSolidObstacleCollisions,
+  resolveVehicleSolidObstacleCollisions,
   updateAndEvaluateObstacles,
   WorldObstaclesRig,
 } from './worldObstacles';
@@ -687,8 +693,8 @@ export class RpgWorldEngine {
   );
 
   // Driveable 3D Explorer Car state (parked at Alun-Alun Desa, full slow door animation + driving physics)
-  private carPos = new THREE.Vector3(3.2, getArchipelagoGroundY(3.2, 119.5), 119.5);
-  private carYaw = -Math.PI * 0.72;
+  private carPos = new THREE.Vector3(0.4, getArchipelagoGroundY(0.4, 118.0), 118.0);
+  private carYaw = -Math.PI * 0.68;
   private carSpeed = 0;
   private carSteerAngle = 0;
   private carWheelSpin = 0;
@@ -1809,10 +1815,30 @@ export class RpgWorldEngine {
     this.villageRig.obstacles.push(...this.archipelagoRig.obstacles);
     const px = OVERWORLD_ANCHORS.portal.x;
     const pz = OVERWORLD_ANCHORS.portal.z;
+    const h1y = getArchipelagoGroundY(-13.5, 84.0);
+    const h2y = getArchipelagoGroundY(-20.0, 118.0);
     this.villageRig.obstacles.push(
-      // Desa Sapaan 12m x 10m Village Houses (left stepped terraces, exact OBB rotation)
-      { x: -13.5, z: 84.0, halfW: 6.15, halfD: 5.15, rotY: 0.35 },
-      { x: -20.0, z: 118.0, halfW: 6.15, halfD: 5.15, rotY: 1.15 },
+      // Desa Sapaan 12m x 10m Village Houses (corner pillars + front cobblestone steps/torch pedestals)
+      { x: -13.5, z: 84.0, halfW: 6.36, halfD: 5.36, rotY: 0.35, minY: h1y, maxY: h1y + 9.2 },
+      {
+        x: -13.5 + 5.42 * Math.sin(0.35),
+        z: 84.0 + 5.42 * Math.cos(0.35),
+        halfW: 1.5,
+        halfD: 0.52,
+        rotY: 0.35,
+        minY: h1y,
+        maxY: h1y + 1.8,
+      },
+      { x: -20.0, z: 118.0, halfW: 6.36, halfD: 5.36, rotY: 1.15, minY: h2y, maxY: h2y + 9.2 },
+      {
+        x: -20.0 + 5.42 * Math.sin(1.15),
+        z: 118.0 + 5.42 * Math.cos(1.15),
+        halfW: 1.5,
+        halfD: 0.52,
+        rotY: 1.15,
+        minY: h2y,
+        maxY: h2y + 1.8,
+      },
       // Portal Arch stone piers in Gua Portal (center doorway stays passable)
       { x: px - 3.9, z: pz, halfW: 1.15, halfD: 1.25 },
       { x: px + 3.9, z: pz, halfW: 1.15, halfD: 1.25 },
@@ -2315,7 +2341,7 @@ export class RpgWorldEngine {
     for (let i = 0; i < this.villageRig.golems.length; i++) {
       const g = this.villageRig.golems[i];
       if (!this.isInDesaSapaanArea(g.x, g.z)) continue;
-      this.pushCircle2d(pos, g.x, g.z, selfRad + 0.92, 0.85);
+      this.pushCircle2d(pos, g.x, g.z, selfRad + 1.16, 0.85);
     }
     if (
       !skipHero &&
@@ -6693,8 +6719,8 @@ export class RpgWorldEngine {
     this.worldVehicles = [];
 
     // 1. Hero's Explorer SUV at Desa Sapaan
-    const heroSpawn = new THREE.Vector3(3.2, getArchipelagoGroundY(3.2, 119.5), 119.5);
-    const heroYaw = -Math.PI * 0.72;
+    const heroSpawn = new THREE.Vector3(0.4, getArchipelagoGroundY(0.4, 118.0), 118.0);
+    const heroYaw = -Math.PI * 0.68;
     this.carRig.root.userData.driveableCar = true;
     this.carRig.root.userData.vehicleId = 'hero_car';
     this.worldVehicles.push({
@@ -6715,9 +6741,9 @@ export class RpgWorldEngine {
       rollLean: 0,
       headlightsOn: false,
       handbrakeOn: false,
-      halfW: 1.52,
-      halfL: 3.05,
-      height: 3.45,
+      halfW: 1.64,
+      halfL: 3.2,
+      height: 3.48,
       seatOffset: this.carRig.driverSeatOffset.clone(),
       boardOffset: this.carRig.boardOutsideOffset.clone(),
       driverKind: 'none',
@@ -6925,7 +6951,7 @@ export class RpgWorldEngine {
 
   private resolveWorldVehiclesCollision(
     pos: { x: number; y?: number; z: number },
-    radius = 0.72,
+    radius = 0.62,
     entityHeight = 2.6,
     excludeVehicleId?: string,
   ): { hitVehicle: boolean; supportY: number | null } {
@@ -6940,8 +6966,8 @@ export class RpgWorldEngine {
         v.pos.y,
         v.pos.z,
         v.yaw,
-        v.halfW + 0.08,
-        v.halfL + 0.08,
+        v.halfW,
+        v.halfL,
         v.height,
         radius,
         entityHeight,
@@ -6950,6 +6976,53 @@ export class RpgWorldEngine {
       if (r.topY !== null && (supportY === null || r.topY > supportY)) supportY = r.topY;
     }
     return { hitVehicle, supportY };
+  }
+
+  private resolveVehicleOBBvsWorldVehicles(
+    pos: { x: number; y?: number; z: number },
+    yaw: number,
+    halfW: number,
+    halfL: number,
+    vehicleHeight: number,
+    excludeVehicleId?: string,
+  ): boolean {
+    const aUx = Math.cos(yaw);
+    const aUz = -Math.sin(yaw);
+    const aVx = Math.sin(yaw);
+    const aVz = Math.cos(yaw);
+    const vy = pos.y ?? 0;
+    let hit = false;
+    for (let i = 0; i < this.worldVehicles.length; i++) {
+      const v = this.worldVehicles[i];
+      if (v.id === excludeVehicleId) continue;
+      if (vy + vehicleHeight <= v.pos.y + 0.05 || vy >= v.pos.y + v.height - 0.1) continue;
+      const bUx = Math.cos(v.yaw);
+      const bUz = -Math.sin(v.yaw);
+      const bVx = Math.sin(v.yaw);
+      const bVz = Math.cos(v.yaw);
+      if (
+        resolveOBBvsOBB(
+          pos,
+          halfW,
+          halfL,
+          aUx,
+          aUz,
+          aVx,
+          aVz,
+          v.pos.x,
+          v.pos.z,
+          v.halfW,
+          v.halfL,
+          bUx,
+          bUz,
+          bVx,
+          bVz,
+        )
+      ) {
+        hit = true;
+      }
+    }
+    return hit;
   }
 
   private clearCarControls(): void {
@@ -7039,8 +7112,8 @@ export class RpgWorldEngine {
       if (heroCar) {
         this.syncCarFieldsFromVehicle(heroCar);
       } else {
-        this.carPos.set(3.2, getArchipelagoGroundY(3.2, 119.5), 119.5);
-        this.carYaw = -Math.PI * 0.72;
+        this.carPos.set(0.4, getArchipelagoGroundY(0.4, 118.0), 118.0);
+        this.carYaw = -Math.PI * 0.68;
       }
     } else {
       const active = this.getActiveVehicle();
@@ -7088,12 +7161,21 @@ export class RpgWorldEngine {
       const s = sampleArchipelagoTerrain(p.x, p.z);
       const refY = veh ? veh.pos.y : this.carPos.y;
       if (s.isLandOrBridge && s.groundY >= 0.05 && Math.abs(s.groundY - refY) < 2.2) {
-        p.y = s.groundY;
-        return p;
+        const probe = { x: p.x, y: s.groundY, z: p.z };
+        if (this.villageRig) {
+          resolveObstacleBoxes(probe, 0.56, this.villageRig.obstacles, s.groundY, 2.2);
+        }
+        if (Math.hypot(probe.x - p.x, probe.z - p.z) < 0.35) {
+          p.y = s.groundY;
+          return p;
+        }
       }
     }
     const fallback = veh ? this.getVehicleWorldPoint(veh, board) : this.getCarWorldPoint(board);
     fallback.y = Math.max(0.1, getArchipelagoGroundY(fallback.x, fallback.z));
+    if (this.villageRig) {
+      resolveObstacleBoxes(fallback, 0.56, this.villageRig.obstacles, fallback.y, 2.2);
+    }
     return fallback;
   }
 
@@ -7285,7 +7367,7 @@ export class RpgWorldEngine {
   }
 
   private resolveHeroParkedCarCollision(): void {
-    this.resolveWorldVehiclesCollision(this.heroPos, 0.72, 2.55);
+    this.resolveWorldVehiclesCollision(this.heroPos, 0.62, 2.2);
   }
 
   private updateCarPhysicsAndAnimation(dt: number): void {
@@ -7571,9 +7653,11 @@ export class RpgWorldEngine {
       const prevZ = this.carPos.z;
       this.carPos.x += Math.sin(this.carYaw) * this.carSpeed * dt;
       this.carPos.z += Math.cos(this.carYaw) * this.carSpeed * dt;
-      const carRadius = active ? active.halfW + 0.35 : 1.95;
-      const carHeight = active ? active.height : 2.65;
-      constrainHeroToWorldBounds(this.carPos, carRadius + 0.25);
+      const carHalfW = active ? active.halfW : 1.64;
+      const carHalfL = active ? active.halfL : 3.2;
+      const carHeight = active ? active.height : 3.48;
+      const carRadius = Math.max(carHalfW, 1.55);
+      constrainHeroToWorldBounds(this.carPos, carHalfW + 0.35);
 
       const checkWaterEdge = sampleArchipelagoTerrain(this.carPos.x, this.carPos.z);
       if (!checkWaterEdge.isLandOrBridge || checkWaterEdge.groundY < -0.18) {
@@ -7590,11 +7674,63 @@ export class RpgWorldEngine {
         this.carSpeed *= 0.25;
       }
 
-      resolveObstacleBoxes(this.carPos, carRadius, this.villageRig.obstacles);
+      const preCarClimbMax = this.carPos.y + 0.58;
+      if (this.isInDesaSapaanArea(this.carPos.x, this.carPos.z)) {
+        resolveVehicleOBBDesaVisualTerrain(
+          this.archipelagoRig,
+          this.carPos,
+          this.carYaw,
+          carHalfW,
+          carHalfL,
+          preCarClimbMax,
+        );
+      }
+      resolveVehicleOBBvsObstacles(
+        this.carPos,
+        this.carYaw,
+        carHalfW,
+        carHalfL,
+        this.villageRig.obstacles,
+        this.carPos.y,
+        carHeight,
+      );
       resolveArchipelagoVehicleCollisions(this.archipelagoRig, this.carPos, carRadius, carHeight);
-      this.resolveWorldVehiclesCollision(this.carPos, carRadius, carHeight, active?.id);
+      this.resolveVehicleOBBvsWorldVehicles(
+        this.carPos,
+        this.carYaw,
+        carHalfW,
+        carHalfL,
+        carHeight,
+        active?.id,
+      );
       if (this.worldObstaclesRig) {
-        resolveSolidObstacleCollisions(this.worldObstaclesRig, this.carPos, carRadius, carHeight);
+        resolveVehicleSolidObstacleCollisions(
+          this.worldObstaclesRig,
+          this.carPos,
+          this.carYaw,
+          carHalfW,
+          carHalfL,
+          carHeight,
+        );
+      }
+      if (this.isInDesaSapaanArea(this.carPos.x, this.carPos.z)) {
+        resolveVehicleOBBDesaVisualTerrain(
+          this.archipelagoRig,
+          this.carPos,
+          this.carYaw,
+          carHalfW,
+          carHalfL,
+          preCarClimbMax,
+        );
+        resolveVehicleOBBvsObstacles(
+          this.carPos,
+          this.carYaw,
+          carHalfW,
+          carHalfL,
+          this.villageRig.obstacles,
+          this.carPos.y,
+          carHeight,
+        );
       }
 
       const postWater = sampleArchipelagoTerrain(this.carPos.x, this.carPos.z);
@@ -7603,9 +7739,21 @@ export class RpgWorldEngine {
         this.carPos.z = prevZ;
         this.carSpeed = 0;
       } else {
+        const targetCarY = this.isInDesaSapaanArea(this.carPos.x, this.carPos.z)
+          ? sampleDesaVisualVehicleGroundY(
+              this.archipelagoRig,
+              this.carPos.x,
+              this.carPos.z,
+              this.carYaw,
+              carHalfW,
+              carHalfL,
+              preCarClimbMax,
+              postWater.groundY,
+            )
+          : postWater.groundY;
         this.carPos.y = THREE.MathUtils.damp(
           this.carPos.y,
-          Math.max(-0.05, postWater.groundY),
+          Math.max(-0.05, targetCarY),
           16,
           dt,
         );
@@ -7832,13 +7980,45 @@ export class RpgWorldEngine {
             const prevZ = v.pos.z;
             v.pos.x += Math.sin(v.yaw) * v.speed * dt;
             v.pos.z += Math.cos(v.yaw) * v.speed * dt;
-            const carRad = v.halfW + 0.3;
-            constrainHeroToWorldBounds(v.pos, carRad + 0.3);
-            resolveObstacleBoxes(v.pos, carRad, this.villageRig.obstacles);
-            resolveArchipelagoVehicleCollisions(this.archipelagoRig, v.pos, carRad, v.height);
-            this.resolveWorldVehiclesCollision(v.pos, carRad, v.height, v.id);
+            const npcCarClimbMax = v.pos.y + 0.58;
+            constrainHeroToWorldBounds(v.pos, v.halfW + 0.35);
+            if (this.isInDesaSapaanArea(v.pos.x, v.pos.z)) {
+              resolveVehicleOBBDesaVisualTerrain(
+                this.archipelagoRig,
+                v.pos,
+                v.yaw,
+                v.halfW,
+                v.halfL,
+                npcCarClimbMax,
+              );
+            }
+            resolveVehicleOBBvsObstacles(
+              v.pos,
+              v.yaw,
+              v.halfW,
+              v.halfL,
+              this.villageRig.obstacles,
+              v.pos.y,
+              v.height,
+            );
+            resolveArchipelagoVehicleCollisions(this.archipelagoRig, v.pos, v.halfW, v.height);
+            this.resolveVehicleOBBvsWorldVehicles(
+              v.pos,
+              v.yaw,
+              v.halfW,
+              v.halfL,
+              v.height,
+              v.id,
+            );
             if (this.worldObstaclesRig) {
-              resolveSolidObstacleCollisions(this.worldObstaclesRig, v.pos, carRad, v.height);
+              resolveVehicleSolidObstacleCollisions(
+                this.worldObstaclesRig,
+                v.pos,
+                v.yaw,
+                v.halfW,
+                v.halfL,
+                v.height,
+              );
             }
             const gSample = sampleArchipelagoTerrain(v.pos.x, v.pos.z);
             if (!gSample.isLandOrBridge || gSample.groundY < 0.05 || Math.abs(gSample.groundY - v.pos.y) > 1.8) {
@@ -7851,7 +8031,19 @@ export class RpgWorldEngine {
                 v.yaw += Math.PI * 0.65;
               }
             } else {
-              v.pos.y = THREE.MathUtils.damp(v.pos.y, gSample.groundY, 14, dt);
+              const targetY = this.isInDesaSapaanArea(v.pos.x, v.pos.z)
+                ? sampleDesaVisualVehicleGroundY(
+                    this.archipelagoRig,
+                    v.pos.x,
+                    v.pos.z,
+                    v.yaw,
+                    v.halfW,
+                    v.halfL,
+                    npcCarClimbMax,
+                    gSample.groundY,
+                  )
+                : gSample.groundY;
+              v.pos.y = THREE.MathUtils.damp(v.pos.y, targetY, 14, dt);
             }
             v.wheelSpin += (v.speed / 0.56) * dt;
           }
@@ -7880,16 +8072,64 @@ export class RpgWorldEngine {
           const prevZ = v.pos.z;
           v.pos.x += Math.sin(v.yaw) * v.speed * dt;
           v.pos.z += Math.cos(v.yaw) * v.speed * dt;
+          const coastClimbMax = v.pos.y + 0.58;
+          if (this.isInDesaSapaanArea(v.pos.x, v.pos.z)) {
+            resolveVehicleOBBDesaVisualTerrain(
+              this.archipelagoRig,
+              v.pos,
+              v.yaw,
+              v.halfW,
+              v.halfL,
+              coastClimbMax,
+            );
+          }
+          resolveVehicleOBBvsObstacles(
+            v.pos,
+            v.yaw,
+            v.halfW,
+            v.halfL,
+            this.villageRig.obstacles,
+            v.pos.y,
+            v.height,
+          );
+          this.resolveVehicleOBBvsWorldVehicles(
+            v.pos,
+            v.yaw,
+            v.halfW,
+            v.halfL,
+            v.height,
+            v.id,
+          );
+          if (this.worldObstaclesRig) {
+            resolveVehicleSolidObstacleCollisions(
+              this.worldObstaclesRig,
+              v.pos,
+              v.yaw,
+              v.halfW,
+              v.halfL,
+              v.height,
+            );
+          }
           const s = sampleArchipelagoTerrain(v.pos.x, v.pos.z);
           if (!s.isLandOrBridge || s.groundY < -0.1) {
             v.pos.x = prevX;
             v.pos.z = prevZ;
             v.speed = 0;
           } else {
-            v.pos.y = THREE.MathUtils.damp(v.pos.y, s.groundY, 14, dt);
+            const targetY = this.isInDesaSapaanArea(v.pos.x, v.pos.z)
+              ? sampleDesaVisualVehicleGroundY(
+                  this.archipelagoRig,
+                  v.pos.x,
+                  v.pos.z,
+                  v.yaw,
+                  v.halfW,
+                  v.halfL,
+                  coastClimbMax,
+                  s.groundY,
+                )
+              : s.groundY;
+            v.pos.y = THREE.MathUtils.damp(v.pos.y, targetY, 14, dt);
           }
-          resolveObstacleBoxes(v.pos, v.halfW + 0.3, this.villageRig.obstacles);
-          this.resolveWorldVehiclesCollision(v.pos, v.halfW + 0.3, v.height, v.id);
           v.wheelSpin += (v.speed / 0.56) * dt;
           if (Math.abs(v.speed) < 0.16) v.speed = 0;
         } else {
@@ -12619,7 +12859,8 @@ export class RpgWorldEngine {
           const mobClamp = this._desaColScratch;
           mobClamp.x = nextMx;
           mobClamp.z = nextMz;
-          resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles);
+          const bPreY = getArchipelagoGroundY(m.x, m.z);
+          resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles, bPreY, 2.2);
           this.resolveActiveDesaPickupBoxes(mobClamp, mRad);
           resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
           this.resolveWorldVehiclesCollision(mobClamp, mRad, 2.2);
@@ -12627,6 +12868,7 @@ export class RpgWorldEngine {
             resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
           }
           if (this.isInDesaSapaanArea(mobClamp.x, mobClamp.z)) {
+            resolveCircleDesaVisualTerrain(this.archipelagoRig, mobClamp, mRad, bPreY + 0.95);
             const bGroundY = getArchipelagoGroundY(mobClamp.x, mobClamp.z);
             const heroMinD = Math.min(2.0, 0.65 + spec.hitRadius * 0.62);
             this.resolveDesaLivingSeparation(
@@ -12639,13 +12881,14 @@ export class RpgWorldEngine {
               false,
               heroMinD,
             );
-            resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles);
+            resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles, bGroundY, 2.2);
             this.resolveActiveDesaPickupBoxes(mobClamp, mRad);
             resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
             this.resolveWorldVehiclesCollision(mobClamp, mRad, 2.2);
             if (this.worldObstaclesRig) {
               resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
             }
+            resolveCircleDesaVisualTerrain(this.archipelagoRig, mobClamp, mRad, bPreY + 0.95);
           }
           constrainToWalkableArchipelago(mobClamp, 0.95);
           m.x = mobClamp.x;
@@ -12734,7 +12977,8 @@ export class RpgWorldEngine {
           const mobClamp = this._desaColScratch;
           mobClamp.x = nextMx;
           mobClamp.z = nextMz;
-          resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles);
+          const qPreY = getArchipelagoGroundY(m.x, m.z);
+          resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles, qPreY, 2.2);
           this.resolveActiveDesaPickupBoxes(mobClamp, mRad);
           resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
           this.resolveWorldVehiclesCollision(mobClamp, mRad, 2.2);
@@ -12742,6 +12986,7 @@ export class RpgWorldEngine {
             resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
           }
           if (this.isInDesaSapaanArea(mobClamp.x, mobClamp.z)) {
+            resolveCircleDesaVisualTerrain(this.archipelagoRig, mobClamp, mRad, qPreY + 0.95);
             const qGroundY = getArchipelagoGroundY(mobClamp.x, mobClamp.z);
             const heroMinD = Math.min(2.05, 0.68 + spec.hitRadius * 0.65);
             this.resolveDesaLivingSeparation(
@@ -12754,13 +12999,14 @@ export class RpgWorldEngine {
               false,
               heroMinD,
             );
-            resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles);
+            resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles, qGroundY, 2.2);
             this.resolveActiveDesaPickupBoxes(mobClamp, mRad);
             resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
             this.resolveWorldVehiclesCollision(mobClamp, mRad, 2.2);
             if (this.worldObstaclesRig) {
               resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
             }
+            resolveCircleDesaVisualTerrain(this.archipelagoRig, mobClamp, mRad, qPreY + 0.95);
           }
           constrainToWalkableArchipelago(mobClamp, 0.95);
           nextMx = mobClamp.x;
@@ -12898,9 +13144,11 @@ export class RpgWorldEngine {
       this.extraVillageColliders.push({
         x: v.pos.x,
         z: v.pos.z,
-        halfW: v.halfW + 0.25,
-        halfD: v.halfL + 0.25,
+        halfW: v.halfW,
+        halfD: v.halfL,
         rotY: v.yaw,
+        minY: v.pos.y,
+        maxY: v.pos.y + v.height,
       });
     }
     updateMinecraftVillage(
@@ -13142,7 +13390,8 @@ export class RpgWorldEngine {
           ownPostObs.halfW = -10;
           ownPostObs.halfD = -10;
         }
-        resolveObstacleBoxes(npcCol, nRad, this.villageRig.obstacles);
+        const nPreY = getArchipelagoGroundY(npcCol.x, npcCol.z);
+        resolveObstacleBoxes(npcCol, nRad, this.villageRig.obstacles, nPreY, 2.2);
         this.resolveActiveDesaPickupBoxes(npcCol, nRad);
         resolveArchipelagoVehicleCollisions(this.archipelagoRig, npcCol, nRad, 2.2);
         this.resolveWorldVehiclesCollision(npcCol, nRad, 2.2);
@@ -13150,6 +13399,7 @@ export class RpgWorldEngine {
           resolveSolidObstacleCollisions(this.worldObstaclesRig, npcCol, nRad, 2.2);
         }
         if (this.isInDesaSapaanArea(npcCol.x, npcCol.z)) {
+          resolveCircleDesaVisualTerrain(this.archipelagoRig, npcCol, nRad, nPreY + 0.95);
           this.resolveDesaLivingSeparation(
             npcCol,
             nRad,
@@ -13158,7 +13408,7 @@ export class RpgWorldEngine {
             undefined,
             npcId,
           );
-          resolveObstacleBoxes(npcCol, nRad, this.villageRig.obstacles);
+          resolveObstacleBoxes(npcCol, nRad, this.villageRig.obstacles, nPreY, 2.2);
           this.resolveActiveDesaPickupBoxes(npcCol, nRad);
         }
         if (ownPostObs && nearOwnBed) {
@@ -13975,10 +14225,13 @@ export class RpgWorldEngine {
         }
       };
       resolveHeroTerrainWalls();
+      if (this.isInDesaSapaanArea(this.heroPos.x, this.heroPos.z)) {
+        resolveCircleDesaVisualTerrain(this.archipelagoRig, this.heroPos, 0.58, climbLimit);
+      }
 
       // Resolve smooth collisions against cottages, rocks, fences, towers & walls
-      const heroRad = 0.72;
-      resolveObstacleBoxes(this.heroPos, heroRad, this.villageRig.obstacles);
+      const heroRad = 0.62;
+      resolveObstacleBoxes(this.heroPos, heroRad, this.villageRig.obstacles, this.heroPos.y, 2.2);
       this.resolveActiveDesaPickupBoxes(this.heroPos, heroRad);
 
       // Prevent clipping through moving & parked vehicles (Bus, Sedan, Taxi, Police Car, Minecart)
@@ -13986,13 +14239,13 @@ export class RpgWorldEngine {
         this.archipelagoRig,
         this.heroPos,
         heroRad,
-        2.55,
+        2.2,
       );
       this.resolveHeroParkedCarCollision();
 
       // Prevent clipping through solid obstacle housings (pistons, vents, turrets, lasers, moving platform sides)
       if (this.worldObstaclesRig) {
-        resolveSolidObstacleCollisions(this.worldObstaclesRig, this.heroPos, 0.66, 2.55);
+        resolveSolidObstacleCollisions(this.worldObstaclesRig, this.heroPos, heroRad, 2.2);
       }
 
       const pushHeroCircle = (ex: number, ey: number, ez: number, minD: number, verticalTol = 2.2) => {
@@ -14026,7 +14279,7 @@ export class RpgWorldEngine {
       }
       for (const g of this.villageRig.golems) {
         if (!g.root.visible) continue;
-        pushHeroCircle(g.x, g.root.position.y, g.z, 1.32, 2.8);
+        pushHeroCircle(g.x, g.root.position.y, g.z, 1.38, 2.8);
       }
       for (const l of this.villageRig.llamas) {
         if (!l.root.visible) continue;
@@ -14069,12 +14322,14 @@ export class RpgWorldEngine {
       }
 
       if (this.isInDesaSapaanArea(this.heroPos.x, this.heroPos.z)) {
-        resolveObstacleBoxes(this.heroPos, heroRad, this.villageRig.obstacles);
+        resolveObstacleBoxes(this.heroPos, heroRad, this.villageRig.obstacles, this.heroPos.y, 2.2);
         this.resolveActiveDesaPickupBoxes(this.heroPos, heroRad);
-        resolveArchipelagoVehicleCollisions(this.archipelagoRig, this.heroPos, heroRad, 2.55);
+        resolveArchipelagoVehicleCollisions(this.archipelagoRig, this.heroPos, heroRad, 2.2);
+        this.resolveHeroParkedCarCollision();
         if (this.worldObstaclesRig) {
-          resolveSolidObstacleCollisions(this.worldObstaclesRig, this.heroPos, 0.66, 2.55);
+          resolveSolidObstacleCollisions(this.worldObstaclesRig, this.heroPos, heroRad, 2.2);
         }
+        resolveCircleDesaVisualTerrain(this.archipelagoRig, this.heroPos, 0.58, climbLimit);
       }
 
       resolveHeroTerrainWalls();
@@ -16042,7 +16297,8 @@ export class RpgWorldEngine {
         const sClamp = this._desaColScratch;
         sClamp.x = nextSx;
         sClamp.z = nextSz;
-        resolveObstacleBoxes(sClamp, sRad, this.villageRig.obstacles);
+        const sPreY = getArchipelagoGroundY(s.x, s.z);
+        resolveObstacleBoxes(sClamp, sRad, this.villageRig.obstacles, sPreY, 2.2);
         this.resolveActiveDesaPickupBoxes(sClamp, sRad);
         resolveArchipelagoVehicleCollisions(this.archipelagoRig, sClamp, sRad, 2.2);
         this.resolveWorldVehiclesCollision(sClamp, sRad, 2.2);
@@ -16050,6 +16306,7 @@ export class RpgWorldEngine {
           resolveSolidObstacleCollisions(this.worldObstaclesRig, sClamp, sRad, 2.2);
         }
         if (this.isInDesaSapaanArea(sClamp.x, sClamp.z)) {
+          resolveCircleDesaVisualTerrain(this.archipelagoRig, sClamp, sRad, sPreY + 0.95);
           this.resolveDesaLivingSeparation(
             sClamp,
             sRad,
@@ -16057,13 +16314,14 @@ export class RpgWorldEngine {
             undefined,
             s,
           );
-          resolveObstacleBoxes(sClamp, sRad, this.villageRig.obstacles);
+          resolveObstacleBoxes(sClamp, sRad, this.villageRig.obstacles, sPreY, 2.2);
           this.resolveActiveDesaPickupBoxes(sClamp, sRad);
           resolveArchipelagoVehicleCollisions(this.archipelagoRig, sClamp, sRad, 2.2);
           this.resolveWorldVehiclesCollision(sClamp, sRad, 2.2);
           if (this.worldObstaclesRig) {
             resolveSolidObstacleCollisions(this.worldObstaclesRig, sClamp, sRad, 2.2);
           }
+          resolveCircleDesaVisualTerrain(this.archipelagoRig, sClamp, sRad, sPreY + 0.95);
         } else {
           for (const npc of this.npcs.values()) {
             this.pushCircle2d(sClamp, npc.x, npc.z, sRad + 0.7);

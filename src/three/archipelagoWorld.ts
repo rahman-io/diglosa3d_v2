@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { ZoneId } from '../types/game';
 import { MaterialPalette } from './materials';
-import { VillageObstacle } from './minecraftVillage';
+import { resolveOBBvsOBB, VillageObstacle } from './minecraftVillage';
 import {
   buildIstanaFloatingIsland,
   IstanaFloatingRig,
@@ -629,6 +629,7 @@ function sampleIslandInterior(
     h = rectBlend(wx, wz, -21.0, -6.0, 77.0, 91.0, 4.0, 6.2, h); // Rumah Desa 1 (12m x 10m)
     h = rectBlend(wx, wz, -27.5, -12.5, 111.5, 124.5, 4.0, 4.6, h); // Rumah Desa 2 (12m x 10m)
     h = padBlend(wx, wz, -6.0, 126.0, 5.0, 9.5, 2.6, h); // desaSpawn & village square
+    h = padBlend(wx, wz, 1.5, 118.5, 4.6, 8.2, 2.6, h); // Explorer SUV parking plaza
     h = padBlend(wx, wz, -12.5, 123.0, 3.2, 6.5, 2.6, h); // starterWeapon
     h = padBlend(wx, wz, -4.5, 140.0, 3.0, 6.0, 2.6, h); // swimSuit
     h = padBlend(wx, wz, -6.5, 111.5, 3.0, 6.0, 2.6, h); // village_well
@@ -1324,10 +1325,23 @@ function buildVoxelBatch(
   return mesh;
 }
 
+export interface DesaVisualTerrainGrid {
+  cellStep: number;
+  halfCell: number;
+  minGx: number;
+  maxGx: number;
+  minGz: number;
+  maxGz: number;
+  nx: number;
+  nz: number;
+  heights: Float32Array;
+}
+
 export interface ArchipelagoRig {
   group: THREE.Group;
   walkableTargets: THREE.Object3D[];
   obstacles: VillageObstacle[];
+  desaVisualGrid: DesaVisualTerrainGrid;
   torchesFlame: THREE.Object3D[];
   waterUniforms: { uTime: { value: number } };
   windmillHub: THREE.Group;
@@ -1955,6 +1969,7 @@ export function createArchipelagoWorld(
 
   const cellStep = lowDetail ? 2.2 : 1.75;
   const topThickness = 0.65;
+  let desaVisualGrid!: DesaVisualTerrainGrid;
   for (let idx = 0; idx < ISLAND_DISKS.length; idx++) {
     const isl = ISLAND_DISKS[idx];
     const theme = islandThemes[isl.id];
@@ -1963,6 +1978,24 @@ export function createArchipelagoWorld(
     const maxGx = Math.ceil((isl.cx + outerR) / cellStep);
     const minGz = Math.floor((isl.cz - outerR) / cellStep);
     const maxGz = Math.ceil((isl.cz + outerR) / cellStep);
+    const isDesaSapaan = isl.id === 'desa_sapaan';
+    let desaNx = 0;
+    let desaNz = 0;
+    if (isDesaSapaan) {
+      desaNx = maxGx - minGx + 1;
+      desaNz = maxGz - minGz + 1;
+      desaVisualGrid = {
+        cellStep,
+        halfCell: cellStep * 0.515,
+        minGx,
+        maxGx,
+        minGz,
+        maxGz,
+        nx: desaNx,
+        nz: desaNz,
+        heights: new Float32Array(desaNx * desaNz).fill(-999),
+      };
+    }
 
     for (let gx = minGx; gx <= maxGx; gx++) {
       for (let gz = minGz; gz <= maxGz; gz++) {
@@ -1973,6 +2006,9 @@ export function createArchipelagoWorld(
 
         if (dist <= effR) {
           const inner = sampleIslandInterior(isl, wx, wz, dist, effR);
+          if (isDesaSapaan) {
+            desaVisualGrid.heights[(gx - minGx) * desaNz + (gz - minGz)] = inner.y;
+          }
           const isHubBasaltZone =
             isl.id === 'hub' && wx >= -18.5 && wx <= 26.5 && wz + 17.0 >= 22.0;
           const colList =
@@ -2767,9 +2803,9 @@ export function createArchipelagoWorld(
     mill.add(mPlinth, mBase, mTrim, mTower, mDoor, windmillHub);
     group.add(mill);
     obstacles.push(
-      { x: millX, z: millZ, halfW: 3.15, halfD: 3.2, rotY: 0.65 },
-      { x: -28.5, z: 99.5, halfW: 0.62, halfD: 0.62 },
-      { x: -27.2, z: 100.6, halfW: 0.5, halfD: 0.5 },
+      { x: millX, z: millZ, halfW: 3.14, halfD: 3.28, rotY: 0.65 },
+      { x: -28.5, z: 99.5, halfW: 0.61, halfD: 0.61 },
+      { x: -27.2, z: 100.6, halfW: 0.49, halfD: 0.49 },
     );
 
     // Wooden crates beside the windmill
@@ -2792,6 +2828,7 @@ export function createArchipelagoWorld(
       [27.0, 122.5],
     ].forEach(([px, pz]) => {
       cliffBlocks.push({ x: px, y: 2.2, z: pz, sx: 0.65, sy: 1.8, sz: 0.65, color: 0x5c3a1e });
+      obstacles.push({ x: px, z: pz, halfW: 0.34, halfD: 0.34, minY: 1.2, maxY: 3.05 });
     });
 
     // Grand Stepped Stone Cave Archway (Lebar 16m x Tinggi 14m!) carved into the 38m East Bukit Gua
@@ -2835,20 +2872,20 @@ export function createArchipelagoWorld(
     });
     // Arch pillar, inner cheeks, torch pedestals + cavern backwall colliders (central wooden deck & mouth stay walkable!)
     obstacles.push(
-      { x: 28.0, z: 110.2, halfW: 2.4, halfD: 1.8 },
-      { x: 28.0, z: 125.8, halfW: 2.4, halfD: 1.8 },
-      { x: 26.8, z: 111.7, halfW: 1.45, halfD: 0.95 },
-      { x: 26.8, z: 124.3, halfW: 1.45, halfD: 0.95 },
-      { x: 20.5, z: 111.5, halfW: 0.72, halfD: 0.72 },
-      { x: 20.5, z: 124.5, halfW: 0.72, halfD: 0.72 },
-      { x: 32.0, z: 118.0, halfW: 2.6, halfD: 5.5 },
+      { x: 28.0, z: 110.5, halfW: 2.26, halfD: 1.42 },
+      { x: 28.0, z: 125.5, halfW: 2.26, halfD: 1.42 },
+      { x: 26.8, z: 111.7, halfW: 1.42, halfD: 0.92 },
+      { x: 26.8, z: 124.3, halfW: 1.42, halfD: 0.92 },
+      { x: 20.5, z: 111.5, halfW: 0.69, halfD: 0.69 },
+      { x: 20.5, z: 124.5, halfW: 0.69, halfD: 0.69 },
+      { x: 32.5, z: 118.0, halfW: 3.6, halfD: 5.4 },
     );
 
     // Wooden Village Signpost beside the 4m footpath
     const signY = getArchipelagoGroundY(-1.5, 131.5);
     cliffBlocks.push({ x: -1.5, y: signY + 1.1, z: 131.5, sx: 0.35, sy: 2.2, sz: 0.35, color: 0x5c3a1e });
     cliffBlocks.push({ x: -1.5, y: signY + 1.85, z: 131.5, sx: 1.8, sy: 0.95, sz: 0.28, color: 0xb88a4c });
-    obstacles.push({ x: -1.5, z: 131.5, halfW: 0.92, halfD: 0.32 });
+    obstacles.push({ x: -1.5, z: 131.5, halfW: 0.91, halfD: 0.21, minY: signY, maxY: signY + 2.4 });
 
     // Pohon Desa (T: 6m - 10m!) stylized voxel oak trees across terraces & meadow
     const desaTreeSpots: Array<[number, number, number, number]> = [
@@ -2876,7 +2913,10 @@ export function createArchipelagoWorld(
       const ty = getArchipelagoGroundY(tx, tz);
       if (ty < 1.0) return;
       cliffBlocks.push({ x: tx, y: ty + th * 0.5, z: tz, sx: 1.05, sy: th, sz: 1.05, color: 0x5c3a1e });
-      obstacles.push({ x: tx, z: tz, halfW: 0.72, halfD: 0.72 });
+      obstacles.push(
+        { x: tx, z: tz, halfW: 0.54, halfD: 0.54, minY: ty, maxY: ty + th + 0.1 },
+        { x: tx, z: tz, halfW: cw * 0.5, halfD: cw * 0.5, minY: ty + th, maxY: ty + th + 3.4 },
+      );
       const leaf1 = ti % 2 === 0 ? 0x65a30d : 0x4d7c0f;
       const leaf2 = ti % 2 === 0 ? 0x84cc16 : 0x65a30d;
       walkableTopBlocks.push({ x: tx, y: ty + th + 0.9, z: tz, sx: cw, sy: 1.8, sz: cw, color: leaf1 });
@@ -4525,6 +4565,7 @@ export function createArchipelagoWorld(
     group,
     walkableTargets,
     obstacles,
+    desaVisualGrid,
     torchesFlame,
     waterUniforms,
     windmillHub,
@@ -4835,3 +4876,216 @@ export function appendVehicleVillageColliders(
     });
   }
 }
+
+function isDesaCellCoveredByBridgeOrDock(cx: number, cz: number): boolean {
+  if (cz < 68 && cx < -10 && cx > -32) {
+    const b = evalBridgeSample(BRIDGE_SPANS[0], cx, cz);
+    if (b.rawT >= -0.04 && b.rawT <= 1.04 && !b.inGap && b.perp <= BRIDGE_SPANS[0].halfWidth + 0.6) {
+      return true;
+    }
+  }
+  if (cz > 170 && Math.abs(cx) < 8) {
+    const s = sampleArchipelagoTerrain(cx, cz);
+    if (s.isLandOrBridge && s.groundY >= 0.05) return true;
+  }
+  return false;
+}
+
+/**
+ * Resolves a circular entity (Hero, NPC, Monster) against every rendered voxel terrain block
+ * in Pulau Desa Sapaan whose top height exceeds `maxClimbY`, eliminating visual cliff overhangs.
+ */
+export function resolveCircleDesaVisualTerrain(
+  rig: ArchipelagoRig,
+  pos: { x: number; z: number },
+  radius: number,
+  maxClimbY: number,
+  blockWater = false,
+): boolean {
+  const g = rig.desaVisualGrid;
+  if (!g) return false;
+  const { cellStep, halfCell, minGx, maxGx, minGz, maxGz, nz, heights } = g;
+  const minX = minGx * cellStep - halfCell - radius;
+  const maxX = maxGx * cellStep + halfCell + radius;
+  const minZ = minGz * cellStep - halfCell - radius;
+  const maxZ = maxGz * cellStep + halfCell + radius;
+  if (pos.x < minX || pos.x > maxX || pos.z < minZ || pos.z > maxZ) return false;
+
+  const onBridge = sampleArchipelagoTerrain(pos.x, pos.z).surface === 'bridge';
+  let hit = false;
+  const rSq = radius * radius;
+
+  for (let pass = 0; pass < 2; pass++) {
+    let passHit = false;
+    const gx0 = Math.max(minGx, Math.floor((pos.x - radius - halfCell) / cellStep));
+    const gx1 = Math.min(maxGx, Math.ceil((pos.x + radius + halfCell) / cellStep));
+    const gz0 = Math.max(minGz, Math.floor((pos.z - radius - halfCell) / cellStep));
+    const gz1 = Math.min(maxGz, Math.ceil((pos.z + radius + halfCell) / cellStep));
+
+    for (let gx = gx0; gx <= gx1; gx++) {
+      const cx = gx * cellStep;
+      for (let gz = gz0; gz <= gz1; gz++) {
+        const cellY = heights[(gx - minGx) * nz + (gz - minGz)];
+        const cz = gz * cellStep;
+        if (cellY < -500) {
+          if (!blockWater || onBridge || isDesaCellCoveredByBridgeOrDock(cx, cz)) continue;
+        } else if (cellY <= maxClimbY) {
+          continue;
+        }
+
+        const nearX = THREE.MathUtils.clamp(pos.x, cx - halfCell, cx + halfCell);
+        const nearZ = THREE.MathUtils.clamp(pos.z, cz - halfCell, cz + halfCell);
+        const dx = pos.x - nearX;
+        const dz = pos.z - nearZ;
+        const distSq = dx * dx + dz * dz;
+        if (distSq < rSq) {
+          hit = true;
+          passHit = true;
+          if (distSq > 0.0001) {
+            const d = Math.sqrt(distSq);
+            pos.x += (dx / d) * (radius - d);
+            pos.z += (dz / d) * (radius - d);
+          } else {
+            const penX = halfCell + radius - Math.abs(pos.x - cx);
+            const penZ = halfCell + radius - Math.abs(pos.z - cz);
+            if (penX < penZ) {
+              pos.x += pos.x >= cx ? penX : -penX;
+            } else {
+              pos.z += pos.z >= cz ? penZ : -penZ;
+            }
+          }
+        }
+      }
+    }
+    if (!passHit) break;
+  }
+  return hit;
+}
+
+/**
+ * Resolves a vehicle OBB against every rendered voxel terrain block on Pulau Desa Sapaan
+ * that is either steeper than `maxClimbY` or water outside bridges/docks.
+ */
+export function resolveVehicleOBBDesaVisualTerrain(
+  rig: ArchipelagoRig,
+  pos: { x: number; z: number },
+  yaw: number,
+  halfW: number,
+  halfL: number,
+  maxClimbY: number,
+): boolean {
+  const g = rig.desaVisualGrid;
+  if (!g) return false;
+  const aUx = Math.cos(yaw);
+  const aUz = -Math.sin(yaw);
+  const aVx = Math.sin(yaw);
+  const aVz = Math.cos(yaw);
+  const extX = Math.abs(aUx) * halfW + Math.abs(aVx) * halfL;
+  const extZ = Math.abs(aUz) * halfW + Math.abs(aVz) * halfL;
+
+  const { cellStep, halfCell, minGx, maxGx, minGz, maxGz, nz, heights } = g;
+  if (
+    pos.x < minGx * cellStep - halfCell - extX ||
+    pos.x > maxGx * cellStep + halfCell + extX ||
+    pos.z < minGz * cellStep - halfCell - extZ ||
+    pos.z > maxGz * cellStep + halfCell + extZ
+  ) {
+    return false;
+  }
+
+  const onBridge = sampleArchipelagoTerrain(pos.x, pos.z).surface === 'bridge';
+  let hit = false;
+
+  for (let pass = 0; pass < 2; pass++) {
+    let passHit = false;
+    const gx0 = Math.max(minGx, Math.floor((pos.x - extX - halfCell) / cellStep));
+    const gx1 = Math.min(maxGx, Math.ceil((pos.x + extX + halfCell) / cellStep));
+    const gz0 = Math.max(minGz, Math.floor((pos.z - extZ - halfCell) / cellStep));
+    const gz1 = Math.min(maxGz, Math.ceil((pos.z + extZ + halfCell) / cellStep));
+
+    for (let gx = gx0; gx <= gx1; gx++) {
+      const cx = gx * cellStep;
+      for (let gz = gz0; gz <= gz1; gz++) {
+        const cellY = heights[(gx - minGx) * nz + (gz - minGz)];
+        const cz = gz * cellStep;
+        if (cellY < -500) {
+          if (onBridge || isDesaCellCoveredByBridgeOrDock(cx, cz)) continue;
+        } else if (cellY <= maxClimbY) {
+          continue;
+        }
+
+        if (
+          resolveOBBvsOBB(
+            pos,
+            halfW,
+            halfL,
+            aUx,
+            aUz,
+            aVx,
+            aVz,
+            cx,
+            cz,
+            halfCell,
+            halfCell,
+            1,
+            0,
+            0,
+            1,
+          )
+        ) {
+          hit = true;
+          passHit = true;
+        }
+      }
+    }
+    if (!passHit) break;
+  }
+  return hit;
+}
+
+/**
+ * Computes wheel-footprint ground height on Pulau Desa Sapaan directly from the rendered
+ * terrain cell grid so tires rest flush on visual blocks without sinking into ledges.
+ */
+export function sampleDesaVisualVehicleGroundY(
+  rig: ArchipelagoRig,
+  x: number,
+  z: number,
+  yaw: number,
+  halfW: number,
+  halfL: number,
+  maxClimbY: number,
+  fallbackY: number,
+): number {
+  const g = rig.desaVisualGrid;
+  if (!g) return fallbackY;
+  const { cellStep, minGx, maxGx, minGz, maxGz, nz, heights } = g;
+  const aUx = Math.cos(yaw);
+  const aUz = -Math.sin(yaw);
+  const aVx = Math.sin(yaw);
+  const aVz = Math.cos(yaw);
+  const wxOff = halfW * 0.72;
+  const wzOff = halfL * 0.62;
+
+  let bestY = -Infinity;
+  const samplePt = (px: number, pz: number) => {
+    const gx = Math.round(px / cellStep);
+    const gz = Math.round(pz / cellStep);
+    if (gx >= minGx && gx <= maxGx && gz >= minGz && gz <= maxGz) {
+      const cy = heights[(gx - minGx) * nz + (gz - minGz)];
+      if (cy > -500 && cy <= maxClimbY && cy > bestY) {
+        bestY = cy;
+      }
+    }
+  };
+
+  samplePt(x, z);
+  samplePt(x + aUx * wxOff + aVx * wzOff, z + aUz * wxOff + aVz * wzOff);
+  samplePt(x - aUx * wxOff + aVx * wzOff, z - aUz * wxOff + aVz * wzOff);
+  samplePt(x + aUx * wxOff - aVx * wzOff, z + aUz * wxOff - aVz * wzOff);
+  samplePt(x - aUx * wxOff - aVx * wzOff, z - aUz * wxOff - aVz * wzOff);
+
+  if (bestY > -Infinity) return Math.max(fallbackY, bestY);
+  return fallbackY;
+}
+

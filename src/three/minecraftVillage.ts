@@ -21,6 +21,8 @@ export interface VillageObstacle {
   halfW: number;
   halfD: number;
   rotY?: number;
+  minY?: number;
+  maxY?: number;
 }
 
 export interface VillageInteractable {
@@ -957,7 +959,7 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
   well.userData.villageId = 'village_well';
   group.add(well);
   clickables.push(well);
-  obstacles.push({ x: -6.5, z: 111.5, halfW: 1.55, halfD: 1.55 });
+  obstacles.push({ x: -6.5, z: 111.5, halfW: 1.68, halfD: 1.68, minY: wellY, maxY: wellY + 3.95 });
   interactables.push({
     id: 'village_well',
     x: -6.5,
@@ -1031,9 +1033,9 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
   disposables.push(wheatGeo, wheatMat);
   group.add(farmGroup);
   obstacles.push(
-    { x: farmCx, z: farmCz, halfW: 3.3, halfD: 2.7 },
-    { x: farmCx + 3.6, z: farmCz - 1.8, halfW: 0.55, halfD: 0.55 },
-    { x: farmCx - 3.6, z: farmCz - 1.8, halfW: 0.5, halfD: 0.5 },
+    { x: farmCx, z: farmCz, halfW: 3.25, halfD: 2.75, minY: farmY, maxY: farmY + 1.05 },
+    { x: farmCx + 3.6, z: farmCz - 1.8, halfW: 0.49, halfD: 0.49, minY: farmY, maxY: farmY + 1.05 },
+    { x: farmCx - 3.6, z: farmCz - 1.8, halfW: 0.44, halfD: 0.44, minY: farmY, maxY: farmY + 2.15 },
   );
 
   // Outdoor Furnace & Crafting Bench beside Desa Sapaan Rumah 2 (-12.8, 110.5)
@@ -1043,7 +1045,7 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
   const craftBench = new THREE.Mesh(new THREE.BoxGeometry(1.0, 1.0, 1.0), palette.getPixelMat('crafting'));
   craftBench.position.set(-12.8, benchY + 0.5, 111.1);
   group.add(furnace, craftBench);
-  obstacles.push({ x: -12.8, z: 110.55, halfW: 0.65, halfD: 1.25 });
+  obstacles.push({ x: -12.8, z: 110.55, halfW: 0.54, halfD: 1.08, minY: benchY, maxY: benchY + 1.05 });
 
   // Island Lantern Posts along Desa Sapaan, Central Hub, & outer island plazas
   const lanternCoords: Array<[number, number]> = [
@@ -1073,9 +1075,14 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
   ];
   lanternCoords.forEach(([lx, lz]) => {
     const post = createLanternPost(palette, lx, lz);
-    post.position.y = getArchipelagoGroundY(lx, lz);
+    const ly = getArchipelagoGroundY(lx, lz);
+    post.position.y = ly;
     group.add(post);
-    obstacles.push({ x: lx, z: lz, halfW: 0.45, halfD: 0.45 });
+    // Pole trunk (0.28m) + overhead lantern arm/head (y >= +2.38m, walkable underneath by Hero & NPCs)
+    obstacles.push(
+      { x: lx, z: lz, halfW: 0.2, halfD: 0.2, minY: ly, maxY: ly + 3.2 },
+      { x: lx + 0.44, z: lz, halfW: 0.42, halfD: 0.2, minY: ly + 2.38, maxY: ly + 3.2 },
+    );
   });
 
   // 4. All 14 Remaining Diverse World Citizens (completing all 20 NPCs across every biome!)
@@ -1793,8 +1800,8 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
   golem1.waypoints = [
     [-4.5, 108.0],
     [4.5, 110.0],
-    [4.5, 122.0],
-    [-4.5, 122.0],
+    [6.2, 120.0],
+    [-3.2, 122.5],
   ];
   golem1.x = golem1.waypoints[0][0];
   golem1.z = golem1.waypoints[0][1];
@@ -1925,7 +1932,10 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     const s = 0.92 + (i % 3) * 0.14;
     if (isBirch) birchSpecs.push([tx, tz, s]);
     else oakSpecs.push([tx, tz, s]);
-    obstacles.push({ x: tx, z: tz, halfW: 0.65 * s, halfD: 0.65 * s });
+    obstacles.push(
+      { x: tx, z: tz, halfW: 0.46 * s, halfD: 0.46 * s, minY: ty, maxY: ty + 2.6 * s },
+      { x: tx, z: tz, halfW: 1.62 * s, halfD: 1.62 * s, minY: ty + 2.32 * s, maxY: ty + 4.9 * s },
+    );
   });
 
   const buildTreeInstancing = (
@@ -2153,16 +2163,23 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
 }
 
 export function resolveObstacleBoxes(
-  pos: { x: number; z: number },
+  pos: { x: number; y?: number; z: number },
   radius: number,
   boxes: VillageObstacle[],
+  entityY?: number,
+  entityHeight = 2.2,
 ): boolean {
   let hit = false;
   const rSq = radius * radius;
+  const ey = entityY ?? pos.y;
   for (let pass = 0; pass < 2; pass++) {
     let passHit = false;
     for (let i = 0; i < boxes.length; i++) {
       const obs = boxes[i];
+      if (ey !== undefined && (obs.minY !== undefined || obs.maxY !== undefined)) {
+        if (obs.minY !== undefined && ey + entityHeight <= obs.minY + 0.04) continue;
+        if (obs.maxY !== undefined && ey >= obs.maxY - 0.12) continue;
+      }
       if (obs.rotY) {
         const span = obs.halfW + obs.halfD + radius;
         const rx = pos.x - obs.x;
@@ -2238,12 +2255,172 @@ export function resolveObstacleBoxes(
   return hit;
 }
 
-function pushOutFromBoxes(
+/**
+ * Zero-allocation 2D Separating Axis Theorem (SAT) resolution pushing OBB A out of OBB B.
+ * Local +X = (cos(rotY), -sin(rotY)), Local +Z = (sin(rotY), cos(rotY)).
+ */
+export function resolveOBBvsOBB(
   pos: { x: number; z: number },
+  aHalfW: number,
+  aHalfD: number,
+  aUx: number,
+  aUz: number,
+  aVx: number,
+  aVz: number,
+  bx: number,
+  bz: number,
+  bHalfW: number,
+  bHalfD: number,
+  bUx: number,
+  bUz: number,
+  bVx: number,
+  bVz: number,
+): boolean {
+  const dx = pos.x - bx;
+  const dz = pos.z - bz;
+  const span = aHalfW + aHalfD + bHalfW + bHalfD;
+  if (dx > span || dx < -span || dz > span || dz < -span) return false;
+
+  let minOverlap = Infinity;
+  let pushNx = 0;
+  let pushNz = 0;
+
+  // Axis 1: A.u
+  {
+    const dist = dx * aUx + dz * aUz;
+    const projA = aHalfW;
+    const projB =
+      bHalfW * Math.abs(bUx * aUx + bUz * aUz) +
+      bHalfD * Math.abs(bVx * aUx + bVz * aUz);
+    const ov = projA + projB - Math.abs(dist);
+    if (ov <= 0) return false;
+    if (ov < minOverlap) {
+      minOverlap = ov;
+      const s = dist >= 0 ? 1 : -1;
+      pushNx = aUx * s;
+      pushNz = aUz * s;
+    }
+  }
+  // Axis 2: A.v
+  {
+    const dist = dx * aVx + dz * aVz;
+    const projA = aHalfD;
+    const projB =
+      bHalfW * Math.abs(bUx * aVx + bUz * aVz) +
+      bHalfD * Math.abs(bVx * aVx + bVz * aVz);
+    const ov = projA + projB - Math.abs(dist);
+    if (ov <= 0) return false;
+    if (ov < minOverlap) {
+      minOverlap = ov;
+      const s = dist >= 0 ? 1 : -1;
+      pushNx = aVx * s;
+      pushNz = aVz * s;
+    }
+  }
+  // Axis 3: B.u
+  {
+    const dist = dx * bUx + dz * bUz;
+    const projA =
+      aHalfW * Math.abs(aUx * bUx + aUz * bUz) +
+      aHalfD * Math.abs(aVx * bUx + aVz * bUz);
+    const projB = bHalfW;
+    const ov = projA + projB - Math.abs(dist);
+    if (ov <= 0) return false;
+    if (ov < minOverlap) {
+      minOverlap = ov;
+      const s = dist >= 0 ? 1 : -1;
+      pushNx = bUx * s;
+      pushNz = bUz * s;
+    }
+  }
+  // Axis 4: B.v
+  {
+    const dist = dx * bVx + dz * bVz;
+    const projA =
+      aHalfW * Math.abs(aUx * bVx + aUz * bVz) +
+      aHalfD * Math.abs(aVx * bVx + aVz * bVz);
+    const projB = bHalfD;
+    const ov = projA + projB - Math.abs(dist);
+    if (ov <= 0) return false;
+    if (ov < minOverlap) {
+      minOverlap = ov;
+      const s = dist >= 0 ? 1 : -1;
+      pushNx = bVx * s;
+      pushNz = bVz * s;
+    }
+  }
+
+  pos.x += pushNx * minOverlap;
+  pos.z += pushNz * minOverlap;
+  return true;
+}
+
+export function resolveVehicleOBBvsObstacles(
+  pos: { x: number; y?: number; z: number },
+  yaw: number,
+  halfW: number,
+  halfL: number,
+  boxes: VillageObstacle[],
+  vehicleY?: number,
+  vehicleHeight = 3.5,
+): boolean {
+  const aUx = Math.cos(yaw);
+  const aUz = -Math.sin(yaw);
+  const aVx = Math.sin(yaw);
+  const aVz = Math.cos(yaw);
+  const vy = vehicleY ?? pos.y;
+  let hit = false;
+
+  for (let pass = 0; pass < 2; pass++) {
+    let passHit = false;
+    for (let i = 0; i < boxes.length; i++) {
+      const obs = boxes[i];
+      if (obs.halfW <= 0 || obs.halfD <= 0) continue;
+      if (vy !== undefined && (obs.minY !== undefined || obs.maxY !== undefined)) {
+        if (obs.minY !== undefined && vy + vehicleHeight <= obs.minY + 0.06) continue;
+        if (obs.maxY !== undefined && vy >= obs.maxY - 0.14) continue;
+      }
+      const bRot = obs.rotY ?? 0;
+      const bUx = bRot ? Math.cos(bRot) : 1;
+      const bUz = bRot ? -Math.sin(bRot) : 0;
+      const bVx = bRot ? Math.sin(bRot) : 0;
+      const bVz = bRot ? Math.cos(bRot) : 1;
+      if (
+        resolveOBBvsOBB(
+          pos,
+          halfW,
+          halfL,
+          aUx,
+          aUz,
+          aVx,
+          aVz,
+          obs.x,
+          obs.z,
+          obs.halfW,
+          obs.halfD,
+          bUx,
+          bUz,
+          bVx,
+          bVz,
+        )
+      ) {
+        hit = true;
+        passHit = true;
+      }
+    }
+    if (!passHit) break;
+  }
+  return hit;
+}
+
+function pushOutFromBoxes(
+  pos: { x: number; y?: number; z: number },
   radius: number,
   boxes: VillageObstacle[],
+  entityY?: number,
+  entityHeight = 2.2,
 ): boolean {
-  const hit = resolveObstacleBoxes(pos, radius, boxes);
+  const hit = resolveObstacleBoxes(pos, radius, boxes, entityY, entityHeight);
   constrainToWalkableArchipelago(pos, radius);
   return hit;
 }
@@ -2585,8 +2762,9 @@ export function updateMinecraftVillage(
         _moveScratch.x = v.x + (dx / dist) * step;
         _moveScratch.z = v.z + (dz / dist) * step;
         if (_moveScratch.z >= 52 && _moveScratch.z <= 185 && _moveScratch.x >= -68 && _moveScratch.x <= 68) {
-          resolveObstacleBoxes(_moveScratch, 0.56, extraObstacles);
-          pushOutFromBoxes(_moveScratch, 0.56, rig.obstacles);
+          const vgY = getArchipelagoGroundY(_moveScratch.x, _moveScratch.z);
+          resolveObstacleBoxes(_moveScratch, 0.56, extraObstacles, vgY, 2.0);
+          pushOutFromBoxes(_moveScratch, 0.56, rig.obstacles, vgY, 2.0);
         }
         v.x = _moveScratch.x;
         v.z = _moveScratch.z;
@@ -2618,8 +2796,8 @@ export function updateMinecraftVillage(
       const prevZ = v.z;
       _moveScratch.x = v.x + v.fleeDirX * step;
       _moveScratch.z = v.z + v.fleeDirZ * step;
-      resolveObstacleBoxes(_moveScratch, 0.56, rig.obstacles);
-      resolveObstacleBoxes(_moveScratch, 0.56, extraObstacles);
+      resolveObstacleBoxes(_moveScratch, 0.56, rig.obstacles, curGroundY, 2.0);
+      resolveObstacleBoxes(_moveScratch, 0.56, extraObstacles, curGroundY, 2.0);
       constrainToWalkableArchipelago(_moveScratch, 0.56);
       const nextGroundY = getArchipelagoGroundY(_moveScratch.x, _moveScratch.z);
       if (nextGroundY < 0.05 || Math.abs(nextGroundY - curGroundY) > 2.4) {
@@ -2817,8 +2995,9 @@ export function updateMinecraftVillage(
     const prevZ = v.z;
     _moveScratch.x = v.x + dirX * step;
     _moveScratch.z = v.z + dirZ * step;
-    resolveObstacleBoxes(_moveScratch, vRad, rig.obstacles);
-    resolveObstacleBoxes(_moveScratch, vRad, extraObstacles);
+    const vCurY = getArchipelagoGroundY(_moveScratch.x, _moveScratch.z);
+    resolveObstacleBoxes(_moveScratch, vRad, rig.obstacles, vCurY, 2.0);
+    resolveObstacleBoxes(_moveScratch, vRad, extraObstacles, vCurY, 2.0);
 
     // Keep distance from other visible villagers & golems (fast AABB reject)
     for (let j = 0; j < rig.villagers.length; j++) {
@@ -2848,8 +3027,8 @@ export function updateMinecraftVillage(
       }
     }
     // Re-resolve static obstacles & extra colliders so entity separation never pushes into walls/props
-    resolveObstacleBoxes(_moveScratch, vRad, extraObstacles);
-    pushOutFromBoxes(_moveScratch, vRad, rig.obstacles);
+    resolveObstacleBoxes(_moveScratch, vRad, extraObstacles, vCurY, 2.0);
+    pushOutFromBoxes(_moveScratch, vRad, rig.obstacles, vCurY, 2.0);
 
     const moved = Math.hypot(_moveScratch.x - prevX, _moveScratch.z - prevZ);
     v.x = _moveScratch.x;
@@ -2951,8 +3130,9 @@ export function updateMinecraftVillage(
         _moveScratch.x = g.x + (dx / dist) * step;
         _moveScratch.z = g.z + (dz / dist) * step;
         if (_moveScratch.z >= 52 && _moveScratch.z <= 185 && _moveScratch.x >= -68 && _moveScratch.x <= 68) {
-          resolveObstacleBoxes(_moveScratch, 0.92, extraObstacles);
-          pushOutFromBoxes(_moveScratch, 0.92, rig.obstacles);
+          const ggY = getArchipelagoGroundY(_moveScratch.x, _moveScratch.z);
+          resolveObstacleBoxes(_moveScratch, 1.16, extraObstacles, ggY, 2.75);
+          pushOutFromBoxes(_moveScratch, 1.16, rig.obstacles, ggY, 2.75);
         }
         g.x = _moveScratch.x;
         g.z = _moveScratch.z;
@@ -2998,7 +3178,7 @@ export function updateMinecraftVillage(
 
     let dirX = dx / dist;
     let dirZ = dz / dist;
-    const gRad = 0.92;
+    const gRad = 1.16;
     if (
       hasAheadObstacle(g.x, g.z, dirX, dirZ, 1.25, gRad, rig.obstacles) ||
       hasAheadObstacle(g.x, g.z, dirX, dirZ, 1.25, gRad, extraObstacles)
@@ -3017,38 +3197,39 @@ export function updateMinecraftVillage(
     const prevZ = g.z;
     _moveScratch.x = g.x + dirX * step;
     _moveScratch.z = g.z + dirZ * step;
-    resolveObstacleBoxes(_moveScratch, gRad, rig.obstacles);
-    resolveObstacleBoxes(_moveScratch, gRad, extraObstacles);
+    const gCurY = getArchipelagoGroundY(_moveScratch.x, _moveScratch.z);
+    resolveObstacleBoxes(_moveScratch, gRad, rig.obstacles, gCurY, 2.75);
+    resolveObstacleBoxes(_moveScratch, gRad, extraObstacles, gCurY, 2.75);
 
     // Keep golems separated from other golems & villagers
     for (let j = 0; j < rig.golems.length; j++) {
       if (j === i) continue;
       const og = rig.golems[j];
       const gx = _moveScratch.x - og.x;
-      if (gx > 1.85 || gx < -1.85) continue;
+      if (gx > 2.35 || gx < -2.35) continue;
       const gz = _moveScratch.z - og.z;
-      if (gz > 1.85 || gz < -1.85) continue;
+      if (gz > 2.35 || gz < -2.35) continue;
       const gd = Math.hypot(gx, gz);
-      if (gd > 0.001 && gd < 1.78) {
-        _moveScratch.x += (gx / gd) * (1.78 - gd) * 0.5;
-        _moveScratch.z += (gz / gd) * (1.78 - gd) * 0.5;
+      if (gd > 0.001 && gd < 2.28) {
+        _moveScratch.x += (gx / gd) * (2.28 - gd) * 0.5;
+        _moveScratch.z += (gz / gd) * (2.28 - gd) * 0.5;
       }
     }
     for (let j = 0; j < rig.villagers.length; j++) {
       const ov = rig.villagers[j];
       if (ov.isInsideHouse) continue;
       const vx = _moveScratch.x - ov.x;
-      if (vx > 1.45 || vx < -1.45) continue;
+      if (vx > 1.75 || vx < -1.75) continue;
       const vz = _moveScratch.z - ov.z;
-      if (vz > 1.45 || vz < -1.45) continue;
+      if (vz > 1.75 || vz < -1.75) continue;
       const vd = Math.hypot(vx, vz);
-      if (vd > 0.001 && vd < 1.38) {
-        _moveScratch.x += (vx / vd) * (1.38 - vd) * 0.35;
-        _moveScratch.z += (vz / vd) * (1.38 - vd) * 0.35;
+      if (vd > 0.001 && vd < 1.65) {
+        _moveScratch.x += (vx / vd) * (1.65 - vd) * 0.35;
+        _moveScratch.z += (vz / vd) * (1.65 - vd) * 0.35;
       }
     }
-    resolveObstacleBoxes(_moveScratch, gRad, extraObstacles);
-    pushOutFromBoxes(_moveScratch, gRad, rig.obstacles);
+    resolveObstacleBoxes(_moveScratch, gRad, extraObstacles, gCurY, 2.75);
+    pushOutFromBoxes(_moveScratch, gRad, rig.obstacles, gCurY, 2.75);
 
     const moved = Math.hypot(_moveScratch.x - prevX, _moveScratch.z - prevZ);
     g.x = _moveScratch.x;

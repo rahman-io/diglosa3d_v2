@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { ZoneId } from '../types/game';
 import { getArchipelagoGroundY } from './archipelagoWorld';
 import { MaterialPalette } from './materials';
+import { resolveOBBvsOBB } from './minecraftVillage';
 
 /**
  * All 40 Interactive 3D Obstacles (20 from Sheet A + 20 from Sheet B),
@@ -2205,7 +2206,7 @@ export function resolveSolidObstacleCollisions(
         applyBox(0, 0, 1.85, 0.95, 0, 4.2);
         break;
       case 'wind_turbine':
-        applyBox(0, 0, 1.65, 1.1, 0, 3.8);
+        applyBox(0, 0, 1.75, 1.12, 0.1, 3.7);
         break;
       case 'piston_pusher':
         applyBox(-2.6, 0, 0.85, 1.65, 0, 2.9);
@@ -2230,14 +2231,14 @@ export function resolveSolidObstacleCollisions(
         applyBox(0, 0, 0.72, 0.72, 0, 1.2);
         break;
       case 'rotating_blades':
-        applyBox(0, 0, 0.82, 0.82, 0, 0.7);
+        applyBox(0, 0, 0.9, 0.9, 0, 0.72);
         break;
       case 'bouncy_pad':
         applyBox(0, 0, 1.55, 1.55, 0, 1.2);
         break;
       case 'treadmill_spikes':
-        applyBox(-2.2, 0, 0.22, 3.2, 0, 0.55);
-        applyBox(2.2, 0, 0.22, 3.2, 0, 0.55);
+        applyBox(-2.2, 0, 0.19, 3.2, 0, 0.48);
+        applyBox(2.2, 0, 0.19, 3.2, 0, 0.48);
         break;
       case 'moving_platforms':
         for (let p = 0; p < inst.movingPlatforms.length; p++) {
@@ -2246,6 +2247,133 @@ export function resolveSolidObstacleCollisions(
           // Push horizontally if hero is below the platform's walkable top surface
           if (dy < topDy - 0.55) {
             applyBox(mp.localX, mp.localZ, mp.halfW - 0.15, mp.halfD - 0.15, -4, topDy);
+          }
+        }
+        break;
+    }
+  }
+}
+
+export function resolveVehicleSolidObstacleCollisions(
+  rig: WorldObstaclesRig,
+  pos: { x: number; y?: number; z: number },
+  yaw: number,
+  halfW: number,
+  halfL: number,
+  vehicleHeight = 3.5,
+): void {
+  const posY = pos.y;
+  const aUx = Math.cos(yaw);
+  const aUz = -Math.sin(yaw);
+  const aVx = Math.sin(yaw);
+  const aVz = Math.cos(yaw);
+  const reach = halfW + halfL + 7.5;
+
+  for (let i = 0; i < rig.instances.length; i++) {
+    const inst = rig.instances[i];
+    if (Math.abs(pos.x - inst.def.x) > reach || Math.abs(pos.z - inst.def.z) > reach) continue;
+    const dy = (posY ?? inst.baseY) - inst.baseY;
+    if (dy > 8.5 || dy + vehicleHeight < -0.5) continue;
+
+    const bUx = inst.cosY;
+    const bUz = -inst.sinY;
+    const bVx = inst.sinY;
+    const bVz = inst.cosY;
+
+    const applyVehicleBox = (bx: number, bz: number, bHalfW: number, bHalfD: number, minY: number, maxY: number) => {
+      if (dy + vehicleHeight <= minY + 0.05 || dy >= maxY - 0.12) return;
+      const wx = inst.def.x + bx * inst.cosY + bz * inst.sinY;
+      const wz = inst.def.z - bx * inst.sinY + bz * inst.cosY;
+      resolveOBBvsOBB(
+        pos,
+        halfW,
+        halfL,
+        aUx,
+        aUz,
+        aVx,
+        aVz,
+        wx,
+        wz,
+        bHalfW,
+        bHalfD,
+        bUx,
+        bUz,
+        bVx,
+        bVz,
+      );
+    };
+
+    switch (inst.def.kind) {
+      case 'swinging_spike':
+      case 'falling_stalactites':
+        applyVehicleBox(-2.6, 0, 0.35, 0.35, 0, 6.2);
+        applyVehicleBox(2.6, 0, 0.35, 0.35, 0, 6.2);
+        break;
+      case 'crushing_piston':
+        applyVehicleBox(-2.1, 0, 0.35, 0.4, 0, 5.4);
+        applyVehicleBox(2.1, 0, 0.35, 0.4, 0, 5.4);
+        break;
+      case 'laser_barrier':
+        applyVehicleBox(-2.5, 0, 0.35, 0.35, 0, 3.8);
+        applyVehicleBox(2.5, 0, 0.35, 0.35, 0, 3.8);
+        break;
+      case 'laser_gate':
+        applyVehicleBox(-2.4, 0, 0.55, 0.55, 0, 4.6);
+        applyVehicleBox(2.4, 0, 0.55, 0.55, 0, 4.6);
+        break;
+      case 'fire_shooter':
+        applyVehicleBox(0, 0, 1.08, 1.15, 0, 2.2);
+        break;
+      case 'lava_volcano':
+        applyVehicleBox(0, 0, 1.65, 1.65, 0, 1.75);
+        break;
+      case 'acid_fount':
+        applyVehicleBox(0, -2.0, 0.52, 0.65, 0, 3.1);
+        break;
+      case 'gust_vent':
+        applyVehicleBox(0, 0, 1.85, 0.95, 0, 4.2);
+        break;
+      case 'wind_turbine':
+        applyVehicleBox(0, 0, 1.75, 1.12, 0.1, 3.7);
+        break;
+      case 'piston_pusher':
+        applyVehicleBox(-2.6, 0, 0.85, 1.65, 0, 2.9);
+        if (inst.pistons[0]) {
+          const px = inst.pistons[0].obj.position.x;
+          applyVehicleBox(px, 0, 0.45, 1.35, 0.1, 2.5);
+        }
+        break;
+      case 'crushing_walls':
+        for (let p = 0; p < inst.pistons.length; p++) {
+          const px = inst.pistons[p].obj.position.x;
+          applyVehicleBox(px, 0, 0.82, 1.82, 0.1, 3.4);
+        }
+        break;
+      case 'crushing_monoliths':
+        for (let p = 0; p < inst.pistons.length; p++) {
+          const px = inst.pistons[p].obj.position.x;
+          applyVehicleBox(px, 0, 1.08, 1.75, 0, 4.4);
+        }
+        break;
+      case 'spinning_fire_bar':
+        applyVehicleBox(0, 0, 0.72, 0.72, 0, 1.2);
+        break;
+      case 'rotating_blades':
+        applyVehicleBox(0, 0, 0.9, 0.9, 0, 0.72);
+        break;
+      case 'bouncy_pad':
+        applyVehicleBox(0, 0, 1.55, 1.55, 0, 1.2);
+        break;
+      case 'treadmill_spikes':
+        applyVehicleBox(-2.2, 0, 0.19, 3.2, 0, 0.48);
+        applyVehicleBox(2.2, 0, 0.19, 3.2, 0, 0.48);
+        break;
+      case 'moving_platforms':
+        for (let p = 0; p < inst.movingPlatforms.length; p++) {
+          const mp = inst.movingPlatforms[p];
+          const topDy = mp.currentY - inst.baseY;
+          if (dy < topDy - 0.55) {
+            applyVehicleBox(mp.localX, mp.localZ, mp.halfW - 0.15, mp.halfD - 0.15, -4, topDy);
           }
         }
         break;
