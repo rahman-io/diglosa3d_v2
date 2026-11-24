@@ -22,6 +22,8 @@ interface NpcDialogueModalProps {
   wordProgress: Record<string, WordProgress>;
   liberatedZones: ZoneId[];
   areaDoorsCleared: Record<ZoneId, number[]>;
+  isNightTime?: boolean;
+  nightPermittedZones?: ZoneId[];
   onClose: () => void;
   onAcceptOrClaimQuest: (npcId: string) => void;
   onLearnVocab: (vocabIds: string[]) => void;
@@ -34,6 +36,8 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
   wordProgress,
   liberatedZones,
   areaDoorsCleared,
+  isNightTime = false,
+  nightPermittedZones = [],
   onClose,
   onAcceptOrClaimQuest,
   onLearnVocab,
@@ -60,6 +64,7 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
     quest && quest.accepted && !quest.claimed && quest.progress >= quest.target,
   );
   const isLiberated = liberatedZones.includes(zoneId);
+  const hasNightPermission = isNightTime || nightPermittedZones.includes(zoneId);
   const clearedDoors = areaDoorsCleared[zoneId] || [];
   const doors = ZONE_DOORS[zoneId] || [];
 
@@ -268,6 +273,14 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
               </div>
             )}
 
+            {isNightTime && hasNightPermission && (
+              <div className="rounded-2xl border border-emerald-400/45 bg-emerald-950/55 px-3.5 py-2 text-xs font-bold leading-relaxed text-emerald-100">
+                🌙 <span className="font-black text-emerald-300">Izin Malam Diberikan:</span>{' '}
+                {npc.name} terbangun di pos istirahatnya dan mengizinkanmu memasuki{' '}
+                <span className="font-extrabold text-white">{npc.zoneName}</span> malam ini!
+              </div>
+            )}
+
             {/* Stacked Full-Width RPG Actions: 1. Kosakata -> 2. Masuk ke Gua -> 3. Abaikan */}
             <div className="flex flex-col gap-2 pt-0.5">
               <RpgPillButton
@@ -355,7 +368,11 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
                 }}
                 className="w-full"
               >
-                <span>⚔️ {npc.enterLabel} (5 Pintu + Bos)</span>
+                <span>
+                  {isNightTime
+                    ? `🔑 Izin Diberikan · ${npc.enterLabel} (5 Pintu + Bos)`
+                    : `⚔️ ${npc.enterLabel} (5 Pintu + Bos)`}
+                </span>
               </RpgPillButton>
 
               <RpgPillButton variant="cream" onClick={onClose} className="w-full">

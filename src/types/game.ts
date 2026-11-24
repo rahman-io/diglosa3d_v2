@@ -563,6 +563,8 @@ export interface RpgHudSnapshot {
   activeZoneName: string;
   rankTitle: string;
   nearbyNpcId: string | null;
+  nearbyOverworldZoneDoor: ZoneId | null;
+  nightPermittedZones: ZoneId[];
   nearbyMonsterId: string | null;
   nearbyDoorIndex: number | null;
   nearbyDungeonGuardian: boolean;

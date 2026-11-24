@@ -26,12 +26,12 @@ export const OVERWORLD_ANCHORS = {
     gua_portal: { x: 9.0, y: 14.0, z: -171.0 },
   } as Record<ZoneId, { x: number; y: number; z: number }>,
   npcs: {
-    npc_tetua: { x: 20.0, z: 118.0, rotY: -1.57 },
-    npc_koki: { x: -89.5, z: 45.0, rotY: 0.75 },
-    npc_rubah: { x: 87.5, z: 42.5, rotY: -1.1 },
-    npc_penjaga: { x: -110.5, z: -92.5, rotY: 0.45 },
-    npc_penyihir: { x: 113.5, z: -73.5, rotY: 0.72 },
-    npc_portal: { x: 5.0, z: -177.0, rotY: 0.52 },
+    npc_tetua: { x: 25.0, z: 118.0, rotY: -1.57 },
+    npc_koki: { x: -122.5, z: 48.0, rotY: 1.57 },
+    npc_rubah: { x: 137.8, z: 42.8, rotY: -1.35 },
+    npc_penjaga: { x: -119.0, z: -98.5, rotY: 0.0 },
+    npc_penyihir: { x: 114.2, z: -88.5, rotY: 1.57 },
+    npc_portal: { x: 19.2, z: -183.5, rotY: 0.34 },
   } as Record<string, { x: number; z: number; rotY: number }>,
   guardPosts: {
     npc_tetua: { x: 11.5, z: 109.0, rotY: -0.9, bedTint: 0xf59e0b },
@@ -42,6 +42,18 @@ export const OVERWORLD_ANCHORS = {
     npc_portal: { x: -1.0, z: -172.0, rotY: 0.78, bedTint: 0xa855f7 },
   } as Record<string, { x: number; z: number; rotY: number; bedTint: number }>,
 } as const;
+
+export const OVERWORLD_ZONE_DOORS: Record<
+  ZoneId,
+  { x: number; y: number; z: number; npcId: string; label: string }
+> = {
+  desa_sapaan: { x: 27.5, y: 3.2, z: 118.0, npcId: 'npc_tetua', label: 'Mulut Gua Hutan Kata' },
+  pasar_rasa: { x: -126.5, y: 2.0, z: 48.0, npcId: 'npc_koki', label: 'Gua Dapur Rempah' },
+  hutan_satwa: { x: 141.0, y: 3.4, z: 42.5, npcId: 'npc_rubah', label: 'Gua Kepala Harimau' },
+  gerbang_kota: { x: -119.0, y: 16.5, z: -101.5, npcId: 'npc_penjaga', label: 'Gerbang Kota' },
+  menara_waktu: { x: 112.4, y: 10.0, z: -88.5, npcId: 'npc_penyihir', label: 'Pintu Penjaga Waktu' },
+  gua_portal: { x: 21.0, y: 16.6, z: -186.5, npcId: 'npc_portal', label: 'Mulut Gua Portal' },
+};
 
 export type TerrainSurfaceKind =
   | 'land'

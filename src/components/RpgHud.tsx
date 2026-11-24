@@ -446,6 +446,14 @@ export const RpgHud: React.FC<RpgHudProps> = ({
     hud.worldMode === 'overworld' && hud.nearbyNpcId
       ? NPC_CATALOG.find((n) => n.id === hud.nearbyNpcId)
       : null;
+  const nearbyOverworldDoorNpc =
+    hud.worldMode === 'overworld' && hud.nearbyOverworldZoneDoor
+      ? NPC_CATALOG.find((n) => n.zoneId === hud.nearbyOverworldZoneDoor)
+      : null;
+  const overworldDoorHasNightPermission =
+    !hud.nearbyOverworldZoneDoor ||
+    hud.worldTime.phase !== 'malam' ||
+    hud.nightPermittedZones.includes(hud.nearbyOverworldZoneDoor);
   const nearbyAcademyNpc =
     hud.worldMode === 'academy' && hud.nearbyNpcId
       ? ACADEMY_NPCS.find((n) => n.id === hud.nearbyNpcId)
@@ -2243,6 +2251,54 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               className="pointer-events-none h-full w-full select-none object-contain"
               draggable={false}
             />
+          </button>
+        )}
+
+        {nearbyOverworldDoorNpc && !nearbyOverworldNpc && !hud.nearPortal && (
+          <button
+            type="button"
+            onClick={onPrimaryAction}
+            title={
+              hud.worldTime.phase === 'malam'
+                ? overworldDoorHasNightPermission
+                  ? `Masuk ${nearbyOverworldDoorNpc.zoneName} (Izin Malam Diberikan)`
+                  : `Pintu ${nearbyOverworldDoorNpc.zoneName} — Minta Izin ke ${nearbyOverworldDoorNpc.name}`
+                : `Bicara Penjaga & Masuk ${nearbyOverworldDoorNpc.zoneName}`
+            }
+            aria-label={
+              hud.worldTime.phase === 'malam'
+                ? overworldDoorHasNightPermission
+                  ? `Masuk ${nearbyOverworldDoorNpc.zoneName}`
+                  : `Butuh izin ${nearbyOverworldDoorNpc.name}`
+                : `Bicara Penjaga ${nearbyOverworldDoorNpc.zoneName}`
+            }
+            className={`relative flex h-[54px] w-[54px] items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px] ${
+              overworldDoorHasNightPermission
+                ? 'shadow-[0_5px_14px_rgba(16,185,129,0.52)]'
+                : 'shadow-[0_5px_14px_rgba(245,158,11,0.52)]'
+            }`}
+          >
+            <img
+              src="./assets/ui/btn_door.png"
+              alt={nearbyOverworldDoorNpc.zoneName}
+              className="pointer-events-none h-full w-full select-none object-contain"
+              draggable={false}
+            />
+            <span
+              className={`pointer-events-none absolute -bottom-0.5 rounded-full border px-1.5 text-[9px] font-black leading-tight shadow ${
+                hud.worldTime.phase === 'malam'
+                  ? overworldDoorHasNightPermission
+                    ? 'border-emerald-300/80 bg-slate-950/95 text-emerald-200'
+                    : 'border-amber-300/80 bg-slate-950/95 text-amber-200'
+                  : 'border-emerald-300/70 bg-slate-950/95 text-emerald-200'
+              }`}
+            >
+              {hud.worldTime.phase === 'malam'
+                ? overworldDoorHasNightPermission
+                  ? '🔑 Izin'
+                  : '🔒 Izin'
+                : 'Masuk'}
+            </span>
           </button>
         )}
 

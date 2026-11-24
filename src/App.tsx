@@ -180,6 +180,8 @@ const INITIAL_HUD: RpgHudSnapshot = {
   activeZoneName: 'Hutan Kata',
   rankTitle: 'Telur Pemula',
   nearbyNpcId: null,
+  nearbyOverworldZoneDoor: null,
+  nightPermittedZones: [],
   nearbyMonsterId: null,
   nearbyDoorIndex: null,
   nearbyDungeonGuardian: false,
@@ -2810,6 +2812,8 @@ function DiglosaRpgApp() {
         wordProgress={hud.wordProgress}
         liberatedZones={hud.liberatedZones}
         areaDoorsCleared={hud.areaDoorsCleared}
+        isNightTime={hud.worldTime.phase === 'malam'}
+        nightPermittedZones={hud.nightPermittedZones}
         onClose={() => {
           setDialogueNpcId(null);
           engineRef.current?.setPhase('playing');

@@ -132,6 +132,7 @@ import {
   IELTS_TEMPORARILY_LOCKED,
   isWalkableArchipelago,
   OVERWORLD_ANCHORS,
+  OVERWORLD_ZONE_DOORS,
   pushEntityFromOBB,
   resolveArchipelagoVehicleCollisions,
   resolveCircleDesaVisualTerrain,
@@ -760,6 +761,7 @@ export class RpgWorldEngine {
       standY: number;
       standZ: number;
       standRotY: number;
+      walkWaypoint?: { x: number; z: number };
       yaw: number;
       guardPost: GuardPostRig;
       poseMode: 'stand' | 'walk' | 'sleep';
@@ -1002,6 +1004,8 @@ export class RpgWorldEngine {
   private quests: RpgQuestState[] = [];
 
   private nearbyNpcId: string | null = null;
+  private nearbyOverworldZoneDoor: ZoneId | null = null;
+  private nightPermittedZones: Set<ZoneId> = new Set();
   private nearbyMonsterId: string | null = null;
   private nearbyDoorIndex: number | null = null;
   private nearbyDungeonGuardian = false;
@@ -1879,6 +1883,7 @@ export class RpgWorldEngine {
   private initNpcs(): void {
     const alertGeo = new THREE.OctahedronGeometry(0.42, 0);
     const alertMat = this.palette.getMat(0xfacc15, 'emissive');
+    const startAtNight = this.getCurrentDayPhase() === 'malam';
 
     for (const def of NPC_CATALOG) {
       const ny = getArchipelagoGroundY(def.x, def.z);
@@ -1893,29 +1898,35 @@ export class RpgWorldEngine {
       this.villageRig.obstacles.push(...guardPost.obstacles);
       this.villageRig.torchesFlame.push(guardPost.torchFlame);
 
+      const initX = startAtNight ? guardPost.bedX : def.x;
+      const initY = startAtNight ? guardPost.bedY : ny;
+      const initZ = startAtNight ? guardPost.bedZ : def.z;
+      const initYaw = startAtNight ? guardPost.bedYaw : def.rotationY;
+
       const mesh = createZoneNpc(def.id, this.palette);
-      mesh.position.set(def.x, ny, def.z);
-      mesh.rotation.y = def.rotationY;
+      mesh.position.set(initX, initY, initZ);
+      mesh.rotation.y = initYaw;
       mesh.userData.npcId = def.id;
       this.overworldGroup.add(mesh);
       this.overworldClickables.push(mesh);
 
       const alertMesh = new THREE.Mesh(alertGeo, alertMat);
-      alertMesh.position.set(def.x, ny + 4.4, def.z);
+      alertMesh.position.set(initX, startAtNight ? guardPost.bedY + 1.4 : ny + 4.4, initZ);
       this.overworldGroup.add(alertMesh);
 
       this.npcs.set(def.id, {
         mesh,
         alertMesh,
-        x: def.x,
-        z: def.z,
+        x: initX,
+        z: initZ,
         standX: def.x,
         standY: ny,
         standZ: def.z,
         standRotY: def.rotationY,
-        yaw: def.rotationY,
+        walkWaypoint: def.id === 'npc_rubah' ? { x: 110.0, z: 48.0 } : undefined,
+        yaw: initYaw,
         guardPost,
-        poseMode: 'stand',
+        poseMode: startAtNight ? 'sleep' : 'stand',
         nightAwake: false,
         lastWakeBannerMs: 0,
         koTimer: 0,
@@ -1923,6 +1934,53 @@ export class RpgWorldEngine {
         fleeDirX: 0,
         fleeDirZ: 1,
       });
+    }
+  }
+
+  private grantNightPermissionForNpc(
+    npcId: string,
+    options?: { fromProximityWake?: boolean },
+  ): void {
+    const def = NPC_CATALOG.find((item) => item.id === npcId);
+    const npc = this.npcs.get(npcId);
+    if (!def || !npc) return;
+    if (this.getCurrentDayPhase() !== 'malam') return;
+
+    const zoneId = def.zoneId as ZoneId;
+    const newlyPermitted = !this.nightPermittedZones.has(zoneId);
+    this.nightPermittedZones.add(zoneId);
+
+    if (!npc.nightAwake || npc.poseMode === 'sleep') {
+      const bedX = npc.guardPost.bedX;
+      const bedZ = npc.guardPost.bedZ;
+      const toStandX = npc.standX - bedX;
+      const toStandZ = npc.standZ - bedZ;
+      const toStandLen = Math.hypot(toStandX, toStandZ) || 1;
+      const col = this._desaColScratch;
+      col.x = bedX + (toStandX / toStandLen) * 2.15;
+      col.z = bedZ + (toStandZ / toStandLen) * 2.15;
+      constrainToWalkableArchipelago(col, 0.62);
+      npc.x = col.x;
+      npc.z = col.z;
+      npc.nightAwake = true;
+      npc.poseMode = 'stand';
+      npc.yaw = Math.atan2(this.heroPos.x - npc.x, this.heroPos.z - npc.z);
+      npc.mesh.position.set(npc.x, getArchipelagoGroundY(npc.x, npc.z), npc.z);
+    }
+
+    if (options?.fromProximityWake) {
+      const nowMs = Date.now();
+      if (newlyPermitted || nowMs - npc.lastWakeBannerMs > 6000) {
+        npc.lastWakeBannerMs = nowMs;
+        soundEngine.playPick();
+        this.showBanner(
+          `🔑 ${def.name} terbangun di pos istirahat: "Oh, kamu datang malam-malam! Silakan, aku beri izin masuk ke ${def.zoneName}!"`,
+          5.2,
+        );
+      }
+      this.pushHud(true);
+    } else if (newlyPermitted) {
+      this.pushHud(true);
     }
   }
 
@@ -4736,6 +4794,8 @@ export class RpgWorldEngine {
     this.ownedRelics.clear();
     this.ribbons.clear();
     this.liberatedZones.clear();
+    this.nightPermittedZones.clear();
+    this.nearbyOverworldZoneDoor = null;
     this.areaTrophies.clear();
     this.areaDoorsCleared = {
       desa_sapaan: [],
@@ -5298,14 +5358,19 @@ export class RpgWorldEngine {
           this.hasAliveChallengeMonsters();
         if (nextPhase === 'sore') {
           this.showBanner(
-            '🌇 Sore tiba! Warga pulang ke rumah & penjaga bersiap istirahat di pos...',
+            '🌇 Sore tiba! Warga pulang ke rumah & para penjaga tetap berjaga di depan pintu wilayah hingga malam...',
             4.5,
           );
         } else if (nextPhase === 'malam') {
           if (this.isWorldAuthority() && !activeMissionWave) {
             this.spawnNightSurfaceWave();
           }
+          this.showBanner(
+            '🌙 Malam tiba! Para penjaga kembali beristirahat di pos — temui mereka di pos untuk izin masuk wilayah.',
+            5.0,
+          );
         } else if (nextPhase === 'pagi') {
+          this.nightPermittedZones.clear();
           if (this.isWorldAuthority()) {
             if (!activeMissionWave) {
               this.triggerMorningSunlightDestruction();
@@ -5315,7 +5380,7 @@ export class RpgWorldEngine {
           this.showBanner(
             activeMissionWave
               ? '🌅 Fajar menyingsing! Monster misi aktif tetap bertahan untuk kamu habisi!'
-              : '🌅 Fajar menyingsing! Panas matahari menghancurkan monster malam & warga keluar kembali!',
+              : '🌅 Fajar menyingsing! Panas matahari menghancurkan monster malam & penjaga kembali ke depan pintu!',
             5.0,
           );
         } else if (nextPhase === 'siang') {
@@ -5629,6 +5694,7 @@ export class RpgWorldEngine {
     this.dungeonState = null;
     this.nearDungeonExit = false;
     this.nearbyDoorIndex = null;
+    this.nearbyOverworldZoneDoor = null;
     this.nearbyDungeonGuardian = false;
     this.nearPrisonKey = false;
     this.nearHiddenPrison = false;
@@ -6053,6 +6119,7 @@ export class RpgWorldEngine {
     this.syncDungeonMonsterStats();
 
     this.nearbyNpcId = null;
+    this.nearbyOverworldZoneDoor = null;
     this.nearbyMonsterId = null;
     this.nearbyDoorIndex = null;
     this.nearbyDungeonGuardian = false;
@@ -7233,16 +7300,21 @@ export class RpgWorldEngine {
           }
         }
       }
+      const resetAtNight = this.getCurrentDayPhase() === 'malam';
       for (const npc of this.npcs.values()) {
         npc.koTimer = 0;
         npc.fleeTimer = 0;
-        npc.x = npc.standX;
-        npc.z = npc.standZ;
-        npc.yaw = npc.standRotY;
-        npc.poseMode = 'stand';
         npc.nightAwake = false;
+        npc.x = resetAtNight ? npc.guardPost.bedX : npc.standX;
+        npc.z = resetAtNight ? npc.guardPost.bedZ : npc.standZ;
+        npc.yaw = resetAtNight ? npc.guardPost.bedYaw : npc.standRotY;
+        npc.poseMode = resetAtNight ? 'sleep' : 'stand';
         npc.mesh.visible = true;
-        npc.mesh.position.set(npc.standX, npc.standY, npc.standZ);
+        npc.mesh.position.set(
+          npc.x,
+          resetAtNight ? npc.guardPost.bedY : npc.standY,
+          npc.z,
+        );
       }
       for (const v of this.worldVehicles) {
         v.pos.copy(v.spawnPos);
@@ -9644,10 +9716,38 @@ export class RpgWorldEngine {
     }
 
     if (this.worldMode === 'overworld' && this.nearbyNpcId) {
+      this.grantNightPermissionForNpc(this.nearbyNpcId, { fromProximityWake: false });
       this.phase = 'dialogue';
       this.heldKeys.clear();
       this.callbacks.onOpenNpcDialogue(this.nearbyNpcId);
       this.pushHud(true);
+      return;
+    }
+
+    if (this.worldMode === 'overworld' && this.nearbyOverworldZoneDoor && !this.nearPortal) {
+      const doorZoneId = this.nearbyOverworldZoneDoor;
+      const door = OVERWORLD_ZONE_DOORS[doorZoneId];
+      const def = NPC_CATALOG.find((item) => item.id === door.npcId);
+      if (this.getCurrentDayPhase() === 'malam') {
+        if (this.nightPermittedZones.has(doorZoneId)) {
+          this.enterZoneDungeon(doorZoneId, false);
+        } else {
+          const liveNpc = this.npcs.get(door.npcId);
+          const restX = liveNpc?.guardPost.bedX ?? OVERWORLD_GUARD_POSTS[door.npcId]?.x ?? door.x;
+          const restZ = liveNpc?.guardPost.bedZ ?? OVERWORLD_GUARD_POSTS[door.npcId]?.z ?? door.z;
+          const dist = Math.round(Math.hypot(this.heroPos.x - restX, this.heroPos.z - restZ));
+          soundEngine.playNo();
+          this.showBanner(
+            `🔒 ${door.label} ditutup malam ini! Temui ${def?.name ?? 'Penjaga'} di pos istirahatnya (~${dist}m) untuk minta izin masuk.`,
+            4.8,
+          );
+        }
+      } else {
+        this.phase = 'dialogue';
+        this.heldKeys.clear();
+        this.callbacks.onOpenNpcDialogue(door.npcId);
+        this.pushHud(true);
+      }
       return;
     }
 
@@ -11875,6 +11975,9 @@ export class RpgWorldEngine {
               this.callbacks.onOpenAcademyExam(npc.academySkill);
             }
           } else {
+            this.grantNightPermissionForNpc(obj.userData.npcId as string, {
+              fromProximityWake: false,
+            });
             this.phase = 'dialogue';
             this.heldKeys.clear();
             this.callbacks.onOpenNpcDialogue(obj.userData.npcId as string);
@@ -13416,7 +13519,7 @@ export class RpgWorldEngine {
       });
     }
 
-    const isNightShift = currentDayPhase === 'sore' || currentDayPhase === 'malam';
+    const isNightShift = currentDayPhase === 'malam';
     let npcIdx = 0;
     for (const [npcId, npc] of this.npcs.entries()) {
       if (npc.koTimer > 0) {
@@ -13497,15 +13600,22 @@ export class RpgWorldEngine {
         npc.poseMode = 'walk';
         npc.mesh.position.set(npc.x, getArchipelagoGroundY(npc.x, npc.z), npc.z);
       } else if (!isNightShift) {
-        // Pagi - Sore: kembali ke posisi jaga berdiri seperti biasa
+        // Pagi - Sore: berjaga berdiri tepat di depan pintu wilayah masing-masing
         npc.nightAwake = false;
-        const dx = npc.standX - npc.x;
-        const dz = npc.standZ - npc.z;
-        const distStand = Math.hypot(dx, dz);
-        if (distStand > 0.25) {
-          const step = Math.min(distStand, 3.2 * dt);
-          npc.x += (dx / distStand) * step;
-          npc.z += (dz / distStand) * step;
+        const useWaypoint =
+          Boolean(npc.walkWaypoint) &&
+          npc.x < npc.walkWaypoint!.x - 0.8 &&
+          npc.standX > npc.walkWaypoint!.x;
+        const targetX = useWaypoint ? npc.walkWaypoint!.x : npc.standX;
+        const targetZ = useWaypoint ? npc.walkWaypoint!.z : npc.standZ;
+        const dx = targetX - npc.x;
+        const dz = targetZ - npc.z;
+        const distTarget = Math.hypot(dx, dz);
+        const distStand = Math.hypot(npc.standX - npc.x, npc.standZ - npc.z);
+        if (distStand > 0.25 && distTarget > 0.2) {
+          const step = Math.min(distTarget, 3.6 * dt);
+          npc.x += (dx / distTarget) * step;
+          npc.z += (dz / distTarget) * step;
           npc.yaw = Math.atan2(dx, dz);
           npc.poseMode = 'walk';
           npc.mesh.position.set(npc.x, getArchipelagoGroundY(npc.x, npc.z), npc.z);
@@ -13517,33 +13627,16 @@ export class RpgWorldEngine {
           npc.mesh.position.set(npc.standX, npc.standY, npc.standZ);
         }
       } else {
-        // Sore / Malam: pindah ke pos penjaga & tidur; terbangun saat player mendekat!
+        // Malam: kembali ke pos istirahat & tidur; terbangun + beri izin saat player datang!
         const bedX = npc.guardPost.bedX;
         const bedZ = npc.guardPost.bedZ;
         if (
           !npc.nightAwake &&
           this.phase === 'playing' &&
-          distHero < 6.0 &&
-          (npc.poseMode === 'sleep' || Math.hypot(npc.x - bedX, npc.z - bedZ) < 1.8)
+          distHero < 6.2 &&
+          (npc.poseMode === 'sleep' || Math.hypot(npc.x - bedX, npc.z - bedZ) < 2.1)
         ) {
-          npc.nightAwake = true;
-          // Berdiri cepat di sisi pos menghadap Hero
-          const toStandX = npc.standX - bedX;
-          const toStandZ = npc.standZ - bedZ;
-          const toStandLen = Math.hypot(toStandX, toStandZ) || 1;
-          npc.x = bedX + (toStandX / toStandLen) * 1.85;
-          npc.z = bedZ + (toStandZ / toStandLen) * 1.85;
-          npc.poseMode = 'stand';
-          npc.mesh.position.set(npc.x, getArchipelagoGroundY(npc.x, npc.z), npc.z);
-          const nowMs = Date.now();
-          if (nowMs - npc.lastWakeBannerMs > 6000) {
-            npc.lastWakeBannerMs = nowMs;
-            soundEngine.playPick();
-            this.showBanner(
-              `⚠️ ${def?.name ?? 'Penjaga'} terbangun: "${def?.storyLine1Id ?? def?.speechBubble ?? 'Tolong selamatkan wilayah kami!'}"`,
-              5.0,
-            );
-          }
+          this.grantNightPermissionForNpc(npcId, { fromProximityWake: true });
         }
 
         if (npc.nightAwake) {
@@ -13557,14 +13650,21 @@ export class RpgWorldEngine {
         }
 
         if (!npc.nightAwake) {
-          const dx = bedX - npc.x;
-          const dz = bedZ - npc.z;
-          const distBed = Math.hypot(dx, dz);
-          if (distBed > 0.4) {
-            const spd = currentDayPhase === 'malam' ? 3.8 : 2.6;
-            const step = Math.min(distBed, spd * dt);
-            npc.x += (dx / distBed) * step;
-            npc.z += (dz / distBed) * step;
+          const useWaypoint =
+            Boolean(npc.walkWaypoint) &&
+            npc.x > npc.walkWaypoint!.x + 0.8 &&
+            bedX < npc.walkWaypoint!.x;
+          const targetX = useWaypoint ? npc.walkWaypoint!.x : bedX;
+          const targetZ = useWaypoint ? npc.walkWaypoint!.z : bedZ;
+          const dx = targetX - npc.x;
+          const dz = targetZ - npc.z;
+          const distTarget = Math.hypot(dx, dz);
+          const distBed = Math.hypot(bedX - npc.x, bedZ - npc.z);
+          if (distBed > 0.4 && distTarget > 0.2) {
+            const spd = 4.0;
+            const step = Math.min(distTarget, spd * dt);
+            npc.x += (dx / distTarget) * step;
+            npc.z += (dz / distTarget) * step;
             npc.yaw = Math.atan2(dx, dz);
             npc.poseMode = 'walk';
             npc.mesh.position.set(npc.x, getArchipelagoGroundY(npc.x, npc.z), npc.z);
@@ -13578,7 +13678,7 @@ export class RpgWorldEngine {
         }
       }
 
-      if (npc.poseMode === 'walk' && (isFleeingCar || this.isInDesaSapaanArea(npc.x, npc.z))) {
+      if (npc.poseMode === 'walk') {
         const npcCol = this._desaColScratch;
         npcCol.x = npc.x;
         npcCol.z = npc.z;
@@ -15712,6 +15812,21 @@ export class RpgWorldEngine {
         }
       }
       this.nearbyNpcId = bestNpc;
+      let bestZoneDoor: ZoneId | null = null;
+      let bestZoneDoorDist = 4.8;
+      if (this.carMode === 'none') {
+        for (const [zKey, door] of Object.entries(OVERWORLD_ZONE_DOORS) as Array<
+          [ZoneId, (typeof OVERWORLD_ZONE_DOORS)[ZoneId]]
+        >) {
+          if (Math.abs(this.heroPos.y - door.y) > 4.0) continue;
+          const d = Math.hypot(this.heroPos.x - door.x, this.heroPos.z - door.z);
+          if (d < bestZoneDoorDist) {
+            bestZoneDoorDist = d;
+            bestZoneDoor = zKey;
+          }
+        }
+      }
+      this.nearbyOverworldZoneDoor = bestZoneDoor;
       this.nearbyDoorIndex = null;
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
@@ -15723,6 +15838,7 @@ export class RpgWorldEngine {
       this.nearDungeonExit = false;
     } else if (this.worldMode === 'dungeon' && this.dungeonState) {
       this.nearbyNpcId = null;
+      this.nearbyOverworldZoneDoor = null;
       this.nearPortal = false;
       this.nearDungeonExit =
         Math.hypot(this.heroPos.x - this.dungeonExitPos.x, this.heroPos.z - this.dungeonExitPos.z) < 4.4;
@@ -15817,6 +15933,7 @@ export class RpgWorldEngine {
       this.nearbyDoorIndex = bestDoor;
     } else if (this.worldMode === 'academy') {
       this.nearbyDoorIndex = null;
+      this.nearbyOverworldZoneDoor = null;
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
       this.nearHiddenPrison = false;
@@ -15837,6 +15954,7 @@ export class RpgWorldEngine {
       this.nearbyNpcId = bestNpc;
     } else if (this.worldMode === 'ocean' && this.oceanRig) {
       this.nearbyNpcId = null;
+      this.nearbyOverworldZoneDoor = null;
       this.nearbyDoorIndex = null;
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
@@ -15850,6 +15968,7 @@ export class RpgWorldEngine {
         ) < 5.2 ||
         (this.heroPos.y > -1.75 && this.heroPos.z > 24);
     } else {
+      this.nearbyOverworldZoneDoor = null;
       this.nearCraftingTable = false;
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
@@ -17366,11 +17485,16 @@ export class RpgWorldEngine {
           nz,
         );
         if (bubblePos && showSpeech) {
+          const isNightDialog = this.getCurrentDayPhase() === 'malam';
           labels.push({
             id: `speech_${npc.id}`,
             x: bubblePos.x,
             y: bubblePos.y,
-            title: isSleeping ? '💤 Sedang beristirahat di pos...' : npc.speechBubble,
+            title: isSleeping
+              ? '💤 Istirahat di pos (Dekati untuk izin masuk)'
+              : isAwakeWoken || isNightDialog
+              ? `🔑 "Silakan masuk ke ${npc.zoneName} malam ini!"`
+              : npc.speechBubble,
             kind: 'speech',
           });
         } else if (
@@ -17388,6 +17512,28 @@ export class RpgWorldEngine {
             kind: 'thought',
           });
         }
+      }
+    }
+
+    if (this.phase === 'playing' && this.getCurrentDayPhase() === 'malam') {
+      for (const [zKey, door] of Object.entries(OVERWORLD_ZONE_DOORS) as Array<
+        [ZoneId, (typeof OVERWORLD_ZONE_DOORS)[ZoneId]]
+      >) {
+        if (this.nearbyNpcId === door.npcId) continue;
+        const dHero = Math.hypot(this.heroPos.x - door.x, this.heroPos.z - door.z);
+        if (dHero > 22) continue;
+        const doorPos = projectPoint(door.x, door.y + 3.4, door.z);
+        if (!doorPos) continue;
+        const permitted = this.nightPermittedZones.has(zKey);
+        labels.push({
+          id: `zone_door_${zKey}`,
+          x: doorPos.x,
+          y: doorPos.y,
+          title: permitted
+            ? `🔑 ${door.label} (Izin Diberikan)`
+            : `🔒 ${door.label} · Minta Izin di Pos`,
+          kind: 'door',
+        });
       }
     }
 
@@ -18865,6 +19011,8 @@ export class RpgWorldEngine {
           : ZONE_INFO[zoneId].name,
       rankTitle: getRankTitle(this.xp, this.ribbons.size, this.ieltsCleared),
       nearbyNpcId: this.nearbyNpcId,
+      nearbyOverworldZoneDoor: this.nearbyOverworldZoneDoor,
+      nightPermittedZones: Array.from(this.nightPermittedZones),
       nearbyMonsterId: this.nearbyMonsterId,
       nearbyDoorIndex: this.nearbyDoorIndex,
       nearbyDungeonGuardian: this.nearbyDungeonGuardian,
