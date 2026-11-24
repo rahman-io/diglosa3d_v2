@@ -82,7 +82,7 @@ export default defineConfig(() => {
                 sameOrigin && url.pathname.includes('/assets/'),
               handler: 'CacheFirst',
               options: {
-                cacheName: 'diglosa-offline-assets-v1',
+                cacheName: 'diglosa-offline-assets-v2',
                 rangeRequests: true,
                 expiration: {
                   maxEntries: 250,

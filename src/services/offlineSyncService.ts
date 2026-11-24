@@ -1,6 +1,6 @@
 import { registerSW } from 'virtual:pwa-register';
 
-export const OFFLINE_CACHE_NAME = 'diglosa-offline-assets-v1';
+export const OFFLINE_CACHE_NAME = 'diglosa-offline-assets-v2';
 
 const LS_ENROLLED = 'diglosa_offline_enrolled';
 const LS_BUILD_HASH = 'diglosa_offline_build_hash';

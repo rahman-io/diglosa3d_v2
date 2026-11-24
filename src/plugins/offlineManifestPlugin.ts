@@ -27,6 +27,13 @@ const REFERENCED_AISTUDIO_IMAGES = new Set([
   'Gemini_Generated_Image_p9qrl3p9qrl3p9qr_c81c9878.jpeg',
   'Gemini_Generated_Image_q4s0n7q4s0n7q4s0_03737224.jpeg',
   'Gemini_Generated_Image_aoej87aoej87aoej_de96d052.jpeg',
+  'btn_car_brake_ea27cd8a.jpeg',
+  'btn_car_enter_7623e10e.jpeg',
+  'btn_car_exit_18ede182.jpeg',
+  'btn_car_gas_3821c6db.jpeg',
+  'btn_car_horn_e2392958.jpeg',
+  'btn_car_lights_8d7f17c4.jpeg',
+  'btn_car_turbo_7ad55721.jpeg',
 ]);
 
 const PWA_ICONS = [

@@ -2645,7 +2645,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               >
                 <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
                   <img
-                    src="./assets/aistudio/btn_car_turbo_7ad57721.jpeg"
+                    src="./assets/aistudio/btn_car_turbo_7ad55721.jpeg"
                     alt="Turbo"
                     className="pointer-events-none h-full w-full scale-[1.14] select-none object-cover"
                     draggable={false}
