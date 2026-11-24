@@ -297,6 +297,7 @@ function DiglosaRpgApp() {
   const [sessionRestoreDone, setSessionRestoreDone] = useState(
     () => !initialSessionRef.current || initialSessionRef.current.stage === 'title',
   );
+  const [hudTutorialRunKey, setHudTutorialRunKey] = useState(0);
   const sessionRestoreStartedRef = useRef(false);
   const quickLearnStandaloneRef = useRef(false);
 
@@ -1189,6 +1190,7 @@ function DiglosaRpgApp() {
     engineRef.current?.setLocalAppearance(characterId, playerName);
     engineRef.current?.setMultiplayerActive(false);
     engineRef.current?.continueGame();
+    setHudTutorialRunKey((k) => k + 1);
   }, [characterId, playerName]);
 
   const appendChatMessage = useCallback((msg: RoomChatMessage): boolean => {
@@ -1271,6 +1273,7 @@ function DiglosaRpgApp() {
         });
         if (!isRejoin) {
           engine.setPhase('paused');
+          setHudTutorialRunKey((k) => k + 1);
         }
       }
 
@@ -1989,6 +1992,7 @@ function DiglosaRpgApp() {
         ],
         wave: buildWaveMissionPreview(waveSeed, waveCount, soloSquadName),
       });
+      setHudTutorialRunKey((k) => k + 1);
     },
     [
       activeRoom,
@@ -2687,6 +2691,21 @@ function DiglosaRpgApp() {
           onToggleCarHandbrake={() => engineRef.current?.toggleCarHandbrake()}
           onToggleCarHeadlights={() => engineRef.current?.toggleCarHeadlights()}
           onCarHorn={() => engineRef.current?.honkCarHorn()}
+          tutorialRunKey={hudTutorialRunKey}
+          suppressTutorial={
+            Boolean(vsIntroData) ||
+            Boolean(activeBattle) ||
+            Boolean(activeLearning) ||
+            Boolean(activeAcademySkill) ||
+            Boolean(activeCaveSeal) ||
+            craftingOpen ||
+            Boolean(dialogueNpcId) ||
+            Boolean(sideTab) ||
+            leaderboardOpen ||
+            difficultyPromptOpen ||
+            showAssetDownloader ||
+            isPortraitTouch
+          }
         />
       )}
 

@@ -32,6 +32,7 @@ import { SEA_BIOTA_CATALOG } from '../three/seaBiotaCatalog';
 import { getWeaponThumbnails } from '../utils/weaponThumbnails';
 import { RadarMinimap, StarterWeaponPixelIcon, SwimSuitIcon } from './RadarMinimap';
 import { WeaponPreviewCanvas } from './WeaponPreviewCanvas';
+import { HUD_TUTORIAL_STEPS, HudTutorialOverlay } from './HudTutorialOverlay';
 import { scrollFieldIntoView, useVisualViewport } from '../utils/useVisualViewport';
 
 const CAMERA_VIEW_LABELS: Record<CameraMode, string> = {
@@ -110,6 +111,8 @@ interface RpgHudProps {
   onToggleCarHandbrake?: () => void;
   onToggleCarHeadlights?: () => void;
   onCarHorn?: () => void;
+  tutorialRunKey?: number;
+  suppressTutorial?: boolean;
 }
 
 const ResilientMedallionImg: React.FC<{
@@ -251,6 +254,8 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   onToggleCarHandbrake,
   onToggleCarHeadlights,
   onCarHorn,
+  tutorialRunKey = 0,
+  suppressTutorial = false,
 }) => {
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [touchUsed, setTouchUsed] = useState(false);
@@ -268,6 +273,12 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   >({ kind: 'weapon', id: hud.activeWeapon });
   const [weaponThumbs] = useState<Partial<Record<WeaponId, string>>>(() => getWeaponThumbnails());
   const [showInfoHud, setShowInfoHud] = useState(false);
+  const [tutorialDismissed, setTutorialDismissed] = useState(true);
+  const [tutorialStepIdx, setTutorialStepIdx] = useState(0);
+  const [tutorialJustDone, setTutorialJustDone] = useState(false);
+  const tutorialAdvancingRef = useRef(false);
+  const tutorialAdvanceTimerRef = useRef<number | null>(null);
+  const lastTutorialKeyRef = useRef<number>(0);
   const [floatingOrigin, setFloatingOrigin] = useState<{ x: number; y: number } | null>(null);
   const knobImgRef = useRef<HTMLImageElement | null>(null);
   const lastStickMoveRef = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
@@ -355,6 +366,74 @@ export const RpgHud: React.FC<RpgHudProps> = ({
       onSetFireHeldRef.current(false);
     }
   }, [hud.phase]);
+
+  useEffect(() => {
+    if (tutorialRunKey > 0 && tutorialRunKey !== lastTutorialKeyRef.current) {
+      lastTutorialKeyRef.current = tutorialRunKey;
+      if (tutorialAdvanceTimerRef.current !== null) {
+        window.clearTimeout(tutorialAdvanceTimerRef.current);
+        tutorialAdvanceTimerRef.current = null;
+      }
+      tutorialAdvancingRef.current = false;
+      setTutorialJustDone(false);
+      setTutorialStepIdx(0);
+      setTutorialDismissed(false);
+    }
+  }, [tutorialRunKey]);
+
+  useEffect(() => {
+    return () => {
+      if (tutorialAdvanceTimerRef.current !== null) {
+        window.clearTimeout(tutorialAdvanceTimerRef.current);
+      }
+    };
+  }, []);
+
+  const tutorialSteps = HUD_TUTORIAL_STEPS.filter((step) => {
+    if (step.id === 'touch_joystick' && !showTouchControls) return false;
+    if ((step.id === 'voice_toggle' || step.id === 'voice_help') && !onToggleVoice) return false;
+    return true;
+  });
+
+  const tutorialActive =
+    !tutorialDismissed &&
+    !suppressTutorial &&
+    hud.phase === 'playing' &&
+    !inCar &&
+    tutorialStepIdx < tutorialSteps.length;
+
+  const activeTutorialStep = tutorialActive ? tutorialSteps[tutorialStepIdx] ?? null : null;
+  const activeTutorialStepId = activeTutorialStep?.id ?? null;
+
+  const isTutorialTarget = (id: string) => activeTutorialStepId === id;
+
+  const completeTutorialStep = (id: string) => {
+    if (!tutorialActive || activeTutorialStepId !== id || tutorialAdvancingRef.current) return;
+    tutorialAdvancingRef.current = true;
+    setTutorialJustDone(true);
+    tutorialAdvanceTimerRef.current = window.setTimeout(() => {
+      tutorialAdvanceTimerRef.current = null;
+      tutorialAdvancingRef.current = false;
+      setTutorialJustDone(false);
+      setTutorialStepIdx((prev) => {
+        const next = prev + 1;
+        if (next >= tutorialSteps.length) {
+          setTutorialDismissed(true);
+        }
+        return next;
+      });
+    }, 340);
+  };
+
+  const handleSkipTutorial = () => {
+    if (tutorialAdvanceTimerRef.current !== null) {
+      window.clearTimeout(tutorialAdvanceTimerRef.current);
+      tutorialAdvanceTimerRef.current = null;
+    }
+    tutorialAdvancingRef.current = false;
+    setTutorialJustDone(false);
+    setTutorialDismissed(true);
+  };
 
   if (hud.phase !== 'playing') {
     return null;
@@ -457,6 +536,19 @@ export const RpgHud: React.FC<RpgHudProps> = ({
     { label: 'Misi', iconSrc: './assets/ui/icon_quest.png', onClick: onOpenQuests, badge: activeQuestCount },
     { label: 'Peta', iconSrc: './assets/ui/icon_map.png', onClick: onOpenMap },
     { label: 'Petunjuk', iconSrc: './assets/ui/menu_guide.png', onClick: onOpenGuide },
+    {
+      label: 'Tutorial',
+      iconSrc: './assets/aistudio/image_d988e3c5.png',
+      onClick: () => {
+        setMenuOpen(false);
+        setHotbarOpen(false);
+        setVoiceHelpOpen(false);
+        tutorialAdvancingRef.current = false;
+        setTutorialJustDone(false);
+        setTutorialStepIdx(0);
+        setTutorialDismissed(false);
+      },
+    },
     { label: 'Opsi', iconSrc: './assets/ui/icon_settings.png', onClick: onOpenOptions },
     { label: 'Ranking', iconSrc: './assets/ui/menu_trophy.png', onClick: onOpenLeaderboard },
     { label: 'Jeda', iconSrc: './assets/ui/btn_pause.png', onClick: onPause },
@@ -518,8 +610,13 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         <div className="flex items-center gap-2">
           <button
             type="button"
+            data-tutorial-target="weapon_switcher"
             onClick={(e) => {
               (e.currentTarget as HTMLButtonElement).blur();
+              if (isTutorialTarget('weapon_switcher')) {
+                completeTutorialStep('weapon_switcher');
+                return;
+              }
               openWeaponSwitcher();
             }}
             title={hotbarOpen ? 'Tutup Daftar Senjata & Alat' : 'Pilih Senjata & Alat'}
@@ -632,7 +729,14 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           {/* Active Weapon & Tool Box (tap to open Tas) */}
           <button
             type="button"
-            onClick={onOpenBag}
+            data-tutorial-target="bag_slot"
+            onClick={() => {
+              if (isTutorialTarget('bag_slot')) {
+                completeTutorialStep('bag_slot');
+                return;
+              }
+              onOpenBag();
+            }}
             title={
               hud.ownedWeapons.length > 0
                 ? `${activeWeaponDef.name} (${activeAmmo}) — Buka Tas`
@@ -684,7 +788,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           {!inCar && (
             <button
               type="button"
-              onClick={onToggleAimMode}
+              data-tutorial-target="aim_mode"
+              onClick={() => {
+                onToggleAimMode();
+                completeTutorialStep('aim_mode');
+              }}
               title={
                 hud.settings.aimMode === 'auto'
                   ? 'Mode Bidik: Otomatis (Klik untuk ganti ke Bidik Bebas)'
@@ -716,7 +824,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
           <button
             type="button"
-            onClick={onToggleCamera}
+            data-tutorial-target="camera_view"
+            onClick={() => {
+              onToggleCamera();
+              completeTutorialStep('camera_view');
+            }}
             title={`Ganti Sudut Pandang: ${CAMERA_VIEW_LABELS[hud.cameraMode]} (C / F5)`}
             aria-label={`Ganti Sudut Pandang: ${CAMERA_VIEW_LABELS[hud.cameraMode]}`}
             className="relative flex h-9 w-9 items-center justify-center rounded-full shadow-[0_3px_8px_rgba(34,211,238,0.38)] transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10"
@@ -731,7 +843,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
           <button
             type="button"
-            onClick={() => setShowInfoHud((v) => !v)}
+            data-tutorial-target="info_toggle"
+            onClick={() => {
+              setShowInfoHud((v) => !v);
+              completeTutorialStep('info_toggle');
+            }}
             title={showInfoHud ? 'Sembunyikan Info & Label Layar' : 'Tampilkan Info & Label Layar'}
             aria-label={showInfoHud ? 'Sembunyikan Info & Label Layar' : 'Tampilkan Info & Label Layar'}
             aria-pressed={showInfoHud}
@@ -747,7 +863,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
           <button
             type="button"
-            onClick={onToggleMute}
+            data-tutorial-target="sound_toggle"
+            onClick={() => {
+              onToggleMute();
+              completeTutorialStep('sound_toggle');
+            }}
             title={muted ? 'Nyalakan Suara' : 'Matikan Suara'}
             aria-label={muted ? 'Nyalakan Suara' : 'Matikan Suara'}
             className="relative flex h-9 w-9 items-center justify-center rounded-full shadow-[0_3px_8px_rgba(0,0,0,0.42)] transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10"
@@ -762,7 +882,12 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
           <button
             type="button"
+            data-tutorial-target="main_menu"
             onClick={() => {
+              if (isTutorialTarget('main_menu')) {
+                completeTutorialStep('main_menu');
+                return;
+              }
               setHotbarOpen(false);
               setMenuOpen((v) => !v);
             }}
@@ -1629,6 +1754,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
       {showTouchControls && (
         <>
           <div
+            data-tutorial-target="touch_joystick"
             onPointerDown={(e) => {
               if (stickPointerId.current !== null) return;
               stickPointerId.current = e.pointerId;
@@ -1645,11 +1771,21 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             onPointerMove={(e) => {
               if (stickPointerId.current === e.pointerId) {
                 updateJoystickFromPointer(e.clientX, e.clientY);
+                if (
+                  isTutorialTarget('touch_joystick') &&
+                  stickOriginRef.current &&
+                  Math.hypot(e.clientX - stickOriginRef.current.x, e.clientY - stickOriginRef.current.y) >= 10
+                ) {
+                  completeTutorialStep('touch_joystick');
+                }
               }
             }}
             onPointerUp={(e) => {
               if (stickPointerId.current === e.pointerId) {
                 resetFloatingJoystick();
+                if (isTutorialTarget('touch_joystick')) {
+                  completeTutorialStep('touch_joystick');
+                }
               }
             }}
             onPointerCancel={(e) => {
@@ -2508,15 +2644,18 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           {/* Button 2 (Arc Left): Winged-Boot Jump Medallion */}
           <button
             type="button"
+            data-tutorial-target="jump"
             data-no-click-sfx="true"
             onPointerDown={(e) => {
               e.preventDefault();
               onJump();
+              completeTutorialStep('jump');
             }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
                 onJump();
+                completeTutorialStep('jump');
               }
             }}
             title={hud.isSwimming ? 'Lompat Naik dari Air (J / Spasi)' : 'Lompat (J)'}
@@ -2531,13 +2670,24 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             />
           </button>
 
-          {/* Optional ADS / Scope Bidik Button (shows in Bidik Bebas mode when holding an owned weapon) */}
-          {hud.settings.aimMode === 'manual' &&
+          {/* Optional ADS / Scope Bidik Button (shows in Bidik Bebas mode when holding an owned weapon, or during Scope tutorial step) */}
+          {((hud.settings.aimMode === 'manual' &&
             hud.activeHotbarSlot <= 7 &&
-            hud.ownedWeapons.includes(hud.activeWeapon) && (
+            hud.ownedWeapons.includes(hud.activeWeapon)) ||
+            isTutorialTarget('scope')) && (
             <button
               type="button"
-              onClick={onToggleAim}
+              data-tutorial-target="scope"
+              onClick={() => {
+                if (
+                  hud.settings.aimMode === 'manual' &&
+                  hud.activeHotbarSlot <= 7 &&
+                  hud.ownedWeapons.includes(hud.activeWeapon)
+                ) {
+                  onToggleAim();
+                }
+                completeTutorialStep('scope');
+              }}
               title={hud.isAiming ? 'Keluar Mode Scope (Klik Kanan / Q)' : 'Mode Scope / Bidik Presisi (Klik Kanan / Q)'}
               aria-label="Mode Scope"
               className={`pointer-events-auto absolute bottom-[88px] right-[82px] flex h-[54px] w-[54px] items-center justify-center rounded-full transition-transform active:scale-90 sm:bottom-[102px] sm:right-[96px] sm:h-[60px] sm:w-[60px] ${
@@ -2555,10 +2705,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             </button>
           )}
 
-          {/* Quick Ammo Refill Medallion directly above Attack (shows live availability!) */}
-          {hud.ownedWeapons.length > 0 &&
-            Boolean(onBuyAmmo) &&
+          {/* Quick Ammo Refill Medallion directly above Attack (shows live availability, or preview during tutorial) */}
+          {((hud.ownedWeapons.length > 0 && Boolean(onBuyAmmo)) ||
+            isTutorialTarget('buy_ammo')) &&
             (() => {
+              const tutorialPracticeAmmo = isTutorialTarget('buy_ammo');
               const ammoFull = activeAmmo >= MAX_AMMO;
               const hasEnoughDiamonds = hud.diamonds >= AMMO_COST;
               const canBuyAmmo = hasEnoughDiamonds && !ammoFull;
@@ -2571,8 +2722,15 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               return (
                 <button
                   type="button"
-                  disabled={!canBuyAmmo}
-                  onClick={() => onBuyAmmo?.()}
+                  data-tutorial-target="buy_ammo"
+                  disabled={!tutorialPracticeAmmo && !canBuyAmmo}
+                  onClick={() => {
+                    if (tutorialPracticeAmmo) {
+                      completeTutorialStep('buy_ammo');
+                      return;
+                    }
+                    onBuyAmmo?.();
+                  }}
                   title={reloadTitle}
                   aria-label={reloadTitle}
                   className={`pointer-events-auto absolute right-[10px] flex h-[52px] w-[52px] touch-none select-none items-center justify-center rounded-full transition-transform sm:right-[12px] sm:h-[58px] sm:w-[58px] ${
@@ -2580,7 +2738,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                       ? 'bottom-[170px] sm:bottom-[196px]'
                       : 'bottom-[88px] sm:bottom-[102px]'
                   } ${
-                    canBuyAmmo
+                    canBuyAmmo || tutorialPracticeAmmo
                       ? `ring-2 ring-cyan-300 shadow-[0_0_16px_rgba(34,211,238,0.72)] hover:scale-105 active:scale-90 ${
                           activeAmmo === 0 ? 'animate-pulse' : ''
                         }`
@@ -2595,14 +2753,14 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                   />
                   <span
                     className={`pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border px-1.5 font-mono-nums text-[8px] font-black leading-tight shadow sm:text-[9px] ${
-                      canBuyAmmo
+                      canBuyAmmo || tutorialPracticeAmmo
                         ? 'border-cyan-300/80 bg-cyan-950/95 text-cyan-100'
                         : ammoFull
                         ? 'border-emerald-400/65 bg-slate-950/95 text-emerald-200'
                         : 'border-rose-400/75 bg-slate-950/95 text-rose-200'
                     }`}
                   >
-                    {ammoFull ? 'MAX' : `${AMMO_COST}💎`}
+                    {ammoFull && !tutorialPracticeAmmo ? 'MAX' : `${AMMO_COST}💎`}
                   </span>
                 </button>
               );
@@ -2611,6 +2769,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           {/* Button 3 (Primary Thumb Anchor): Large Attack / Active Tool Medallion (Hold to Spray!) */}
           <button
             type="button"
+            data-tutorial-target="attack"
             data-no-click-sfx="true"
             onPointerDown={(e) => {
               e.preventDefault();
@@ -2621,6 +2780,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                 // ignore
               }
               onSetFireHeld(true);
+              completeTutorialStep('attack');
             }}
             onPointerUp={(e) => {
               if (firePointerId.current === null || firePointerId.current === e.pointerId) {
@@ -2638,6 +2798,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 onFireWeapon();
+                completeTutorialStep('attack');
               }
             }}
             title="Tahan / Tekan untuk Menembak ke Crosshair (Spasi / Klik Kiri)"
@@ -2923,9 +3084,14 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         <div className="pointer-events-auto fixed bottom-2.5 left-2.5 z-20 flex items-center gap-2 sm:bottom-3.5 sm:left-4">
           <button
             type="button"
+            data-tutorial-target="voice_toggle"
             data-no-click-sfx="true"
             onClick={(e) => {
               (e.currentTarget as HTMLButtonElement).blur();
+              if (isTutorialTarget('voice_toggle')) {
+                completeTutorialStep('voice_toggle');
+                return;
+              }
               onToggleVoice();
             }}
             title={
@@ -2970,7 +3136,14 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
           <button
             type="button"
-            onClick={() => setVoiceHelpOpen((v) => !v)}
+            data-tutorial-target="voice_help"
+            onClick={() => {
+              if (isTutorialTarget('voice_help')) {
+                completeTutorialStep('voice_help');
+                return;
+              }
+              setVoiceHelpOpen((v) => !v);
+            }}
             title={`Daftar ${VOICE_COMMAND_CATALOG.length}+ Perintah Suara`}
             aria-label="Daftar Perintah Suara"
             aria-pressed={voiceHelpOpen}
@@ -3091,6 +3264,16 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           </div>
         </div>
       )}
+
+      {/* INTERACTIVE SPOTLIGHT COACH-MARK TUTORIAL */}
+      <HudTutorialOverlay
+        active={tutorialActive}
+        step={activeTutorialStep}
+        stepIndex={tutorialStepIdx}
+        totalSteps={tutorialSteps.length}
+        justCompletedStep={tutorialJustDone}
+        onSkip={handleSkipTutorial}
+      />
     </div>
   );
 };
