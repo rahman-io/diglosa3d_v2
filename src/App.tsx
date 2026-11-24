@@ -97,10 +97,12 @@ import {
   updateMyMemberProfile,
   updateRoomGroupName,
 } from './services/multiplayerRoomService';
+import { SEA_MONSTER_SPAWNS, SKY_MONSTER_SPAWNS } from './three/monstersCatalog';
 import {
   generateRandomSurfaceWave,
   generateRandomWaveSeed,
   rollRandomWaveCount,
+  summarizeWaveMonsters,
 } from './three/waveGenerator';
 import {
   filterChatProfanity,
@@ -1154,22 +1156,29 @@ function DiglosaRpgApp() {
   const buildWaveMissionPreview = useCallback(
     (waveSeed: number, waveCount: number, squadLabel: string): WaveMissionState => {
       const wavePreview = generateRandomSurfaceWave(waveSeed, waveCount);
+      const combinedEntries = [
+        ...wavePreview.spawns.map((s) => ({ type: s.type, combatOnly: s.combatOnly })),
+        ...SEA_MONSTER_SPAWNS.map((s) => ({ type: s.type, combatOnly: true })),
+        ...SKY_MONSTER_SPAWNS.map((s) => ({ type: s.type, combatOnly: s.combatOnly })),
+      ];
+      const combinedSummary = summarizeWaveMonsters(combinedEntries);
+      const combinedTotal = combinedEntries.length;
       let quizTotal = 0;
       let combatTotal = 0;
-      for (const g of wavePreview.summary) {
+      for (const g of combinedSummary) {
         quizTotal += g.quizCount;
         combatTotal += g.combatCount;
       }
       return {
         seed: wavePreview.seed,
         squadName: squadLabel,
-        total: wavePreview.count,
+        total: combinedTotal,
         defeated: 0,
-        remaining: wavePreview.count,
+        remaining: combinedTotal,
         quizTotal,
         combatTotal,
         completed: false,
-        monsterGroups: wavePreview.summary,
+        monsterGroups: combinedSummary,
       };
     },
     [],
