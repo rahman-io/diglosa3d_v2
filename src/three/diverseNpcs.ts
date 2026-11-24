@@ -21,7 +21,13 @@ export type NpcArchetypeId =
   | 'crystal_scholar'
   | 'mine_engineer'
   | 'temple_guardian'
-  | 'ielts_dean';
+  | 'ielts_dean'
+  | 'night_watchman'
+  | 'night_chef'
+  | 'night_ranger'
+  | 'night_officer'
+  | 'night_astronomer'
+  | 'night_scholar';
 
 export type NpcAgeGroup = 'child' | 'youth' | 'adult' | 'elderly';
 export type NpcGender = 'male' | 'female';
@@ -609,6 +615,170 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     baseRightArmX: -0.68,
     baseLeftArmX: -0.14,
   },
+  night_watchman: {
+    id: 'night_watchman',
+    sheetNumber: 21,
+    sheetTitle: 'NIGHT WATCHMAN',
+    displayNameId: 'Ronda Bima',
+    ageGroup: 'adult',
+    ageLabelId: 'Dewasa',
+    gender: 'male',
+    genderLabelId: 'Laki-laki',
+    hijab: false,
+    professionId: 'Penjaga Malam Desa Sapaan',
+    habitId: 'Berpatroli malam membawa lentera & kentongan kayu',
+    skillId: 'Ronda malam & penjagaan pintu desa',
+    socialMessageId:
+      'Ronda Bima (Dewasa · Laki-laki): "Malam aman terkendali! Kakek Sapa sedang beristirahat, biar aku yang berjaga di pintu Desa Sapaan."',
+    stats: { hp: 145, atk: 24, nrg: 155 },
+    scaleY: 0.99,
+    scaleXZ: 1.0,
+    skinHex: 0xc98b5b,
+    hairHex: 0x1e293b,
+    shirtHex: 0x1e3a8a,
+    pantsHex: 0x334155,
+    shoeHex: 0x1e293b,
+    accentHex: 0xfbbf24,
+    baseRightArmX: -0.78,
+    baseLeftArmX: -0.32,
+  },
+  night_chef: {
+    id: 'night_chef',
+    sheetNumber: 22,
+    sheetTitle: 'NIGHT CHEF',
+    displayNameId: 'Chef Bara',
+    ageGroup: 'adult',
+    ageLabelId: 'Dewasa',
+    gender: 'male',
+    genderLabelId: 'Laki-laki',
+    hijab: false,
+    professionId: 'Juru Masak Shift Malam Pasar Rasa',
+    habitId: 'Menjaga tungku sup hangat agar tetap menyala sepanjang malam',
+    skillId: 'Masak tungku arang & kaldu malam',
+    socialMessageId:
+      'Chef Bara (Dewasa · Laki-laki): "Tungku malam menyala! Koki Mimi lepas piket, aku yang menjaga pintu Pasar Rasa sampai pagi."',
+    stats: { hp: 135, atk: 22, nrg: 145 },
+    scaleY: 0.97,
+    scaleXZ: 1.01,
+    skinHex: 0xe3a87d,
+    hairHex: 0x3b2314,
+    shirtHex: 0x991b1b,
+    pantsHex: 0x1f2937,
+    shoeHex: 0x111827,
+    accentHex: 0xfb923c,
+    baseRightArmX: -0.72,
+    baseLeftArmX: -0.68,
+    baseRightArmZ: -0.15,
+    baseLeftArmZ: 0.15,
+  },
+  night_ranger: {
+    id: 'night_ranger',
+    sheetNumber: 23,
+    sheetTitle: 'NIGHT RANGER',
+    displayNameId: 'Penjelajah Kirana',
+    ageGroup: 'youth',
+    ageLabelId: 'Muda',
+    gender: 'female',
+    genderLabelId: 'Perempuan',
+    hijab: false,
+    professionId: 'Pengintai Malam Hutan Satwa',
+    habitId: 'Memakai kacamata penglihatan malam & membawa lentera zamrud',
+    skillId: 'Pelacakan jejak malam & perlindungan satwa',
+    socialMessageId:
+      'Penjelajah Kirana (Muda · Perempuan Non-Hijab): "Kacamata malamku aktif! Aku menggantikan Ranger Rimba memantau jejak Kiki di Hutan Satwa."',
+    stats: { hp: 140, atk: 28, nrg: 170 },
+    scaleY: 0.94,
+    scaleXZ: 0.91,
+    skinHex: 0xf4c19a,
+    hairHex: 0x7c2d12,
+    shirtHex: 0x065f46,
+    pantsHex: 0x1e293b,
+    shoeHex: 0x3f2e21,
+    accentHex: 0x34d399,
+    baseRightArmX: -0.76,
+    baseLeftArmX: -0.18,
+  },
+  night_officer: {
+    id: 'night_officer',
+    sheetNumber: 24,
+    sheetTitle: 'NIGHT OFFICER',
+    displayNameId: 'Inspektur Sinta',
+    ageGroup: 'adult',
+    ageLabelId: 'Dewasa',
+    gender: 'female',
+    genderLabelId: 'Perempuan',
+    hijab: true,
+    professionId: 'Komandan Patroli Malam Gerbang Kota',
+    habitId: 'Mengatur lampu lalu lintas malam dengan tongkat sinyal biru',
+    skillId: 'Patroli malam & keamanan kota',
+    socialMessageId:
+      'Inspektur Sinta (Dewasa · Perempuan Berhijab): "Piket malam dimulai! Pak Polisi Gerbang sedang lepas tugas, biar aku yang kawal Gerbang Kota."',
+    stats: { hp: 185, atk: 34, nrg: 165 },
+    scaleY: 0.96,
+    scaleXZ: 0.93,
+    skinHex: 0xf7cbb0,
+    hairHex: 0x0f172a,
+    shirtHex: 0x1e293b,
+    pantsHex: 0x0f172a,
+    shoeHex: 0x090d16,
+    accentHex: 0x38bdf8,
+    baseRightArmX: -0.82,
+    baseLeftArmX: -0.22,
+  },
+  night_astronomer: {
+    id: 'night_astronomer',
+    sheetNumber: 25,
+    sheetTitle: 'NIGHT ASTRONOMER',
+    displayNameId: 'Astronom Astra',
+    ageGroup: 'youth',
+    ageLabelId: 'Muda',
+    gender: 'female',
+    genderLabelId: 'Perempuan',
+    hijab: false,
+    professionId: 'Penjaga Bintang Menara Waktu',
+    habitId: 'Mengamati gerak bintang & menjaga roda menara tetap aman saat malam',
+    skillId: 'Astronomi waktu & kalibrasi malam',
+    socialMessageId:
+      'Astronom Astra (Muda · Perempuan Non-Hijab): "Bintang malam membimbing waktu! Pembuat Jam istirahat dulu, sekarang giliranku menjaga Menara Waktu."',
+    stats: { hp: 120, atk: 18, nrg: 185 },
+    scaleY: 0.95,
+    scaleXZ: 0.91,
+    skinHex: 0xf9d5bc,
+    hairHex: 0xcbd5e1,
+    shirtHex: 0x312e81,
+    pantsHex: 0x1e1b4b,
+    shoeHex: 0x1e293b,
+    accentHex: 0xa78bfa,
+    baseRightArmX: -0.74,
+    baseLeftArmX: -0.2,
+  },
+  night_scholar: {
+    id: 'night_scholar',
+    sheetNumber: 26,
+    sheetTitle: 'NIGHT SCHOLAR',
+    displayNameId: 'Arkeolog Orion',
+    ageGroup: 'adult',
+    ageLabelId: 'Dewasa',
+    gender: 'male',
+    genderLabelId: 'Laki-laki',
+    hijab: false,
+    professionId: 'Penjaga Malam Gua Portal',
+    habitId: 'Meneliti resonansi kristal gua pada malam hari dengan orb bercahaya',
+    skillId: 'Arkeologi kristal & kata tanya malam',
+    socialMessageId:
+      'Arkeolog Orion (Dewasa · Laki-laki): "Kristal gua bersinar terang malam ini! Aku menggantikan Nyonya Portal menjaga pintu Gua Portal."',
+    stats: { hp: 165, atk: 32, nrg: 210 },
+    scaleY: 1.0,
+    scaleXZ: 0.99,
+    skinHex: 0xd9a177,
+    hairHex: 0x27272a,
+    shirtHex: 0x115e59,
+    pantsHex: 0x0f172a,
+    shoeHex: 0x18181b,
+    accentHex: 0xc084fc,
+    baseRightArmX: -0.78,
+    baseLeftArmX: -0.35,
+  },
 };
 
 export const WORLD_CITIZEN_ARCHETYPES: NpcArchetypeId[] = [
@@ -633,16 +803,28 @@ export function resolveNpcArchetype(npcId: string): NpcArchetypeId {
   switch (npcId) {
     case 'npc_tetua':
       return 'village_elder';
+    case 'npc_tetua_malam':
+      return 'night_watchman';
     case 'npc_koki':
       return 'pastry_chef';
+    case 'npc_koki_malam':
+      return 'night_chef';
     case 'npc_rubah':
       return 'ranger_guide';
+    case 'npc_rubah_malam':
+      return 'night_ranger';
     case 'npc_penjaga':
       return 'city_policeman';
+    case 'npc_penjaga_malam':
+      return 'night_officer';
     case 'npc_penyihir':
       return 'clockmaker';
+    case 'npc_penyihir_malam':
+      return 'night_astronomer';
     case 'npc_portal':
       return 'crystal_scholar';
+    case 'npc_portal_malam':
+      return 'night_scholar';
     case 'npc_sera':
       return 'ielts_dean';
     case 'npc_ayu':
@@ -752,7 +934,9 @@ export function buildDiverseNpcRig(
     archetypeId === 'village_elder' ||
     archetypeId === 'grandma_herbalist' ||
     archetypeId === 'crystal_scholar' ||
-    archetypeId === 'ielts_dean';
+    archetypeId === 'ielts_dean' ||
+    archetypeId === 'night_astronomer' ||
+    archetypeId === 'night_scholar';
 
   // 1. Articulated Legs + Footwear
   const makeLeg = (lx: number): THREE.Group => {
@@ -799,7 +983,9 @@ export function buildDiverseNpcRig(
       archetypeId === 'school_teacher' ||
       archetypeId === 'crystal_scholar' ||
       archetypeId === 'ielts_dean' ||
-      archetypeId === 'village_elder'
+      archetypeId === 'village_elder' ||
+      archetypeId === 'night_astronomer' ||
+      archetypeId === 'night_scholar'
         ? shirtMat
         : pantsMat;
     const hemH = archetypeId === 'schoolgirl' ? 0.48 : 0.66;
@@ -811,11 +997,13 @@ export function buildDiverseNpcRig(
     archetypeId === 'pastry_chef' ||
     archetypeId === 'street_vendor' ||
     archetypeId === 'blacksmith' ||
-    archetypeId === 'temple_guardian'
+    archetypeId === 'temple_guardian' ||
+    archetypeId === 'night_chef' ||
+    archetypeId === 'night_officer'
   ) {
     const tunicHem = new THREE.Mesh(
       new THREE.BoxGeometry(0.92, 0.42, 0.62),
-      archetypeId === 'temple_guardian' ? shirtMat : shirtMat,
+      shirtMat,
     );
     tunicHem.position.y = 0.82;
     tunicHem.castShadow = true;
@@ -984,6 +1172,54 @@ export function buildDiverseNpcRig(
     const innerShirt = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.52, 0.05), whiteMat);
     innerShirt.position.set(0, 0.7, 0.29);
     upperBody.add(trimL, trimR, innerShirt);
+  } else if (archetypeId === 'night_watchman') {
+    const vest = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.74, 0.62), palette.getMat(0x0f172a, 'matte'));
+    vest.position.set(0, 0.56, 0.01);
+    const reflFront = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.14, 0.64), palette.getMat(0xfacc15, 'emissive'));
+    reflFront.position.y = 0.34;
+    const scarf = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.16, 0.62), accentMat);
+    scarf.position.set(0, 0.92, 0.01);
+    upperBody.add(vest, reflFront, scarf);
+  } else if (archetypeId === 'night_chef') {
+    const apron = new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.94, 0.09), palette.getMat(0x1e293b, 'matte'));
+    apron.position.set(0, 0.24, 0.32);
+    const collar = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.14, 0.61), accentMat);
+    collar.position.set(0, 0.89, 0.01);
+    const sash = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.12, 0.63), accentMat);
+    sash.position.y = 0.22;
+    upperBody.add(apron, collar, sash);
+  } else if (archetypeId === 'night_ranger') {
+    const poncho = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.62, 0.66), palette.getMat(0x064e3b, 'matte'));
+    poncho.position.set(0, 0.66, 0.01);
+    const leafClasp = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.18, 0.08), palette.getMat(0x34d399, 'emissive'));
+    leafClasp.position.set(0, 0.84, 0.34);
+    const pack = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.82, 0.36), woodMat);
+    pack.position.set(0, 0.52, -0.44);
+    upperBody.add(poncho, leafClasp, pack);
+  } else if (archetypeId === 'night_officer') {
+    const reflSash = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.16, 0.64), palette.getMat(0x38bdf8, 'emissive'));
+    reflSash.position.y = 0.32;
+    const badge = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.2, 0.06), goldMat);
+    badge.position.set(-0.24, 0.72, 0.31);
+    const tie = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.56, 0.06), accentMat);
+    tie.position.set(0, 0.6, 0.31);
+    upperBody.add(reflSash, badge, tie);
+  } else if (archetypeId === 'night_astronomer') {
+    const cape = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.86, 0.22), palette.getMat(0x1e1b4b, 'matte'));
+    cape.position.set(0, 0.45, -0.34);
+    const starChest = new THREE.Mesh(new THREE.OctahedronGeometry(0.14, 0), palette.getMat(0xfde047, 'emissive'));
+    starChest.position.set(0, 0.68, 0.33);
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.14, 0.62), goldMat);
+    belt.position.y = 0.18;
+    upperBody.add(cape, starChest, belt);
+  } else if (archetypeId === 'night_scholar') {
+    const stole = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.88, 0.64), palette.getMat(0x581c87, 'matte'));
+    stole.position.set(0, 0.54, 0.01);
+    const crystalPin = new THREE.Mesh(new THREE.OctahedronGeometry(0.13, 0), palette.getMat(0xc084fc, 'emissive'));
+    crystalPin.position.set(0, 0.8, 0.34);
+    const belt = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.14, 0.63), goldMat);
+    belt.position.y = 0.16;
+    upperBody.add(stole, crystalPin, belt);
   }
 
   // 3. Neck, Head, Face, Hair / Hijab & Headgear
@@ -1036,6 +1272,10 @@ export function buildDiverseNpcRig(
       const goldTrim = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.09, 0.84), goldMat);
       goldTrim.position.set(0, 0.75, 0.02);
       headGroup.add(goldTrim);
+    } else if (archetypeId === 'night_officer') {
+      const cyanTrim = new THREE.Mesh(new THREE.BoxGeometry(0.94, 0.09, 0.84), palette.getMat(0x38bdf8, 'emissive'));
+      cyanTrim.position.set(0, 0.75, 0.02);
+      headGroup.add(cyanTrim);
     }
   } else if (archetypeId === 'florist_girl') {
     // Non-Hijab long chestnut hair flowing past shoulders
@@ -1048,8 +1288,8 @@ export function buildDiverseNpcRig(
     const sideHairR = sideHairL.clone();
     sideHairR.position.x = 0.42;
     headGroup.add(topHair, backHair, sideHairL, sideHairR);
-  } else if (archetypeId === 'zoo_keeper') {
-    // Non-Hijab hair + rear ponytail under safari cap
+  } else if (archetypeId === 'zoo_keeper' || archetypeId === 'night_ranger') {
+    // Non-Hijab hair + rear ponytail/braid
     const topHair = new THREE.Mesh(new THREE.BoxGeometry(0.88, 0.16, 0.84), hairMat);
     topHair.position.set(0, 0.8, -0.02);
     const sideL = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.42, 0.36), hairMat);
@@ -1057,9 +1297,24 @@ export function buildDiverseNpcRig(
     const sideR = sideL.clone();
     sideR.position.x = 0.41;
     const ponytail = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.68, 0.22), hairMat);
-    ponytail.position.set(0, 0.32, -0.52);
+    ponytail.position.set(archetypeId === 'night_ranger' ? 0.22 : 0, 0.32, -0.5);
     ponytail.rotation.x = 0.25;
     headGroup.add(topHair, sideL, sideR, ponytail);
+  } else if (archetypeId === 'night_astronomer') {
+    // Sleek silver-streaked bob haircut + cheek rosy blush!
+    const topHair = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.22, 0.86), hairMat);
+    topHair.position.set(0, 0.84, -0.02);
+    const bobL = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.58, 0.52), hairMat);
+    bobL.position.set(-0.42, 0.5, -0.08);
+    const bobR = bobL.clone();
+    bobR.position.x = 0.42;
+    const bobBack = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.58, 0.2), hairMat);
+    bobBack.position.set(0, 0.5, -0.36);
+    const blushL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 0.03), palette.getMat(0xf472b6, 'matte'));
+    blushL.position.set(-0.24, 0.34, 0.4);
+    const blushR = blushL.clone();
+    blushR.position.x = 0.24;
+    headGroup.add(topHair, bobL, bobR, bobBack, blushL, blushR);
   } else if (archetypeId === 'village_elder') {
     // Bald crown with fluffy white side/back hair + long flowing beard!
     const sideL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.4, 0.54), hairMat);
@@ -1091,6 +1346,20 @@ export function buildDiverseNpcRig(
       const beard = new THREE.Mesh(new THREE.BoxGeometry(0.64, 0.46, 0.22), hairMat);
       beard.position.set(0, 0.14, 0.38);
       headGroup.add(beard);
+    } else if (archetypeId === 'night_watchman') {
+      const thickStache = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.12, 0.11), hairMat);
+      thickStache.position.set(0, 0.27, 0.41);
+      headGroup.add(thickStache);
+    } else if (archetypeId === 'night_chef') {
+      const goatee = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.22, 0.12), hairMat);
+      goatee.position.set(0, 0.18, 0.39);
+      const smile = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.06, 0.04), whiteMat);
+      smile.position.set(0, 0.28, 0.41);
+      headGroup.add(goatee, smile);
+    } else if (archetypeId === 'night_scholar') {
+      const silverStubble = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.26, 0.14), palette.getMat(0x94a3b8, 'matte'));
+      silverStubble.position.set(0, 0.2, 0.37);
+      headGroup.add(silverStubble);
     }
   }
 
@@ -1163,6 +1432,53 @@ export function buildDiverseNpcRig(
     const tassel = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.34, 0.08), goldMat);
     tassel.position.set(0.5, 0.8, 0.22);
     headGroup.add(glassRimL, glassRimR, bridge, capBoard, capButton, tassel);
+  } else if (archetypeId === 'night_watchman') {
+    const cap = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.24, 0.82), palette.getMat(0x0f172a, 'matte'));
+    cap.position.y = 0.9;
+    const emblem = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.12, 0.06), goldMat);
+    emblem.position.set(0, 0.9, 0.43);
+    headGroup.add(cap, emblem);
+  } else if (archetypeId === 'night_chef') {
+    const bandana = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.18, 0.88), accentMat);
+    bandana.position.set(0, 0.78, 0);
+    const knot = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.18, 0.16), accentMat);
+    knot.position.set(0, 0.76, -0.48);
+    headGroup.add(bandana, knot);
+  } else if (archetypeId === 'night_ranger') {
+    // Glowing emerald night-vision goggles pushed on forehead!
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.1, 0.86), darkMetalMat);
+    strap.position.y = 0.78;
+    const gogL = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 0.12, 8), palette.getMat(0x34d399, 'emissive'));
+    gogL.rotation.x = Math.PI / 2;
+    gogL.position.set(-0.18, 0.78, 0.45);
+    const gogR = gogL.clone();
+    gogR.position.x = 0.18;
+    headGroup.add(strap, gogL, gogR);
+  } else if (archetypeId === 'night_officer') {
+    const beret = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.2, 0.9), palette.getMat(0x1e3a8a, 'matte'));
+    beret.position.set(0.06, 0.94, 0);
+    beret.rotation.z = -0.14;
+    const star = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.06), palette.getMat(0x38bdf8, 'emissive'));
+    star.position.set(-0.14, 0.92, 0.46);
+    headGroup.add(beret, star);
+  } else if (archetypeId === 'night_astronomer') {
+    // Brass monocle over right eye + crescent moon tiara!
+    const monocle = new THREE.Mesh(new THREE.TorusGeometry(0.13, 0.03, 6, 12), goldMat);
+    monocle.position.set(0.19, 0.46, 0.43);
+    const tiara = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.1, 0.12), goldMat);
+    tiara.position.set(0, 0.95, 0.34);
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.12, 0), palette.getMat(0xa78bfa, 'emissive'));
+    gem.position.set(0, 1.04, 0.36);
+    headGroup.add(monocle, tiara, gem);
+  } else if (archetypeId === 'night_scholar') {
+    // Glowing amethyst crystal spectacles!
+    const frameL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.17, 0.05), palette.getMat(0xc084fc, 'emissive'));
+    frameL.position.set(-0.19, 0.46, 0.42);
+    const frameR = frameL.clone();
+    frameR.position.x = 0.19;
+    const bridge = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.05, 0.05), goldMat);
+    bridge.position.set(0, 0.48, 0.42);
+    headGroup.add(frameL, frameR, bridge);
   }
 
   // 4. Full Articulated Arms & Profession Tools
@@ -1426,6 +1742,68 @@ export function buildDiverseNpcRig(
     const ribbon = new THREE.Mesh(new THREE.CylinderGeometry(0.095, 0.095, 0.1, 8), palette.getMat(0xdc2626, 'matte'));
     diploma.add(roll, ribbon);
     rightArm.add(diploma);
+  } else if (archetypeId === 'night_watchman') {
+    // Glowing brass night lantern in right hand + wooden kentongan baton in left hand
+    const lantern = new THREE.Group();
+    lantern.position.set(0, -0.72, 0.22);
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.36, 0.26), darkMetalMat);
+    frame.position.y = -0.28;
+    const flame = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.22, 0.18), palette.getMat(0xfde047, 'emissive'));
+    flame.position.y = -0.28;
+    lantern.add(frame, flame);
+    rightArm.add(lantern);
+    const kentongan = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.65, 8), woodMat);
+    kentongan.position.set(0, -0.68, 0.18);
+    kentongan.rotation.x = 0.4;
+    leftArm.add(kentongan);
+  } else if (archetypeId === 'night_chef') {
+    // Glowing hot soup pot carried in front!
+    const pot = new THREE.Group();
+    pot.position.set(0, 0.28, 0.58);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.28, 0.34, 12), darkMetalMat);
+    const soup = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.06, 12), palette.getMat(0xfb923c, 'emissive'));
+    soup.position.y = 0.15;
+    pot.add(body, soup);
+    upperBody.add(pot);
+  } else if (archetypeId === 'night_ranger') {
+    // Glowing emerald signal lantern
+    const lantern = new THREE.Group();
+    lantern.position.set(0, -0.7, 0.22);
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.34, 0.24), darkMetalMat);
+    frame.position.y = -0.24;
+    const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.14, 0), palette.getMat(0x34d399, 'emissive'));
+    gem.position.y = -0.24;
+    lantern.add(frame, gem);
+    rightArm.add(lantern);
+  } else if (archetypeId === 'night_officer') {
+    // Glowing cyan traffic baton in right hand
+    const wand = new THREE.Group();
+    wand.position.set(0, -0.68, 0.2);
+    wand.rotation.x = 0.55;
+    const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.25, 6), darkMetalMat);
+    const glow = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.65, 8), palette.getMat(0x38bdf8, 'emissive'));
+    glow.position.y = 0.44;
+    wand.add(grip, glow);
+    rightArm.add(wand);
+  } else if (archetypeId === 'night_astronomer') {
+    // Spinning golden/violet astrolabe in right hand
+    const astrolabe = new THREE.Group();
+    astrolabe.position.set(0, -0.68, 0.24);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.22, 0.035, 6, 14), goldMat);
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.11, 0), palette.getMat(0xa78bfa, 'emissive'));
+    astrolabe.add(ring, core);
+    rightArm.add(astrolabe);
+    propSpin = astrolabe;
+  } else if (archetypeId === 'night_scholar') {
+    // Floating spinning amethyst crystal orb
+    const orb = new THREE.Group();
+    orb.position.set(0, -0.66, 0.26);
+    const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.18, 0), palette.getMat(0xc084fc, 'emissive'));
+    const halo = new THREE.Mesh(new THREE.TorusGeometry(0.24, 0.025, 6, 12), goldMat);
+    halo.rotation.x = Math.PI / 2;
+    orb.add(crystal, halo);
+    rightArm.add(orb);
+    propSpin = orb;
   }
 
   const baseRightArmX = spec.baseRightArmX;

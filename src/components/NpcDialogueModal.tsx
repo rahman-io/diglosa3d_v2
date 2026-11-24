@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
-import { NPC_CATALOG, ZONE_DOORS } from '../data/diglosaCatalog';
+import { getZoneNpcById, ZONE_DOORS } from '../data/diglosaCatalog';
 import { getWordsForZone, getWordStatus } from '../data/vocabCatalog';
 import { RpgQuestState, WordProgress, ZoneId } from '../types/game';
 import { RpgAvatarFrame, RpgBoardPanel, RpgNameplate, RpgPillButton } from './RpgUiKit';
@@ -47,7 +47,7 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
   const [showEn1, setShowEn1] = useState(false);
   const [showEn2, setShowEn2] = useState(false);
 
-  const npc = NPC_CATALOG.find((n) => n.id === npcId) ?? null;
+  const npc = getZoneNpcById(npcId);
   const zoneId = npc ? (npc.zoneId as ZoneId) : null;
   const zoneVocab = zoneId ? getWordsForZone(zoneId) : [];
 
@@ -59,7 +59,8 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
 
   if (!npc || !zoneId) return null;
 
-  const quest = quests.find((q) => q.npcId === npc.id);
+  const questNpcId = npc.dayNpcId ?? npc.id;
+  const quest = quests.find((q) => q.npcId === questNpcId || q.zoneId === zoneId);
   const readyToClaim = Boolean(
     quest && quest.accepted && !quest.claimed && quest.progress >= quest.target,
   );
@@ -265,7 +266,7 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
                 </div>
                 <button
                   type="button"
-                  onClick={() => onAcceptOrClaimQuest(npc.id)}
+                  onClick={() => onAcceptOrClaimQuest(questNpcId)}
                   className="rounded-xl bg-emerald-500 px-3 py-1.5 text-xs font-black text-white shadow transition hover:bg-emerald-400"
                 >
                   Klaim Hadiah!
@@ -275,8 +276,8 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
 
             {isNightTime && hasNightPermission && (
               <div className="rounded-2xl border border-emerald-400/45 bg-emerald-950/55 px-3.5 py-2 text-xs font-bold leading-relaxed text-emerald-100">
-                🌙 <span className="font-black text-emerald-300">Izin Malam Diberikan:</span>{' '}
-                {npc.name} terbangun di pos istirahatnya dan mengizinkanmu memasuki{' '}
+                🌙 <span className="font-black text-emerald-300">Shift Jaga Malam Aktif:</span>{' '}
+                {npc.name} berjaga di depan pintu dan mengizinkanmu memasuki{' '}
                 <span className="font-extrabold text-white">{npc.zoneName}</span> malam ini!
               </div>
             )}

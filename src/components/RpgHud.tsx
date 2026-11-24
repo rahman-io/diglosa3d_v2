@@ -20,6 +20,8 @@ import {
 import {
   ACADEMY_NPCS,
   AMMO_COST,
+  getActiveZoneNpcDef,
+  getZoneNpcById,
   MAX_AMMO,
   NPC_CATALOG,
   WEAPON_ORDER,
@@ -444,11 +446,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
   const nearbyOverworldNpc =
     hud.worldMode === 'overworld' && hud.nearbyNpcId
-      ? NPC_CATALOG.find((n) => n.id === hud.nearbyNpcId)
+      ? getZoneNpcById(hud.nearbyNpcId)
       : null;
   const nearbyOverworldDoorNpc =
     hud.worldMode === 'overworld' && hud.nearbyOverworldZoneDoor
-      ? NPC_CATALOG.find((n) => n.zoneId === hud.nearbyOverworldZoneDoor)
+      ? getActiveZoneNpcDef(hud.nearbyOverworldZoneDoor, hud.worldTime.phase === 'malam')
       : null;
   const overworldDoorHasNightPermission =
     !hud.nearbyOverworldZoneDoor ||

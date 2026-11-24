@@ -281,6 +281,9 @@ export interface NpcDefinition {
   habitSummary?: string;
   skillSummary?: string;
   stats?: { hp: number; atk: number; nrg: number };
+  shiftRole?: 'day' | 'night';
+  partnerNpcId?: string;
+  dayNpcId?: string;
 }
 
 export interface MonsterSpawnDef {

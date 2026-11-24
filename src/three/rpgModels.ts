@@ -2040,7 +2040,7 @@ export function animateZoneNpc(
   phase: number,
   isNearHero = false,
   dt = 0.016,
-  poseMode: 'stand' | 'walk' | 'sleep' = 'stand',
+  poseMode: 'stand' | 'walk' = 'stand',
 ): void {
   const rig = mesh.userData.npcRig as ZoneNpcRig | undefined;
   if (!rig) return;
@@ -2050,40 +2050,7 @@ export function animateZoneNpc(
   const restRightZ = rig.baseRightArmZ ?? 0;
   const restLeftZ = rig.baseLeftArmZ ?? 0;
 
-  if (poseMode === 'sleep') {
-    const sleepBreath = Math.sin(elapsed * 1.45 + phase);
-    const sy = 1 + sleepBreath * 0.025;
-    const sxz = 1 / Math.sqrt(sy);
-    rig.bodyPivot.scale.set(baseXZ * sxz, baseY * sy, baseXZ * sxz);
-    rig.bodyPivot.rotation.x = THREE.MathUtils.damp(rig.bodyPivot.rotation.x, -Math.PI / 2, 10, dt);
-    rig.bodyPivot.position.y = THREE.MathUtils.damp(rig.bodyPivot.position.y, 0.92, 10, dt);
-    rig.bodyPivot.position.z = THREE.MathUtils.damp(rig.bodyPivot.position.z, -0.78, 10, dt);
-
-    rig.leftEye.scale.y = 0.08;
-    rig.rightEye.scale.y = 0.08;
-
-    rig.upperBody.rotation.z = THREE.MathUtils.damp(rig.upperBody.rotation.z, 0, 8, dt);
-    rig.upperBody.rotation.x = THREE.MathUtils.damp(rig.upperBody.rotation.x, 0, 8, dt);
-    rig.headGroup.rotation.y = THREE.MathUtils.damp(
-      rig.headGroup.rotation.y,
-      Math.sin(elapsed * 0.65 + phase) * 0.08,
-      6,
-      dt,
-    );
-    rig.headGroup.rotation.x = THREE.MathUtils.damp(rig.headGroup.rotation.x, 0.08, 6, dt);
-    rig.leftLeg.rotation.x = THREE.MathUtils.damp(rig.leftLeg.rotation.x, 0.04, 10, dt);
-    rig.rightLeg.rotation.x = THREE.MathUtils.damp(rig.rightLeg.rotation.x, 0.04, 10, dt);
-    rig.rightArm.rotation.x = THREE.MathUtils.damp(rig.rightArm.rotation.x, 0.14, 10, dt);
-    rig.rightArm.rotation.z = THREE.MathUtils.damp(rig.rightArm.rotation.z, restRightZ, 10, dt);
-    rig.leftArm.rotation.x = THREE.MathUtils.damp(rig.leftArm.rotation.x, 0.14, 10, dt);
-    rig.leftArm.rotation.z = THREE.MathUtils.damp(rig.leftArm.rotation.z, 0.08, 10, dt);
-    if (rig.tailPivot) {
-      rig.tailPivot.rotation.y = Math.sin(elapsed * 1.6 + phase) * 0.1;
-    }
-    return;
-  }
-
-  // Stand / Walk upright posture
+  // Stand / Walk upright posture (guardians never sleep!)
   rig.bodyPivot.rotation.x = THREE.MathUtils.damp(rig.bodyPivot.rotation.x, 0, 14, dt);
   rig.bodyPivot.position.z = THREE.MathUtils.damp(rig.bodyPivot.position.z, 0, 14, dt);
 
@@ -2111,7 +2078,10 @@ export function animateZoneNpc(
     const keepHeldArm =
       rig.archetype === 'pastry_chef' ||
       rig.archetype === 'ranger_guide' ||
-      rig.archetype === 'crystal_scholar';
+      rig.archetype === 'crystal_scholar' ||
+      rig.archetype === 'night_chef' ||
+      rig.archetype === 'night_astronomer' ||
+      rig.archetype === 'night_scholar';
     const armAmp = keepHeldArm ? 0.1 : 0.45;
     rig.rightArm.rotation.x = THREE.MathUtils.damp(
       rig.rightArm.rotation.x,
@@ -2153,27 +2123,35 @@ export function animateZoneNpc(
 
     // Distinct profession habits during standing duty
     if (!isNearHero) {
-      if (rig.archetype === 'clockmaker') {
+      if (rig.archetype === 'clockmaker' || rig.archetype === 'night_astronomer') {
         const inspect = Math.max(0, Math.sin(elapsed * 1.15 + phase));
         targetRightX = rig.baseRightArmX - 0.32 * inspect;
         targetHeadX += 0.16 * inspect;
-      } else if (rig.archetype === 'pastry_chef') {
+      } else if (rig.archetype === 'pastry_chef' || rig.archetype === 'night_chef') {
         targetRightX = rig.baseRightArmX + Math.sin(elapsed * 1.8) * 0.04;
         targetLeftX = rig.baseLeftArmX + Math.sin(elapsed * 1.8) * 0.04;
-      } else if (rig.archetype === 'ranger_guide') {
+      } else if (rig.archetype === 'ranger_guide' || rig.archetype === 'night_ranger') {
         const scan = Math.max(0, Math.sin(elapsed * 0.85 + phase));
         targetRightX = rig.baseRightArmX - 0.34 * scan;
         targetLeftX = rig.baseLeftArmX - 0.34 * scan;
         targetHeadY = Math.sin(elapsed * 1.4 + phase) * (0.28 + 0.2 * scan);
-      } else if (rig.archetype === 'city_policeman') {
+      } else if (rig.archetype === 'city_policeman' || rig.archetype === 'night_officer') {
         const signal = Math.max(0, Math.sin(elapsed * 1.5 + phase));
         targetRightX = rig.baseRightArmX - 0.28 * signal;
         targetLeftX = rig.baseLeftArmX - 0.18 * Math.sin(elapsed * 2.2);
-      } else if (rig.archetype === 'crystal_scholar' || rig.archetype === 'school_teacher') {
+      } else if (
+        rig.archetype === 'crystal_scholar' ||
+        rig.archetype === 'school_teacher' ||
+        rig.archetype === 'night_scholar'
+      ) {
         targetHeadX += 0.12 + Math.sin(elapsed * 1.9 + phase) * 0.06;
         targetRightX = rig.baseRightArmX + Math.sin(elapsed * 1.6) * 0.05;
         targetLeftX = rig.baseLeftArmX + Math.sin(elapsed * 1.6) * 0.05;
-      } else if (rig.archetype === 'village_elder' || rig.archetype === 'ielts_dean') {
+      } else if (
+        rig.archetype === 'village_elder' ||
+        rig.archetype === 'ielts_dean' ||
+        rig.archetype === 'night_watchman'
+      ) {
         targetHeadX += Math.sin(elapsed * 1.5 + phase) * 0.06;
       }
     }

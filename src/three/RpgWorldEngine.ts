@@ -6,14 +6,17 @@ import {
   ACADEMY_INHABITANTS,
   ACADEMY_NPCS,
   ACADEMY_SHADOWS,
+  ALL_OVERWORLD_NPCS,
   AMMO_COST,
   BOSSES,
   DAILY_GOAL,
   DIFF_CONFIG,
   DOOR_MINI_MONSTER,
   DOOR_RESTORED_STORY,
+  getActiveZoneNpcDef,
   getLevelInfo,
   getRankTitle,
+  getZoneNpcById,
   MAX_AMMO,
   NPC_CATALOG,
   RELICS,
@@ -110,8 +113,6 @@ import { SEA_BIOTA_BY_ID } from './seaBiotaCatalog';
 import { createMaterialPalette, MaterialPalette } from './materials';
 import {
   createMinecraftVillageWorld,
-  createNpcGuardPost,
-  GuardPostRig,
   MinecraftVillageRig,
   resolveOBBvsOBB,
   resolveObstacleBoxes,
@@ -492,7 +493,7 @@ const MAX_PROJECTILES = 36;
 const TICKS_PER_DAY = 24000;
 const TICKS_PER_SEC = 20;
 
-const OVERWORLD_GUARD_POSTS = OVERWORLD_ANCHORS.guardPosts;
+const OVERWORLD_OFF_DUTY_SPOTS = OVERWORLD_ANCHORS.offDutySpots;
 
 const _v1 = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -769,18 +770,28 @@ export class RpgWorldEngine {
         rayMat: THREE.MeshBasicMaterial;
         motes: Array<{ mesh: THREE.Mesh; phase: number; speed: number }>;
       };
+      zoneId: ZoneId;
+      shift: 'day' | 'night';
+      partnerNpcId: string;
+      dayNpcId: string;
       x: number;
       z: number;
       standX: number;
       standY: number;
       standZ: number;
       standRotY: number;
+      offDutyX: number;
+      offDutyY: number;
+      offDutyZ: number;
+      offDutyRotY: number;
+      roamTargetX: number;
+      roamTargetZ: number;
+      roamPaused: boolean;
+      roamTimer: number;
       walkWaypoint?: { x: number; z: number };
       yaw: number;
-      guardPost: GuardPostRig;
-      poseMode: 'stand' | 'walk' | 'sleep';
-      nightAwake: boolean;
-      lastWakeBannerMs: number;
+      poseMode: 'stand' | 'walk';
+      lastTalkBannerMs: number;
       koTimer: number;
       fleeTimer: number;
       fleeDirX: number;
@@ -1427,7 +1438,6 @@ export class RpgWorldEngine {
       dyn.add(n.mesh);
       dyn.add(n.alertMesh);
       dyn.add(n.aura.group);
-      dyn.add(n.guardPost.torchFlame);
     });
     for (const m of this.overworldAllMonsters) dyn.add(m.mesh);
 
@@ -1906,23 +1916,22 @@ export class RpgWorldEngine {
     const moteGeo = new THREE.OctahedronGeometry(0.22, 0);
     const startAtNight = this.getCurrentDayPhase() === 'malam';
 
-    for (const def of NPC_CATALOG) {
-      const ny = getArchipelagoGroundY(def.x, def.z);
-      const postDef = OVERWORLD_GUARD_POSTS[def.id] ?? {
-        x: def.x - 2.6,
-        z: def.z + 1.8,
+    for (const def of ALL_OVERWORLD_NPCS) {
+      const zId = def.zoneId as ZoneId;
+      const shift: 'day' | 'night' = def.shiftRole ?? 'day';
+      const isOnDuty = (shift === 'night') === startAtNight;
+      const standY = getArchipelagoGroundY(def.x, def.z);
+      const spot = OVERWORLD_OFF_DUTY_SPOTS[zId] ?? {
+        x: def.x - 4.0,
+        z: def.z + 2.5,
         rotY: def.rotationY,
-        bedTint: 0xdc2626,
       };
-      const guardPost = createNpcGuardPost(this.palette, postDef);
-      this.overworldGroup.add(guardPost.group);
-      this.villageRig.obstacles.push(...guardPost.obstacles);
-      this.villageRig.torchesFlame.push(guardPost.torchFlame);
+      const offDutyY = getArchipelagoGroundY(spot.x, spot.z);
 
-      const initX = startAtNight ? guardPost.bedX : def.x;
-      const initY = startAtNight ? guardPost.bedY : ny;
-      const initZ = startAtNight ? guardPost.bedZ : def.z;
-      const initYaw = startAtNight ? guardPost.bedYaw : def.rotationY;
+      const initX = isOnDuty ? def.x : spot.x;
+      const initY = isOnDuty ? standY : offDutyY;
+      const initZ = isOnDuty ? def.z : spot.z;
+      const initYaw = isOnDuty ? def.rotationY : spot.rotY;
 
       const mesh = createZoneNpc(def.id, this.palette);
       mesh.position.set(initX, initY, initZ);
@@ -1932,13 +1941,14 @@ export class RpgWorldEngine {
       this.overworldClickables.push(mesh);
 
       const alertMesh = new THREE.Mesh(alertGeo, alertMat);
-      alertMesh.position.set(initX, startAtNight ? guardPost.bedY + 1.4 : ny + 4.4, initZ);
+      alertMesh.position.set(initX, initY + 4.4, initZ);
+      alertMesh.visible = isOnDuty;
       this.overworldGroup.add(alertMesh);
 
       const accentColor = new THREE.Color(def.accentColor);
       const auraGroup = new THREE.Group();
-      const auraBaseY = startAtNight ? guardPost.bedY - 0.54 : ny;
-      auraGroup.position.set(initX, auraBaseY, initZ);
+      auraGroup.position.set(initX, initY, initZ);
+      auraGroup.visible = isOnDuty;
 
       const outerBeamMat = new THREE.MeshBasicMaterial({
         color: accentColor,
@@ -2060,18 +2070,28 @@ export class RpgWorldEngine {
           rayMat,
           motes,
         },
+        zoneId: zId,
+        shift,
+        partnerNpcId: def.partnerNpcId ?? def.id,
+        dayNpcId: def.dayNpcId ?? def.id,
         x: initX,
         z: initZ,
         standX: def.x,
-        standY: ny,
+        standY,
         standZ: def.z,
         standRotY: def.rotationY,
-        walkWaypoint: def.id === 'npc_rubah' ? { x: 110.0, z: 48.0 } : undefined,
+        offDutyX: spot.x,
+        offDutyY,
+        offDutyZ: spot.z,
+        offDutyRotY: spot.rotY,
+        roamTargetX: spot.x,
+        roamTargetZ: spot.z,
+        roamPaused: true,
+        roamTimer: 2.0 + Math.random() * 2.5,
+        walkWaypoint: zId === 'hutan_satwa' ? { x: 110.0, z: 48.0 } : undefined,
         yaw: initYaw,
-        guardPost,
-        poseMode: startAtNight ? 'sleep' : 'stand',
-        nightAwake: false,
-        lastWakeBannerMs: 0,
+        poseMode: 'stand',
+        lastTalkBannerMs: 0,
         koTimer: 0,
         fleeTimer: 0,
         fleeDirX: 0,
@@ -2080,51 +2100,54 @@ export class RpgWorldEngine {
     }
   }
 
-  private grantNightPermissionForNpc(
-    npcId: string,
-    options?: { fromProximityWake?: boolean },
-  ): void {
-    const def = NPC_CATALOG.find((item) => item.id === npcId);
-    const npc = this.npcs.get(npcId);
-    if (!def || !npc) return;
-    if (this.getCurrentDayPhase() !== 'malam') return;
+  private isNpcOnDuty(shift: 'day' | 'night'): boolean {
+    const isNight = this.getCurrentDayPhase() === 'malam';
+    return (shift === 'night') === isNight;
+  }
 
-    const zoneId = def.zoneId as ZoneId;
+  private grantNightPermissionForZone(zoneId: ZoneId, silent = false): void {
+    if (this.getCurrentDayPhase() !== 'malam') return;
     const newlyPermitted = !this.nightPermittedZones.has(zoneId);
     this.nightPermittedZones.add(zoneId);
+    if (!silent && newlyPermitted) {
+      const nightDef = getActiveZoneNpcDef(zoneId, true);
+      soundEngine.playPick();
+      this.showBanner(
+        `🔑 ${nightDef.name} (Shift Malam): "Silakan, pintu ${nightDef.zoneName} kubuka untukmu malam ini!"`,
+        4.6,
+      );
+      this.pushHud(true);
+    }
+  }
 
-    if (!npc.nightAwake || npc.poseMode === 'sleep') {
-      const bedX = npc.guardPost.bedX;
-      const bedZ = npc.guardPost.bedZ;
-      const toStandX = npc.standX - bedX;
-      const toStandZ = npc.standZ - bedZ;
-      const toStandLen = Math.hypot(toStandX, toStandZ) || 1;
-      const col = this._desaColScratch;
-      col.x = bedX + (toStandX / toStandLen) * 2.15;
-      col.z = bedZ + (toStandZ / toStandLen) * 2.15;
-      constrainToWalkableArchipelago(col, 0.62);
-      npc.x = col.x;
-      npc.z = col.z;
-      npc.nightAwake = true;
-      npc.poseMode = 'stand';
+  private interactWithOverworldNpc(npcId: string): void {
+    const def = getZoneNpcById(npcId);
+    const npc = this.npcs.get(npcId);
+    if (!def || !npc) return;
+
+    if (!this.isNpcOnDuty(npc.shift)) {
+      const partnerDef = getZoneNpcById(npc.partnerNpcId);
+      soundEngine.playPick();
       npc.yaw = Math.atan2(this.heroPos.x - npc.x, this.heroPos.z - npc.z);
-      npc.mesh.position.set(npc.x, getArchipelagoGroundY(npc.x, npc.z), npc.z);
+      npc.roamPaused = true;
+      npc.roamTimer = 3.5;
+      npc.lastTalkBannerMs = Date.now();
+      const msg =
+        npc.shift === 'day'
+          ? `💬 ${def.name} (Lepas Piket): "Shift siangku sudah selesai, sekarang aku warga biasa. Temui ${partnerDef?.name ?? 'Penjaga Malam'} di pintu ${def.zoneName}!"`
+          : `💬 ${def.name} (Lepas Piket): "Pagi hingga sore ${partnerDef?.name ?? 'Penjaga Siang'} yang berjaga di pintu ${def.zoneName}. Nanti malam giliranku bertugas!"`;
+      this.showBanner(msg, 5.0);
+      this.pushHud(true);
+      return;
     }
 
-    if (options?.fromProximityWake) {
-      const nowMs = Date.now();
-      if (newlyPermitted || nowMs - npc.lastWakeBannerMs > 6000) {
-        npc.lastWakeBannerMs = nowMs;
-        soundEngine.playPick();
-        this.showBanner(
-          `🔑 ${def.name} terbangun di pos istirahat: "Oh, kamu datang malam-malam! Silakan, aku beri izin masuk ke ${def.zoneName}!"`,
-          5.2,
-        );
-      }
-      this.pushHud(true);
-    } else if (newlyPermitted) {
-      this.pushHud(true);
+    if (this.getCurrentDayPhase() === 'malam') {
+      this.nightPermittedZones.add(npc.zoneId);
     }
+    this.phase = 'dialogue';
+    this.heldKeys.clear();
+    this.callbacks.onOpenNpcDialogue(npcId);
+    this.pushHud(true);
   }
 
   private rebuildOverworldMonsterPool(): void {
@@ -5501,7 +5524,7 @@ export class RpgWorldEngine {
           this.hasAliveChallengeMonsters();
         if (nextPhase === 'sore') {
           this.showBanner(
-            '🌇 Sore tiba! Warga pulang ke rumah & para penjaga tetap berjaga di depan pintu wilayah hingga malam...',
+            '🌇 Sore tiba! Penjaga siang bersiap bergantian tugas dengan penjaga shift malam menjelang gelap...',
             4.5,
           );
         } else if (nextPhase === 'malam') {
@@ -5509,8 +5532,8 @@ export class RpgWorldEngine {
             this.spawnNightSurfaceWave();
           }
           this.showBanner(
-            '🌙 Malam tiba! Para penjaga kembali beristirahat di pos — temui mereka di pos untuk izin masuk wilayah.',
-            5.0,
+            '🌙 Malam tiba! Para penjaga malam datang menggantikan tugas di depan pintu wilayah, sementara penjaga siang kembali menjadi warga biasa!',
+            5.4,
           );
         } else if (nextPhase === 'pagi') {
           this.nightPermittedZones.clear();
@@ -5522,9 +5545,9 @@ export class RpgWorldEngine {
           }
           this.showBanner(
             activeMissionWave
-              ? '🌅 Fajar menyingsing! Monster misi aktif tetap bertahan untuk kamu habisi!'
-              : '🌅 Fajar menyingsing! Panas matahari menghancurkan monster malam & penjaga kembali ke depan pintu!',
-            5.0,
+              ? '🌅 Fajar menyingsing! Monster misi aktif tetap bertahan & penjaga siang mengambil alih pintu wilayah!'
+              : '🌅 Fajar menyingsing! Monster malam hancur & penjaga siang kembali berjaga di depan pintu menggantikan penjaga malam!',
+            5.4,
           );
         } else if (nextPhase === 'siang') {
           if (this.isWorldAuthority()) {
@@ -6522,7 +6545,7 @@ export class RpgWorldEngine {
     this.camera.position.set(sp.x, sy + 22, sp.z + 20);
     this.controls.update();
 
-    const npc = lastZoneId ? NPC_CATALOG.find((n) => n.zoneId === lastZoneId) : NPC_CATALOG[0];
+    const npc = getActiveZoneNpcDef(lastZoneId || 'desa_sapaan', this.getCurrentDayPhase() === 'malam');
     this.phase = 'story';
     this.applyCameraVisibilityAndControls();
     this.storyDialog = {
@@ -7445,23 +7468,25 @@ export class RpgWorldEngine {
       }
       const resetAtNight = this.getCurrentDayPhase() === 'malam';
       for (const npc of this.npcs.values()) {
+        const isOnDuty = (npc.shift === 'night') === resetAtNight;
         npc.koTimer = 0;
         npc.fleeTimer = 0;
-        npc.nightAwake = false;
-        npc.x = resetAtNight ? npc.guardPost.bedX : npc.standX;
-        npc.z = resetAtNight ? npc.guardPost.bedZ : npc.standZ;
-        npc.yaw = resetAtNight ? npc.guardPost.bedYaw : npc.standRotY;
-        npc.poseMode = resetAtNight ? 'sleep' : 'stand';
+        npc.x = isOnDuty ? npc.standX : npc.offDutyX;
+        npc.z = isOnDuty ? npc.standZ : npc.offDutyZ;
+        npc.yaw = isOnDuty ? npc.standRotY : npc.offDutyRotY;
+        npc.poseMode = 'stand';
+        npc.roamPaused = true;
+        npc.roamTimer = 2.0 + Math.random() * 2.5;
         npc.mesh.visible = true;
         npc.mesh.position.set(
           npc.x,
-          resetAtNight ? npc.guardPost.bedY : npc.standY,
+          isOnDuty ? npc.standY : npc.offDutyY,
           npc.z,
         );
-        npc.aura.group.visible = true;
+        npc.aura.group.visible = isOnDuty;
         npc.aura.group.position.set(
           npc.x,
-          resetAtNight ? npc.guardPost.bedY - 0.54 : npc.standY,
+          isOnDuty ? npc.standY : npc.offDutyY,
           npc.z,
         );
       }
@@ -8767,11 +8792,11 @@ export class RpgWorldEngine {
           npc.alertMesh.visible = false;
           npc.aura.group.visible = false;
           if (this.nearbyNpcId === npcId) this.nearbyNpcId = null;
-          const def = NPC_CATALOG.find((item) => item.id === npcId);
+          const def = getZoneNpcById(npcId);
           soundEngine.playHurt();
           this.spawnBurst(npc.x, ny + 1.5, npc.z, 0xef4444, 22);
           if (byPlayer) {
-            this.showBanner(`💥 ${def?.name ?? 'Penjaga'} tertabrak ${v.name} & pingsan 15 detik!`, 2.8);
+            this.showBanner(`💥 ${def?.name ?? 'Warga'} tertabrak ${v.name} & pingsan 15 detik!`, 2.8);
           }
           v.speed *= 0.84;
         }
@@ -9866,37 +9891,36 @@ export class RpgWorldEngine {
     }
 
     if (this.worldMode === 'overworld' && this.nearbyNpcId) {
-      this.grantNightPermissionForNpc(this.nearbyNpcId, { fromProximityWake: false });
-      this.phase = 'dialogue';
-      this.heldKeys.clear();
-      this.callbacks.onOpenNpcDialogue(this.nearbyNpcId);
-      this.pushHud(true);
+      this.interactWithOverworldNpc(this.nearbyNpcId);
       return;
     }
 
     if (this.worldMode === 'overworld' && this.nearbyOverworldZoneDoor && !this.nearPortal) {
       const doorZoneId = this.nearbyOverworldZoneDoor;
       const door = OVERWORLD_ZONE_DOORS[doorZoneId];
-      const def = NPC_CATALOG.find((item) => item.id === door.npcId);
-      if (this.getCurrentDayPhase() === 'malam') {
+      const isNight = this.getCurrentDayPhase() === 'malam';
+      const activeDef = getActiveZoneNpcDef(doorZoneId, isNight);
+      const activeLive = this.npcs.get(activeDef.id);
+      if (isNight) {
         if (this.nightPermittedZones.has(doorZoneId)) {
           this.enterZoneDungeon(doorZoneId, false);
+        } else if (
+          activeLive &&
+          Math.hypot(activeLive.x - door.x, activeLive.z - door.z) < 9.0
+        ) {
+          this.interactWithOverworldNpc(activeDef.id);
         } else {
-          const liveNpc = this.npcs.get(door.npcId);
-          const restX = liveNpc?.guardPost.bedX ?? OVERWORLD_GUARD_POSTS[door.npcId]?.x ?? door.x;
-          const restZ = liveNpc?.guardPost.bedZ ?? OVERWORLD_GUARD_POSTS[door.npcId]?.z ?? door.z;
-          const dist = Math.round(Math.hypot(this.heroPos.x - restX, this.heroPos.z - restZ));
+          const guardDist = activeLive
+            ? Math.round(Math.hypot(this.heroPos.x - activeLive.x, this.heroPos.z - activeLive.z))
+            : 0;
           soundEngine.playNo();
           this.showBanner(
-            `🔒 ${door.label} ditutup malam ini! Temui ${def?.name ?? 'Penjaga'} di pos istirahatnya (~${dist}m) untuk minta izin masuk.`,
-            4.8,
+            `🌙 ${activeDef.name} sedang menuju pintu ${door.label} (~${guardDist}m) untuk pergantian jaga malam!`,
+            4.2,
           );
         }
       } else {
-        this.phase = 'dialogue';
-        this.heldKeys.clear();
-        this.callbacks.onOpenNpcDialogue(door.npcId);
-        this.pushHud(true);
+        this.interactWithOverworldNpc(activeDef.id);
       }
       return;
     }
@@ -12124,15 +12148,10 @@ export class RpgWorldEngine {
               this.phase = 'academy';
               this.callbacks.onOpenAcademyExam(npc.academySkill);
             }
+            this.pushHud(true);
           } else {
-            this.grantNightPermissionForNpc(obj.userData.npcId as string, {
-              fromProximityWake: false,
-            });
-            this.phase = 'dialogue';
-            this.heldKeys.clear();
-            this.callbacks.onOpenNpcDialogue(obj.userData.npcId as string);
+            this.interactWithOverworldNpc(obj.userData.npcId as string);
           }
-          this.pushHud(true);
           return;
         }
         if (obj.userData.portal && this.worldMode === 'overworld') {
@@ -13672,35 +13691,39 @@ export class RpgWorldEngine {
     const isNightShift = currentDayPhase === 'malam';
     let npcIdx = 0;
     for (const [npcId, npc] of this.npcs.entries()) {
+      const isOnDuty = (npc.shift === 'night') === isNightShift;
       if (npc.koTimer > 0) {
         npc.koTimer = Math.max(0, npc.koTimer - dt);
         npc.mesh.visible = false;
         npc.alertMesh.visible = false;
         npc.aura.group.visible = false;
         if (npc.koTimer <= 0) {
-          npc.x = npc.standX;
-          npc.z = npc.standZ;
-          npc.yaw = npc.standRotY;
+          const rx = isOnDuty ? npc.standX : npc.offDutyX;
+          const ry = isOnDuty ? npc.standY : npc.offDutyY;
+          const rz = isOnDuty ? npc.standZ : npc.offDutyZ;
+          const rYaw = isOnDuty ? npc.standRotY : npc.offDutyRotY;
+          npc.x = rx;
+          npc.z = rz;
+          npc.yaw = rYaw;
           npc.poseMode = 'stand';
           npc.fleeTimer = 0;
-          npc.mesh.position.set(npc.standX, npc.standY, npc.standZ);
+          npc.mesh.position.set(rx, ry, rz);
           npc.mesh.visible = true;
-          npc.aura.group.position.set(npc.standX, npc.standY, npc.standZ);
-          npc.aura.group.visible = true;
-          this.spawnBurst(npc.standX, npc.standY + 1.2, npc.standZ, 0x38bdf8, 12);
+          npc.aura.group.position.set(rx, ry, rz);
+          npc.aura.group.visible = isOnDuty;
+          this.spawnBurst(rx, ry + 1.2, rz, 0x38bdf8, 12);
         }
         npcIdx++;
         continue;
       }
       npc.mesh.visible = true;
-      npc.aura.group.visible = true;
+      npc.aura.group.visible = isOnDuty;
 
-      const def = NPC_CATALOG.find((item) => item.id === npcId);
-      const q = this.quests.find((item) => item.npcId === npcId);
-      const showAlert = !q?.claimed;
+      const q = this.quests.find((item) => item.npcId === npc.dayNpcId);
+      const showAlert = isOnDuty && !q?.claimed;
       const distHero = Math.hypot(this.heroPos.x - npc.x, this.heroPos.z - npc.z);
 
-      // Threat scan: Quest NPCs sprint away fast when a moving or honking car approaches
+      // Threat scan: Overworld NPCs sprint away fast when a moving or honking car approaches
       let threatX = 0;
       let threatZ = 0;
       let threatScore = 0;
@@ -13747,15 +13770,13 @@ export class RpgWorldEngine {
       if (npc.fleeTimer > 0) {
         npc.fleeTimer = Math.max(0, npc.fleeTimer - dt);
         isFleeingCar = true;
-        npc.nightAwake = false;
         npc.x += npc.fleeDirX * 7.6 * dt;
         npc.z += npc.fleeDirZ * 7.6 * dt;
         npc.yaw = Math.atan2(npc.fleeDirX, npc.fleeDirZ);
         npc.poseMode = 'walk';
         npc.mesh.position.set(npc.x, getArchipelagoGroundY(npc.x, npc.z), npc.z);
-      } else if (!isNightShift) {
-        // Pagi - Sore: berjaga berdiri tepat di depan pintu wilayah masing-masing
-        npc.nightAwake = false;
+      } else if (isOnDuty) {
+        // Shift bertugas: berjalan ke pos pintu wilayah dan berdiri berjaga dengan aura terang!
         const useWaypoint =
           Boolean(npc.walkWaypoint) &&
           npc.x < npc.walkWaypoint!.x - 0.8 &&
@@ -13767,7 +13788,7 @@ export class RpgWorldEngine {
         const distTarget = Math.hypot(dx, dz);
         const distStand = Math.hypot(npc.standX - npc.x, npc.standZ - npc.z);
         if (distStand > 0.25 && distTarget > 0.2) {
-          const step = Math.min(distTarget, 3.6 * dt);
+          const step = Math.min(distTarget, 3.8 * dt);
           npc.x += (dx / distTarget) * step;
           npc.z += (dz / distTarget) * step;
           npc.yaw = Math.atan2(dx, dz);
@@ -13776,58 +13797,75 @@ export class RpgWorldEngine {
         } else {
           npc.x = npc.standX;
           npc.z = npc.standZ;
-          npc.yaw = npc.standRotY;
+          npc.yaw = distHero < 5.6
+            ? Math.atan2(this.heroPos.x - npc.x, this.heroPos.z - npc.z)
+            : npc.standRotY;
           npc.poseMode = 'stand';
           npc.mesh.position.set(npc.standX, npc.standY, npc.standZ);
         }
-      } else {
-        // Malam: kembali ke pos istirahat & tidur; terbangun + beri izin saat player datang!
-        const bedX = npc.guardPost.bedX;
-        const bedZ = npc.guardPost.bedZ;
         if (
-          !npc.nightAwake &&
+          isNightShift &&
           this.phase === 'playing' &&
-          distHero < 6.2 &&
-          (npc.poseMode === 'sleep' || Math.hypot(npc.x - bedX, npc.z - bedZ) < 2.1)
+          distHero < 6.4 &&
+          !this.nightPermittedZones.has(npc.zoneId)
         ) {
-          this.grantNightPermissionForNpc(npcId, { fromProximityWake: true });
+          this.grantNightPermissionForZone(npc.zoneId);
         }
-
-        if (npc.nightAwake) {
-          if (distHero > 9.5) {
-            npc.nightAwake = false;
-          } else {
-            npc.poseMode = 'stand';
-            npc.yaw = Math.atan2(this.heroPos.x - npc.x, this.heroPos.z - npc.z);
-            npc.mesh.position.set(npc.x, getArchipelagoGroundY(npc.x, npc.z), npc.z);
-          }
-        }
-
-        if (!npc.nightAwake) {
+      } else {
+        // Lepas piket: kembali ke plaza pulau & berbaur santai sebagai warga / NPC biasa (tanpa aura & tanpa tidur!)
+        const distOffHome = Math.hypot(npc.offDutyX - npc.x, npc.offDutyZ - npc.z);
+        if (distOffHome > 3.8) {
           const useWaypoint =
             Boolean(npc.walkWaypoint) &&
             npc.x > npc.walkWaypoint!.x + 0.8 &&
-            bedX < npc.walkWaypoint!.x;
-          const targetX = useWaypoint ? npc.walkWaypoint!.x : bedX;
-          const targetZ = useWaypoint ? npc.walkWaypoint!.z : bedZ;
+            npc.offDutyX < npc.walkWaypoint!.x;
+          const targetX = useWaypoint ? npc.walkWaypoint!.x : npc.offDutyX;
+          const targetZ = useWaypoint ? npc.walkWaypoint!.z : npc.offDutyZ;
           const dx = targetX - npc.x;
           const dz = targetZ - npc.z;
-          const distTarget = Math.hypot(dx, dz);
-          const distBed = Math.hypot(bedX - npc.x, bedZ - npc.z);
-          if (distBed > 0.4 && distTarget > 0.2) {
-            const spd = 4.0;
-            const step = Math.min(distTarget, spd * dt);
-            npc.x += (dx / distTarget) * step;
-            npc.z += (dz / distTarget) * step;
-            npc.yaw = Math.atan2(dx, dz);
-            npc.poseMode = 'walk';
-            npc.mesh.position.set(npc.x, getArchipelagoGroundY(npc.x, npc.z), npc.z);
+          const distTarget = Math.hypot(dx, dz) || 1;
+          const step = Math.min(distTarget, 3.6 * dt);
+          npc.x += (dx / distTarget) * step;
+          npc.z += (dz / distTarget) * step;
+          npc.yaw = Math.atan2(dx, dz);
+          npc.poseMode = 'walk';
+          npc.mesh.position.set(npc.x, getArchipelagoGroundY(npc.x, npc.z), npc.z);
+        } else if (distHero < 5.0 && this.phase === 'playing') {
+          npc.poseMode = 'stand';
+          npc.yaw = Math.atan2(this.heroPos.x - npc.x, this.heroPos.z - npc.z);
+          npc.mesh.position.set(npc.x, getArchipelagoGroundY(npc.x, npc.z), npc.z);
+        } else {
+          npc.roamTimer -= dt;
+          if (npc.roamTimer <= 0) {
+            npc.roamPaused = !npc.roamPaused;
+            if (!npc.roamPaused) {
+              const ang = Math.random() * Math.PI * 2;
+              const rad = 0.8 + Math.random() * 1.9;
+              npc.roamTargetX = npc.offDutyX + Math.cos(ang) * rad;
+              npc.roamTargetZ = npc.offDutyZ + Math.sin(ang) * rad;
+              npc.roamTimer = 2.2 + Math.random() * 2.0;
+            } else {
+              npc.roamTimer = 3.2 + Math.random() * 3.0;
+            }
+          }
+          if (!npc.roamPaused) {
+            const dx = npc.roamTargetX - npc.x;
+            const dz = npc.roamTargetZ - npc.z;
+            const dRoam = Math.hypot(dx, dz);
+            if (dRoam > 0.25) {
+              const step = Math.min(dRoam, 1.55 * dt);
+              npc.x += (dx / dRoam) * step;
+              npc.z += (dz / dRoam) * step;
+              npc.yaw = Math.atan2(dx, dz);
+              npc.poseMode = 'walk';
+              npc.mesh.position.set(npc.x, getArchipelagoGroundY(npc.x, npc.z), npc.z);
+            } else {
+              npc.roamPaused = true;
+              npc.poseMode = 'stand';
+              npc.roamTimer = 3.0 + Math.random() * 2.5;
+            }
           } else {
-            npc.x = bedX;
-            npc.z = bedZ;
-            npc.yaw = npc.guardPost.bedYaw;
-            npc.poseMode = 'sleep';
-            npc.mesh.position.set(bedX, npc.guardPost.bedY, bedZ);
+            npc.poseMode = 'stand';
           }
         }
       }
@@ -13837,15 +13875,6 @@ export class RpgWorldEngine {
         npcCol.x = npc.x;
         npcCol.z = npc.z;
         const nRad = 0.62;
-        const ownPostObs = npc.guardPost.obstacles[0];
-        const nearOwnBed =
-          Math.hypot(npcCol.x - npc.guardPost.bedX, npcCol.z - npc.guardPost.bedZ) < 2.6;
-        const prevObsHw = ownPostObs ? ownPostObs.halfW : 0;
-        const prevObsHd = ownPostObs ? ownPostObs.halfD : 0;
-        if (ownPostObs && nearOwnBed) {
-          ownPostObs.halfW = -10;
-          ownPostObs.halfD = -10;
-        }
         const nPreY = getArchipelagoGroundY(npcCol.x, npcCol.z);
         resolveObstacleBoxes(npcCol, nRad, this.villageRig.obstacles, nPreY, 2.2);
         this.resolveActiveDesaPickupBoxes(npcCol, nRad);
@@ -13867,10 +13896,6 @@ export class RpgWorldEngine {
           resolveObstacleBoxes(npcCol, nRad, this.villageRig.obstacles, nPreY, 2.2);
           this.resolveActiveDesaPickupBoxes(npcCol, nRad);
         }
-        if (ownPostObs && nearOwnBed) {
-          ownPostObs.halfW = prevObsHw;
-          ownPostObs.halfD = prevObsHd;
-        }
         constrainToWalkableArchipelago(npcCol, nRad);
         npc.x = npcCol.x;
         npc.z = npcCol.z;
@@ -13880,13 +13905,10 @@ export class RpgWorldEngine {
       const npcGroundY =
         npc.poseMode === 'stand' && npc.x === npc.standX && npc.z === npc.standZ
           ? npc.standY
-          : npc.poseMode === 'sleep'
-          ? npc.guardPost.bedY
           : getArchipelagoGroundY(npc.x, npc.z);
       npc.mesh.rotation.y = npc.yaw;
-      const auraBaseY = npc.poseMode === 'sleep' ? npc.guardPost.bedY - 0.54 : npcGroundY;
-      npc.aura.group.position.set(npc.x, auraBaseY, npc.z);
-      if (distHero < 180 || this.phase === 'title') {
+      npc.aura.group.position.set(npc.x, npcGroundY, npc.z);
+      if (isOnDuty && (distHero < 180 || this.phase === 'title')) {
         const pulse = Math.sin(this.elapsed * 3.1 + npcIdx * 1.15);
         const beamWidthScale = 1 + pulse * 0.14;
         npc.aura.outerBeam.rotation.y += dt * 0.65;
@@ -13913,10 +13935,9 @@ export class RpgWorldEngine {
       }
       npc.alertMesh.visible = showAlert;
       if (showAlert && (distHero < 85 || this.phase === 'title')) {
-        const alertY = npc.poseMode === 'sleep' ? npc.guardPost.bedY + 1.4 : npcGroundY + 4.2;
         npc.alertMesh.position.set(
           npc.x,
-          alertY + Math.sin(this.elapsed * 3.5 + npc.x) * 0.28,
+          npcGroundY + 4.2 + Math.sin(this.elapsed * 3.5 + npc.x) * 0.28,
           npc.z,
         );
         npc.alertMesh.rotation.y += dt * 2.2;
@@ -13942,8 +13963,7 @@ export class RpgWorldEngine {
         const blockedBySpeech =
           this.npcThoughtId === this.nearbyNpcId ||
           !thoughtNpc ||
-          thoughtNpc.poseMode !== 'stand' ||
-          thoughtNpc.nightAwake;
+          thoughtNpc.poseMode !== 'stand';
         if (blockedBySpeech) {
           this.npcThoughtId = null;
           this.npcThoughtText = null;
@@ -13961,7 +13981,7 @@ export class RpgWorldEngine {
         if (this.npcThoughtCooldown <= 0) {
           const candidates: string[] = [];
           for (const [id, npc] of this.npcs.entries()) {
-            if (npc.poseMode !== 'stand' || npc.nightAwake || id === this.nearbyNpcId) continue;
+            if (npc.poseMode !== 'stand' || id === this.nearbyNpcId) continue;
             const dHero = Math.hypot(this.heroPos.x - npc.x, this.heroPos.z - npc.z);
             if (dHero < 26) candidates.push(id);
           }
@@ -15976,9 +15996,9 @@ export class RpgWorldEngine {
       }
 
       let bestNpc: string | null = null;
-      let bestNpcDist = 5.6;
+      let bestNpcScore = Infinity;
       if (this.carMode === 'none') {
-        for (const npc of NPC_CATALOG) {
+        for (const npc of ALL_OVERWORLD_NPCS) {
           const live = this.npcs.get(npc.id);
           if (live && live.koTimer > 0) continue;
           const nx = live?.x ?? npc.x;
@@ -15986,8 +16006,11 @@ export class RpgWorldEngine {
           const ny = getArchipelagoGroundY(nx, nz);
           if (Math.abs(this.heroPos.y - ny) > 3.5) continue;
           const d = Math.hypot(this.heroPos.x - nx, this.heroPos.z - nz);
-          if (d < bestNpcDist) {
-            bestNpcDist = d;
+          if (d >= 5.6) continue;
+          const onDuty = live ? this.isNpcOnDuty(live.shift) : npc.shiftRole !== 'night';
+          const score = d - (onDuty ? 0.65 : 0);
+          if (score < bestNpcScore) {
+            bestNpcScore = score;
             bestNpc = npc.id;
           }
         }
@@ -17638,49 +17661,46 @@ export class RpgWorldEngine {
       }
     }
 
-    for (const npc of NPC_CATALOG) {
+    const isNightLabels = this.getCurrentDayPhase() === 'malam';
+    for (const npc of ALL_OVERWORLD_NPCS) {
       const liveNpc = this.npcs.get(npc.id);
       if (liveNpc && liveNpc.koTimer > 0) continue;
+      const isOnDuty = liveNpc ? this.isNpcOnDuty(liveNpc.shift) : npc.shiftRole !== 'night';
       const nx = liveNpc?.x ?? npc.x;
       const nz = liveNpc?.z ?? npc.z;
       const ny = getArchipelagoGroundY(nx, nz);
-      const pos = projectPoint(nx, ny - 0.2, nz + 2.2);
-      if (pos) {
-        const isLiberated = this.liberatedZones.has(npc.zoneId as ZoneId);
-        labels.push({
-          id: `zone_${npc.id}`,
-          x: pos.x,
-          y: pos.y,
-          title: isLiberated ? `✓ ${npc.zoneName}` : npc.zoneName,
-          kind: 'zone',
-        });
+      if (isOnDuty) {
+        const pos = projectPoint(nx, ny - 0.2, nz + 2.2);
+        if (pos) {
+          const isLiberated = this.liberatedZones.has(npc.zoneId as ZoneId);
+          labels.push({
+            id: `zone_${npc.id}`,
+            x: pos.x,
+            y: pos.y,
+            title: isLiberated ? `✓ ${npc.zoneName}` : npc.zoneName,
+            kind: 'zone',
+          });
+        }
       }
       if (this.phase === 'playing') {
-        const isSleeping = liveNpc?.poseMode === 'sleep';
-        const isAwakeWoken = Boolean(liveNpc?.nightAwake);
         const distHero = Math.hypot(this.heroPos.x - nx, this.heroPos.z - nz);
-        const showSpeech = npc.id === this.nearbyNpcId || (isAwakeWoken && distHero < 8.5);
-        const bubblePos = projectPoint(
-          nx,
-          isSleeping ? (liveNpc?.guardPost.bedY ?? ny) + 1.8 : ny + 4.9,
-          nz,
-        );
+        const showSpeech = npc.id === this.nearbyNpcId || (isOnDuty && isNightLabels && distHero < 8.5);
+        const bubblePos = projectPoint(nx, ny + 4.9, nz);
         if (bubblePos && showSpeech) {
-          const isNightDialog = this.getCurrentDayPhase() === 'malam';
+          const partnerDef = getZoneNpcById(npc.partnerNpcId);
           labels.push({
             id: `speech_${npc.id}`,
             x: bubblePos.x,
             y: bubblePos.y,
-            title: isSleeping
-              ? '💤 Istirahat di pos (Dekati untuk izin masuk)'
-              : isAwakeWoken || isNightDialog
-              ? `🔑 "Silakan masuk ke ${npc.zoneName} malam ini!"`
+            title: !isOnDuty
+              ? `💬 Lepas piket · ${partnerDef?.name ?? 'Rekanku'} yang jaga pintu`
+              : isNightLabels
+              ? `🔑 "${npc.speechBubble} Silakan masuk ke ${npc.zoneName}!"`
               : npc.speechBubble,
             kind: 'speech',
           });
         } else if (
           bubblePos &&
-          !isSleeping &&
           liveNpc?.poseMode === 'stand' &&
           this.npcThoughtId === npc.id &&
           this.npcThoughtText
@@ -17696,11 +17716,12 @@ export class RpgWorldEngine {
       }
     }
 
-    if (this.phase === 'playing' && this.getCurrentDayPhase() === 'malam') {
+    if (this.phase === 'playing' && isNightLabels) {
       for (const [zKey, door] of Object.entries(OVERWORLD_ZONE_DOORS) as Array<
         [ZoneId, (typeof OVERWORLD_ZONE_DOORS)[ZoneId]]
       >) {
-        if (this.nearbyNpcId === door.npcId) continue;
+        const activeNightDef = getActiveZoneNpcDef(zKey, true);
+        if (this.nearbyNpcId === activeNightDef.id) continue;
         const dHero = Math.hypot(this.heroPos.x - door.x, this.heroPos.z - door.z);
         if (dHero > 22) continue;
         const doorPos = projectPoint(door.x, door.y + 3.4, door.z);
@@ -17711,8 +17732,8 @@ export class RpgWorldEngine {
           x: doorPos.x,
           y: doorPos.y,
           title: permitted
-            ? `🔑 ${door.label} (Izin Diberikan)`
-            : `🔒 ${door.label} · Minta Izin di Pos`,
+            ? `🔑 ${door.label} (Dijaga ${activeNightDef.name})`
+            : `🌙 ${door.label} · ${activeNightDef.name} Siaga`,
           kind: 'door',
         });
       }
@@ -18462,28 +18483,40 @@ export class RpgWorldEngine {
   }
 
   private pickNpcIdleThought(npcId: string): string {
-    const npcDef = NPC_CATALOG.find((item) => item.id === npcId);
+    const npcDef = getZoneNpcById(npcId);
     const npcState = this.npcs.get(npcId);
+    const isOnDuty = npcState ? this.isNpcOnDuty(npcState.shift) : true;
     if (npcState) {
       for (const m of this.getActiveMonsters()) {
         if (!m.alive) continue;
         if (Math.hypot(m.x - npcState.x, m.z - npcState.z) < 15) {
-          return `Hati-hati... ada ${m.name} berkeliaran di dekat pos.`;
+          return `Hati-hati... ada ${m.name} berkeliaran di dekat sini.`;
         }
       }
+    }
+
+    if (!isOnDuty) {
+      const partnerDef = getZoneNpcById(npcState?.partnerNpcId);
+      const offDutyThoughts = [
+        `Senangnya berbaur sebagai warga biasa sambil menunggu giliran jaga!`,
+        `Sekarang ${partnerDef?.name ?? 'rekanku'} yang berjaga di pintu ${npcDef?.zoneName ?? 'wilayah'}.`,
+        'Udara pulau terasa segar setelah lepas piket...',
+        'Mengamati warga sekitar... pulau tetap aman berkat kerja sama shift!',
+      ];
+      return offDutyThoughts[Math.floor(Math.random() * offDutyThoughts.length)];
     }
 
     if (npcDef && Math.random() < 0.45) {
       const zoneWords = VOCAB_CATALOG.filter((v) => v.zoneId === npcDef.zoneId);
       const pool = zoneWords.length > 0 ? zoneWords : VOCAB_CATALOG;
       const v = pool[Math.floor(Math.random() * pool.length)];
-      return `Sambil jaga pos, ingat kata "${v.word}" = ${v.meaningId}.`;
+      return `Sambil jaga pintu, ingat kata "${v.word}" = ${v.meaningId}.`;
     }
 
     const npcThoughts = [
-      '*Hoaam...* Udara desa hari ini terasa sejuk.',
-      '*Krucuk...* Nanti habis jaga makan apa ya?',
-      'Melirik sekitar... situasi pos tampaknya aman terkendali.',
+      'Mengawasi pintu masuk... aman terkendali sepanjang shift.',
+      '*Krucuk...* Nanti habis pergantian shift makan apa ya?',
+      'Melirik sekitar... situasi pintu wilayah tampaknya aman terkendali.',
       `Tarik napas pelan... tetap semangat menjaga ${npcDef?.zoneName ?? 'desa'}!`,
       'Berdiri lama bikin kaki pegal, goyang lutut sebentar ah...',
     ];
@@ -18542,16 +18575,18 @@ export class RpgWorldEngine {
         menara_waktu: 'spot_menara',
         gua_portal: 'spot_gua',
       };
+      const isNightRadar = this.getCurrentDayPhase() === 'malam';
       for (const npc of NPC_CATALOG) {
         const zId = npc.zoneId as ZoneId;
         const liberated = this.liberatedZones.has(zId);
-        const live = this.npcs.get(npc.id);
+        const activeDef = getActiveZoneNpcDef(zId, isNightRadar);
+        const live = this.npcs.get(activeDef.id);
         blips.push({
           id: `npc_${npc.id}`,
-          x: live?.x ?? npc.x,
-          z: live?.z ?? npc.z,
+          x: live?.x ?? activeDef.x,
+          z: live?.z ?? activeDef.z,
           kind: spotKindByZone[zId] ?? 'npc',
-          color: npc.accentColor,
+          color: activeDef.accentColor,
           liberated,
           needsHelp: !liberated,
           label: ZONE_INFO[zId].name,
@@ -19594,9 +19629,10 @@ export class RpgWorldEngine {
       let best: { x: number; z: number; name: string; d: number } | null = null;
       if (this.worldMode === 'overworld') {
         for (const [id, npc] of this.npcs.entries()) {
+          if (!this.isNpcOnDuty(npc.shift)) continue;
           const d = Math.hypot(npc.x - this.heroPos.x, npc.z - this.heroPos.z);
-          const def = NPC_CATALOG.find((n) => n.id === id);
-          if (!best || d < best.d) best = { x: npc.x, z: npc.z, name: def?.name || 'NPC', d };
+          const def = getZoneNpcById(id);
+          if (!best || d < best.d) best = { x: npc.x, z: npc.z, name: def?.name || 'Penjaga', d };
         }
       } else if (this.worldMode === 'academy') {
         for (const [id, npc] of this.academyNpcs.entries()) {
@@ -19738,7 +19774,7 @@ export class RpgWorldEngine {
       }
       consider(this.portalRig.root.position.x, this.portalRig.root.position.z + 2.5, 'Portal Istana IELTS');
       for (const [id, npc] of this.npcs.entries()) {
-        const def = NPC_CATALOG.find((n) => n.id === id);
+        const def = getZoneNpcById(id);
         consider(npc.x, npc.z, def?.name || 'NPC');
       }
     } else if (this.worldMode === 'dungeon' && this.dungeonRig) {

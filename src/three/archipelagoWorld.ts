@@ -33,14 +33,14 @@ export const OVERWORLD_ANCHORS = {
     npc_penyihir: { x: 114.2, z: -88.5, rotY: 1.57 },
     npc_portal: { x: 19.2, z: -183.5, rotY: 0.34 },
   } as Record<string, { x: number; z: number; rotY: number }>,
-  guardPosts: {
-    npc_tetua: { x: 11.5, z: 109.0, rotY: -0.9, bedTint: 0xf59e0b },
-    npc_koki: { x: -85.5, z: 41.0, rotY: -0.8, bedTint: 0xef4444 },
-    npc_rubah: { x: 83.5, z: 36.5, rotY: 0.75, bedTint: 0x10b981 },
-    npc_penjaga: { x: -102.0, z: -95.5, rotY: -0.95, bedTint: 0x3b82f6 },
-    npc_penyihir: { x: 117.5, z: -80.5, rotY: 0.35, bedTint: 0x8b5cf6 },
-    npc_portal: { x: -1.0, z: -172.0, rotY: 0.78, bedTint: 0xa855f7 },
-  } as Record<string, { x: number; z: number; rotY: number; bedTint: number }>,
+  offDutySpots: {
+    desa_sapaan: { x: 11.5, z: 109.0, rotY: -0.9 },
+    pasar_rasa: { x: -85.5, z: 41.0, rotY: -0.8 },
+    hutan_satwa: { x: 83.5, z: 36.5, rotY: 0.75 },
+    gerbang_kota: { x: -102.0, z: -95.5, rotY: -0.95 },
+    menara_waktu: { x: 117.5, z: -80.5, rotY: 0.35 },
+    gua_portal: { x: -1.0, z: -172.0, rotY: 0.78 },
+  } as Record<ZoneId, { x: number; z: number; rotY: number }>,
 } as const;
 
 export const OVERWORLD_ZONE_DOORS: Record<
