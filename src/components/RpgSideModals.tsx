@@ -588,22 +588,32 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
   return (
     <div
       style={{ top: `${vp.offsetTop}px`, height: `${vp.height}px` }}
-      className="fixed left-0 right-0 z-50 flex items-center justify-center overscroll-contain bg-[#0f172a]/70 p-1.5 sm:p-4"
+      className={`fixed left-0 right-0 z-50 flex justify-center overscroll-contain bg-transparent px-2 ${
+        vp.isKeyboardOpen
+          ? 'items-center py-1.5'
+          : 'items-start pt-7 sm:pt-9 lg:items-center lg:pt-0'
+      }`}
     >
-      <div className="flex max-h-full w-full max-w-3xl flex-col overflow-hidden rounded-3xl border-4 border-[#78350f] bg-[#fff7e6] text-[#3b2008] shadow-2xl">
+      <div
+        className={`flex flex-col overflow-hidden rounded-2xl border border-amber-300/45 bg-slate-950/88 p-2.5 text-slate-100 shadow-2xl sm:p-3.5 ${
+          vp.isKeyboardOpen
+            ? 'max-h-full w-full max-w-3xl'
+            : 'max-h-[76dvh] w-full max-w-[calc(100vw-130px)] sm:max-h-[82dvh] sm:max-w-[min(46rem,calc(100vw-210px))]'
+        }`}
+      >
         {/* Header */}
         <div
-          className={`flex items-center justify-between border-b-2 border-[#d6b67c] bg-[#f5e3be] ${
-            vp.isKeyboardOpen ? 'px-4 py-1.5' : 'px-5 py-3.5'
+          className={`flex items-center justify-between gap-2 border-b border-white/15 ${
+            vp.isKeyboardOpen ? 'mb-1.5 pb-1' : 'mb-2.5 pb-1.5'
           }`}
         >
-          <div className="flex items-center gap-2.5">
-            {tab === 'bag' && <Backpack className="h-5 w-5 text-amber-700" />}
-            {tab === 'kamus' && <BookOpen className="h-5 w-5 text-amber-700" />}
-            {tab === 'quests' && <ScrollText className="h-5 w-5 text-amber-700" />}
-            {tab === 'options' && <Settings className="h-5 w-5 text-amber-700" />}
-            {tab === 'guide' && <HelpCircle className="h-5 w-5 text-amber-700" />}
-            <h2 className="text-sm font-extrabold sm:text-lg">
+          <div className="flex min-w-0 items-center gap-2">
+            {tab === 'bag' && <Backpack className="h-4 w-4 shrink-0 text-amber-300 sm:h-5 sm:w-5" />}
+            {tab === 'kamus' && <BookOpen className="h-4 w-4 shrink-0 text-amber-300 sm:h-5 sm:w-5" />}
+            {tab === 'quests' && <ScrollText className="h-4 w-4 shrink-0 text-amber-300 sm:h-5 sm:w-5" />}
+            {tab === 'options' && <Settings className="h-4 w-4 shrink-0 text-amber-300 sm:h-5 sm:w-5" />}
+            {tab === 'guide' && <HelpCircle className="h-4 w-4 shrink-0 text-amber-300 sm:h-5 sm:w-5" />}
+            <h2 className="truncate text-xs font-black uppercase tracking-wider text-amber-200 [text-shadow:0_1px_2px_rgba(0,0,0,0.92)] sm:text-sm">
               {tab === 'bag' && 'Tas Hoot: 8 Senjata, 6 Pusaka & Mahkota'}
               {tab === 'kamus' && `Kamus Kata (${hud.wordsMastered}/${VOCAB_CATALOG.length} Dikuasai)`}
               {tab === 'quests' && 'Misi Wilayah & Checklist 5 Pintu'}
@@ -614,28 +624,30 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#e7d3ad] text-[#5c340f] hover:bg-[#d6b67c] sm:h-9 sm:w-9"
+            aria-label="Tutup"
+            className="inline-flex shrink-0 items-center gap-1 rounded-full border border-white/25 bg-slate-950/35 px-2.5 py-1 text-[10px] font-extrabold text-slate-100 hover:bg-slate-900/55"
           >
-            <X className="h-4 w-4" />
+            <X className="h-3.5 w-3.5" />
+            <span>Tutup</span>
           </button>
         </div>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y p-3.5 sm:p-5">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain touch-pan-y pr-0.5">
           {/* TAB 1: TAS (7 WEAPONS + AMMO + 6 RELICS + 6 RIBBONS) */}
           {tab === 'bag' && (
-            <div className="space-y-5">
+            <div className="space-y-4">
               {/* Ammo Refill Panel */}
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border-2 border-[#b45309]/50 bg-[#f5e3be] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/35 bg-slate-950/30 p-3.5">
                 <div>
-                  <div className="text-xs font-extrabold uppercase text-[#78350f]">
+                  <div className="text-[11px] font-extrabold uppercase tracking-wider text-amber-200">
                     Senjata Aktif
                   </div>
-                  <div className="text-base font-black text-[#2e1806]">
+                  <div className="text-sm font-black text-slate-100 sm:text-base">
                     {hud.ownedWeapons.length > 0
                       ? `${activeWeaponDef.name} (${activeAmmo}/${MAX_AMMO} Peluru)`
                       : 'Belum punya senjata! Ambil di rumput Hutan Kata'}
                   </div>
-                  <div className="text-xs font-semibold text-[#78350f]">
+                  <div className="text-xs font-semibold text-slate-300">
                     Berlian: {hud.diamonds} 💎 · Paket +{activeWeaponDef.packSize} peluru seharga{' '}
                     {AMMO_COST} 💎
                   </div>
@@ -649,7 +661,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                       activeAmmo >= MAX_AMMO
                     }
                     onClick={onBuyAmmo}
-                    className="rounded-xl border-2 border-[#0e7490] bg-cyan-600 px-3.5 py-2 text-xs font-black text-white shadow disabled:cursor-not-allowed disabled:opacity-45 hover:bg-cyan-500"
+                    className="rounded-xl border border-cyan-300/70 bg-cyan-600/80 px-3.5 py-2 text-xs font-black text-white shadow disabled:cursor-not-allowed disabled:opacity-45 hover:bg-cyan-500/90"
                   >
                     Isi Peluru ({AMMO_COST} 💎)
                   </button>
@@ -660,7 +672,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                       onClose();
                       onStartAmmoQuiz();
                     }}
-                    className="rounded-xl border-2 border-[#14532d] bg-emerald-600 px-3.5 py-2 text-xs font-black text-white shadow disabled:cursor-not-allowed disabled:opacity-45 hover:bg-emerald-500"
+                    className="rounded-xl border border-emerald-300/70 bg-emerald-600/80 px-3.5 py-2 text-xs font-black text-white shadow disabled:cursor-not-allowed disabled:opacity-45 hover:bg-emerald-500/90"
                   >
                     Kuis Peluru Gratis (+6)
                   </button>
@@ -669,7 +681,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
 
               {/* 8 Weapons 3D Interactive Showcase + Grid */}
               <div>
-                <h3 className="mb-2 text-xs font-black uppercase tracking-wider text-[#78350f]">
+                <h3 className="mb-2 text-xs font-black uppercase tracking-wider text-amber-200">
                   Koleksi Senjata 3D ({hud.ownedWeapons.length}/8)
                 </h3>
 
@@ -679,7 +691,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                   const inspectedDef = WEAPONS[inspectedId];
                   const inspectedOwned = hud.ownedWeapons.includes(inspectedId);
                   return (
-                    <div className="mb-3 overflow-hidden rounded-2xl border-2 border-[#78350f]/60 bg-gradient-to-br from-slate-900 via-[#162036] to-slate-950 text-white shadow-inner">
+                    <div className="mb-3 overflow-hidden rounded-xl border border-white/20 bg-slate-950/35 text-white">
                       <div className="flex items-center justify-between border-b border-white/10 px-3.5 py-2">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
@@ -691,7 +703,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                               {inspectedDef.name}
                             </span>
                             {!inspectedOwned && (
-                              <span className="rounded bg-slate-800 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">
+                              <span className="rounded bg-slate-950/65 px-1.5 py-0.5 text-[10px] font-bold text-slate-300">
                                 Terkunci
                               </span>
                             )}
@@ -700,7 +712,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                             {inspectedDef.desc}
                           </div>
                         </div>
-                        <span className="hidden shrink-0 rounded-lg border border-amber-400/30 bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-200 sm:inline-block">
+                        <span className="hidden shrink-0 rounded-lg border border-amber-300/35 bg-slate-950/55 px-2 py-0.5 text-[10px] font-bold text-amber-200 sm:inline-block">
                           Geser untuk Putar 360°
                         </span>
                       </div>
@@ -709,7 +721,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                   );
                 })()}
 
-                <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {WEAPON_ORDER.map((wId) => {
                     const w = WEAPONS[wId];
                     const owned = hud.ownedWeapons.includes(wId);
@@ -720,33 +732,33 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                       <div
                         key={wId}
                         onClick={() => setPreviewWeapon(wId)}
-                        className={`flex cursor-pointer items-center justify-between rounded-2xl border-2 p-3 transition ${
+                        className={`flex cursor-pointer items-center justify-between rounded-xl border p-3 transition ${
                           equipped
-                            ? 'border-emerald-600 bg-emerald-50'
+                            ? 'border-emerald-300/90 bg-emerald-950/30 text-emerald-100 ring-1 ring-emerald-300/80'
                             : inspected
-                            ? 'border-amber-500 bg-amber-50/90'
+                            ? 'border-amber-300/90 bg-amber-950/30 text-amber-100 ring-1 ring-amber-300/80'
                             : owned
-                            ? 'border-[#d6b67c] bg-white hover:border-amber-500/80'
-                            : 'border-[#d6c29f] bg-[#f5ebd6]/75 opacity-80 hover:opacity-95'
+                            ? 'border-white/20 bg-slate-950/20 text-slate-100 hover:border-white/45 hover:bg-slate-900/35'
+                            : 'border-white/15 bg-slate-950/15 text-slate-300/85 hover:border-white/30'
                         }`}
                       >
                         <div className="min-w-0 pr-2">
                           <div className="flex items-center gap-2">
                             <span
-                              className="inline-block h-3.5 w-3.5 shrink-0 rounded-full border border-[#0f172a]"
+                              className="inline-block h-3.5 w-3.5 shrink-0 rounded-full border border-white/75"
                               style={{ backgroundColor: w.color }}
                             />
                             <span className="truncate text-sm font-black">{w.name}</span>
                             {owned && (
-                              <span className="font-mono-nums text-[11px] font-bold text-amber-800">
+                              <span className="font-mono-nums text-[11px] font-bold text-amber-200">
                                 {ammo}/{MAX_AMMO}
                               </span>
                             )}
                           </div>
-                          <div className="mt-0.5 text-[11px] font-semibold text-[#78350f]">
+                          <div className="mt-0.5 text-[11px] font-semibold text-slate-200">
                             {w.desc}
                           </div>
-                          <div className="text-[10px] font-bold text-[#92400e]">
+                          <div className="text-[10px] font-bold text-amber-200/90">
                             Asal: {w.originLabel}
                           </div>
                         </div>
@@ -759,16 +771,16 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                               onEquipWeapon(wId);
                             }}
                             disabled={equipped}
-                            className={`shrink-0 rounded-xl px-3 py-1.5 text-xs font-black ${
+                            className={`shrink-0 rounded-xl border px-3 py-1.5 text-xs font-black ${
                               equipped
-                                ? 'bg-emerald-600 text-white'
-                                : 'border border-[#78350f] bg-[#f5e3be] text-[#5c340f] hover:bg-[#e7d3ad]'
+                                ? 'border-emerald-300/80 bg-emerald-600/75 text-white'
+                                : 'border-amber-300/80 bg-amber-500/75 text-slate-950 hover:bg-amber-400/90'
                             }`}
                           >
                             {equipped ? 'Dipakai' : 'Pakai'}
                           </button>
                         ) : (
-                          <Lock className="h-4 w-4 shrink-0 text-[#92400e]" />
+                          <Lock className="h-4 w-4 shrink-0 text-slate-300" />
                         )}
                       </div>
                     );
@@ -778,7 +790,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
 
               {/* 6 Relics */}
               <div>
-                <h3 className="mb-2 text-xs font-black uppercase tracking-wider text-[#78350f]">
+                <h3 className="mb-2 text-xs font-black uppercase tracking-wider text-amber-200">
                   6 Pusaka Duel ({hud.ownedRelics.length}/6)
                 </h3>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -788,21 +800,21 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                     return (
                       <div
                         key={rId}
-                        className={`rounded-xl border-2 px-3 py-2.5 ${
+                        className={`rounded-xl border px-3 py-2.5 ${
                           owned
-                            ? 'border-amber-500 bg-white'
-                            : 'border-[#d6c29f] bg-[#f5ebd6]/65 opacity-60'
+                            ? 'border-amber-300/75 bg-amber-950/25 text-slate-100'
+                            : 'border-white/15 bg-slate-950/20 text-slate-300 opacity-70'
                         }`}
                       >
                         <div className="flex items-center justify-between text-xs font-black">
                           <span>
                             {r.icon} {r.name}
                           </span>
-                          <span className="text-[10px] text-[#92400e]">
+                          <span className="text-[10px] text-amber-200/90">
                             {owned ? '✓ Aktif' : `Bos ${ZONE_INFO[r.zoneId].name}`}
                           </span>
                         </div>
-                        <p className="mt-1 text-[11px] font-medium text-[#5c340f]">{r.desc}</p>
+                        <p className="mt-1 text-[11px] font-medium text-slate-200">{r.desc}</p>
                       </div>
                     );
                   })}
@@ -811,7 +823,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
 
               {/* 6 Ribbons / Crowns + Lila's Red Ribbon Messages */}
               <div>
-                <h3 className="mb-2 text-xs font-black uppercase tracking-wider text-[#78350f]">
+                <h3 className="mb-2 text-xs font-black uppercase tracking-wider text-amber-200">
                   Mahkota &amp; Pita Merah dari Lila ({hud.crowns}/6)
                 </h3>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -821,29 +833,29 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                     return (
                       <div
                         key={zId}
-                        className={`rounded-xl border-2 px-3 py-2.5 ${
+                        className={`rounded-xl border px-3 py-2.5 ${
                           has
-                            ? 'border-rose-400 bg-gradient-to-br from-rose-50 to-amber-50 text-[#3b2008]'
-                            : 'border-[#d6c29f] bg-[#f5ebd6]/65 text-slate-500 opacity-75'
+                            ? 'border-rose-300/75 bg-rose-950/25 text-slate-100'
+                            : 'border-white/15 bg-slate-950/20 text-slate-300 opacity-75'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2 text-xs font-black">
                           <span className="inline-flex items-center gap-1.5">
                             {has ? (
-                              <Bookmark className="h-3.5 w-3.5 fill-rose-600 text-rose-700" />
+                              <Bookmark className="h-3.5 w-3.5 fill-rose-400 text-rose-300" />
                             ) : (
                               <Lock className="h-3.5 w-3.5 text-slate-400" />
                             )}
                             <span>{rb.name}</span>
                           </span>
                           {has && (
-                            <span className="inline-flex items-center gap-1 rounded-md bg-amber-200/90 px-1.5 py-0.5 text-[10px] font-black text-amber-950">
-                              <Crown className="h-3 w-3 text-amber-700" />
+                            <span className="inline-flex items-center gap-1 rounded-md border border-amber-300/50 bg-amber-500/25 px-1.5 py-0.5 text-[10px] font-black text-amber-200">
+                              <Crown className="h-3 w-3 text-amber-300" />
                               <span>#{rb.number}</span>
                             </span>
                           )}
                         </div>
-                        <p className="mt-1.5 text-[11px] font-semibold italic leading-snug text-rose-950/90">
+                        <p className="mt-1.5 text-[11px] font-semibold italic leading-snug text-rose-100/90">
                           {has
                             ? `“${rb.quote}”`
                             : `Kalahkan bos ${ZONE_INFO[zId].name} untuk menemukan Pita Merah Lila.`}
@@ -861,14 +873,14 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 <div className="relative min-w-[200px] flex-1">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-[#92400e]" />
+                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-amber-300" />
                   <input
                     type="text"
                     value={searchText}
                     onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
                     onChange={(e) => setSearchText(e.target.value)}
                     placeholder="Cari kata Inggris atau arti Indonesia..."
-                    className="w-full rounded-xl border-2 border-[#c4a472] bg-white py-2 pl-9 pr-3 text-xs font-bold focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    className="w-full rounded-xl border border-white/25 bg-slate-950/55 py-2 pl-9 pr-3 text-xs font-bold text-slate-100 placeholder:text-slate-400 focus:border-amber-300/75 focus:outline-none focus:ring-2 focus:ring-amber-400/40"
                   />
                 </div>
                 <select
@@ -876,11 +888,13 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                   onChange={(e) =>
                     setSelectedCat(e.target.value === 'all' ? 'all' : Number(e.target.value))
                   }
-                  className="rounded-xl border-2 border-[#c4a472] bg-white px-3 py-2 text-xs font-bold"
+                  className="rounded-xl border border-white/25 bg-slate-950/65 px-3 py-2 text-xs font-bold text-slate-100 focus:border-amber-300/75 focus:outline-none"
                 >
-                  <option value="all">Semua {CATEGORIES.length} Tema ({VOCAB_CATALOG.length})</option>
+                  <option value="all" className="bg-slate-900 text-slate-100">
+                    Semua {CATEGORIES.length} Tema ({VOCAB_CATALOG.length})
+                  </option>
                   {CATEGORIES.map((c) => (
-                    <option key={c.id} value={c.id}>
+                    <option key={c.id} value={c.id} className="bg-slate-900 text-slate-100">
                       {c.icon} {c.name}
                     </option>
                   ))}
@@ -901,10 +915,10 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                       key={key}
                       type="button"
                       onClick={() => setStatusFilter(key)}
-                      className={`rounded-lg px-2.5 py-1 text-[11px] font-extrabold ${
+                      className={`rounded-lg border px-2.5 py-1 text-[11px] font-extrabold transition ${
                         statusFilter === key
-                          ? 'bg-[#78350f] text-white'
-                          : 'border border-[#c4a472] bg-white text-[#5c340f]'
+                          ? 'border-amber-300/80 bg-amber-500/75 text-slate-950'
+                          : 'border-white/20 bg-slate-950/35 text-slate-200 hover:bg-slate-900/55'
                       }`}
                     >
                       {label}
@@ -918,7 +932,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                       onClose();
                       onStartQuickLearn('cards', selectedCat);
                     }}
-                    className="rounded-lg bg-emerald-600 px-3 py-1 text-[11px] font-black text-white hover:bg-emerald-500"
+                    className="rounded-lg border border-emerald-300/75 bg-emerald-600/80 px-3 py-1 text-[11px] font-black text-white hover:bg-emerald-500"
                   >
                     Latih Tema Ini
                   </button>
@@ -932,40 +946,40 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                   return (
                     <div
                       key={v.id}
-                      className={`flex items-center justify-between rounded-xl border-2 px-3 py-2 ${
+                      className={`flex items-center justify-between rounded-xl border px-3 py-2 ${
                         st === 'mast'
-                          ? 'border-emerald-500 bg-white'
+                          ? 'border-emerald-300/75 bg-emerald-950/25 text-slate-100'
                           : st === 'learn'
-                          ? 'border-amber-400 bg-white'
-                          : 'border-[#d6c29f] bg-[#f5ebd6]/65'
+                          ? 'border-amber-300/75 bg-amber-950/25 text-slate-100'
+                          : 'border-white/15 bg-slate-950/20 text-slate-100'
                       }`}
                     >
                       <div className="min-w-0 pr-2">
                         <div className="flex items-center gap-1.5">
                           <span className="truncate text-sm font-black">{v.word}</span>
-                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-900">
+                          <span className="rounded border border-amber-300/35 bg-amber-500/20 px-1.5 py-0.5 text-[10px] font-bold text-amber-200">
                             {v.cefr}
                           </span>
                           <span
                             className={`rounded px-1.5 py-0.5 font-mono-nums text-[10px] font-bold ${
                               st === 'mast'
-                                ? 'bg-emerald-100 text-emerald-800'
+                                ? 'bg-emerald-500/25 text-emerald-200'
                                 : st === 'learn'
-                                ? 'bg-amber-100 text-amber-800'
-                                : 'bg-slate-200 text-slate-700'
+                                ? 'bg-amber-500/25 text-amber-200'
+                                : 'bg-slate-950/60 text-slate-300'
                             }`}
                           >
                             {st === 'mast' ? '✓ 3/3' : `${box}/3`}
                           </span>
                         </div>
-                        <div className="text-xs font-semibold text-[#5c340f]">{v.meaningId}</div>
+                        <div className="text-xs font-semibold text-slate-300">{v.meaningId}</div>
                       </div>
                       <div className="flex items-center gap-1">
-                        {st === 'mast' && <CheckCircle2 className="h-4 w-4 text-emerald-600" />}
+                        {st === 'mast' && <CheckCircle2 className="h-4 w-4 text-emerald-300" />}
                         <button
                           type="button"
                           onClick={() => soundEngine.speakEnglish(v.word)}
-                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#f5e3be] text-[#5c340f] hover:bg-[#e7d3ad]"
+                          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/20 bg-slate-950/45 text-amber-200 hover:bg-slate-900/70"
                         >
                           <Volume2 className="h-3.5 w-3.5" />
                         </button>
@@ -975,7 +989,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                 })}
               </div>
               {filteredWords.length === 0 && (
-                <div className="py-8 text-center text-xs font-bold text-[#92400e]">
+                <div className="py-8 text-center text-xs font-bold text-amber-200/80">
                   Tidak ada kata yang cocok dengan pencarianmu.
                 </div>
               )}
@@ -991,21 +1005,21 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                 return (
                   <div
                     key={q.id}
-                    className="rounded-2xl border-2 border-[#d6b67c] bg-white p-4"
+                    className="rounded-xl border border-white/20 bg-slate-950/25 p-3.5 text-slate-100"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
                         <div className="flex items-center gap-2">
-                          <span className="rounded-md bg-[#f5e3be] px-2 py-0.5 text-[10px] font-extrabold text-[#78350f]">
+                          <span className="rounded-md border border-amber-300/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-extrabold text-amber-200">
                             {q.zoneName}
                           </span>
-                          <span className="text-xs font-bold text-[#92400e]">{q.npcName}</span>
+                          <span className="text-xs font-bold text-amber-200/90">{q.npcName}</span>
                         </div>
-                        <div className="mt-1 text-sm font-extrabold">{q.title}</div>
-                        <p className="mt-0.5 text-[11px] font-medium leading-snug text-[#5c340f]/90">
+                        <div className="mt-1 text-sm font-extrabold text-slate-100">{q.title}</div>
+                        <p className="mt-0.5 text-[11px] font-medium leading-snug text-slate-300">
                           {ZONE_INFO[q.zoneId]?.conflict}
                         </p>
-                        <div className="mt-1 font-mono-nums text-xs text-[#78350f]">
+                        <div className="mt-1 font-mono-nums text-xs text-amber-200">
                           Hadiah: +{q.rewardXp} XP · +{q.rewardDiamonds} 💎 · {cleared.length}/5 Pintu
                         </div>
                       </div>
@@ -1016,7 +1030,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                             onClose();
                             onTeleportZone(q.zoneId);
                           }}
-                          className="rounded-lg bg-amber-500 px-2.5 py-1.5 text-[11px] font-extrabold text-white hover:bg-amber-600"
+                          className="rounded-lg border border-amber-300/80 bg-amber-500/80 px-2.5 py-1.5 text-[11px] font-extrabold text-slate-950 hover:bg-amber-400"
                         >
                           Ke NPC
                         </button>
@@ -1026,23 +1040,23 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                             onClose();
                             onEnterDungeon(q.zoneId);
                           }}
-                          className="rounded-lg bg-emerald-600 px-2.5 py-1.5 text-[11px] font-extrabold text-white hover:bg-emerald-500"
+                          className="rounded-lg border border-emerald-300/75 bg-emerald-600/80 px-2.5 py-1.5 text-[11px] font-extrabold text-white hover:bg-emerald-500"
                         >
                           Masuk Area
                         </button>
                       </div>
                     </div>
 
-                    <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-[#f5e3be] pt-2">
+                    <div className="mt-2.5 flex flex-wrap gap-1.5 border-t border-white/10 pt-2">
                       {doors.map((d) => {
                         const ok = cleared.includes(d.index);
                         return (
                           <span
                             key={d.id}
-                            className={`rounded-md px-2 py-0.5 text-[10px] font-bold ${
+                            className={`rounded-md border px-2 py-0.5 text-[10px] font-bold ${
                               ok
-                                ? 'bg-emerald-100 text-emerald-900'
-                                : 'bg-slate-100 text-slate-600'
+                                ? 'border-emerald-400/50 bg-emerald-950/40 text-emerald-200'
+                                : 'border-white/15 bg-slate-950/45 text-slate-300'
                             }`}
                           >
                             {ok ? '✓' : '○'} {d.name} ({d.modeLabel})
@@ -1058,10 +1072,10 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
 
           {/* TAB 5: OPSI & PANDUAN HOOT */}
           {tab === 'options' && (
-            <div className="space-y-4">
+            <div className="space-y-3.5">
               {/* Aim Mode (Bidik Otomatis vs Bidik Bebas) */}
-              <div className="rounded-2xl border-2 border-[#d6b67c] bg-white p-4">
-                <div className="text-xs font-black uppercase text-[#78350f]">
+              <div className="rounded-xl border border-white/20 bg-slate-950/25 p-3.5">
+                <div className="text-xs font-black uppercase tracking-wider text-amber-200">
                   Gaya Membidik &amp; Menembak
                 </div>
                 <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -1087,10 +1101,10 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                         key={item.mode}
                         type="button"
                         onClick={() => onUpdateSettings({ aimMode: item.mode })}
-                        className={`rounded-xl border-2 p-3 text-left transition ${
+                        className={`rounded-xl border p-3 text-left transition ${
                           active
-                            ? 'border-cyan-600 bg-cyan-50/90'
-                            : 'border-[#d6c29f] bg-white hover:bg-[#fffbeb]'
+                            ? 'border-cyan-300/85 bg-cyan-950/35 text-cyan-100 ring-1 ring-cyan-300/70'
+                            : 'border-white/15 bg-slate-950/25 text-slate-200 hover:border-white/35 hover:bg-slate-900/40'
                         }`}
                       >
                         <div className="flex items-center justify-between gap-2">
@@ -1098,14 +1112,14 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                           <span
                             className={`rounded-md px-2 py-0.5 text-[10px] font-black ${
                               active
-                                ? 'bg-cyan-600 text-white'
-                                : 'bg-[#f5e3be] text-[#78350f]'
+                                ? 'bg-cyan-400/90 text-slate-950'
+                                : 'border border-white/15 bg-slate-950/55 text-amber-200'
                             }`}
                           >
                             {active ? 'Aktif' : item.sub}
                           </span>
                         </div>
-                        <div className="mt-1 text-[11px] font-medium text-[#78350f]">
+                        <div className="mt-1 text-[11px] font-medium text-slate-300">
                           {item.desc}
                         </div>
                       </button>
@@ -1115,8 +1129,8 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
               </div>
 
               {/* Difficulty */}
-              <div className="rounded-2xl border-2 border-[#d6b67c] bg-white p-4">
-                <div className="text-xs font-black uppercase text-[#78350f]">
+              <div className="rounded-xl border border-white/20 bg-slate-950/25 p-3.5">
+                <div className="text-xs font-black uppercase tracking-wider text-amber-200">
                   Tingkat Kesulitan
                 </div>
                 <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
@@ -1128,14 +1142,14 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                         key={d}
                         type="button"
                         onClick={() => onUpdateSettings({ difficulty: d })}
-                        className={`rounded-xl border-2 p-3 text-left transition ${
+                        className={`rounded-xl border p-3 text-left transition ${
                           active
-                            ? 'border-emerald-600 bg-emerald-50'
-                            : 'border-[#d6c29f] bg-white hover:bg-[#fffbeb]'
+                            ? 'border-emerald-300/85 bg-emerald-950/35 text-emerald-100 ring-1 ring-emerald-300/70'
+                            : 'border-white/15 bg-slate-950/25 text-slate-200 hover:border-white/35 hover:bg-slate-900/40'
                         }`}
                       >
                         <div className="text-sm font-black">{cfg.label}</div>
-                        <div className="mt-0.5 text-[11px] font-medium text-[#78350f]">
+                        <div className="mt-0.5 text-[11px] font-medium text-slate-300">
                           {cfg.desc}
                         </div>
                       </button>
@@ -1145,7 +1159,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
               </div>
 
               {/* Toggles */}
-              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <button
                   type="button"
                   disabled={IELTS_TEMPORARILY_LOCKED}
@@ -1153,11 +1167,11 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                     if (IELTS_TEMPORARILY_LOCKED) return;
                     onUpdateSettings({ storyLocked: !hud.settings.storyLocked });
                   }}
-                  className="flex items-center justify-between rounded-2xl border-2 border-[#d6b67c] bg-white p-3.5 text-left disabled:cursor-not-allowed disabled:opacity-70"
+                  className="flex items-center justify-between rounded-xl border border-white/20 bg-slate-950/25 p-3 text-left text-slate-100 hover:border-white/35 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   <div>
                     <div className="text-xs font-black">Akses Istana IELTS</div>
-                    <div className="text-[11px] text-[#78350f]">
+                    <div className="text-[11px] text-slate-300">
                       {IELTS_TEMPORARILY_LOCKED
                         ? 'Ditutup sementara — fokus petualangan 6 pulau Nusantara Kata'
                         : hud.settings.storyLocked
@@ -1165,7 +1179,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                         : 'Mode Bebas (Langsung Masuk)'}
                     </div>
                   </div>
-                  <span className="rounded-lg bg-purple-100 px-2.5 py-1 text-xs font-black text-purple-900">
+                  <span className="rounded-lg border border-purple-300/40 bg-purple-500/25 px-2.5 py-1 text-xs font-black text-purple-200">
                     {IELTS_TEMPORARILY_LOCKED
                       ? 'Ditutup'
                       : hud.settings.storyLocked
@@ -1177,15 +1191,15 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                 <button
                   type="button"
                   onClick={() => onUpdateSettings({ qtimer: !hud.settings.qtimer })}
-                  className="flex items-center justify-between rounded-2xl border-2 border-[#d6b67c] bg-white p-3.5 text-left"
+                  className="flex items-center justify-between rounded-xl border border-white/20 bg-slate-950/25 p-3 text-left text-slate-100 hover:border-white/35"
                 >
                   <div>
                     <div className="text-xs font-black">Timer Soal Pintu</div>
-                    <div className="text-[11px] text-[#78350f]">
+                    <div className="text-[11px] text-slate-300">
                       Bilah Hoot vs Monster saat belajar
                     </div>
                   </div>
-                  <span className="rounded-lg bg-amber-100 px-2.5 py-1 text-xs font-black text-amber-900">
+                  <span className="rounded-lg border border-amber-300/40 bg-amber-500/25 px-2.5 py-1 text-xs font-black text-amber-200">
                     {hud.settings.qtimer ? 'Aktif' : 'Nonaktif'}
                   </span>
                 </button>
@@ -1197,13 +1211,13 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                     const next = order[(order.indexOf(hud.settings.fxLevel) + 1) % 3];
                     onUpdateSettings({ fxLevel: next });
                   }}
-                  className="flex items-center justify-between rounded-2xl border-2 border-[#d6b67c] bg-white p-3.5 text-left"
+                  className="flex items-center justify-between rounded-xl border border-white/20 bg-slate-950/25 p-3 text-left text-slate-100 hover:border-white/35"
                 >
                   <div>
                     <div className="text-xs font-black">Efek Partikel 3D</div>
-                    <div className="text-[11px] text-[#78350f]">Kepadatan percikan pertempuran</div>
+                    <div className="text-[11px] text-slate-300">Kepadatan percikan pertempuran</div>
                   </div>
-                  <span className="rounded-lg bg-sky-100 px-2.5 py-1 text-xs font-black uppercase text-sky-900">
+                  <span className="rounded-lg border border-sky-300/40 bg-sky-500/25 px-2.5 py-1 text-xs font-black uppercase text-sky-200">
                     {hud.settings.fxLevel}
                   </span>
                 </button>
@@ -1215,15 +1229,15 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                     const next = order[(order.indexOf(hud.settings.touchControls) + 1) % 3];
                     onUpdateSettings({ touchControls: next });
                   }}
-                  className="flex items-center justify-between rounded-2xl border-2 border-[#d6b67c] bg-white p-3.5 text-left"
+                  className="flex items-center justify-between rounded-xl border border-white/20 bg-slate-950/25 p-3 text-left text-slate-100 hover:border-white/35"
                 >
                   <div>
                     <div className="text-xs font-black">Kontrol Sentuh (Floating Joystick)</div>
-                    <div className="text-[11px] text-[#78350f]">
+                    <div className="text-[11px] text-slate-300">
                       Joystick muncul di area kiri yang disentuh &amp; tombol layar
                     </div>
                   </div>
-                  <span className="rounded-lg bg-emerald-100 px-2.5 py-1 text-xs font-black uppercase text-emerald-900">
+                  <span className="rounded-lg border border-emerald-300/40 bg-emerald-500/25 px-2.5 py-1 text-xs font-black uppercase text-emerald-200">
                     {hud.settings.touchControls}
                   </span>
                 </button>
@@ -1233,13 +1247,13 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
               {(() => {
                 const offlineMeta = getLocalOfflineState();
                 return (
-                  <div className="rounded-2xl border-2 border-[#d6b67c] bg-white p-4">
+                  <div className="rounded-xl border border-white/20 bg-slate-950/25 p-3.5">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
-                        <div className="text-xs font-black uppercase text-[#78350f]">
+                        <div className="text-xs font-black uppercase tracking-wider text-amber-200">
                           Mode Offline Penuh &amp; Auto-Update
                         </div>
-                        <div className="mt-0.5 text-[11px] font-medium text-[#5c340f]">
+                        <div className="mt-0.5 text-[11px] font-medium text-slate-300">
                           {offlineMeta.enrolled && offlineMeta.buildHash
                             ? `Tersimpan di perangkat · ${offlineMeta.fileCount} berkas (${formatBytesMb(offlineMeta.totalBytes)}) · v${offlineMeta.version || '-'}`
                             : 'Aset offline belum diunduh lengkap. Unduh agar bisa main tanpa kuota.'}
@@ -1253,7 +1267,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                               onClose();
                               onOpenOfflineSync();
                             }}
-                            className="inline-flex items-center gap-1.5 rounded-xl border border-amber-700/40 bg-amber-500 px-3 py-2 text-xs font-black text-slate-950 hover:bg-amber-400 whitespace-nowrap"
+                            className="inline-flex items-center gap-1.5 whitespace-nowrap rounded-xl border border-amber-300/80 bg-amber-500/85 px-3 py-2 text-xs font-black text-slate-950 hover:bg-amber-400"
                           >
                             <RefreshCw className="h-3.5 w-3.5" />
                             <span>
@@ -1271,11 +1285,11 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
               })()}
 
               {/* Panduan Hoot & Diglosa Credits */}
-              <div className="rounded-2xl border-2 border-[#d6b67c] bg-[#f5e3be]/60 p-4">
+              <div className="rounded-xl border border-white/20 bg-slate-950/30 p-3.5">
                 <button
                   type="button"
                   onClick={() => setShowRpgHelp((s) => !s)}
-                  className="flex w-full items-center justify-between text-xs font-black text-[#5c340f]"
+                  className="flex w-full items-center justify-between text-xs font-black text-amber-200"
                 >
                   <span className="inline-flex items-center gap-1.5">
                     <HelpCircle className="h-4 w-4" />
@@ -1284,7 +1298,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                   <span>{showRpgHelp ? 'Tutup ▲' : 'Buka ▼'}</span>
                 </button>
                 {showRpgHelp && (
-                  <ul className="mt-2.5 space-y-1 text-xs font-medium text-[#5c340f]">
+                  <ul className="mt-2.5 space-y-1 text-xs font-medium text-slate-200">
                     <li>• <strong>Gerak:</strong> WASD / Panah, Ketuk lantai 3D, atau Joystick Virtual.</li>
                     <li>• <strong>Senjata &amp; Kekuatan:</strong> Senjata kecil (Ketapel / Kerikil) butuh <strong>3× tembakan</strong> untuk mematahkan perisai monster sebelum Kuis Duel muncul.</li>
                     <li>• <strong>Gua Voxel (Minecraft):</strong> Slot <strong>9 (⛏️)</strong> gali balok, Slot <strong>0 (🔦)</strong> pasang obor, Slot <strong>B (🧱)</strong> pasang Blok Pelindung, serta cari <strong>Peti Senjata Gua</strong> acak!</li>
@@ -1297,16 +1311,16 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                   <button
                     type="button"
                     onClick={onOpenGuide}
-                    className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-[#78350f] bg-[#78350f] px-3 py-1.5 text-xs font-extrabold text-amber-100 hover:bg-[#92400e]"
+                    className="mt-3 inline-flex items-center gap-1.5 rounded-xl border border-amber-300/75 bg-amber-500/80 px-3 py-1.5 text-xs font-extrabold text-slate-950 hover:bg-amber-400"
                   >
                     <HelpCircle className="h-3.5 w-3.5" />
                     <span>Buka Menu Petunjuk Lengkap</span>
                   </button>
                 )}
 
-                <div className="mt-3 border-t border-[#d6b67c] pt-2.5 flex items-center justify-between text-[11px] font-bold text-[#78350f]">
+                <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-2.5 text-[11px] font-bold text-slate-300">
                   <span>Diglosa: Petualangan Kata 3D · Diglosa Edukasi Digital</span>
-                  <span className="inline-flex items-center gap-1">
+                  <span className="inline-flex items-center gap-1 text-amber-200">
                     <Crosshair className="h-3.5 w-3.5" />
                     <span>Target Harian: {hud.dailyCount}/{hud.dailyGoal}</span>
                   </span>
@@ -1315,17 +1329,17 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
 
               {/* Profil Akun Google & Logout Sistem */}
               {user && (
-                <div className="rounded-2xl border-2 border-[#d6b67c] bg-white p-4">
+                <div className="rounded-xl border border-white/20 bg-slate-950/25 p-3.5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2.5">
-                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-600/40 bg-emerald-100 text-sm font-black text-emerald-900">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-400/50 bg-emerald-950/60 text-sm font-black text-emerald-200">
                         {(user.displayName || user.email || 'P').slice(0, 1).toUpperCase()}
                       </span>
                       <div className="min-w-0">
-                        <div className="truncate text-xs font-black text-[#451a03]">
+                        <div className="truncate text-xs font-black text-slate-100">
                           Profil Akun Google · {user.displayName || 'Petualang'}
                         </div>
-                        <div className="truncate text-[11px] font-medium text-[#78350f]">
+                        <div className="truncate text-[11px] font-medium text-slate-300">
                           {user.email || 'Sesi aktif tersimpan di perangkat ini'}
                         </div>
                       </div>
@@ -1334,7 +1348,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                       <button
                         type="button"
                         onClick={() => void onSignOut()}
-                        className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border-2 border-rose-700/40 bg-rose-600 px-3.5 py-2 text-xs font-black text-white transition hover:bg-rose-700"
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-rose-300/60 bg-rose-600/85 px-3.5 py-2 text-xs font-black text-white transition hover:bg-rose-500"
                       >
                         <LogOut className="h-3.5 w-3.5" />
                         <span>Logout Akun</span>
