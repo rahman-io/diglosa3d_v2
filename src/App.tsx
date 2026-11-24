@@ -1134,13 +1134,14 @@ function DiglosaRpgApp() {
     engineRef.current?.continueGame();
   }, [characterId, playerName]);
 
-  const appendChatMessage = useCallback((msg: RoomChatMessage) => {
-    if (chatSeenIdsRef.current.has(msg.id)) return;
+  const appendChatMessage = useCallback((msg: RoomChatMessage): boolean => {
+    if (chatSeenIdsRef.current.has(msg.id)) return false;
     chatSeenIdsRef.current.add(msg.id);
     setChatMessages((prev) => {
       const next = [...prev, msg];
       return next.length > 60 ? next.slice(next.length - 60) : next;
     });
+    return true;
   }, []);
 
   const buildWaveMissionPreview = useCallback(
@@ -1239,6 +1240,15 @@ function DiglosaRpgApp() {
         });
       } else {
         setVsIntroData(null);
+        const transport = transportRef.current;
+        if (transport) {
+          if (transport.getOpenChannelCount() > 0) {
+            transport.sendReliableToAll({ t: 'wreq' });
+          }
+          if (transport.hasMissingP2pPeers()) {
+            transport.reconnectAllPeers();
+          }
+        }
       }
     },
     [
@@ -1404,8 +1414,12 @@ function DiglosaRpgApp() {
           source: 'system',
         });
 
+        const departedAtMs = Date.now();
         if (currentRoom.hostUid === activeUid) {
-          void pruneDisconnectedMember(currentRoom.roomId, uid);
+          window.setTimeout(() => {
+            if (activeRoomRef.current?.roomId !== currentRoom.roomId) return;
+            void pruneDisconnectedMember(currentRoom.roomId, uid, departedAtMs);
+          }, 2500);
         } else if (currentRoom.hostUid === uid) {
           const survivingActive = Array.from(
             new Set([
@@ -1418,6 +1432,7 @@ function DiglosaRpgApp() {
               currentRoom.roomId,
               uid,
               playerNameRef.current || 'Host',
+              departedAtMs,
             ).then((claimed) => {
               if (claimed) {
                 engineRef.current?.showGroupNotice(
@@ -1480,8 +1495,8 @@ function DiglosaRpgApp() {
     const unsubFallbackChat = subscribeFallbackChatMessages(
       activeRoomId,
       (msg) => {
-        appendChatMessage(msg);
-        if (msg.senderUid !== activeUid) {
+        const isNew = appendChatMessage(msg);
+        if (isNew && msg.senderUid !== activeUid) {
           transport.applyRemoteChatBubble(msg.senderUid, msg.text);
           engineRef.current?.triggerRemoteChatBubble(msg.senderUid, msg.text);
         }
@@ -2058,12 +2073,9 @@ function DiglosaRpgApp() {
       engineRef.current?.voiceShowFeedback(`💬 ${senderName}: ${clean}`);
 
       const remoteMemberCount = roomMembers.filter((m) => m.uid !== user.uid).length;
-      const missingP2p =
-        !res ||
-        res.sentP2pCount < remoteMemberCount ||
-        Boolean(transportRef.current?.hasMissingP2pPeers());
-      // Always relay via Firestore when any peer in the room lacks an open P2P DataChannel
-      if (missingP2p) {
+      const shouldRelayFirestore = remoteMemberCount > 0 || activeRoom.memberCount > 1;
+      // Always relay via Firestore alongside P2P so chat stays 100% reliable across rejoins & half-open channels
+      if (shouldRelayFirestore) {
         void sendFallbackChatMessage({
           roomId: activeRoom.roomId,
           senderName,
@@ -2555,7 +2567,18 @@ function DiglosaRpgApp() {
         onJoinPublicRoom={handleJoinPublicRoom}
         onStartMultiplayerMatch={handleStartMultiplayerMatch}
         onEnterPlayingRoom={() => {
-          if (activeRoom) enterMultiplayerMatch(mergeRoomWithCachedMeta(activeRoom), mySpawnIndex);
+          if (activeRoom) {
+            const shouldRejoinSync = Boolean(
+              activeRoom.status === 'playing' &&
+                roomMembers.length > 1 &&
+                activeRoom.hostUid !== user?.uid,
+            );
+            enterMultiplayerMatch(
+              mergeRoomWithCachedMeta(activeRoom),
+              mySpawnIndex,
+              shouldRejoinSync,
+            );
+          }
         }}
         onLeaveRoom={() => handleLeaveMultiplayerRoom(false)}
         onCancel={() => setDifficultyPromptOpen(false)}

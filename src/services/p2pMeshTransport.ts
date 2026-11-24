@@ -84,6 +84,9 @@ interface PeerSlot {
   reliableDc: RTCDataChannel | null;
   makingOffer: boolean;
   ignoreOffer: boolean;
+  pendingNegotiation: boolean;
+  remoteOriginSessionId: string | null;
+  closing: boolean;
   audioEl: HTMLAudioElement | null;
   remoteStream: MediaStream | null;
   audioCtx: AudioContext | null;
@@ -115,6 +118,12 @@ function getUpdatedAtMs(val: unknown): number {
   return 0;
 }
 
+function extractSdpOriginId(sdp?: string): string | null {
+  if (!sdp) return null;
+  const match = sdp.match(/^o=\S+\s+(\S+)/m);
+  return match ? match[1] : null;
+}
+
 /**
  * Pure P2P WebRTC Mesh Transport (100% Rp 0 server cost):
  * - Coordinates / movement / chat packets run directly over RTCDataChannel (~12 Hz)
@@ -128,6 +137,7 @@ export class P2pMeshTransport {
   private peers = new Map<string, PeerSlot>();
   private memberMeta = new Map<string, MultiplayerMemberDoc>();
   private memberUpdatedAtMs = new Map<string, number>();
+  private memberJoinedAtMs = new Map<string, number>();
   private remoteStates = new Map<string, RemotePlayerState>();
   private fallbackStates = new Map<string, RemotePlayerState>();
   private lastActivityMs = new Map<string, number>();
@@ -135,6 +145,8 @@ export class P2pMeshTransport {
   private reconnectAttempts = new Map<string, number>();
   private nextReconnectAtMs = new Map<string, number>();
   private departedPeers = new Set<string>();
+  private departedAtMs = new Map<string, number>();
+  private signalQueues = new Map<string, Promise<void>>();
   private everHadLiveState = new Set<string>();
   private lastHealthCheckMs = 0;
   private unsubSignals: (() => void) | null = null;
@@ -154,13 +166,24 @@ export class P2pMeshTransport {
     this.callbacks = callbacks;
 
     this.unsubSignals = subscribeIncomingSignals(roomId, myUid, (sig) => {
-      void this.handleIncomingSignal(sig);
+      this.enqueueSignal(sig.fromUid, () => this.handleIncomingSignal(sig));
     });
 
     // Lightweight 8 Hz voice-activity detection + peer speaking state sync
     this.vadTimer = window.setInterval(() => {
       if (!this.disposed) this.pollVoiceActivity();
     }, 135);
+  }
+
+  private enqueueSignal(uid: string, task: () => Promise<void>): void {
+    const prev = this.signalQueues.get(uid) ?? Promise.resolve();
+    const next = prev
+      .catch(() => undefined)
+      .then(async () => {
+        if (this.disposed) return;
+        await task();
+      });
+    this.signalQueues.set(uid, next);
   }
 
   public syncMembers(members: MultiplayerMemberDoc[]): void {
@@ -184,9 +207,23 @@ export class P2pMeshTransport {
         this.memberUpdatedAtMs.set(m.uid, nextUpdated);
       }
 
-      const memberUpdatedFresh = nextUpdated > prevUpdated && prevUpdated > 0;
-      if (memberUpdatedFresh && this.departedPeers.has(m.uid)) {
+      const prevJoined = this.memberJoinedAtMs.get(m.uid) ?? 0;
+      const nextJoined = getUpdatedAtMs(m.joinedAt);
+      if (nextJoined > 0) {
+        this.memberJoinedAtMs.set(m.uid, nextJoined);
+      }
+
+      const departedAt = this.departedAtMs.get(m.uid) ?? 0;
+      const memberUpdatedFresh =
+        (nextUpdated > prevUpdated && prevUpdated > 0) ||
+        (nextJoined > prevJoined && prevJoined > 0) ||
+        (nextJoined > 0 && prevJoined === 0 && departedAt > 0) ||
+        (nextUpdated === 0 && nextJoined === 0 && departedAt > 0);
+      const departureExpired = departedAt > 0 && Date.now() - departedAt >= 5000;
+
+      if ((memberUpdatedFresh || departureExpired) && this.departedPeers.has(m.uid)) {
         this.departedPeers.delete(m.uid);
+        this.departedAtMs.delete(m.uid);
       }
 
       if (this.departedPeers.has(m.uid)) {
@@ -229,10 +266,12 @@ export class P2pMeshTransport {
         this.handlePeerDeparture(uid, meta?.displayName, 'left');
         this.memberMeta.delete(uid);
         this.memberUpdatedAtMs.delete(uid);
+        this.memberJoinedAtMs.delete(uid);
         this.fallbackStates.delete(uid);
         this.reconnectAttempts.delete(uid);
         this.nextReconnectAtMs.delete(uid);
         this.departedPeers.delete(uid);
+        this.departedAtMs.delete(uid);
         this.everHadLiveState.delete(uid);
       }
     }
@@ -282,6 +321,7 @@ export class P2pMeshTransport {
     if (this.disposed) return;
     for (const uid of this.memberMeta.keys()) {
       this.departedPeers.delete(uid);
+      this.departedAtMs.delete(uid);
       const slot = this.peers.get(uid);
       const dcOpen =
         slot &&
@@ -449,6 +489,51 @@ export class P2pMeshTransport {
     }
   }
 
+  private async attachLocalMicToPeer(slot: PeerSlot, stream: MediaStream): Promise<void> {
+    if (this.disposed || slot.closing || this.peers.get(slot.uid) !== slot) return;
+    const tracks = stream.getAudioTracks();
+    if (tracks.length === 0) return;
+    const track = tracks[0];
+    const pc = slot.pc;
+
+    const audioTransceiver = pc
+      .getTransceivers()
+      .find(
+        (t) =>
+          t.sender.track?.kind === 'audio' ||
+          t.receiver.track?.kind === 'audio',
+      );
+    if (audioTransceiver) {
+      let needsNegotiation = false;
+      if (audioTransceiver.direction !== 'sendrecv' && audioTransceiver.direction !== 'sendonly') {
+        audioTransceiver.direction = 'sendrecv';
+        needsNegotiation = true;
+      }
+      if (audioTransceiver.sender.track !== track) {
+        await audioTransceiver.sender.replaceTrack(track).catch(() => undefined);
+        needsNegotiation = true;
+      }
+      if (needsNegotiation) {
+        slot.pendingNegotiation = true;
+        void this.runNegotiation(slot);
+      }
+      return;
+    }
+
+    const existingSender = pc.getSenders().find((s) => s.track?.kind === 'audio');
+    if (existingSender) {
+      if (existingSender.track !== track) {
+        await existingSender.replaceTrack(track).catch(() => undefined);
+        slot.pendingNegotiation = true;
+        void this.runNegotiation(slot);
+      }
+    } else {
+      pc.addTrack(track, stream);
+      slot.pendingNegotiation = true;
+      void this.runNegotiation(slot);
+    }
+  }
+
   public async setMicEnabled(enabled: boolean): Promise<boolean> {
     if (this.disposed) return false;
     if (!enabled) {
@@ -462,9 +547,17 @@ export class P2pMeshTransport {
       return false;
     }
 
-    if (!this.localMicStream) {
+    const hasLiveTrack =
+      Boolean(this.localMicStream) &&
+      this.localMicStream!.getAudioTracks().some((tr) => tr.readyState === 'live');
+
+    if (!hasLiveTrack) {
       if (!navigator.mediaDevices?.getUserMedia) {
         throw new Error('Browser tidak mendukung akses mikrofon untuk Voice Chat.');
+      }
+      if (this.localMicStream) {
+        this.localMicStream.getTracks().forEach((t) => t.stop());
+        this.localMicStream = null;
       }
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
@@ -479,26 +572,22 @@ export class P2pMeshTransport {
         return false;
       }
       this.localMicStream = stream;
-      this.setupLocalVad(stream);
-
-      // Attach audio track to all existing peer connections & renegotiate
-      for (const peer of this.peers.values()) {
-        for (const track of stream.getAudioTracks()) {
-          const already = peer.pc.getSenders().some((s) => s.track?.kind === 'audio');
-          if (!already) {
-            peer.pc.addTrack(track, stream);
-          } else {
-            const sender = peer.pc.getSenders().find((s) => s.track?.kind === 'audio');
-            void sender?.replaceTrack(track);
-          }
-        }
+      if (this.localAudioCtx) {
+        void this.localAudioCtx.close().catch(() => undefined);
+        this.localAudioCtx = null;
       }
+      this.setupLocalVad(stream);
     }
 
     this.localMicMuted = false;
-    this.localMicStream.getAudioTracks().forEach((tr) => {
+    this.localMicStream!.getAudioTracks().forEach((tr) => {
       tr.enabled = true;
     });
+
+    // Ensure every active peer connection has the live audio track bound & negotiated
+    for (const peer of this.peers.values()) {
+      void this.attachLocalMicToPeer(peer, this.localMicStream!);
+    }
     return true;
   }
 
@@ -712,6 +801,7 @@ export class P2pMeshTransport {
     const displayName = (explicitName || prevState?.displayName || meta?.displayName || 'Rekan Tim').slice(0, 32);
 
     this.departedPeers.add(uid);
+    this.departedAtMs.set(uid, Date.now());
     this.remoteStates.delete(uid);
     this.fallbackStates.delete(uid);
     this.lastActivityMs.delete(uid);
@@ -731,6 +821,44 @@ export class P2pMeshTransport {
     return this.myUid < remoteUid;
   }
 
+  private async runNegotiation(slot: PeerSlot): Promise<void> {
+    if (this.disposed || slot.closing || this.peers.get(slot.uid) !== slot) return;
+    const pc = slot.pc;
+    if (slot.makingOffer || pc.signalingState !== 'stable') {
+      slot.pendingNegotiation = true;
+      return;
+    }
+    slot.pendingNegotiation = false;
+    slot.makingOffer = true;
+    try {
+      await pc.setLocalDescription();
+      if (this.disposed || slot.closing || this.peers.get(slot.uid) !== slot) return;
+      if (pc.localDescription) {
+        await sendWebRtcSignal({
+          roomId: this.roomId,
+          toUid: slot.uid,
+          kind: pc.localDescription.type === 'answer' ? 'answer' : 'offer',
+          payload: JSON.stringify(pc.localDescription),
+        });
+      }
+    } catch {
+      if (!this.disposed && !slot.closing && this.peers.get(slot.uid) === slot) {
+        slot.pendingNegotiation = true;
+      }
+    } finally {
+      slot.makingOffer = false;
+      if (
+        slot.pendingNegotiation &&
+        !this.disposed &&
+        !slot.closing &&
+        this.peers.get(slot.uid) === slot &&
+        pc.signalingState === 'stable'
+      ) {
+        void this.runNegotiation(slot);
+      }
+    }
+  }
+
   private createPeer(remoteUid: string): PeerSlot {
     const pc = new RTCPeerConnection(RTC_ICE_CONFIG);
     const slot: PeerSlot = {
@@ -740,6 +868,9 @@ export class P2pMeshTransport {
       reliableDc: null,
       makingOffer: false,
       ignoreOffer: false,
+      pendingNegotiation: false,
+      remoteOriginSessionId: null,
+      closing: false,
       audioEl: null,
       remoteStream: null,
       audioCtx: null,
@@ -753,10 +884,18 @@ export class P2pMeshTransport {
     };
     this.peers.set(remoteUid, slot);
 
-    // Attach local mic if already active
-    if (this.localMicStream) {
+    // Attach local mic if already active; otherwise impolite peer pre-allocates recvonly audio m-line
+    if (this.localMicStream && this.localMicStream.getAudioTracks().some((t) => t.readyState === 'live')) {
       for (const tr of this.localMicStream.getAudioTracks()) {
-        pc.addTrack(tr, this.localMicStream);
+        if (tr.readyState === 'live') {
+          pc.addTrack(tr, this.localMicStream);
+        }
+      }
+    } else if (!this.isPoliteFor(remoteUid)) {
+      try {
+        pc.addTransceiver('audio', { direction: 'recvonly' });
+      } catch {
+        // ignore if unsupported
       }
     }
 
@@ -769,31 +908,26 @@ export class P2pMeshTransport {
     }
 
     pc.ondatachannel = (ev) => {
+      if (this.disposed || slot.closing || this.peers.get(remoteUid) !== slot) return;
       const kind = ev.channel.label === 'diglosa-reliable' ? 'reliable' : 'sync';
       this.bindDataChannel(slot, ev.channel, kind);
     };
 
-    pc.onnegotiationneeded = async () => {
-      try {
-        slot.makingOffer = true;
-        await pc.setLocalDescription();
-        if (pc.localDescription && !this.disposed) {
-          await sendWebRtcSignal({
-            roomId: this.roomId,
-            toUid: remoteUid,
-            kind: pc.localDescription.type === 'answer' ? 'answer' : 'offer',
-            payload: JSON.stringify(pc.localDescription),
-          });
-        }
-      } catch {
-        // ignore transient negotiation errors
-      } finally {
-        slot.makingOffer = false;
+    pc.onsignalingstatechange = () => {
+      if (this.disposed || slot.closing || this.peers.get(remoteUid) !== slot) return;
+      if (pc.signalingState === 'stable' && slot.pendingNegotiation && !slot.makingOffer) {
+        void this.runNegotiation(slot);
       }
     };
 
+    pc.onnegotiationneeded = () => {
+      if (this.disposed || slot.closing || this.peers.get(remoteUid) !== slot) return;
+      slot.pendingNegotiation = true;
+      void this.runNegotiation(slot);
+    };
+
     pc.onicecandidate = (ev) => {
-      if (this.disposed) return;
+      if (this.disposed || slot.closing || this.peers.get(remoteUid) !== slot) return;
       if (ev.candidate) {
         const init: RTCIceCandidateInit =
           typeof ev.candidate.toJSON === 'function'
@@ -818,6 +952,7 @@ export class P2pMeshTransport {
     };
 
     pc.ontrack = (ev) => {
+      if (this.disposed || slot.closing || this.peers.get(remoteUid) !== slot) return;
       const stream = ev.streams[0] ?? new MediaStream([ev.track]);
       slot.remoteStream = stream;
       if (!slot.audioEl) {
@@ -831,19 +966,28 @@ export class P2pMeshTransport {
           document.body.appendChild(audio);
         }
         slot.audioEl = audio;
-        void audio.play().catch(() => {
-          this.scheduleAudioPlayUnlock();
-        });
-        this.setupRemoteVad(slot, stream);
       } else {
         slot.audioEl.srcObject = stream;
+      }
+      const tryPlay = () => {
+        if (this.disposed || slot.closing || !slot.audioEl || this.muteAllPeers) return;
         void slot.audioEl.play().catch(() => {
           this.scheduleAudioPlayUnlock();
         });
+      };
+      tryPlay();
+      ev.track.onunmute = () => {
+        tryPlay();
+      };
+      if (slot.audioCtx) {
+        void slot.audioCtx.close().catch(() => undefined);
+        slot.audioCtx = null;
       }
+      this.setupRemoteVad(slot, stream);
     };
 
     pc.onconnectionstatechange = () => {
+      if (this.disposed || slot.closing || this.peers.get(remoteUid) !== slot) return;
       const state = pc.connectionState;
       if (state === 'connected') {
         this.disconnectedSinceMs.delete(remoteUid);
@@ -881,13 +1025,16 @@ export class P2pMeshTransport {
       slot.dc = dc;
     }
     dc.onopen = () => {
+      if (this.disposed || slot.closing || this.peers.get(slot.uid) !== slot) return;
       this.departedPeers.delete(slot.uid);
+      this.departedAtMs.delete(slot.uid);
       this.lastActivityMs.set(slot.uid, Date.now());
       this.disconnectedSinceMs.delete(slot.uid);
       this.emitConnectionStats();
       this.callbacks.onPeerChannelOpen?.(slot.uid);
     };
     dc.onclose = () => {
+      if (this.disposed || slot.closing || this.peers.get(slot.uid) !== slot) return;
       const otherOpen =
         (slot.dc && slot.dc !== dc && slot.dc.readyState === 'open') ||
         (slot.reliableDc && slot.reliableDc !== dc && slot.reliableDc.readyState === 'open');
@@ -897,7 +1044,7 @@ export class P2pMeshTransport {
       this.emitConnectionStats();
     };
     dc.onmessage = (ev) => {
-      if (typeof ev.data !== 'string' || this.disposed) return;
+      if (typeof ev.data !== 'string' || this.disposed || slot.closing || this.peers.get(slot.uid) !== slot) return;
       try {
         const parsed = JSON.parse(ev.data) as
           | LocalPlayerSyncPacket
@@ -989,19 +1136,38 @@ export class P2pMeshTransport {
     if (this.disposed || sig.fromUid === this.myUid) return;
     if (sig.kind === 'offer') {
       this.departedPeers.delete(sig.fromUid);
+      this.departedAtMs.delete(sig.fromUid);
     }
+
+    let description: RTCSessionDescriptionInit | null = null;
+    let incomingOriginId: string | null = null;
+    if (sig.kind === 'offer' || sig.kind === 'answer') {
+      try {
+        description = JSON.parse(sig.payload) as RTCSessionDescriptionInit;
+        incomingOriginId = extractSdpOriginId(description.sdp);
+      } catch {
+        return;
+      }
+    }
+
     let slot = this.peers.get(sig.fromUid);
-    if (
-      sig.kind === 'offer' &&
-      slot &&
-      (slot.pc.connectionState === 'failed' ||
+    if (sig.kind === 'offer' && slot) {
+      const isDead =
+        slot.closing ||
+        slot.pc.connectionState === 'failed' ||
         slot.pc.connectionState === 'closed' ||
-        (slot.pc.connectionState === 'disconnected' && Date.now() - slot.createdAtMs >= 3000))
-    ) {
-      this.closePeer(sig.fromUid);
-      slot = undefined;
+        (slot.pc.connectionState === 'disconnected' && Date.now() - slot.createdAtMs >= 3000);
+      const isNewRemoteSession =
+        Boolean(incomingOriginId) &&
+        Boolean(slot.remoteOriginSessionId) &&
+        incomingOriginId !== slot.remoteOriginSessionId;
+      if (isDead || isNewRemoteSession) {
+        this.closePeer(sig.fromUid);
+        slot = undefined;
+      }
     }
     if (!slot) {
+      if (sig.kind !== 'offer') return;
       slot = this.createPeer(sig.fromUid);
     }
 
@@ -1009,15 +1175,20 @@ export class P2pMeshTransport {
     const polite = this.isPoliteFor(sig.fromUid);
 
     try {
-      if (sig.kind === 'offer' || sig.kind === 'answer') {
-        const description = JSON.parse(sig.payload) as RTCSessionDescriptionInit;
+      if (description && (sig.kind === 'offer' || sig.kind === 'answer')) {
         const offerCollision =
           description.type === 'offer' &&
           (slot.makingOffer || pc.signalingState !== 'stable');
         slot.ignoreOffer = !polite && offerCollision;
         if (slot.ignoreOffer) return;
 
+        if (incomingOriginId) {
+          slot.remoteOriginSessionId = incomingOriginId;
+        }
+
         await pc.setRemoteDescription(description);
+        if (this.disposed || slot.closing || this.peers.get(sig.fromUid) !== slot) return;
+
         if (slot.pendingRemoteIce.length > 0) {
           const queued = slot.pendingRemoteIce.splice(0, slot.pendingRemoteIce.length);
           for (const cand of queued) {
@@ -1026,7 +1197,12 @@ export class P2pMeshTransport {
         }
         if (description.type === 'offer') {
           await pc.setLocalDescription();
-          if (pc.localDescription && !this.disposed) {
+          if (
+            pc.localDescription &&
+            !this.disposed &&
+            !slot.closing &&
+            this.peers.get(sig.fromUid) === slot
+          ) {
             await sendWebRtcSignal({
               roomId: this.roomId,
               toUid: sig.fromUid,
@@ -1034,6 +1210,9 @@ export class P2pMeshTransport {
               payload: JSON.stringify(pc.localDescription),
             });
           }
+        }
+        if (pc.signalingState === 'stable' && slot.pendingNegotiation && !slot.makingOffer) {
+          void this.runNegotiation(slot);
         }
       } else if (sig.kind === 'ice') {
         const parsed = JSON.parse(sig.payload) as RTCIceCandidateInit | RTCIceCandidateInit[];
@@ -1064,13 +1243,13 @@ export class P2pMeshTransport {
       window.clearTimeout(slot.iceFlushTimer);
       slot.iceFlushTimer = null;
     }
-    if (this.disposed || slot.pendingIce.length === 0) {
+    if (this.disposed || slot.closing || this.peers.get(slot.uid) !== slot || slot.pendingIce.length === 0) {
       slot.pendingIce.length = 0;
       return;
     }
     const batch = slot.pendingIce.splice(0, slot.pendingIce.length);
     const sendChunk = async (items: RTCIceCandidateInit[]): Promise<void> => {
-      if (items.length === 0 || this.disposed) return;
+      if (items.length === 0 || this.disposed || slot.closing || this.peers.get(slot.uid) !== slot) return;
       const serialized = JSON.stringify(items);
       if (serialized.length <= 8190 || items.length === 1) {
         await sendWebRtcSignal({
@@ -1091,6 +1270,7 @@ export class P2pMeshTransport {
   private closePeer(uid: string): void {
     const slot = this.peers.get(uid);
     if (!slot) return;
+    slot.closing = true;
     this.peers.delete(uid);
     if (slot.iceFlushTimer !== null) {
       window.clearTimeout(slot.iceFlushTimer);
@@ -1098,6 +1278,12 @@ export class P2pMeshTransport {
     }
     slot.pendingIce.length = 0;
     slot.pendingRemoteIce.length = 0;
+    slot.pc.onnegotiationneeded = null;
+    slot.pc.onsignalingstatechange = null;
+    slot.pc.onicecandidate = null;
+    slot.pc.ondatachannel = null;
+    slot.pc.ontrack = null;
+    slot.pc.onconnectionstatechange = null;
     try {
       slot.dc?.close();
     } catch {
@@ -1184,6 +1370,8 @@ export class P2pMeshTransport {
       this.localAudioCtx = null;
     }
     this.memberMeta.clear();
+    this.memberUpdatedAtMs.clear();
+    this.memberJoinedAtMs.clear();
     this.remoteStates.clear();
     this.fallbackStates.clear();
     this.lastActivityMs.clear();
@@ -1191,6 +1379,8 @@ export class P2pMeshTransport {
     this.reconnectAttempts.clear();
     this.nextReconnectAtMs.clear();
     this.departedPeers.clear();
+    this.departedAtMs.clear();
+    this.signalQueues.clear();
     this.everHadLiveState.clear();
   }
 }

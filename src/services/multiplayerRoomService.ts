@@ -136,11 +136,30 @@ export interface JoinOrCreateRoomResult {
 const ROOM_META_PREFIX = '__DIGLOSA_META__:';
 const ROOM_META_DOC_ID = 'squad_meta';
 const roomsCreatedMetaByMe = new Set<string>();
+const myExtraMetaDocIds = new Map<string, string[]>();
 const roomsWithFallbackChatSent = new Set<string>();
 const myFallbackChatDocIds = new Map<string, string[]>();
 const roomsWithRelayEventsSent = new Set<string>();
 const myRelayEventDocIds = new Map<string, string[]>();
 const loggedLiveStateErrors = new Set<string>();
+
+async function cleanupStaleSignalsForUser(roomId: string, uid: string): Promise<void> {
+  try {
+    const sigSnap = await getDocs(
+      query(
+        collection(db, ROOMS_COLLECTION, roomId, 'signals'),
+        where('roomId', '==', roomId),
+        where('toUid', '==', uid),
+        limit(40),
+      ),
+    );
+    if (!sigSnap.empty) {
+      await Promise.all(sigSnap.docs.map((d) => deleteDoc(d.ref).catch(() => undefined)));
+    }
+  } catch {
+    // Best-effort stale signal cleanup
+  }
+}
 
 export interface RoomSquadMeta {
   g?: string;
@@ -208,7 +227,7 @@ async function publishRoomMeta(
   }
 
   try {
-    await addDoc(collection(db, path), {
+    const docRef = await addDoc(collection(db, path), {
       roomId,
       senderUid: user.uid,
       senderName: '__SQUAD_META__',
@@ -216,6 +235,15 @@ async function publishRoomMeta(
       createdAt: serverTimestamp(),
     });
     roomsWithFallbackChatSent.add(roomId);
+    const metaList = myExtraMetaDocIds.get(roomId) ?? [];
+    metaList.push(docRef.id);
+    while (metaList.length > 1) {
+      const oldestMetaId = metaList.shift();
+      if (oldestMetaId) {
+        void deleteDoc(doc(db, path, oldestMetaId)).catch(() => undefined);
+      }
+    }
+    myExtraMetaDocIds.set(roomId, metaList);
   } catch {
     // Best-effort live meta publish
   }
@@ -450,6 +478,7 @@ export async function joinRoomByCode(params: {
     handleFirestoreError(error, OperationType.WRITE, memberPath);
   }
 
+  await cleanupStaleSignalsForUser(roomId, user.uid);
   const roomMeta = await readLatestRoomMeta(roomId);
   saveLastActiveRoomSession(user.uid, roomId, joinedRoom.code, joinedRoom.mode);
   return {
@@ -554,6 +583,7 @@ export async function findOrCreatePublicRoom(params: {
           updatedAt: serverTimestamp(),
         });
       }
+      await cleanupStaleSignalsForUser(cand.roomId, user.uid);
       const roomMeta = await readLatestRoomMeta(cand.roomId);
       saveLastActiveRoomSession(user.uid, cand.roomId, joined.code, 'public');
       return {
@@ -836,6 +866,7 @@ export async function rejoinRoomById(params: {
     handleFirestoreError(error, OperationType.WRITE, memberPath);
   }
 
+  await cleanupStaleSignalsForUser(roomId, user.uid);
   const roomMeta = await readLatestRoomMeta(roomId);
   saveLastActiveRoomSession(user.uid, roomId, joinedRoom.code, joinedRoom.mode);
   return {
@@ -862,7 +893,7 @@ async function deleteUserMessagesAndSignals(
         collection(db, ROOMS_COLLECTION, roomId, 'signals'),
         where('roomId', '==', roomId),
         where('toUid', '==', uid),
-        limit(15),
+        limit(40),
       ),
     );
     await Promise.all(sigSnap.docs.map((d) => deleteDoc(d.ref).catch(() => undefined)));
@@ -871,9 +902,10 @@ async function deleteUserMessagesAndSignals(
   }
 
   const hadOwnMeta = !keepRoomMeta && roomsCreatedMetaByMe.has(roomId);
-  const hadFallbackMessages = roomsWithFallbackChatSent.has(roomId);
+  const hadFallbackMessages = roomsWithFallbackChatSent.has(roomId) || myExtraMetaDocIds.has(roomId);
   const hadRelayEvents = roomsWithRelayEventsSent.has(roomId);
   roomsCreatedMetaByMe.delete(roomId);
+  myExtraMetaDocIds.delete(roomId);
   roomsWithFallbackChatSent.delete(roomId);
   myFallbackChatDocIds.delete(roomId);
   roomsWithRelayEventsSent.delete(roomId);
@@ -929,17 +961,33 @@ async function deleteUserMessagesAndSignals(
 export async function pruneDisconnectedMember(
   roomId: string,
   targetUid: string,
+  departedAtMs?: number,
 ): Promise<void> {
   const user = auth.currentUser;
   if (!user || !user.emailVerified || targetUid === user.uid) return;
   const roomRef = doc(db, ROOMS_COLLECTION, roomId);
+  const targetMemberRef = doc(db, ROOMS_COLLECTION, roomId, 'members', targetUid);
   try {
-    const roomSnap = await getDoc(roomRef);
+    const [roomSnap, targetMemberSnap] = await Promise.all([
+      getDoc(roomRef),
+      getDoc(targetMemberRef),
+    ]);
     if (!roomSnap.exists()) return;
     const roomData = roomSnap.data() as MultiplayerRoomDoc;
     if (roomData.hostUid !== user.uid) return;
 
-    await deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', targetUid)).catch(() => undefined);
+    if (targetMemberSnap.exists() && typeof departedAtMs === 'number' && departedAtMs > 0) {
+      const mData = targetMemberSnap.data() as MultiplayerMemberDoc;
+      const mUpdated = getTimestampMs(mData.updatedAt) || getTimestampMs(mData.joinedAt);
+      // Do not prune if the member rejoined / refreshed their member doc around or after departure
+      if (mUpdated > 0 && mUpdated >= departedAtMs - 2000) {
+        return;
+      }
+    }
+
+    if (targetMemberSnap.exists()) {
+      await deleteDoc(targetMemberRef).catch(() => undefined);
+    }
     await deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'states', targetUid)).catch(() => undefined);
 
     const remainingSnap = await getDocs(
@@ -965,12 +1013,25 @@ export async function claimHostAndRemoveDeadHost(
   roomId: string,
   deadHostUid: string,
   myDisplayName: string,
+  departedAtMs?: number,
 ): Promise<boolean> {
   const user = auth.currentUser;
   if (!user || !user.emailVerified || deadHostUid === user.uid) return false;
   const roomRef = doc(db, ROOMS_COLLECTION, roomId);
+  const deadHostMemberRef = doc(db, ROOMS_COLLECTION, roomId, 'members', deadHostUid);
   const hostName = sanitizeDisplayName(myDisplayName, user.displayName || 'Host');
   try {
+    if (typeof departedAtMs === 'number' && departedAtMs > 0) {
+      const deadSnap = await getDoc(deadHostMemberRef);
+      if (deadSnap.exists()) {
+        const dData = deadSnap.data() as MultiplayerMemberDoc;
+        const dUpdated = getTimestampMs(dData.updatedAt) || getTimestampMs(dData.joinedAt);
+        if (dUpdated > 0 && dUpdated >= departedAtMs - 2000) {
+          return false;
+        }
+      }
+    }
+
     const claimed = await runTransaction(db, async (tx) => {
       const snap = await tx.get(roomRef);
       if (!snap.exists()) return false;
@@ -987,7 +1048,7 @@ export async function claimHostAndRemoveDeadHost(
     });
     if (!claimed) return false;
 
-    await deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', deadHostUid)).catch(() => undefined);
+    await deleteDoc(deadHostMemberRef).catch(() => undefined);
     await deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'states', deadHostUid)).catch(() => undefined);
     await updateDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', user.uid), {
       isHost: true,
@@ -1246,7 +1307,7 @@ export async function sendFallbackChatMessage(params: {
     roomsWithFallbackChatSent.add(params.roomId);
     const list = myFallbackChatDocIds.get(params.roomId) ?? [];
     list.push(writtenId);
-    if (list.length > 6) {
+    while (list.length > 4) {
       const oldestId = list.shift();
       if (oldestId) {
         void deleteDoc(doc(db, path, oldestId)).catch(() => undefined);
