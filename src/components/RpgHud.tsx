@@ -2,11 +2,13 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Heart,
   HelpCircle,
+  Info,
   Lightbulb,
   Lock,
   Mic,
   MicOff,
   ParkingCircle,
+  RotateCw,
   Search,
   X,
   Zap,
@@ -17,6 +19,7 @@ import {
 } from '../services/voiceCommandService';
 import {
   ACADEMY_NPCS,
+  AMMO_COST,
   MAX_AMMO,
   NPC_CATALOG,
   WEAPON_ORDER,
@@ -74,6 +77,7 @@ interface RpgHudProps {
   onPrimaryAction: () => void;
   onFireWeapon: () => void;
   onSetFireHeld: (held: boolean) => void;
+  onBuyAmmo?: () => void;
   onToggleAim: () => void;
   onToggleAimMode: () => void;
   onSetSwimStyle?: (style: SwimStylePreference) => void;
@@ -108,6 +112,39 @@ interface RpgHudProps {
   onCarHorn?: () => void;
 }
 
+const ResilientMedallionImg: React.FC<{
+  src: string;
+  className?: string;
+  fallback: React.ReactNode;
+}> = ({ src, className = 'scale-[1.12] object-cover', fallback }) => {
+  const [attempt, setAttempt] = useState(0);
+
+  useEffect(() => {
+    setAttempt(0);
+  }, [src]);
+
+  if (attempt >= 2) {
+    return (
+      <span className="pointer-events-none flex h-full w-full items-center justify-center rounded-full bg-slate-900/95">
+        {fallback}
+      </span>
+    );
+  }
+
+  const resolvedSrc = attempt === 1 ? `${src}${src.includes('?') ? '&' : '?'}v=1` : src;
+  return (
+    <span className="pointer-events-none flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-slate-950">
+      <img
+        src={resolvedSrc}
+        alt=""
+        className={`pointer-events-none h-full w-full select-none ${className}`}
+        draggable={false}
+        onError={() => setAttempt((prev) => prev + 1)}
+      />
+    </span>
+  );
+};
+
 export const RpgHud: React.FC<RpgHudProps> = ({
   hud,
   muted,
@@ -125,6 +162,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   onPrimaryAction,
   onFireWeapon,
   onSetFireHeld,
+  onBuyAmmo,
   onToggleAim,
   onToggleAimMode,
   onSetSwimStyle,
@@ -642,11 +680,9 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               showInfoHud ? 'scale-105 ring-2 ring-cyan-300' : 'opacity-90'
             }`}
           >
-            <img
+            <ResilientMedallionImg
               src="./assets/aistudio/image_d988e3c5.png"
-              alt={showInfoHud ? 'Sembunyikan Info & Label Layar' : 'Tampilkan Info & Label Layar'}
-              className="pointer-events-none h-full w-full scale-[1.12] select-none object-cover"
-              draggable={false}
+              fallback={<Info className="h-4 w-4 text-cyan-300" />}
             />
           </button>
 
@@ -2339,8 +2375,13 @@ export const RpgHud: React.FC<RpgHudProps> = ({
       {/* BOTTOM-RIGHT: On-Foot / Combat / Swim Thumb Cluster (hidden completely when in Car Mode!) */}
       {!inCar && (
         <div className="pointer-events-none fixed bottom-3 right-3 z-20 h-[144px] w-[216px] sm:bottom-5 sm:right-5 sm:h-[168px] sm:w-[244px]">
-          {/* Dive / Surface Ocean Medallion right next to Jump */}
-          {(hud.worldMode === 'overworld' || hud.worldMode === 'ocean') &&
+          {/* Dive / Surface Ocean Medallion right next to Jump (hidden when inland far from beach/sea) */}
+          {(hud.worldMode === 'ocean' ||
+            (hud.worldMode === 'overworld' &&
+              (Boolean(hud.nearSeaShore) ||
+                Boolean(hud.isSwimming) ||
+                Boolean(hud.oceanSurvival) ||
+                (hud.diveTransitionStage !== undefined && hud.diveTransitionStage !== 'idle')))) &&
             Boolean(onDiveOcean || onEnterOcean) && (() => {
               const isUnderwaterHud = hud.worldMode === 'ocean' || Boolean(hud.oceanSurvival);
               return (
@@ -2454,6 +2495,59 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               />
             </button>
           )}
+
+          {/* Quick Ammo Refill Medallion directly above Attack (shows live availability!) */}
+          {hud.ownedWeapons.length > 0 &&
+            Boolean(onBuyAmmo) &&
+            (() => {
+              const ammoFull = activeAmmo >= MAX_AMMO;
+              const hasEnoughDiamonds = hud.diamonds >= AMMO_COST;
+              const canBuyAmmo = hasEnoughDiamonds && !ammoFull;
+              const isUnderwaterHud = hud.worldMode === 'ocean' || Boolean(hud.oceanSurvival);
+              const reloadTitle = ammoFull
+                ? `Peluru ${activeWeaponDef.name} penuh (${activeAmmo}/${MAX_AMMO})`
+                : hasEnoughDiamonds
+                ? `Isi +${activeWeaponDef.packSize} Peluru (${AMMO_COST} 💎)`
+                : `Berlian kurang (${hud.diamonds}/${AMMO_COST} 💎) untuk isi peluru`;
+              return (
+                <button
+                  type="button"
+                  disabled={!canBuyAmmo}
+                  onClick={() => onBuyAmmo?.()}
+                  title={reloadTitle}
+                  aria-label={reloadTitle}
+                  className={`pointer-events-auto absolute right-[10px] flex h-[52px] w-[52px] touch-none select-none items-center justify-center rounded-full transition-transform sm:right-[12px] sm:h-[58px] sm:w-[58px] ${
+                    isUnderwaterHud
+                      ? 'bottom-[170px] sm:bottom-[196px]'
+                      : 'bottom-[88px] sm:bottom-[102px]'
+                  } ${
+                    canBuyAmmo
+                      ? `ring-2 ring-cyan-300 shadow-[0_0_16px_rgba(34,211,238,0.72)] hover:scale-105 active:scale-90 ${
+                          activeAmmo === 0 ? 'animate-pulse' : ''
+                        }`
+                      : ammoFull
+                      ? 'cursor-not-allowed opacity-45 grayscale ring-1 ring-emerald-400/55'
+                      : 'cursor-not-allowed opacity-45 grayscale ring-1 ring-rose-400/70'
+                  }`}
+                >
+                  <ResilientMedallionImg
+                    src="./assets/aistudio/image_b5910649.png"
+                    fallback={<RotateCw className="h-5 w-5 text-cyan-300" />}
+                  />
+                  <span
+                    className={`pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border px-1.5 font-mono-nums text-[8px] font-black leading-tight shadow sm:text-[9px] ${
+                      canBuyAmmo
+                        ? 'border-cyan-300/80 bg-cyan-950/95 text-cyan-100'
+                        : ammoFull
+                        ? 'border-emerald-400/65 bg-slate-950/95 text-emerald-200'
+                        : 'border-rose-400/75 bg-slate-950/95 text-rose-200'
+                    }`}
+                  >
+                    {ammoFull ? 'MAX' : `${AMMO_COST}💎`}
+                  </span>
+                </button>
+              );
+            })()}
 
           {/* Button 3 (Primary Thumb Anchor): Large Attack / Active Tool Medallion (Hold to Spray!) */}
           <button

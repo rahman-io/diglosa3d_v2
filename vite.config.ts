@@ -68,7 +68,7 @@ export default defineConfig(() => {
             '**/assets/aistudio/Screenshot_*',
             '**/assets/aistudio/Gemini_Generated_Image_*',
             '**/assets/aistudio/DOKUMENTASI_*',
-            '**/assets/aistudio/image_*',
+            '**/assets/aistudio/image_43c655bd.png',
           ],
           navigateFallback: 'index.html',
           navigateFallbackDenylist: [/offline-manifest\.json/, /^\/api\//],

@@ -35,6 +35,7 @@ const REFERENCED_AISTUDIO_IMAGES = new Set([
   'btn_car_lights_8d7f17c4.jpeg',
   'btn_car_turbo_7ad55721.jpeg',
   'image_d988e3c5.png',
+  'image_b5910649.png',
 ]);
 
 const PWA_ICONS = [

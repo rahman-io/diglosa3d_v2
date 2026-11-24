@@ -157,6 +157,7 @@ const INITIAL_HUD: RpgHudSnapshot = {
   starterWeaponGuide: null,
   swimSuitPicked: false,
   swimSuitGuide: null,
+  nearSeaShore: false,
   diveTransitionStage: 'idle',
   radarState: null,
   ownedRelics: [],
@@ -2406,6 +2407,7 @@ function DiglosaRpgApp() {
           onPrimaryAction={() => engineRef.current?.triggerPrimaryAction()}
           onFireWeapon={() => engineRef.current?.fireActiveWeapon(false)}
           onSetFireHeld={(held) => engineRef.current?.setFireHeld(held)}
+          onBuyAmmo={() => engineRef.current?.buyAmmoWithDiamonds()}
           onToggleAim={() => engineRef.current?.toggleAimMode()}
           onToggleAimMode={() => engineRef.current?.toggleAimModeSetting()}
           onSetSwimStyle={(style) => engineRef.current?.setSwimStylePreference(style)}
@@ -2558,7 +2560,6 @@ function DiglosaRpgApp() {
         onClose={() => setSideTab(null)}
         onOpenGuide={() => setSideTab('guide')}
         onEquipWeapon={(id) => engineRef.current?.equipWeapon(id)}
-        onBuyAmmo={() => engineRef.current?.buyAmmoWithDiamonds()}
         onStartAmmoQuiz={() => engineRef.current?.startAmmoQuiz()}
         onStartQuickLearn={(mode, catId, zoneId) =>
           engineRef.current?.startQuickLearning(mode, catId, zoneId)

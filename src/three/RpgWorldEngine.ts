@@ -1948,6 +1948,37 @@ export class RpgWorldEngine {
     return true;
   }
 
+  private isHeroNearSeaShore(): boolean {
+    if (
+      this.worldMode === 'ocean' ||
+      this.isSwimming ||
+      this.isHeroUnderwater() ||
+      this.ridingTurtle ||
+      Boolean(this.diveTransition?.active)
+    ) {
+      return true;
+    }
+    if (this.worldMode !== 'overworld') return false;
+    const hx = this.heroPos.x;
+    const hz = this.heroPos.z;
+    const center = sampleArchipelagoTerrain(hx, hz);
+    if (!center.isLandOrBridge || center.surface === 'beach' || center.surface === 'water') {
+      return true;
+    }
+    const radii = [8, 14];
+    for (let ri = 0; ri < radii.length; ri++) {
+      const r = radii[ri];
+      for (let k = 0; k < 8; k++) {
+        const ang = (k / 8) * Math.PI * 2;
+        const s = sampleArchipelagoTerrain(hx + Math.cos(ang) * r, hz + Math.sin(ang) * r);
+        if (!s.isLandOrBridge || s.surface === 'beach' || s.surface === 'water') {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
   private resolveSafeSeaSpawnPos(rawX: number, rawZ: number): { x: number; z: number } {
     if (this.isOpenSeaPoint(rawX, rawZ, 3.2)) {
       return { x: rawX, z: rawZ };
@@ -18779,6 +18810,7 @@ export class RpgWorldEngine {
             : 'Kiri Belakang';
         return { distance, angleDeg, directionLabel };
       })(),
+      nearSeaShore: this.isHeroNearSeaShore(),
       diveTransitionStage: this.diveTransition?.active ? this.diveTransition.stage : 'idle',
       radarState: this.buildRadarState(),
       ownedRelics: Array.from(this.ownedRelics),

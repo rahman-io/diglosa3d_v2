@@ -547,6 +547,7 @@ export interface RpgHudSnapshot {
     angleDeg: number;
     directionLabel: string;
   } | null;
+  nearSeaShore?: boolean;
   diveTransitionStage?: 'idle' | 'swim_to_water' | 'plunge' | 'submerge' | 'surface';
   radarState: RadarState | null;
   ownedRelics: RelicId[];

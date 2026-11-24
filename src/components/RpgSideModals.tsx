@@ -64,7 +64,6 @@ interface RpgSideModalsProps {
   onClose: () => void;
   onOpenGuide?: () => void;
   onEquipWeapon: (id: WeaponId) => void;
-  onBuyAmmo: () => void;
   onStartAmmoQuiz: () => void;
   onStartQuickLearn: (mode: LearningModeType, catId?: number, zoneId?: ZoneId) => void;
   onTeleportZone: (zoneId: ZoneId) => void;
@@ -86,7 +85,6 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
   onClose,
   onOpenGuide,
   onEquipWeapon,
-  onBuyAmmo,
   onStartAmmoQuiz,
   onStartQuickLearn,
   onTeleportZone,
@@ -653,18 +651,6 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={
-                      hud.ownedWeapons.length === 0 ||
-                      hud.diamonds < AMMO_COST ||
-                      activeAmmo >= MAX_AMMO
-                    }
-                    onClick={onBuyAmmo}
-                    className="rounded-xl border border-cyan-300/70 bg-cyan-600/80 px-3.5 py-2 text-xs font-black text-white shadow disabled:cursor-not-allowed disabled:opacity-45 hover:bg-cyan-500/90"
-                  >
-                    Isi Peluru ({AMMO_COST} 💎)
-                  </button>
                   <button
                     type="button"
                     disabled={hud.ownedWeapons.length === 0}
