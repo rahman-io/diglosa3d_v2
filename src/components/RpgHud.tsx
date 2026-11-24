@@ -2920,7 +2920,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
       {/* VOICE COMMAND BUTTON CLUSTER (Bottom-left below floating joystick zone so it never overlaps tracker or combat buttons) */}
       {onToggleVoice && (
-        <div className="pointer-events-auto fixed bottom-2.5 left-2.5 z-20 flex items-center gap-1.5 sm:bottom-3.5 sm:left-4">
+        <div className="pointer-events-auto fixed bottom-2.5 left-2.5 z-20 flex items-center gap-2 sm:bottom-3.5 sm:left-4">
           <button
             type="button"
             data-no-click-sfx="true"
@@ -2936,10 +2936,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                 : 'Aktifkan Kontrol Suara (Ucapkan perintah Bahasa Indonesia)'
             }
             aria-label={voiceListening ? 'Matikan Kontrol Suara' : 'Aktifkan Kontrol Suara'}
-            className={`relative flex h-9 items-center gap-1.5 rounded-full border px-3 text-[11px] font-extrabold shadow-xl transition active:scale-95 sm:h-10 sm:px-3.5 sm:text-xs ${
+            aria-pressed={voiceListening}
+            className={`relative flex h-10 w-10 items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:h-11 sm:w-11 ${
               voiceListening
-                ? 'border-emerald-300 bg-emerald-600/95 text-white ring-2 ring-emerald-300/60'
-                : 'border-cyan-300/45 bg-slate-950/90 text-cyan-100 hover:border-cyan-300 hover:bg-slate-900/95'
+                ? 'ring-2 ring-emerald-300 shadow-[0_0_16px_rgba(52,211,153,0.85)]'
+                : 'opacity-90 shadow-[0_3px_10px_rgba(34,211,238,0.35)]'
             }`}
           >
             {voiceListening && (
@@ -2948,14 +2949,23 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                 className="pointer-events-none absolute inset-0 animate-ping rounded-full bg-emerald-400/35"
               />
             )}
-            {voiceListening ? (
-              <Mic className="relative h-3.5 w-3.5 shrink-0 text-white sm:h-4 sm:w-4" />
-            ) : (
-              <MicOff className="relative h-3.5 w-3.5 shrink-0 text-cyan-300 sm:h-4 sm:w-4" />
+            <ResilientMedallionImg
+              src="./assets/aistudio/Gemini_Generated_Image_9841t9841t9841t9_2a41b1ca.jpeg"
+              className={`scale-[1.14] object-cover ${voiceListening ? '' : 'opacity-85 saturate-75'}`}
+              fallback={
+                voiceListening ? (
+                  <Mic className="h-4 w-4 text-emerald-300 sm:h-5 sm:w-5" />
+                ) : (
+                  <MicOff className="h-4 w-4 text-cyan-300 sm:h-5 sm:w-5" />
+                )
+              }
+            />
+            {voiceListening && (
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-slate-950 bg-emerald-400 shadow"
+              />
             )}
-            <span className="relative whitespace-nowrap">
-              {voiceListening ? 'Mendengarkan' : 'Suara'}
-            </span>
           </button>
 
           <button
@@ -2963,9 +2973,18 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             onClick={() => setVoiceHelpOpen((v) => !v)}
             title={`Daftar ${VOICE_COMMAND_CATALOG.length}+ Perintah Suara`}
             aria-label="Daftar Perintah Suara"
-            className="flex h-8 w-8 items-center justify-center rounded-full border border-white/25 bg-slate-950/88 text-slate-200 shadow-lg transition hover:border-amber-300/70 hover:text-amber-200 active:scale-90 sm:h-9 sm:w-9"
+            aria-pressed={voiceHelpOpen}
+            className={`relative flex h-9 w-9 items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10 ${
+              voiceHelpOpen
+                ? 'scale-105 ring-2 ring-cyan-300 shadow-[0_0_14px_rgba(34,211,238,0.7)]'
+                : 'opacity-90 shadow-[0_3px_8px_rgba(34,211,238,0.32)]'
+            }`}
           >
-            <HelpCircle className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+            <ResilientMedallionImg
+              src="./assets/aistudio/Gemini_Generated_Image_h625wih625wih625_e6bd6711.jpeg"
+              className="scale-[1.14] object-cover"
+              fallback={<HelpCircle className="h-4 w-4 text-cyan-300" />}
+            />
           </button>
         </div>
       )}
