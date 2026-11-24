@@ -7,6 +7,13 @@ import {
   IstanaFloatingRig,
   updateIstanaFloatingIsland,
 } from './istanaFloatingIsland';
+import {
+  AirbaseWorldRig,
+  buildAirbaseIslands,
+  isWalkableAirbase,
+  sampleAirbaseTerrain,
+  updateAirbaseIslands,
+} from './airbaseIslands';
 
 export const IELTS_TEMPORARILY_LOCKED = true;
 
@@ -120,6 +127,7 @@ export interface ParkourPad {
 }
 
 export const WORLD_OCEAN_LIMIT = 275;
+export const FLIGHT_WORLD_LIMIT = 315;
 export const SEABED_Y = -1.1;
 
 export const ISLAND_DISKS: IslandDisk[] = [
@@ -1156,6 +1164,11 @@ export function sampleArchipelagoTerrain(x: number, z: number): TerrainSample {
     }
   }
 
+  const airbaseSample = sampleAirbaseTerrain(x, z);
+  if (airbaseSample) {
+    return airbaseSample;
+  }
+
   return {
     groundY: getArchipelagoSeabedY(x, z),
     isLandOrBridge: false,
@@ -1221,6 +1234,7 @@ export function isWalkableArchipelago(x: number, z: number, margin = 0): boolean
       return true;
     }
   }
+  if (isWalkableAirbase(x, z, margin)) return true;
   return false;
 }
 
@@ -1380,6 +1394,7 @@ export interface ArchipelagoRig {
   istanaGroup: THREE.Group;
   istanaDome: THREE.Mesh;
   istanaRig: IstanaFloatingRig;
+  airbaseRig: AirbaseWorldRig;
   zooCritters: Array<{ root: THREE.Group; head: THREE.Group; phase: number }>;
   disposables: Array<{ dispose: () => void }>;
 }
@@ -4573,6 +4588,11 @@ export function createArchipelagoWorld(
   group.add(cliffBatch);
   disposables.push(cliffBatch.geometry);
 
+  const airbaseRig = buildAirbaseIslands(palette, lowDetail);
+  group.add(airbaseRig.group);
+  obstacles.push(...airbaseRig.obstacles);
+  disposables.push(...airbaseRig.disposables);
+
   return {
     group,
     walkableTargets,
@@ -4592,6 +4612,7 @@ export function createArchipelagoWorld(
     istanaGroup: istanaRig.istanaGroup,
     istanaDome: istanaRig.istanaDome,
     istanaRig,
+    airbaseRig,
     zooCritters,
     disposables,
   };
@@ -4715,6 +4736,8 @@ export function updateArchipelagoWorld(
   ) {
     updateIstanaFloatingIsland(rig.istanaRig, OVERWORLD_ANCHORS.istanaFloating.y, elapsed);
   }
+
+  updateAirbaseIslands(rig.airbaseRig, elapsed, _dt);
 
   for (let i = 0; i < rig.zooCritters.length; i++) {
     const c = rig.zooCritters[i];

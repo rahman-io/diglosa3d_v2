@@ -74,6 +74,10 @@ class SoundEngine {
   private carEngineGain: GainNode | null = null;
   private carEngineFilter: BiquadFilterNode | null = null;
   private carEngineActive = false;
+  private planeEngineOsc: OscillatorNode | null = null;
+  private planeEngineGain: GainNode | null = null;
+  private planeEngineFilter: BiquadFilterNode | null = null;
+  private planeEngineActive = false;
 
   constructor() {
     if (typeof window !== 'undefined' && typeof Audio !== 'undefined') {
@@ -560,6 +564,108 @@ class SoundEngine {
     this.carEngineOsc.frequency.setTargetAtTime(targetFreq, now, 0.08);
     this.carEngineFilter.frequency.setTargetAtTime(targetCutoff, now, 0.08);
     this.carEngineGain.gain.setTargetAtTime(targetGain, now, 0.08);
+  }
+
+  public playPlaneCanopy(opening: boolean): void {
+    if (opening) {
+      this.noise(0.09, 0.045, 0, 1800);
+      this.beep(320, 0.14, 'sine', 0.06, 540, 0.02);
+    } else {
+      this.noise(0.08, 0.06, 0, 720);
+      this.beep(260, 0.12, 'triangle', 0.075, 140);
+    }
+  }
+
+  public playPlaneTakeoff(): void {
+    this.noise(0.32, 0.07, 0, 950);
+    this.beep(130, 0.28, 'sawtooth', 0.065, 310);
+    this.beep(260, 0.24, 'triangle', 0.055, 520, 0.08);
+  }
+
+  public playPlaneLand(): void {
+    this.noise(0.16, 0.08, 0, 420);
+    this.beep(180, 0.16, 'triangle', 0.075, 95);
+    this.beep(440, 0.09, 'sine', 0.045, 620, 0.09);
+  }
+
+  public playPlaneRing(): void {
+    this.beep(587.33, 0.1, 'triangle', 0.065);
+    this.beep(880, 0.14, 'sine', 0.075, undefined, 0.06);
+  }
+
+  public playPlaneFire(ammo: 'vulcan' | 'missile' | 'bomb' | 'plasma'): void {
+    if (ammo === 'vulcan') {
+      this.noise(0.04, 0.045, 0, 2200);
+      this.beep(240, 0.045, 'square', 0.045, 110);
+    } else if (ammo === 'missile') {
+      this.noise(0.2, 0.06, 0, 1400);
+      this.beep(360, 0.22, 'sawtooth', 0.055, 760);
+    } else if (ammo === 'bomb') {
+      this.beep(340, 0.16, 'sine', 0.06, 120);
+      this.noise(0.1, 0.035, 0, 520);
+    } else {
+      this.beep(720, 0.14, 'sawtooth', 0.065, 290);
+      this.beep(1080, 0.12, 'sine', 0.05, 520, 0.03);
+    }
+  }
+
+  public setPlaneEngine(active: boolean, speedRatio = 0, turbo = false): void {
+    if (this.muted || !active) {
+      if (this.planeEngineGain && this.ctx) {
+        const now = this.ctx.currentTime;
+        this.planeEngineGain.gain.setTargetAtTime(0.0001, now, 0.1);
+      }
+      if (this.planeEngineActive && (!active || this.muted)) {
+        this.planeEngineActive = false;
+        const osc = this.planeEngineOsc;
+        const gain = this.planeEngineGain;
+        this.planeEngineOsc = null;
+        this.planeEngineGain = null;
+        this.planeEngineFilter = null;
+        if (osc) {
+          window.setTimeout(() => {
+            try {
+              osc.stop();
+              osc.disconnect();
+              gain?.disconnect();
+            } catch {
+              // ignore
+            }
+          }, 180);
+        }
+      }
+      return;
+    }
+
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    if (!this.planeEngineOsc || !this.planeEngineGain || !this.planeEngineFilter) {
+      const osc = ctx.createOscillator();
+      const filter = ctx.createBiquadFilter();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(92, ctx.currentTime);
+      filter.type = 'bandpass';
+      filter.frequency.setValueAtTime(340, ctx.currentTime);
+      filter.Q.setValueAtTime(1.1, ctx.currentTime);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      this.planeEngineOsc = osc;
+      this.planeEngineFilter = filter;
+      this.planeEngineGain = gain;
+    }
+    this.planeEngineActive = true;
+    const clamped = Math.max(0, Math.min(1.5, speedRatio));
+    const targetFreq = 88 + clamped * 125 + (turbo ? 42 : 0);
+    const targetCutoff = 320 + clamped * 680 + (turbo ? 320 : 0);
+    const targetGain = 0.022 + clamped * 0.03 + (turbo ? 0.018 : 0);
+    const now = ctx.currentTime;
+    this.planeEngineOsc.frequency.setTargetAtTime(targetFreq, now, 0.09);
+    this.planeEngineFilter.frequency.setTargetAtTime(targetCutoff, now, 0.09);
+    this.planeEngineGain.gain.setTargetAtTime(targetGain, now, 0.09);
   }
 
   public speakEnglish(text: string, rate = 0.88, pitch = 1.0): void {

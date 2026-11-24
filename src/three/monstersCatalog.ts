@@ -3301,4 +3301,12 @@ export const SKY_MONSTER_SPAWNS: SkyMonsterSpawnTemplate[] = [
   // Angkasa Alun-Alun Tengah Citadel (2: 2 combat)
   { zoneId: 'desa_sapaan', name: 'Guardian Sentinel (Drone Penjaga)', type: 'guardian_sentinel', x: -18, z: -14, combatOnly: true },
   { zoneId: 'gua_portal', name: 'Giga-Wyvern (Naga Pembom)', type: 'giga_wyvern', x: 20, z: -26, combatOnly: true },
+
+  // Koridor Udara 3 Pulau Pangkalan Pesawat (6: 4 combat + 2 quiz)
+  { zoneId: 'desa_sapaan', name: 'Blight Hornet (Patroli Pangkalan Selatan)', type: 'blight_hornet', x: -124, z: 162, combatOnly: true },
+  { zoneId: 'pasar_rasa', name: 'Shadow Harpy (Penghadang Langit Barat)', type: 'shadow_harpy', x: -162, z: -38, combatOnly: true },
+  { zoneId: 'hutan_satwa', name: 'Crimson Phoenix (Pengawal Langit Timur)', type: 'crimson_phoenix', x: 186, z: 96, combatOnly: true },
+  { zoneId: 'menara_waktu', name: 'Ice Shard Griffin (Patroli Pangkalan Timur)', type: 'ice_shard_griffin', x: 204, z: -12, combatOnly: false },
+  { zoneId: 'gerbang_kota', name: 'Giga-Wyvern (Raja Awan Utara)', type: 'giga_wyvern', x: -148, z: -162, combatOnly: true },
+  { zoneId: 'gua_portal', name: 'Guardian Sentinel Kata (Langit Utara)', type: 'guardian_sentinel', x: -96, z: -188, combatOnly: false },
 ];

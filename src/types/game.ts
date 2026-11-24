@@ -467,7 +467,9 @@ export type RadarBlipKind =
   | 'door'
   | 'exit'
   | 'hero_friend'
-  | 'car';
+  | 'car'
+  | 'plane'
+  | 'airbase';
 
 export interface RadarBlip {
   id: string;
@@ -622,6 +624,29 @@ export interface RpgHudSnapshot {
     zonesCleared: number;
   };
   carState?: CarHudState | null;
+  planeState?: PlaneHudState | null;
+}
+
+export type PlaneVariant = 'garuda' | 'rajawali' | 'elang';
+export type PlaneMode = 'none' | 'entering' | 'taxi' | 'flying' | 'exiting';
+export type PlaneAmmoType = 'vulcan' | 'missile' | 'bomb' | 'plasma';
+
+export interface PlaneHudState {
+  available: boolean;
+  mode: PlaneMode;
+  nearPlane: boolean;
+  planeId?: string;
+  planeName?: string;
+  variant?: PlaneVariant;
+  speedKmh: number;
+  altitudeMeters: number;
+  canTakeoff: boolean;
+  canLand: boolean;
+  turboActive: boolean;
+  activeAmmo: PlaneAmmoType;
+  ammoCounts: Record<PlaneAmmoType, number>;
+  lockedTargetName?: string | null;
+  nearestAirbaseName?: string | null;
 }
 
 export interface CarHudState {

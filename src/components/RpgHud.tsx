@@ -28,7 +28,7 @@ import {
   WEAPONS,
   ZONE_DOORS,
 } from '../data/diglosaCatalog';
-import { CameraMode, DivingGearId, LiveMapSnapshot, OceanMaterials, RpgHudSnapshot, SwimStyleId, SwimStylePreference, WeaponId } from '../types/game';
+import { CameraMode, DivingGearId, LiveMapSnapshot, OceanMaterials, PlaneAmmoType, RpgHudSnapshot, SwimStyleId, SwimStylePreference, WeaponId } from '../types/game';
 import { DIVING_GEAR_DEFS } from '../three/oceanWorld';
 import { SEA_BIOTA_CATALOG } from '../three/seaBiotaCatalog';
 import { getWeaponThumbnails } from '../utils/weaponThumbnails';
@@ -61,6 +61,48 @@ const SWIM_STYLE_OPTIONS: Array<{
   { num: 8, id: 'quick_dodge', name: 'Quick Dodge', indo: 'Manuver Aman', spd: 'Fast' },
   { num: 9, id: 'water_dash', name: 'Water Dash', indo: 'Mencoba Cepat', spd: 'Burst' },
   { num: 10, id: 'backstroke', name: 'Backstroke', indo: 'Gaya Punggung', spd: 'Slow' },
+];
+
+const PLANE_AMMO_OPTIONS: Array<{
+  id: PlaneAmmoType;
+  key: string;
+  label: string;
+  shortLabel: string;
+  img: string;
+  activeBorder: string;
+}> = [
+  {
+    id: 'vulcan',
+    key: '1',
+    label: '20mm Vulcan (Cepat)',
+    shortLabel: 'Vulcan',
+    img: './assets/ui/ammo_plane_vulcan.png',
+    activeBorder: 'border-sky-300 bg-sky-500/25 text-sky-100 ring-1 ring-sky-300/80',
+  },
+  {
+    id: 'missile',
+    key: '2',
+    label: 'Rudal Pencari Target',
+    shortLabel: 'Rudal',
+    img: './assets/ui/ammo_plane_missile.png',
+    activeBorder: 'border-emerald-300 bg-emerald-500/25 text-emerald-100 ring-1 ring-emerald-300/80',
+  },
+  {
+    id: 'bomb',
+    key: '3',
+    label: 'Bom Pintar AoE (Jatuh)',
+    shortLabel: 'Bom',
+    img: './assets/ui/ammo_plane_bomb.png',
+    activeBorder: 'border-amber-300 bg-amber-500/25 text-amber-100 ring-1 ring-amber-300/80',
+  },
+  {
+    id: 'plasma',
+    key: '4',
+    label: 'Roket Plasma Penembus',
+    shortLabel: 'Plasma',
+    img: './assets/ui/ammo_plane_plasma.png',
+    activeBorder: 'border-cyan-300 bg-cyan-500/25 text-cyan-100 ring-1 ring-cyan-300/80',
+  },
 ];
 
 interface RpgHudProps {
@@ -113,6 +155,14 @@ interface RpgHudProps {
   onToggleCarHandbrake?: () => void;
   onToggleCarHeadlights?: () => void;
   onCarHorn?: () => void;
+  onTogglePlane?: () => void;
+  onPlaneControl?: (
+    ctrl: 'gas' | 'brake' | 'left' | 'right' | 'climb' | 'descend' | 'boost',
+    held: boolean,
+  ) => void;
+  onSelectPlaneAmmo?: (ammo: PlaneAmmoType) => void;
+  onFirePlaneWeapon?: () => void;
+  onSetPlaneFireHeld?: (held: boolean) => void;
   tutorialRunKey?: number;
   suppressTutorial?: boolean;
 }
@@ -256,6 +306,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   onToggleCarHandbrake,
   onToggleCarHeadlights,
   onCarHorn,
+  onTogglePlane,
+  onPlaneControl,
+  onSelectPlaneAmmo,
+  onFirePlaneWeapon,
+  onSetPlaneFireHeld,
   tutorialRunKey = 0,
   suppressTutorial = false,
 }) => {
@@ -293,10 +348,18 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   onSetFireHeldRef.current = onSetFireHeld;
   const onCarControlRef = useRef(onCarControl);
   onCarControlRef.current = onCarControl;
+  const onPlaneControlRef = useRef(onPlaneControl);
+  onPlaneControlRef.current = onPlaneControl;
+  const onSetPlaneFireHeldRef = useRef(onSetPlaneFireHeld);
+  onSetPlaneFireHeldRef.current = onSetPlaneFireHeld;
 
   const carMode = hud.carState?.mode ?? 'none';
   const inCar = carMode !== 'none';
   const isCarDriving = carMode === 'driving';
+
+  const planeMode = hud.planeState?.mode ?? 'none';
+  const inPlane = planeMode !== 'none';
+  const isPlanePiloting = planeMode === 'taxi' || planeMode === 'flying';
 
   useEffect(() => {
     if (!isCarDriving) {
@@ -308,6 +371,19 @@ export const RpgHud: React.FC<RpgHudProps> = ({
       onCarControlRef.current?.('boost', false);
     }
   }, [isCarDriving]);
+
+  useEffect(() => {
+    if (!isPlanePiloting) {
+      onPlaneControlRef.current?.('gas', false);
+      onPlaneControlRef.current?.('brake', false);
+      onPlaneControlRef.current?.('left', false);
+      onPlaneControlRef.current?.('right', false);
+      onPlaneControlRef.current?.('climb', false);
+      onPlaneControlRef.current?.('descend', false);
+      onPlaneControlRef.current?.('boost', false);
+      onSetPlaneFireHeldRef.current?.(false);
+    }
+  }, [isPlanePiloting]);
 
   useEffect(() => {
     if (hud.phase !== 'playing' || hud.worldMode !== 'ocean') {
@@ -402,6 +478,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
     !suppressTutorial &&
     hud.phase === 'playing' &&
     !inCar &&
+    !inPlane &&
     tutorialStepIdx < tutorialSteps.length;
 
   const activeTutorialStep = tutorialActive ? tutorialSteps[tutorialStepIdx] ?? null : null;
@@ -773,6 +850,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         {/* Top-Right Utility Medallion Row (Icon-Only: Mouse Lock, Camera Eye View, Fullscreen, Mute, Menu) */}
         <div className="flex items-center gap-1.5 sm:gap-2">
           {!inCar &&
+            !inPlane &&
             !showTouchControls &&
             hud.phase === 'playing' &&
             hud.settings.aimMode === 'manual' &&
@@ -795,7 +873,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             </button>
           )}
 
-          {!inCar && (
+          {!inCar && !inPlane && (
             <button
               type="button"
               data-tutorial-target="aim_mode"
@@ -1657,8 +1735,9 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           );
         })()}
 
-      {/* Dynamic Tactical Crosshair & Hit Marker in Bidik Bebas TPS & FPS Modes (hidden in Car Mode) */}
+      {/* Dynamic Tactical Crosshair & Hit Marker in Bidik Bebas TPS & FPS Modes (hidden in Car/Plane Mode) */}
       {!inCar &&
+        !inPlane &&
         hud.phase === 'playing' &&
         (hud.cameraMode === 'first_person' ||
           (hud.settings.aimMode === 'manual' &&
@@ -1804,10 +1883,10 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               }
             }}
             className="pointer-events-auto fixed bottom-12 left-0 top-28 z-10 w-[44vw] touch-none sm:bottom-16 sm:top-32 sm:w-[40vw]"
-            aria-label={inCar ? 'Area Joystick Kemudi Mobil' : 'Area Floating Joystick'}
+            aria-label={inPlane ? 'Area Joystick Terbang' : inCar ? 'Area Joystick Kemudi Mobil' : 'Area Floating Joystick'}
           />
 
-          {inCar && !floatingOrigin && (
+          {(inCar || inPlane) && !floatingOrigin && (
             <div
               aria-hidden="true"
               className="pointer-events-none fixed bottom-16 left-5 z-10 flex h-[104px] w-[104px] items-center justify-center opacity-55 sm:bottom-20 sm:left-8 sm:h-[118px] sm:w-[118px]"
@@ -2547,6 +2626,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         )}
 
         {!inCar &&
+          !inPlane &&
           hud.worldMode === 'overworld' &&
           hud.carState?.nearCar &&
           onToggleCar && (
@@ -2571,8 +2651,35 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             </button>
           )}
 
+        {!inCar &&
+          !inPlane &&
+          hud.worldMode === 'overworld' &&
+          hud.planeState?.nearPlane &&
+          onTogglePlane && (
+            <button
+              type="button"
+              onClick={onTogglePlane}
+              title={`Naik ke Kokpit ${hud.planeState.planeName || 'Pesawat'} (E)`}
+              aria-label={`Naik ${hud.planeState.planeName || 'Pesawat'}`}
+              className="relative flex h-[56px] w-[56px] items-center justify-center rounded-full shadow-[0_5px_18px_rgba(56,189,248,0.65)] ring-2 ring-cyan-300/85 transition-transform hover:scale-105 active:scale-90 sm:h-[64px] sm:w-[64px]"
+            >
+              <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                <img
+                  src="./assets/ui/btn_plane_board.png"
+                  alt="Naik Pesawat"
+                  className="pointer-events-none h-full w-full select-none object-cover"
+                  draggable={false}
+                />
+              </span>
+              <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-300/80 bg-slate-950/92 px-1.5 text-[8px] font-black leading-tight text-cyan-100 shadow sm:text-[9px]">
+                Naik (E)
+              </span>
+            </button>
+          )}
+
         {(hud.oceanSurvival?.nearTurtleMount || hud.oceanSurvival?.ridingTurtle) &&
           !inCar &&
+          !inPlane &&
           onToggleOceanTurtle && (
             <button
               type="button"
@@ -2588,6 +2695,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
       {/* OCEAN DEPTH CONTROLS (Holdable Naik / Turun buttons cleanly above Attack) */}
       {!inCar &&
+        !inPlane &&
         hud.phase === 'playing' &&
         (hud.worldMode === 'ocean' || Boolean(hud.oceanSurvival)) &&
         onOceanVertical && (
@@ -2625,8 +2733,8 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           </div>
         )}
 
-      {/* BOTTOM-RIGHT: On-Foot / Combat / Swim Thumb Cluster (hidden completely when in Car Mode!) */}
-      {!inCar && (
+      {/* BOTTOM-RIGHT: On-Foot / Combat / Swim Thumb Cluster (hidden completely when in Car or Plane Mode!) */}
+      {!inCar && !inPlane && (
         <div className="pointer-events-none fixed bottom-3 right-3 z-20 h-[144px] w-[216px] sm:bottom-5 sm:right-5 sm:h-[168px] sm:w-[244px]">
           {/* Dive / Surface Ocean Medallion right next to Jump (hidden when inland far from beach/sea) */}
           {(hud.worldMode === 'ocean' ||
@@ -3130,6 +3238,293 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                 </span>
                 <span className="pointer-events-none absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-emerald-300/80 bg-slate-950/92 px-2 text-[9px] font-black leading-tight text-emerald-100 shadow sm:text-[10px]">
                   GAS
+                </span>
+              </button>
+            </div>
+          </>
+        );
+      })()}
+
+      {/* URGENT FLIGHT HUD: Telemetry + 4 Aerial Munitions + 5 Core Flight Medallions */}
+      {inPlane && hud.planeState && (() => {
+        const ps = hud.planeState;
+        const bindPlaneHold = (ctrls: Array<'gas' | 'brake' | 'climb' | 'descend' | 'boost'>) => ({
+          onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
+            e.preventDefault();
+            try {
+              e.currentTarget.setPointerCapture(e.pointerId);
+            } catch {
+              // ignore
+            }
+            for (const c of ctrls) onPlaneControl?.(c, true);
+          },
+          onPointerUp: () => {
+            for (const c of ctrls) onPlaneControl?.(c, false);
+          },
+          onPointerCancel: () => {
+            for (const c of ctrls) onPlaneControl?.(c, false);
+          },
+          onPointerLeave: () => {
+            for (const c of ctrls) onPlaneControl?.(c, false);
+          },
+        });
+
+        const releasePlaneFire = () => {
+          onSetPlaneFireHeld?.(false);
+        };
+
+        return (
+          <>
+            {/* Bottom-Center Flight Telemetry & 4-Weapon Ordnance Bar */}
+            <div className="pointer-events-none fixed bottom-[162px] left-1/2 z-20 -translate-x-1/2 sm:bottom-5">
+              {planeMode === 'entering' || planeMode === 'exiting' ? (
+                <div className="flex items-center gap-2.5 rounded-2xl border border-sky-300/65 bg-slate-950/92 px-3.5 py-2 text-xs font-black text-sky-100 shadow-2xl">
+                  <span className="h-7 w-7 shrink-0 overflow-hidden rounded-full border border-sky-300/70 bg-slate-900">
+                    <img
+                      src={
+                        planeMode === 'entering'
+                          ? './assets/ui/btn_plane_board.png'
+                          : './assets/ui/btn_plane_exit.png'
+                      }
+                      alt=""
+                      className="h-full w-full object-cover"
+                      draggable={false}
+                    />
+                  </span>
+                  <span>
+                    {planeMode === 'entering'
+                      ? `Membuka kokpit & naik ${ps.planeName || 'Pesawat'}...`
+                      : `Menutup mesin & keluar dari ${ps.planeName || 'Pesawat'}...`}
+                  </span>
+                </div>
+              ) : (
+                <div className="pointer-events-auto flex flex-col gap-1.5 rounded-2xl border border-sky-300/55 bg-slate-950/92 px-3 py-2 text-white shadow-2xl">
+                  <div className="flex flex-wrap items-center justify-between gap-2.5">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`rounded-lg border px-2 py-0.5 text-[10px] font-black tracking-wide ${
+                          planeMode === 'flying'
+                            ? ps.canLand
+                              ? 'border-emerald-300/80 bg-emerald-600/35 text-emerald-100'
+                              : 'border-sky-300/80 bg-sky-600/35 text-sky-100'
+                            : 'border-amber-300/80 bg-amber-600/35 text-amber-100'
+                        }`}
+                      >
+                        {planeMode === 'flying'
+                          ? ps.canLand
+                            ? 'SIAP MENDARAT'
+                            : 'TERBANG'
+                          : 'LANDASAN'}
+                      </span>
+                      <div className="flex items-baseline gap-1 font-mono-nums">
+                        <span className="text-lg font-black text-sky-200 sm:text-xl">
+                          {ps.speedKmh}
+                        </span>
+                        <span className="text-[9px] font-extrabold text-slate-400">KM/H</span>
+                      </div>
+                      <div className="flex items-baseline gap-1 border-l border-slate-700/80 pl-2 font-mono-nums">
+                        <span className="text-sm font-black text-cyan-200 sm:text-base">
+                          {ps.altitudeMeters}m
+                        </span>
+                        <span className="text-[9px] font-extrabold text-slate-400">ALT</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-[9px] font-black">
+                      {ps.lockedTargetName && (
+                        <span className="max-w-[110px] truncate rounded border border-rose-400/75 bg-rose-600/35 px-1.5 py-0.5 text-rose-100">
+                          🎯 {ps.lockedTargetName}
+                        </span>
+                      )}
+                      {ps.nearestAirbaseName && (
+                        <span className="hidden max-w-[130px] truncate rounded bg-sky-500/20 px-1.5 py-0.5 text-sky-200 sm:inline-block">
+                          {ps.nearestAirbaseName}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 4 Adjusted Aerial Munitions Selector (Keys 1-4) */}
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {PLANE_AMMO_OPTIONS.map((opt) => {
+                      const active = ps.activeAmmo === opt.id;
+                      const count = ps.ammoCounts[opt.id] ?? 0;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          onClick={() => onSelectPlaneAmmo?.(opt.id)}
+                          title={`${opt.label} [Tombol ${opt.key}]`}
+                          className={`flex items-center gap-1 rounded-xl border px-1.5 py-1 text-left transition active:scale-95 ${
+                            active
+                              ? opt.activeBorder
+                              : 'border-slate-700/80 bg-slate-900/85 text-slate-300 hover:border-slate-500'
+                          }`}
+                        >
+                          <img
+                            src={opt.img}
+                            alt={opt.shortLabel}
+                            className="h-6 w-6 shrink-0 rounded-md object-cover sm:h-7 sm:w-7"
+                            draggable={false}
+                          />
+                          <div className="min-w-0 leading-tight">
+                            <div className="truncate text-[9px] font-black">{opt.shortLabel}</div>
+                            <div className="font-mono-nums text-[9px] font-extrabold text-amber-200">
+                              {count}
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Bottom-Right 5 Urgent Flight Controls: Fire, Takeoff/Climb, Brake/Land, Turbo, Exit */}
+            <div className="pointer-events-none fixed bottom-3 right-3 z-20 h-[156px] w-[212px] sm:bottom-5 sm:right-5 sm:h-[184px] sm:w-[248px]">
+              {/* Brake / Descend to Land Medallion (Left of Fire) */}
+              <button
+                type="button"
+                disabled={!isPlanePiloting}
+                data-no-click-sfx="true"
+                {...bindPlaneHold(planeMode === 'flying' ? ['brake', 'descend'] : ['brake'])}
+                title={
+                  planeMode === 'flying'
+                    ? 'Tahan untuk Turun & Mendarat di Pulau (Ctrl / S)'
+                    : 'Tahan untuk Rem di Landasan (S)'
+                }
+                aria-label={planeMode === 'flying' ? 'Turun dan Mendarat' : 'Rem Pesawat'}
+                className="pointer-events-auto absolute bottom-[6px] right-[90px] flex h-[58px] w-[58px] touch-none select-none items-center justify-center rounded-full shadow-[0_5px_16px_rgba(244,63,94,0.58)] ring-2 ring-rose-400/85 transition-transform hover:scale-105 active:scale-90 disabled:opacity-45 sm:bottom-[8px] sm:right-[106px] sm:h-[68px] sm:w-[68px]"
+              >
+                <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                  <img
+                    src="./assets/ui/btn_plane_brake.png"
+                    alt="Rem / Turun"
+                    className="pointer-events-none h-full w-full select-none object-cover"
+                    draggable={false}
+                  />
+                </span>
+                <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-rose-300/80 bg-slate-950/92 px-1.5 text-[8px] font-black leading-tight text-rose-100 shadow sm:text-[9px]">
+                  {planeMode === 'flying' ? 'Mendarat' : 'Rem'}
+                </span>
+              </button>
+
+              {/* Takeoff / Climb Medallion (Upper-Left of Fire) */}
+              <button
+                type="button"
+                disabled={!isPlanePiloting}
+                data-no-click-sfx="true"
+                {...bindPlaneHold(['climb', 'gas'])}
+                title={
+                  planeMode === 'taxi'
+                    ? 'Tahan untuk Akselerasi & Lepas Landas (Spasi)'
+                    : 'Tahan untuk Terbang Naik (Spasi)'
+                }
+                aria-label={planeMode === 'taxi' ? 'Lepas Landas' : 'Terbang Naik'}
+                className="pointer-events-auto absolute bottom-[74px] right-[88px] flex h-[56px] w-[56px] touch-none select-none items-center justify-center rounded-full shadow-[0_5px_16px_rgba(16,185,129,0.62)] ring-2 ring-emerald-300/85 transition-transform hover:scale-105 active:scale-90 disabled:opacity-45 sm:bottom-[88px] sm:right-[104px] sm:h-[64px] sm:w-[64px]"
+              >
+                <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                  <img
+                    src="./assets/ui/btn_plane_takeoff.png"
+                    alt="Lepas Landas"
+                    className="pointer-events-none h-full w-full select-none object-cover"
+                    draggable={false}
+                  />
+                </span>
+                <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-emerald-300/80 bg-slate-950/92 px-1.5 text-[8px] font-black leading-tight text-emerald-100 shadow sm:text-[9px]">
+                  {planeMode === 'taxi' ? 'Lepas Landas' : 'Naik'}
+                </span>
+              </button>
+
+              {/* Turbo Boost Medallion (Upper-Left Arc) */}
+              <button
+                type="button"
+                disabled={!isPlanePiloting}
+                data-no-click-sfx="true"
+                {...bindPlaneHold(['boost'])}
+                title="Tahan untuk Turbo Akselerasi (Shift)"
+                aria-label="Turbo Pesawat"
+                className={`pointer-events-auto absolute bottom-[100px] right-[150px] flex h-[48px] w-[48px] touch-none select-none items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 disabled:opacity-45 sm:bottom-[118px] sm:right-[176px] sm:h-[56px] sm:w-[56px] ${
+                  ps.turboActive
+                    ? 'scale-110 ring-2 ring-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.95)]'
+                    : 'ring-2 ring-amber-300/85 shadow-[0_5px_14px_rgba(245,158,11,0.55)]'
+                }`}
+              >
+                <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                  <img
+                    src="./assets/ui/btn_plane_turbo.png"
+                    alt="Turbo"
+                    className="pointer-events-none h-full w-full select-none object-cover"
+                    draggable={false}
+                  />
+                </span>
+                <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-amber-300/80 bg-slate-950/92 px-1.5 text-[8px] font-black leading-tight text-amber-100 shadow sm:text-[9px]">
+                  Turbo
+                </span>
+              </button>
+
+              {/* Exit Plane Medallion (Directly above Fire) */}
+              {onTogglePlane && (
+                <button
+                  type="button"
+                  disabled={!isPlanePiloting}
+                  onClick={onTogglePlane}
+                  title="Turun / Keluar Pesawat (E)"
+                  aria-label="Turun Pesawat"
+                  className="pointer-events-auto absolute bottom-[92px] right-[4px] flex h-[52px] w-[52px] touch-none select-none items-center justify-center rounded-full shadow-[0_5px_15px_rgba(249,115,22,0.58)] ring-2 ring-orange-300/85 transition-transform hover:scale-105 active:scale-90 disabled:opacity-45 sm:bottom-[108px] sm:right-[6px] sm:h-[60px] sm:w-[60px]"
+                >
+                  <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                    <img
+                      src="./assets/ui/btn_plane_exit.png"
+                      alt="Turun Pesawat"
+                      className="pointer-events-none h-full w-full select-none object-cover"
+                      draggable={false}
+                    />
+                  </span>
+                  <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-orange-300/80 bg-slate-950/92 px-1.5 text-[8px] font-black leading-tight text-orange-100 shadow sm:text-[9px]">
+                    Keluar (E)
+                  </span>
+                </button>
+              )}
+
+              {/* Primary Fire Aerial Weapon Medallion (Thumb Anchor) */}
+              <button
+                type="button"
+                disabled={!isPlanePiloting}
+                data-no-click-sfx="true"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  try {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  } catch {
+                    // ignore
+                  }
+                  onSetPlaneFireHeld?.(true);
+                }}
+                onPointerUp={releasePlaneFire}
+                onPointerCancel={releasePlaneFire}
+                onPointerLeave={releasePlaneFire}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onFirePlaneWeapon?.();
+                  }
+                }}
+                title="Tahan untuk Menembak Sasaran Udara / Darat (F / Klik Kiri)"
+                aria-label="Tembak Sasaran"
+                className="pointer-events-auto absolute bottom-0 right-0 flex h-[78px] w-[78px] touch-none select-none items-center justify-center rounded-full shadow-[0_6px_20px_rgba(249,115,22,0.65)] ring-2 ring-amber-300/90 transition-transform hover:scale-105 active:scale-90 disabled:opacity-45 sm:h-[90px] sm:w-[90px]"
+              >
+                <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                  <img
+                    src="./assets/ui/btn_plane_fire.png"
+                    alt="Tembak Sasaran"
+                    className="pointer-events-none h-full w-full select-none object-cover"
+                    draggable={false}
+                  />
+                </span>
+                <span className="pointer-events-none absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-amber-300/80 bg-slate-950/92 px-2 text-[9px] font-black leading-tight text-amber-100 shadow sm:text-[10px]">
+                  TEMBAK
                 </span>
               </button>
             </div>

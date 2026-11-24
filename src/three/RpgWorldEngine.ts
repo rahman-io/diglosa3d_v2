@@ -68,6 +68,10 @@ import {
   OceanSurvivalState,
   P2pReliableMessage,
   PickaxeTier,
+  PlaneAmmoType,
+  PlaneHudState,
+  PlaneMode,
+  PlaneVariant,
   ProjectedLabel,
   RadarBlip,
   RadarBlipKind,
@@ -127,6 +131,7 @@ import {
   constrainHeroToWorldBounds,
   constrainToWalkableArchipelago,
   createArchipelagoWorld,
+  FLIGHT_WORLD_LIMIT,
   freezeStaticSubtree,
   getArchipelagoGroundY,
   getArchipelagoSeabedY,
@@ -185,6 +190,15 @@ import {
   DriveableCarRig,
   updateCarRigVisuals,
 } from './carModel';
+import {
+  animatePlaneRig,
+  createPlaneModel,
+  PlaneRig,
+} from './planeModel';
+import {
+  AIRBASE_ISLANDS,
+  getAirbaseRunwaySpawn,
+} from './airbaseIslands';
 import {
   createWorldObstacles,
   getObstacleSupportHeight,
@@ -311,6 +325,8 @@ interface EnemyShooter {
 interface Projectile3D {
   active: boolean;
   fromPlayer: boolean;
+  fromPlane?: boolean;
+  planeAmmo?: PlaneAmmoType;
   weaponId?: WeaponId;
   x: number;
   y?: number;
@@ -318,6 +334,10 @@ interface Projectile3D {
   vx: number;
   vy: number;
   vz: number;
+  gravity?: number;
+  homingTargetId?: string;
+  aoeRadius?: number;
+  explosionColor?: number;
   damage: number;
   shieldDamage: number;
   pierceLeft: number;
@@ -325,6 +345,29 @@ interface Projectile3D {
   life: number;
   mesh: THREE.Mesh;
   visualOnly?: boolean;
+}
+
+interface WorldPlane {
+  id: string;
+  name: string;
+  variant: PlaneVariant;
+  airbaseId: 'airbase_south' | 'airbase_east' | 'airbase_north';
+  radarColor: string;
+  root: THREE.Group;
+  rig: PlaneRig;
+  pos: THREE.Vector3;
+  spawnPos: THREE.Vector3;
+  yaw: number;
+  spawnYaw: number;
+  pitch: number;
+  roll: number;
+  speed: number;
+  vy: number;
+  canopyAngle: number;
+  gearExtend: number;
+  steerAngle: number;
+  occupied: boolean;
+  passedRings: Set<string>;
 }
 
 interface WorldVehicle {
@@ -728,6 +771,40 @@ export class RpgWorldEngine {
     left: false,
     right: false,
     handbrake: false,
+    boost: false,
+  };
+
+  // Flyable 3-Jet Airbase Fleet State
+  private worldPlanes: WorldPlane[] = [];
+  private planeMode: PlaneMode = 'none';
+  private activePlaneId = 'jet_garuda';
+  private nearPlaneId: string | null = null;
+  private planeActiveAmmo: PlaneAmmoType = 'vulcan';
+  private planeAmmoCounts: Record<PlaneAmmoType, number> = {
+    vulcan: 240,
+    missile: 24,
+    bomb: 8,
+    plasma: 14,
+  };
+  private planeFireCooldown = 0;
+  private planeVulcanRegenTimer = 0;
+  private planeResupplyCooldown = 0;
+  private planeFireHeld = false;
+  private planeAnimTimer = 0;
+  private planeCanopyOpenPlayed = false;
+  private planeCanopyClosePlayed = false;
+  private planeEnterStartPos = new THREE.Vector3();
+  private planeEnterStartYaw = 0;
+  private planeExitSafePos = new THREE.Vector3();
+  private planeMuzzleToggle = false;
+  private bombReticleMesh: THREE.Mesh | null = null;
+  private planeCtrl = {
+    gas: false,
+    brake: false,
+    left: false,
+    right: false,
+    climb: false,
+    descend: false,
     boost: false,
   };
 
@@ -1267,6 +1344,20 @@ export class RpgWorldEngine {
     this.overworldGroup.add(this.carRig.root);
     this.overworldClickables.push(this.carRig.root);
     this.initWorldVehicles();
+    this.initWorldPlanes();
+
+    const reticleGeo = new THREE.RingGeometry(5.6, 6.8, 28);
+    const reticleMat = new THREE.MeshBasicMaterial({
+      color: 0xf97316,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.72,
+    });
+    this.bombReticleMesh = new THREE.Mesh(reticleGeo, reticleMat);
+    this.bombReticleMesh.rotation.x = -Math.PI / 2;
+    this.bombReticleMesh.visible = false;
+    this.bombReticleMesh.userData.isMapHidden = true;
+    this.overworldGroup.add(this.bombReticleMesh);
 
     this.cloudsMesh = createVoxelClouds(36, this.preferLiteShader);
     this.cloudsMesh.userData.isMapHidden = true;
@@ -1430,6 +1521,13 @@ export class RpgWorldEngine {
     dyn.add(this.starterPickupMesh);
     dyn.add(this.swimSuitPickupMesh);
     dyn.add(this.carRig.root);
+    for (const pl of this.worldPlanes) dyn.add(pl.root);
+    if (this.bombReticleMesh) dyn.add(this.bombReticleMesh);
+    const airbase = this.archipelagoRig.airbaseRig;
+    for (const d of airbase.radarDishes) dyn.add(d);
+    for (const w of airbase.windsocks) dyn.add(w);
+    for (const rp of airbase.resupplyPads) dyn.add(rp.ringMesh);
+    for (const rg of airbase.rings) dyn.add(rg.mesh);
     dyn.add(this.cloudsMesh);
     dyn.add(this.diamondInstanced);
     dyn.add(this.heartInstanced);
@@ -3316,12 +3414,13 @@ export class RpgWorldEngine {
   private refreshWeaponVisual(): void {
     const canHoldWeapon =
       this.carMode === 'none' &&
+      this.planeMode === 'none' &&
       this.activeHotbarSlot <= 7 &&
       this.ownedWeapons.has(this.activeWeapon) &&
       (!this.isSwimming || this.worldMode === 'ocean' || this.isHeroUnderwater() || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
     setHeroWeaponVisual(this.hero, this.activeWeapon, canHoldWeapon);
 
-    if (this.carMode !== 'none') {
+    if (this.carMode !== 'none' || this.planeMode !== 'none') {
       setFirstPersonHeldVisual(this.fpViewRig, 'bare', this.activeWeapon, this.pickaxeTier);
     } else if (this.isSwimming) {
       setFirstPersonHeldVisual(
@@ -3376,7 +3475,7 @@ export class RpgWorldEngine {
     const isPlaying = this.phase === 'playing';
     const inFirstPerson = isPlaying && this.cameraMode === 'first_person';
     this.hero.body.visible = !inFirstPerson;
-    this.fpViewRig.root.visible = inFirstPerson && this.carMode === 'none';
+    this.fpViewRig.root.visible = inFirstPerson && this.carMode === 'none' && this.planeMode === 'none';
     this.controls.enabled = isPlaying && this.cameraMode === 'orbit';
   }
 
@@ -3641,6 +3740,7 @@ export class RpgWorldEngine {
     }
     this.clearSubScenes();
     this.resetCarToParked();
+    this.resetPlanesToParked(false);
     this.worldMode = 'overworld';
     this.overworldGroup.visible = true;
     this.phase = 'playing';
@@ -4987,6 +5087,7 @@ export class RpgWorldEngine {
     this.ridingTurtle = false;
     this.heroDiveActive = false;
     this.resetCarToParked(true);
+    this.resetPlanesToParked(true);
     if (this.archipelagoUnderwaterRig) {
       for (const ch of this.archipelagoUnderwaterRig.chests) {
         ch.opened = false;
@@ -5816,7 +5917,9 @@ export class RpgWorldEngine {
     this.diveTransition = null;
     soundEngine.setSwimmingAudio(false);
     soundEngine.setCarEngine(false, 0);
+    soundEngine.setPlaneEngine(false, 0);
     this.clearCarControls();
+    this.clearPlaneControls();
     if (this.carMode !== 'none') {
       const av = this.getActiveVehicle();
       if (av) {
@@ -5828,6 +5931,17 @@ export class RpgWorldEngine {
       this.carSpeed = 0;
       this.carDoorAngle = 0;
     }
+    if (this.planeMode !== 'none') {
+      const ap = this.getActivePlane();
+      if (ap) {
+        ap.occupied = false;
+        ap.speed = 0;
+        ap.vy = 0;
+        ap.canopyAngle = 0;
+      }
+      this.planeMode = 'none';
+    }
+    if (this.bombReticleMesh) this.bombReticleMesh.visible = false;
     this.clearCaveBoulders();
     this.activeTnts.forEach((t) => {
       if (t.mesh.parent) t.mesh.parent.remove(t.mesh);
@@ -6580,7 +6694,9 @@ export class RpgWorldEngine {
       this.leftFireHeld = false;
       this.hudFireHeld = false;
       this.clearCarControls();
+      this.clearPlaneControls();
       soundEngine.setCarEngine(false, 0);
+      soundEngine.setPlaneEngine(false, 0);
       if (document.pointerLockElement === this.renderer.domElement) {
         try {
           document.exitPointerLock?.();
@@ -7595,6 +7711,7 @@ export class RpgWorldEngine {
   public enterOrExitCar(targetVehicleId?: string): void {
     this.lastInputActivityMs = performance.now();
     if (this.phase !== 'playing' || this.worldMode !== 'overworld') return;
+    if (this.planeMode !== 'none') return;
 
     if (this.carMode === 'none') {
       let target: WorldVehicle | undefined;
@@ -7779,8 +7896,1003 @@ export class RpgWorldEngine {
     };
   }
 
+  private static readonly PLANE_AMMO_MAX: Record<PlaneAmmoType, number> = {
+    vulcan: 240,
+    missile: 24,
+    bomb: 8,
+    plasma: 14,
+  };
+
+  private initWorldPlanes(): void {
+    this.worldPlanes = [];
+    for (let i = 0; i < AIRBASE_ISLANDS.length; i++) {
+      const base = AIRBASE_ISLANDS[i];
+      const rig = createPlaneModel({ variant: base.planeVariant });
+      const spawn = getAirbaseRunwaySpawn(base);
+      rig.root.position.set(spawn.pos.x, spawn.pos.y, spawn.pos.z);
+      rig.root.rotation.set(0, spawn.yaw, 0);
+      rig.root.userData.driveablePlane = true;
+      rig.root.userData.planeId = base.planeId;
+      this.overworldGroup.add(rig.root);
+      this.overworldClickables.push(rig.root);
+
+      this.worldPlanes.push({
+        id: base.planeId,
+        name: base.planeName,
+        variant: base.planeVariant,
+        airbaseId: base.id,
+        radarColor: base.radarColor,
+        root: rig.root,
+        rig,
+        pos: spawn.pos.clone(),
+        spawnPos: spawn.pos.clone(),
+        yaw: spawn.yaw,
+        spawnYaw: spawn.yaw,
+        pitch: 0,
+        roll: 0,
+        speed: 0,
+        vy: 0,
+        canopyAngle: 0,
+        gearExtend: 1,
+        steerAngle: 0,
+        occupied: false,
+        passedRings: new Set(),
+      });
+    }
+    this.activePlaneId = this.worldPlanes[0]?.id ?? 'jet_garuda';
+  }
+
+  private getActivePlane(): WorldPlane | undefined {
+    return this.worldPlanes.find((p) => p.id === this.activePlaneId) ?? this.worldPlanes[0];
+  }
+
+  private getPlaneWorldPoint(p: WorldPlane, localPt: THREE.Vector3): THREE.Vector3 {
+    const out = localPt.clone();
+    out.applyAxisAngle(new THREE.Vector3(0, 1, 0), p.yaw);
+    out.add(p.pos);
+    return out;
+  }
+
+  private clearPlaneControls(): void {
+    this.planeCtrl.gas = false;
+    this.planeCtrl.brake = false;
+    this.planeCtrl.left = false;
+    this.planeCtrl.right = false;
+    this.planeCtrl.climb = false;
+    this.planeCtrl.descend = false;
+    this.planeCtrl.boost = false;
+    this.planeFireHeld = false;
+  }
+
+  private resetPlanesToParked(resetPosition = false): void {
+    this.clearPlaneControls();
+    this.planeMode = 'none';
+    this.planeFireCooldown = 0;
+    this.planeVulcanRegenTimer = 0;
+    this.planeResupplyCooldown = 0;
+    this.planeAnimTimer = 0;
+    if (this.bombReticleMesh) this.bombReticleMesh.visible = false;
+    soundEngine.setPlaneEngine(false, 0);
+
+    if (resetPosition) {
+      this.planeAmmoCounts = { ...RpgWorldEngine.PLANE_AMMO_MAX };
+      this.planeActiveAmmo = 'vulcan';
+    }
+    for (const p of this.worldPlanes) {
+      p.occupied = false;
+      p.speed = 0;
+      p.vy = 0;
+      p.canopyAngle = 0;
+      p.gearExtend = 1;
+      p.steerAngle = 0;
+      p.pitch = 0;
+      p.roll = 0;
+      if (resetPosition) {
+        p.pos.copy(p.spawnPos);
+        p.yaw = p.spawnYaw;
+        p.passedRings.clear();
+      } else {
+        const groundY = Math.max(0, getArchipelagoGroundY(p.pos.x, p.pos.z));
+        if (p.pos.y > groundY + 1.5) {
+          p.pos.copy(p.spawnPos);
+          p.yaw = p.spawnYaw;
+        } else {
+          p.pos.y = groundY;
+        }
+      }
+      p.root.position.copy(p.pos);
+      p.root.rotation.set(0, p.yaw, 0);
+      animatePlaneRig(p.rig, {
+        speed: 0,
+        throttleRatio: 0,
+        turbo: false,
+        canopyAngle: 0,
+        gearExtend: 1,
+        steerAngle: 0,
+        pitchInput: 0,
+        rollBank: 0,
+        elapsed: this.elapsed,
+      });
+    }
+    this.refreshWeaponVisual();
+    this.applyCameraVisibilityAndControls();
+  }
+
   private resolveHeroParkedCarCollision(): void {
     this.resolveWorldVehiclesCollision(this.heroPos, 0.62, 2.2);
+    for (let i = 0; i < this.worldPlanes.length; i++) {
+      const pl = this.worldPlanes[i];
+      if (pl.occupied) continue;
+      pushEntityFromOBB(
+        this.heroPos,
+        pl.pos.x,
+        pl.pos.y,
+        pl.pos.z,
+        pl.yaw,
+        1.45,
+        pl.rig.halfL * 0.85,
+        pl.rig.height,
+        0.62,
+        2.2,
+      );
+    }
+  }
+
+  private findSafePlaneExitSpot(pl: WorldPlane): THREE.Vector3 {
+    const candidates = [
+      pl.rig.boardOutsideOffset,
+      new THREE.Vector3(-pl.rig.boardOutsideOffset.x, 0, pl.rig.boardOutsideOffset.z),
+      new THREE.Vector3(0, 0, pl.rig.halfL + 1.5),
+      new THREE.Vector3(0, 0, -(pl.rig.halfL + 1.5)),
+    ];
+    for (const off of candidates) {
+      const pt = this.getPlaneWorldPoint(pl, off);
+      const s = sampleArchipelagoTerrain(pt.x, pt.z);
+      if (s.isLandOrBridge && s.groundY >= 0.05 && Math.abs(s.groundY - pl.pos.y) < 3.0) {
+        pt.y = s.groundY;
+        return pt;
+      }
+    }
+    const fallback = this.getPlaneWorldPoint(pl, pl.rig.boardOutsideOffset);
+    fallback.y = Math.max(0.2, getArchipelagoGroundY(fallback.x, fallback.z));
+    return fallback;
+  }
+
+  public enterOrExitPlane(targetPlaneId?: string): void {
+    this.lastInputActivityMs = performance.now();
+    if (this.phase !== 'playing' || this.worldMode !== 'overworld') return;
+    if (this.carMode !== 'none') return;
+
+    if (this.planeMode === 'none') {
+      let target: WorldPlane | undefined;
+      if (targetPlaneId) {
+        target = this.worldPlanes.find((p) => p.id === targetPlaneId);
+      } else if (this.nearPlaneId) {
+        target = this.worldPlanes.find((p) => p.id === this.nearPlaneId);
+      } else {
+        let bestDist = Infinity;
+        for (const p of this.worldPlanes) {
+          const d = Math.hypot(this.heroPos.x - p.pos.x, this.heroPos.z - p.pos.z);
+          if (d < bestDist) {
+            bestDist = d;
+            target = p;
+          }
+        }
+      }
+      if (!target) return;
+
+      const boardPt = this.getPlaneWorldPoint(target, target.rig.boardOutsideOffset);
+      const distCenter = Math.hypot(this.heroPos.x - target.pos.x, this.heroPos.z - target.pos.z);
+      const distBoard = Math.hypot(this.heroPos.x - boardPt.x, this.heroPos.z - boardPt.z);
+      if (distCenter > 7.8 && distBoard > 5.2) {
+        this.tapMoveTarget = boardPt;
+        this.showBanner(`✈️ Berjalan menuju kokpit ${target.name}...`, 2.2);
+        return;
+      }
+
+      this.activePlaneId = target.id;
+      target.occupied = true;
+      target.speed = 0;
+      target.vy = 0;
+      this.planeMode = 'entering';
+      this.planeAnimTimer = 0;
+      this.planeCanopyOpenPlayed = false;
+      this.planeCanopyClosePlayed = false;
+      this.planeEnterStartPos.copy(this.heroPos);
+      this.planeEnterStartYaw = this.heroYaw;
+      this.tapMoveTarget = null;
+      this.heroVel.set(0, 0, 0);
+      this.heroVelY = 0;
+      this.heroOnGround = true;
+      this.isSwimming = false;
+      this.heroDiveActive = false;
+      this.ridingTurtle = false;
+      this.diveTransition = null;
+      this.isAiming = false;
+      this.aimToggled = false;
+      this.hudFireHeld = false;
+      this.leftFireHeld = false;
+      this.clearPlaneControls();
+      soundEngine.setWalking(false);
+      soundEngine.setSwimmingAudio(false);
+      this.refreshWeaponVisual();
+      this.applyCameraVisibilityAndControls();
+      this.showBanner(`✈️ Naik ke kokpit ${target.name}...`, 2.0);
+      this.pushHud(true);
+      return;
+    }
+
+    if (this.planeMode === 'taxi' || this.planeMode === 'flying') {
+      const active = this.getActivePlane();
+      if (!active) return;
+      const groundS = sampleArchipelagoTerrain(active.pos.x, active.pos.z);
+      const altAboveGround = active.pos.y - groundS.groundY;
+
+      if (this.planeMode === 'flying') {
+        if (groundS.isLandOrBridge && groundS.groundY >= 0.05 && altAboveGround <= 6.5) {
+          // Smooth auto-flare touchdown right onto the island!
+          active.pos.y = groundS.groundY;
+          active.vy = 0;
+          active.pitch = 0;
+          active.roll = 0;
+          active.gearExtend = 1;
+          active.speed = Math.min(active.speed, 6);
+          this.planeMode = 'taxi';
+          soundEngine.playPlaneLand();
+          this.spawnBurst(active.pos.x, active.pos.y + 0.3, active.pos.z, 0xe2e8f0, 12);
+        } else {
+          soundEngine.playNo();
+          this.showBanner(
+            !groundS.isLandOrBridge
+              ? '🌊 Terbang di atas laut — arahkan ke pulau/runway lalu tekan Turun untuk mendarat!'
+              : `🛬 Masih terlalu tinggi (${Math.round(altAboveGround)}m)! Tahan Mendarat (Ctrl) hingga mendekati pulau.`,
+            2.6,
+          );
+          return;
+        }
+      }
+
+      this.planeMode = 'exiting';
+      this.planeAnimTimer = 0;
+      this.planeCanopyOpenPlayed = false;
+      this.planeCanopyClosePlayed = false;
+      this.planeExitSafePos.copy(this.findSafePlaneExitSpot(active));
+      this.clearPlaneControls();
+      if (this.bombReticleMesh) this.bombReticleMesh.visible = false;
+      soundEngine.setPlaneEngine(false, 0);
+      this.showBanner(`✈️ Menghentikan turbin & keluar dari ${active.name}...`, 1.8);
+      this.pushHud(true);
+    }
+  }
+
+  public setPlaneControl(
+    ctrl: 'gas' | 'brake' | 'left' | 'right' | 'climb' | 'descend' | 'boost',
+    held: boolean,
+  ): void {
+    this.lastInputActivityMs = performance.now();
+    this.planeCtrl[ctrl] = held;
+  }
+
+  public selectPlaneAmmo(ammo: PlaneAmmoType): void {
+    this.lastInputActivityMs = performance.now();
+    this.planeActiveAmmo = ammo;
+    soundEngine.playPick();
+    this.pushHud(true);
+  }
+
+  public setPlaneFireHeld(held: boolean): void {
+    this.lastInputActivityMs = performance.now();
+    this.planeFireHeld = held;
+    if (held) {
+      this.firePlaneWeapon(false);
+    }
+  }
+
+  private findPlaneLockedTarget(pl: WorldPlane): {
+    id: string;
+    name: string;
+    x: number;
+    y: number;
+    z: number;
+    dist: number;
+    kind: 'monster' | 'shooter';
+  } | null {
+    if (this.worldMode !== 'overworld') return null;
+    const fwdX = Math.sin(pl.yaw);
+    const fwdZ = Math.cos(pl.yaw);
+    let best: {
+      id: string;
+      name: string;
+      x: number;
+      y: number;
+      z: number;
+      dist: number;
+      kind: 'monster' | 'shooter';
+      score: number;
+    } | null = null;
+
+    for (const m of this.getActiveMonsters()) {
+      if (!m.alive || m.sunburnTimer !== undefined) continue;
+      const spec = MONSTER_SPECS[m.type];
+      const my = (m.y ?? getArchipelagoGroundY(m.x, m.z) + spec.hoverY) + (m.isBoss ? 2.1 : spec.hitCenterY);
+      const dx = m.x - pl.pos.x;
+      const dy = my - (pl.pos.y + 1.1);
+      const dz = m.z - pl.pos.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist < 4 || dist > 120) continue;
+      const horiz = Math.max(0.1, Math.hypot(dx, dz));
+      const dot = (dx / horiz) * fwdX + (dz / horiz) * fwdZ;
+      if (dot < 0.35) continue;
+      const score = dot * 120 - dist * 0.45 + (m.isSkyMonster ? 18 : 0);
+      if (!best || score > best.score) {
+        best = { id: m.id, name: m.name, x: m.x, y: my, z: m.z, dist, kind: 'monster', score };
+      }
+    }
+
+    for (const s of this.shooters) {
+      if (!s.alive) continue;
+      const sy = getArchipelagoGroundY(s.x, s.z) + 1.45;
+      const dx = s.x - pl.pos.x;
+      const dy = sy - (pl.pos.y + 1.1);
+      const dz = s.z - pl.pos.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist < 4 || dist > 110) continue;
+      const horiz = Math.max(0.1, Math.hypot(dx, dz));
+      const dot = (dx / horiz) * fwdX + (dz / horiz) * fwdZ;
+      if (dot < 0.4) continue;
+      const score = dot * 110 - dist * 0.45;
+      if (!best || score > best.score) {
+        best = { id: s.id, name: 'Penembak', x: s.x, y: sy, z: s.z, dist, kind: 'shooter', score };
+      }
+    }
+
+    if (!best) return null;
+    return { id: best.id, name: best.name, x: best.x, y: best.y, z: best.z, dist: best.dist, kind: best.kind };
+  }
+
+  public firePlaneWeapon(fromHold = false): void {
+    if (this.phase !== 'playing' || this.worldMode !== 'overworld') return;
+    if (this.planeMode !== 'taxi' && this.planeMode !== 'flying') return;
+    if (this.planeFireCooldown > 0) return;
+
+    const pl = this.getActivePlane();
+    if (!pl) return;
+
+    let ammoType = this.planeActiveAmmo;
+    if ((this.planeAmmoCounts[ammoType] ?? 0) <= 0) {
+      if ((this.planeAmmoCounts.vulcan ?? 0) > 0) {
+        ammoType = 'vulcan';
+        this.planeActiveAmmo = 'vulcan';
+      } else {
+        if (!fromHold) {
+          soundEngine.playNo();
+          this.showBanner('⚠️ Amunisi habis! Tunggu isi otomatis Vulcan atau mendarat di Pad Hangar Pangkalan.', 2.2);
+        }
+        return;
+      }
+    }
+
+    this.planeAmmoCounts[ammoType] = Math.max(0, this.planeAmmoCounts[ammoType] - 1);
+    const locked = this.findPlaneLockedTarget(pl);
+    const cosP = Math.cos(pl.pitch);
+    const fwdX = Math.sin(pl.yaw) * cosP;
+    const fwdY = Math.sin(pl.pitch);
+    const fwdZ = Math.cos(pl.yaw) * cosP;
+
+    this.planeMuzzleToggle = !this.planeMuzzleToggle;
+    const leftWing = this.getPlaneWorldPoint(pl, pl.rig.leftWingMuzzle);
+    const rightWing = this.getPlaneWorldPoint(pl, pl.rig.rightWingMuzzle);
+    const belly = this.getPlaneWorldPoint(pl, pl.rig.bellyBombOffset);
+    const muzzle = this.planeMuzzleToggle ? leftWing : rightWing;
+
+    if (ammoType === 'vulcan') {
+      this.planeFireCooldown = 0.11;
+      const spd = 88 + Math.max(0, pl.speed);
+      let vx = fwdX * spd;
+      let vy = fwdY * spd;
+      let vz = fwdZ * spd;
+      if (locked) {
+        const dx = locked.x - muzzle.x;
+        const dy = locked.y - muzzle.y;
+        const dz = locked.z - muzzle.z;
+        const d3 = Math.max(1, Math.hypot(dx, dy, dz));
+        vx = (dx / d3) * spd;
+        vy = (dy / d3) * spd;
+        vz = (dz / d3) * spd;
+      }
+      this.spawnProjectile({
+        fromPlayer: true,
+        fromPlane: true,
+        planeAmmo: 'vulcan',
+        x: muzzle.x,
+        y: muzzle.y,
+        z: muzzle.z,
+        vx,
+        vy,
+        vz,
+        damage: 14,
+        shieldDamage: 1,
+        pierceLeft: 0,
+        colorHex: 0xfef08a,
+      });
+      this.spawnBurst(muzzle.x, muzzle.y, muzzle.z, 0xfacc15, 3);
+      soundEngine.playPlaneFire('vulcan');
+    } else if (ammoType === 'missile') {
+      this.planeFireCooldown = 0.36;
+      const spd = 62 + Math.max(0, pl.speed * 0.65);
+      let vx = fwdX * spd;
+      let vy = (fwdY - 0.04) * spd;
+      let vz = fwdZ * spd;
+      if (locked) {
+        const dx = locked.x - muzzle.x;
+        const dy = locked.y - muzzle.y;
+        const dz = locked.z - muzzle.z;
+        const d3 = Math.max(1, Math.hypot(dx, dy, dz));
+        vx = (dx / d3) * spd;
+        vy = (dy / d3) * spd;
+        vz = (dz / d3) * spd;
+      }
+      this.spawnProjectile({
+        fromPlayer: true,
+        fromPlane: true,
+        planeAmmo: 'missile',
+        homingTargetId: locked?.id,
+        aoeRadius: 4.5,
+        explosionColor: 0xf97316,
+        x: muzzle.x,
+        y: muzzle.y,
+        z: muzzle.z,
+        vx,
+        vy,
+        vz,
+        damage: 48,
+        shieldDamage: 3,
+        pierceLeft: 0,
+        colorHex: 0xf97316,
+      });
+      this.spawnBurst(muzzle.x, muzzle.y, muzzle.z, 0xf97316, 6);
+      soundEngine.playPlaneFire('missile');
+    } else if (ammoType === 'bomb') {
+      this.planeFireCooldown = 0.72;
+      const dropSpd = Math.max(8, pl.speed * 0.72);
+      this.spawnProjectile({
+        fromPlayer: true,
+        fromPlane: true,
+        planeAmmo: 'bomb',
+        gravity: 24,
+        aoeRadius: 12.0,
+        explosionColor: 0xf59e0b,
+        x: belly.x,
+        y: belly.y,
+        z: belly.z,
+        vx: Math.sin(pl.yaw) * dropSpd,
+        vy: Math.min(-2.5, pl.vy * 0.5 - 3.5),
+        vz: Math.cos(pl.yaw) * dropSpd,
+        damage: 140,
+        shieldDamage: 99,
+        pierceLeft: 0,
+        colorHex: 0xef4444,
+      });
+      soundEngine.playPlaneFire('bomb');
+    } else {
+      // Plasma Rockets: high-speed cyan shield-breaker + AoE
+      this.planeFireCooldown = 0.42;
+      const spd = 76 + Math.max(0, pl.speed * 0.5);
+      let vx = fwdX * spd;
+      let vy = fwdY * spd;
+      let vz = fwdZ * spd;
+      if (locked) {
+        const dx = locked.x - muzzle.x;
+        const dy = locked.y - muzzle.y;
+        const dz = locked.z - muzzle.z;
+        const d3 = Math.max(1, Math.hypot(dx, dy, dz));
+        vx = (dx / d3) * spd;
+        vy = (dy / d3) * spd;
+        vz = (dz / d3) * spd;
+      }
+      this.spawnProjectile({
+        fromPlayer: true,
+        fromPlane: true,
+        planeAmmo: 'plasma',
+        aoeRadius: 6.2,
+        explosionColor: 0x22d3ee,
+        x: muzzle.x,
+        y: muzzle.y,
+        z: muzzle.z,
+        vx,
+        vy,
+        vz,
+        damage: 85,
+        shieldDamage: 99,
+        pierceLeft: 1,
+        colorHex: 0x22d3ee,
+      });
+      this.spawnBurst(muzzle.x, muzzle.y, muzzle.z, 0x38bdf8, 6);
+      soundEngine.playPlaneFire('plasma');
+    }
+
+    if (!fromHold) {
+      this.pushHud(true);
+    }
+  }
+
+  private triggerPlaneExplosionAoe(
+    x: number,
+    y: number,
+    z: number,
+    radius: number,
+    damage: number,
+    shieldDamage: number,
+    colorHex: number,
+  ): void {
+    soundEngine.playBoom();
+    this.spawnBurst(x, y + 0.35, z, colorHex, Math.min(34, Math.round(radius * 2.8)));
+    let hitAny = false;
+    let killedAny = false;
+
+    for (const s of this.shooters) {
+      if (!s.alive) continue;
+      const sy = getArchipelagoGroundY(s.x, s.z) + 1.3;
+      if (Math.hypot(s.x - x, sy - y, s.z - z) <= radius) {
+        hitAny = true;
+        s.hp -= damage;
+        s.hitSquashTimer = 0.24;
+        if (s.hp <= 0) {
+          killedAny = true;
+          s.alive = false;
+          s.mesh.visible = false;
+          s.respawnTimer = 0;
+          this.monstersDefeated += 1;
+          this.localMabarStats.kills += 1;
+          this.gainXp(5);
+          this.addScore(120);
+          this.spawnBurst(s.x, sy + 0.5, s.z, 0xfbbf24, 16);
+        }
+      }
+    }
+
+    for (const m of this.getActiveMonsters()) {
+      if (!m.alive || m.sunburnTimer !== undefined) continue;
+      const spec = MONSTER_SPECS[m.type];
+      const my = (m.y ?? getArchipelagoGroundY(m.x, m.z) + spec.hoverY) + (m.isBoss ? 2.1 : spec.hitCenterY);
+      const d3 = Math.hypot(m.x - x, my - y, m.z - z);
+      if (d3 <= radius + spec.hitRadius) {
+        hitAny = true;
+        if (m.combatOnly || m.isCaveMob) {
+          const wasAlive = m.alive;
+          this.damageRealTimeMonster(m, damage, m.x - x, m.z - z);
+          if (wasAlive && !m.alive) killedAny = true;
+        } else {
+          const maxStance = spec.stanceHp;
+          const nextStance = Math.max(0, (m.stanceHp ?? maxStance) - shieldDamage);
+          m.stanceHp = nextStance;
+          if (nextStance <= 0) {
+            killedAny = true;
+            this.handleRealTimeMonsterDefeated(m);
+          } else {
+            this.spawnBurst(m.x, my, m.z, 0x38bdf8, 8);
+          }
+        }
+      }
+    }
+
+    if (hitAny) {
+      this.triggerHitMarker(killedAny);
+      this.pushHud(true);
+    }
+  }
+
+  private updatePlanePhysicsAndAnimation(dt: number): void {
+    const pl = this.getActivePlane();
+    if (!pl) {
+      this.planeMode = 'none';
+      soundEngine.setPlaneEngine(false, 0);
+      return;
+    }
+
+    const smoothstep = (v: number) => {
+      const t = THREE.MathUtils.clamp(v, 0, 1);
+      return t * t * (3 - 2 * t);
+    };
+    const seatPt = this.getPlaneWorldPoint(pl, pl.rig.pilotSeatOffset);
+    const outsidePt = this.getPlaneWorldPoint(pl, pl.rig.boardOutsideOffset);
+    let turboActive = false;
+    let pitchInput = 0;
+
+    if (this.planeMode === 'entering') {
+      pl.speed = THREE.MathUtils.damp(pl.speed, 0, 10, dt);
+      this.planeAnimTimer += dt;
+      const t = this.planeAnimTimer;
+      if (!this.planeCanopyOpenPlayed && t >= 0.05) {
+        this.planeCanopyOpenPlayed = true;
+        soundEngine.playPlaneCanopy(true);
+      }
+      if (t < 0.48) {
+        const e1 = smoothstep(t / 0.48);
+        this.heroPos.lerpVectors(this.planeEnterStartPos, outsidePt, e1);
+        this.heroPos.y = THREE.MathUtils.lerp(this.planeEnterStartPos.y, pl.pos.y, e1);
+        pl.canopyAngle = THREE.MathUtils.lerp(0, 0.92, e1);
+        const faceYaw = Math.atan2(seatPt.x - this.heroPos.x, seatPt.z - this.heroPos.z);
+        let dYaw = faceYaw - this.planeEnterStartYaw;
+        while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+        while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+        this.heroYaw = this.planeEnterStartYaw + dYaw * e1;
+      } else if (t < 1.25) {
+        const e2 = smoothstep((t - 0.48) / 0.77);
+        pl.canopyAngle = 0.92;
+        this.heroPos.lerpVectors(outsidePt, seatPt, e2);
+        this.heroPos.y += Math.sin(e2 * Math.PI) * 0.42;
+        let dYaw = pl.yaw - this.heroYaw;
+        while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+        while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+        this.heroYaw += dYaw * e2;
+      } else {
+        const e3 = smoothstep((t - 1.25) / 0.45);
+        this.heroPos.copy(seatPt);
+        this.heroYaw = pl.yaw;
+        pl.canopyAngle = THREE.MathUtils.lerp(0.92, 0, e3);
+        if (!this.planeCanopyClosePlayed && t >= 1.32) {
+          this.planeCanopyClosePlayed = true;
+          soundEngine.playPlaneCanopy(false);
+        }
+        if (t >= 1.7) {
+          pl.canopyAngle = 0;
+          this.planeMode = 'taxi';
+          soundEngine.playPlaneTakeoff();
+          this.showBanner(
+            `✈️ ${pl.name} siap! Tahan Lepas Landas (Spasi) untuk terbang, atau pakai Joystick + Tembak!`,
+            3.2,
+          );
+          this.pushHud(true);
+        }
+      }
+      soundEngine.setPlaneEngine(true, 0.14);
+    } else if (this.planeMode === 'exiting') {
+      pl.speed = THREE.MathUtils.damp(pl.speed, 0, 12, dt);
+      this.planeAnimTimer += dt;
+      const t = this.planeAnimTimer;
+      if (!this.planeCanopyOpenPlayed && t >= 0.04) {
+        this.planeCanopyOpenPlayed = true;
+        soundEngine.playPlaneCanopy(true);
+      }
+      if (t < 0.45) {
+        const e1 = smoothstep(t / 0.45);
+        pl.canopyAngle = THREE.MathUtils.lerp(0, 0.92, e1);
+        this.heroPos.copy(seatPt);
+        this.heroYaw = pl.yaw;
+      } else if (t < 1.15) {
+        const e2 = smoothstep((t - 0.45) / 0.7);
+        pl.canopyAngle = 0.92;
+        this.heroPos.lerpVectors(seatPt, this.planeExitSafePos, e2);
+        this.heroPos.y += Math.sin(e2 * Math.PI) * 0.36;
+      } else {
+        const e3 = smoothstep((t - 1.15) / 0.4);
+        this.heroPos.copy(this.planeExitSafePos);
+        pl.canopyAngle = THREE.MathUtils.lerp(0.92, 0, e3);
+        if (!this.planeCanopyClosePlayed && t >= 1.2) {
+          this.planeCanopyClosePlayed = true;
+          soundEngine.playPlaneCanopy(false);
+        }
+        if (t >= 1.55) {
+          pl.canopyAngle = 0;
+          pl.occupied = false;
+          this.planeMode = 'none';
+          this.heroPos.copy(this.planeExitSafePos);
+          this.heroVel.set(0, 0, 0);
+          this.heroVelY = 0;
+          this.heroOnGround = true;
+          this.refreshWeaponVisual();
+          this.applyCameraVisibilityAndControls();
+          this.showBanner(`🚶 Keluar dari ${pl.name}.`, 1.8);
+          this.pushHud(true);
+        }
+      }
+      soundEngine.setPlaneEngine(false, 0);
+    } else if (this.planeMode === 'taxi' || this.planeMode === 'flying') {
+      const joyX = THREE.MathUtils.clamp(this.virtualMove.x, -1, 1);
+      const joyY = THREE.MathUtils.clamp(-this.virtualMove.z, -1, 1);
+      const gasHeld =
+        this.planeCtrl.gas ||
+        this.heldKeys.has('KeyW') ||
+        this.heldKeys.has('ArrowUp') ||
+        joyY > 0.16;
+      const brakeHeld =
+        this.planeCtrl.brake ||
+        this.heldKeys.has('KeyS') ||
+        this.heldKeys.has('ArrowDown') ||
+        joyY < -0.22;
+      const climbHeld = this.planeCtrl.climb || this.heldKeys.has('Space');
+      const descendHeld =
+        this.planeCtrl.descend ||
+        this.heldKeys.has('ControlLeft') ||
+        this.heldKeys.has('ControlRight');
+      const boostHeld =
+        this.planeCtrl.boost ||
+        this.heldKeys.has('ShiftLeft') ||
+        this.heldKeys.has('ShiftRight');
+
+      let steerInput = 0;
+      if (this.planeCtrl.left || this.heldKeys.has('KeyA') || this.heldKeys.has('ArrowLeft')) steerInput += 1;
+      if (this.planeCtrl.right || this.heldKeys.has('KeyD') || this.heldKeys.has('ArrowRight')) steerInput -= 1;
+      if (Math.abs(joyX) > 0.08) steerInput -= joyX;
+      steerInput = THREE.MathUtils.clamp(steerInput, -1, 1);
+      pl.steerAngle = THREE.MathUtils.damp(pl.steerAngle, steerInput * 0.45, 10, dt);
+
+      turboActive = boostHeld && (this.planeMode === 'flying' || gasHeld || climbHeld);
+
+      if (this.planeMode === 'taxi') {
+        const maxTaxi = turboActive ? 28 : 20;
+        if (climbHeld || gasHeld) {
+          const accel = climbHeld ? 24 : turboActive ? 26 : 16;
+          pl.speed = Math.min(maxTaxi, pl.speed + accel * dt);
+        } else if (brakeHeld) {
+          if (pl.speed > 0.5) pl.speed = Math.max(0, pl.speed - 28 * dt);
+          else pl.speed = Math.max(-6, pl.speed - 10 * dt);
+        } else {
+          pl.speed = THREE.MathUtils.damp(pl.speed, 0, 3.8, dt);
+        }
+
+        const steerWeight = Math.abs(pl.speed) > 0.4 ? Math.sign(pl.speed) : 1;
+        pl.yaw += steerInput * 1.45 * steerWeight * dt;
+
+        const prevX = pl.pos.x;
+        const prevZ = pl.pos.z;
+        pl.pos.x += Math.sin(pl.yaw) * pl.speed * dt;
+        pl.pos.z += Math.cos(pl.yaw) * pl.speed * dt;
+        const s = sampleArchipelagoTerrain(pl.pos.x, pl.pos.z);
+        if (!s.isLandOrBridge || s.groundY < -0.05) {
+          if (pl.speed > 10 && !climbHeld) {
+            // Auto-liftoff off the runway edge if moving fast enough!
+            this.planeMode = 'flying';
+            pl.vy = 6.2;
+            soundEngine.playPlaneTakeoff();
+            this.showBanner('🛫 Lepas landas di ujung landasan! Terbang ke Pangkalan lain atau buru monster!', 2.6);
+          } else {
+            pl.pos.x = prevX;
+            pl.pos.z = prevZ;
+            pl.speed *= 0.4;
+          }
+        } else {
+          pl.pos.y = THREE.MathUtils.damp(pl.pos.y, s.groundY, 18, dt);
+          const airbaseObs = this.archipelagoRig.airbaseRig.obstacles;
+          for (let oi = 0; oi < airbaseObs.length; oi++) {
+            const obs = airbaseObs[oi];
+            if (Math.abs(pl.pos.x - obs.x) < obs.halfW + 1.8 && Math.abs(pl.pos.z - obs.z) < obs.halfD + 1.8) {
+              pl.pos.x = prevX;
+              pl.pos.z = prevZ;
+              pl.speed = Math.min(pl.speed, 2);
+              break;
+            }
+          }
+        }
+
+        // Check Airbase Resupply Pad on ground!
+        if (this.planeResupplyCooldown > 0) this.planeResupplyCooldown = Math.max(0, this.planeResupplyCooldown - dt);
+        for (const pad of this.archipelagoRig.airbaseRig.resupplyPads) {
+          if (
+            Math.hypot(pl.pos.x - pad.pos.x, pl.pos.z - pad.pos.z) < 6.4 &&
+            Math.abs(pl.pos.y - pad.pos.y) < 3.0 &&
+            this.planeResupplyCooldown <= 0
+          ) {
+            this.planeAmmoCounts = { ...RpgWorldEngine.PLANE_AMMO_MAX };
+            if (this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + 1);
+            this.planeResupplyCooldown = 5.5;
+            soundEngine.playUpgrade();
+            this.spawnBurst(pl.pos.x, pl.pos.y + 1.4, pl.pos.z, 0x22d3ee, 18);
+            this.showBanner(`🔧 Hanggar ${pad.name}: Amunisi pesawat penuh & +1 ❤️!`, 2.8);
+            this.pushHud(true);
+            break;
+          }
+        }
+
+        // Takeoff trigger when climbHeld & speed >= 9.5 m/s
+        if (climbHeld && pl.speed >= 9.5) {
+          this.planeMode = 'flying';
+          pl.vy = 8.5;
+          pl.speed = Math.max(pl.speed, 22);
+          soundEngine.playPlaneTakeoff();
+          this.spawnBurst(pl.pos.x, pl.pos.y + 0.5, pl.pos.z, 0x38bdf8, 16);
+          this.showBanner('🛫 Lepas Landas! Gunakan Joystick untuk belok, Tembak untuk serangan udara!', 2.6);
+          this.pushHud(true);
+        }
+
+        pl.pitch = THREE.MathUtils.damp(pl.pitch, climbHeld ? 0.14 : 0, 8, dt);
+        pl.roll = THREE.MathUtils.damp(pl.roll, 0, 10, dt);
+        pl.gearExtend = THREE.MathUtils.damp(pl.gearExtend, 1, 10, dt);
+        soundEngine.setPlaneEngine(true, Math.min(0.65, 0.2 + Math.abs(pl.speed) / 28));
+      } else {
+        // FLIGHT MODE: smooth arcade aerodynamics
+        const targetCruise = turboActive ? 54 : gasHeld ? 40 : brakeHeld ? 18 : 29;
+        pl.speed = THREE.MathUtils.damp(pl.speed, targetCruise, 3.2, dt);
+
+        pl.yaw += steerInput * (1.28 + (turboActive ? 0.22 : 0)) * dt;
+        const targetRoll = -steerInput * 0.56;
+        pl.roll = THREE.MathUtils.damp(pl.roll, targetRoll, 7.5, dt);
+
+        let targetVy = 0;
+        if (climbHeld && !descendHeld) {
+          targetVy = turboActive ? 19.5 : 14.5;
+          pitchInput = 1;
+        } else if (descendHeld && !climbHeld) {
+          targetVy = -14.5;
+          pitchInput = -1;
+        } else if (brakeHeld && pl.speed <= 22) {
+          targetVy = -4.2; // Gentle approach descent when slowing down
+          pitchInput = -0.35;
+        }
+        pl.vy = THREE.MathUtils.damp(pl.vy, targetVy, 5.5, dt);
+        const desiredPitch = THREE.MathUtils.clamp(pl.vy / 26, -0.46, 0.48);
+        pl.pitch = THREE.MathUtils.damp(pl.pitch, desiredPitch, 6.5, dt);
+
+        pl.pos.x += Math.sin(pl.yaw) * pl.speed * dt;
+        pl.pos.z += Math.cos(pl.yaw) * pl.speed * dt;
+        pl.pos.y = THREE.MathUtils.clamp(pl.pos.y + pl.vy * dt, 0.55, 86);
+
+        // Keep within expansive 3-airbase flight airspace (soft turn-back clamp)
+        const distOrigin = Math.hypot(pl.pos.x, pl.pos.z);
+        if (distOrigin > FLIGHT_WORLD_LIMIT) {
+          const k = FLIGHT_WORLD_LIMIT / distOrigin;
+          pl.pos.x *= k;
+          pl.pos.z *= k;
+          const backYaw = Math.atan2(-pl.pos.x, -pl.pos.z);
+          let dYaw = backYaw - pl.yaw;
+          while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+          while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+          pl.yaw += dYaw * 2.2 * dt;
+        }
+
+        // Check ground/island/airbase beneath plane for auto-gear deploy & landing touchdown
+        const sUnder = sampleArchipelagoTerrain(pl.pos.x, pl.pos.z);
+        const altUnder = pl.pos.y - Math.max(0, sUnder.groundY);
+        const gearReady = sUnder.isLandOrBridge && sUnder.groundY >= 0 && altUnder <= 9.0;
+        pl.gearExtend = THREE.MathUtils.damp(pl.gearExtend, gearReady ? 1 : 0, 7.5, dt);
+
+        if (sUnder.isLandOrBridge && sUnder.groundY >= 0.05 && pl.pos.y <= sUnder.groundY + 0.35 && pl.vy <= 1.2) {
+          pl.pos.y = sUnder.groundY;
+          pl.vy = 0;
+          pl.pitch = 0;
+          pl.roll = 0;
+          pl.gearExtend = 1;
+          pl.speed = Math.min(pl.speed, 16);
+          this.planeMode = 'taxi';
+          soundEngine.playPlaneLand();
+          this.spawnBurst(pl.pos.x, pl.pos.y + 0.35, pl.pos.z, 0xe2e8f0, 14);
+          this.showBanner('🛬 Berhasil mendarat! Tekan Turun (E) atau lanjut melaju di darat.', 2.6);
+          this.pushHud(true);
+        } else if (!sUnder.isLandOrBridge && pl.pos.y < 1.3 && pl.vy < 0) {
+          // Sea skimming safety hydro-lift so plane never sinks into the ocean
+          pl.vy = 2.8;
+          pl.pos.y = Math.max(1.25, pl.pos.y);
+        }
+
+        // Sky takeoff ring challenges: speed boost + XP!
+        for (const ring of this.archipelagoRig.airbaseRig.rings) {
+          if (ring.cooldown > 0) continue;
+          const dr = pl.pos.distanceTo(ring.pos);
+          if (dr < ring.radius + 1.4) {
+            ring.cooldown = 4.0;
+            pl.speed = Math.min(58, pl.speed + 12);
+            soundEngine.playPlaneRing();
+            this.spawnBurst(ring.pos.x, ring.pos.y, ring.pos.z, ring.ringColor, 18);
+            if (!pl.passedRings.has(ring.id)) {
+              pl.passedRings.add(ring.id);
+              this.gainXp(15);
+              this.addScore(120);
+              this.showBanner('✨ Cincin Langit! +15 XP · Dorongan Kecepatan!', 2.0);
+            }
+          }
+        }
+
+        soundEngine.setPlaneEngine(true, THREE.MathUtils.clamp((pl.speed / 54) * (turboActive ? 1.2 : 0.9), 0.35, 1.15));
+      }
+
+      // Passive Vulcan refill so pilot never gets completely stuck out of ammo
+      if (this.planeAmmoCounts.vulcan < RpgWorldEngine.PLANE_AMMO_MAX.vulcan) {
+        this.planeVulcanRegenTimer += dt;
+        if (this.planeVulcanRegenTimer >= 0.28) {
+          this.planeVulcanRegenTimer = 0;
+          this.planeAmmoCounts.vulcan = Math.min(RpgWorldEngine.PLANE_AMMO_MAX.vulcan, this.planeAmmoCounts.vulcan + 1);
+        }
+      }
+
+      // Bomb aiming ground reticle projection when bomb ammo is selected in flight
+      if (this.bombReticleMesh) {
+        if (this.planeMode === 'flying' && this.planeActiveAmmo === 'bomb') {
+          const dropSpd = Math.max(8, pl.speed * 0.72);
+          const v0y = Math.min(-2.5, pl.vy * 0.5 - 3.5);
+          const hAbove = Math.max(1.0, pl.pos.y - Math.max(0, getArchipelagoGroundY(pl.pos.x, pl.pos.z)));
+          const tFall = (v0y + Math.sqrt(v0y * v0y + 2 * 24 * hAbove)) / 24;
+          const bx = pl.pos.x + Math.sin(pl.yaw) * dropSpd * tFall;
+          const bz = pl.pos.z + Math.cos(pl.yaw) * dropSpd * tFall;
+          const by = Math.max(0.14, getArchipelagoGroundY(bx, bz) + 0.14);
+          this.bombReticleMesh.position.set(bx, by, bz);
+          this.bombReticleMesh.visible = true;
+        } else {
+          this.bombReticleMesh.visible = false;
+        }
+      }
+
+      // Continuous firing when holding Fire button / Space / Left Mouse
+      if (this.planeFireHeld && this.planeFireCooldown <= 0) {
+        this.firePlaneWeapon(true);
+      }
+
+      // Sync hero seated inside cockpit + plane mesh orientation
+      pl.root.position.copy(pl.pos);
+      pl.root.rotation.order = 'YXZ';
+      pl.root.rotation.set(-pl.pitch, pl.yaw, pl.roll);
+
+      const newSeat = this.getPlaneWorldPoint(pl, pl.rig.pilotSeatOffset);
+      this.heroPos.copy(newSeat);
+      this.heroYaw = pl.yaw;
+      this.heroVel.set(Math.sin(pl.yaw) * pl.speed, 0, Math.cos(pl.yaw) * pl.speed);
+      this.heroVelY = pl.vy;
+      this.heroOnGround = this.planeMode === 'taxi';
+    }
+
+    pl.root.position.copy(pl.pos);
+    if (this.planeMode !== 'taxi' && this.planeMode !== 'flying') {
+      pl.root.rotation.set(0, pl.yaw, 0);
+    }
+    animatePlaneRig(pl.rig, {
+      speed: pl.speed,
+      throttleRatio: this.planeMode === 'flying' ? THREE.MathUtils.clamp(pl.speed / 44, 0.3, 1.2) : Math.abs(pl.speed) / 22,
+      turbo: turboActive,
+      canopyAngle: pl.canopyAngle,
+      gearExtend: pl.gearExtend,
+      steerAngle: pl.steerAngle,
+      pitchInput,
+      rollBank: pl.roll,
+      elapsed: this.elapsed,
+    });
+  }
+
+  private buildPlaneHudState(): PlaneHudState | null {
+    if (this.phase !== 'playing' || this.worldMode !== 'overworld') return null;
+    const active =
+      this.planeMode !== 'none'
+        ? this.getActivePlane()
+        : this.worldPlanes.find((p) => p.id === this.nearPlaneId) ?? this.getActivePlane();
+    if (!active) return null;
+
+    const sUnder = sampleArchipelagoTerrain(active.pos.x, active.pos.z);
+    const groundY = Math.max(0, sUnder.groundY);
+    const altitudeMeters = Math.max(0, Math.round(active.pos.y - groundY));
+    const canLand =
+      this.planeMode === 'taxi' ||
+      (this.planeMode === 'flying' && sUnder.isLandOrBridge && sUnder.groundY >= 0.05 && altitudeMeters <= 8);
+
+    let nearestAirbaseName = AIRBASE_ISLANDS[0].name;
+    let bestBaseD = Infinity;
+    for (const b of AIRBASE_ISLANDS) {
+      const d = Math.hypot(active.pos.x - b.cx, active.pos.z - b.cz);
+      if (d < bestBaseD) {
+        bestBaseD = d;
+        nearestAirbaseName = b.name;
+      }
+    }
+
+    const locked = this.planeMode === 'taxi' || this.planeMode === 'flying' ? this.findPlaneLockedTarget(active) : null;
+
+    return {
+      available: this.worldPlanes.length > 0,
+      mode: this.planeMode,
+      nearPlane: Boolean(this.nearPlaneId),
+      planeId: active.id,
+      planeName: active.name,
+      variant: active.variant,
+      speedKmh: Math.round(Math.abs(active.speed) * 3.6),
+      altitudeMeters,
+      canTakeoff: this.planeMode === 'taxi',
+      canLand,
+      turboActive:
+        (this.planeMode === 'flying' || this.planeMode === 'taxi') &&
+        (this.planeCtrl.boost || this.heldKeys.has('ShiftLeft') || this.heldKeys.has('ShiftRight')),
+      activeAmmo: this.planeActiveAmmo,
+      ammoCounts: { ...this.planeAmmoCounts },
+      lockedTargetName: locked?.name ?? null,
+      nearestAirbaseName,
+    };
   }
 
   private updateCarPhysicsAndAnimation(dt: number): void {
@@ -9799,11 +10911,15 @@ export class RpgWorldEngine {
     this.lastInputActivityMs = performance.now();
     if (this.phase !== 'playing') return;
 
-    if (this.worldMode === 'overworld' && (this.carMode === 'driving' || (this.carMode === 'none' && this.nearCar))) {
+    if (this.worldMode === 'overworld' && this.planeMode === 'none' && (this.carMode === 'driving' || (this.carMode === 'none' && this.nearCar))) {
       this.enterOrExitCar();
       return;
     }
-    if (this.carMode !== 'none') return;
+    if (this.worldMode === 'overworld' && this.carMode === 'none' && (this.planeMode === 'taxi' || this.planeMode === 'flying' || (this.planeMode === 'none' && this.nearPlaneId))) {
+      this.enterOrExitPlane();
+      return;
+    }
+    if (this.carMode !== 'none' || this.planeMode !== 'none') return;
 
     if (this.worldMode === 'ocean' || this.isHeroUnderwater() || this.ridingTurtle) {
       if (this.worldMode === 'ocean' && this.nearDungeonExit) {
@@ -10806,7 +11922,7 @@ export class RpgWorldEngine {
 
   public jumpHero(): void {
     this.lastInputActivityMs = performance.now();
-    if (this.phase !== 'playing' || this.carMode !== 'none') return;
+    if (this.phase !== 'playing' || this.carMode !== 'none' || this.planeMode !== 'none') return;
     if (this.worldMode === 'ocean' || this.isHeroUnderwater()) {
       this.heroVelY = Math.min(7.2, this.heroVelY + 4.8);
       soundEngine.playSplash(0.65);
@@ -11220,7 +12336,7 @@ export class RpgWorldEngine {
   }
 
   public fireActiveWeapon(fromHold = false, skipTurnWait = false): void {
-    if (this.phase !== 'playing' || this.carMode !== 'none') return;
+    if (this.phase !== 'playing' || this.carMode !== 'none' || this.planeMode !== 'none') return;
     if (this.isSwimming && this.worldMode !== 'ocean' && !this.isHeroUnderwater()) {
       const slotWpn = this.activeHotbarSlot <= 7 ? WEAPON_ORDER[this.activeHotbarSlot] : undefined;
       const canShootWater = Boolean(
@@ -11535,6 +12651,8 @@ export class RpgWorldEngine {
 
   private spawnProjectile(opts: {
     fromPlayer: boolean;
+    fromPlane?: boolean;
+    planeAmmo?: PlaneAmmoType;
     weaponId?: WeaponId;
     x: number;
     y?: number;
@@ -11542,6 +12660,10 @@ export class RpgWorldEngine {
     vx: number;
     vy?: number;
     vz: number;
+    gravity?: number;
+    homingTargetId?: string;
+    aoeRadius?: number;
+    explosionColor?: number;
     damage: number;
     shieldDamage: number;
     pierceLeft: number;
@@ -11552,6 +12674,8 @@ export class RpgWorldEngine {
     if (!slot) return;
     slot.active = true;
     slot.fromPlayer = opts.fromPlayer;
+    slot.fromPlane = Boolean(opts.fromPlane);
+    slot.planeAmmo = opts.planeAmmo;
     slot.weaponId = opts.weaponId;
     slot.visualOnly = Boolean(opts.visualOnly);
     slot.x = opts.x;
@@ -11560,14 +12684,33 @@ export class RpgWorldEngine {
     slot.vx = opts.vx;
     slot.vy = opts.vy ?? 0;
     slot.vz = opts.vz;
+    slot.gravity = opts.gravity;
+    slot.homingTargetId = opts.homingTargetId;
+    slot.aoeRadius = opts.aoeRadius;
+    slot.explosionColor = opts.explosionColor;
     slot.damage = opts.damage;
     slot.shieldDamage = opts.shieldDamage;
     slot.pierceLeft = opts.pierceLeft;
     slot.hitIds.clear();
     const horizSpd = Math.hypot(opts.vx, opts.vz);
-    slot.life = opts.fromPlayer && Math.abs(opts.vy ?? 0) > horizSpd * 0.18 ? 1.85 : 1.45;
+    slot.life = opts.fromPlane
+      ? opts.planeAmmo === 'bomb'
+        ? 4.2
+        : 2.8
+      : opts.fromPlayer && Math.abs(opts.vy ?? 0) > horizSpd * 0.18
+      ? 1.85
+      : 1.45;
     (slot.mesh.material as THREE.MeshBasicMaterial).color.setHex(opts.colorHex);
-    slot.mesh.scale.setScalar(opts.damage > 1 ? 1.45 : 1.0);
+    const scaleVal = opts.fromPlane
+      ? opts.planeAmmo === 'bomb'
+        ? 2.15
+        : opts.planeAmmo === 'missile' || opts.planeAmmo === 'plasma'
+        ? 1.65
+        : 1.15
+      : opts.damage > 1
+      ? 1.45
+      : 1.0;
+    slot.mesh.scale.setScalar(scaleVal);
     slot.mesh.position.set(opts.x, slot.y, opts.z);
     slot.mesh.visible = true;
   }
@@ -11580,7 +12723,7 @@ export class RpgWorldEngine {
   }
 
   private engageMonster(m: RoamingMonster): void {
-    if (m.combatOnly || m.isCaveMob || this.carMode !== 'none') return;
+    if (m.combatOnly || m.isCaveMob || this.carMode !== 'none' || this.planeMode !== 'none') return;
     this.phase = 'battle';
     this.heldKeys.clear();
     this.tapMoveTarget = null;
@@ -11611,6 +12754,7 @@ export class RpgWorldEngine {
     this.pointerLocked = document.pointerLockElement === this.renderer.domElement;
     if (!this.pointerLocked) {
       this.leftFireHeld = false;
+      this.planeFireHeld = false;
     }
     this.pushHud(true);
   };
@@ -11677,6 +12821,7 @@ export class RpgWorldEngine {
   private onWindowBlur = (): void => {
     this.heldKeys.clear();
     this.clearCarControls();
+    this.clearPlaneControls();
     this.lookPointer = null;
     this.rightAimHeld = false;
     this.leftFireHeld = false;
@@ -11720,6 +12865,44 @@ export class RpgWorldEngine {
           return;
         }
         if (e.code === 'Space') {
+          e.preventDefault();
+          return;
+        }
+        return;
+      }
+      if (this.planeMode !== 'none') {
+        if (e.code === 'KeyE' || e.code === 'Enter') {
+          e.preventDefault();
+          if (this.planeMode === 'taxi' || this.planeMode === 'flying') this.enterOrExitPlane();
+          return;
+        }
+        if (e.code === 'Digit1') {
+          this.selectPlaneAmmo('vulcan');
+          return;
+        }
+        if (e.code === 'Digit2') {
+          this.selectPlaneAmmo('missile');
+          return;
+        }
+        if (e.code === 'Digit3') {
+          this.selectPlaneAmmo('bomb');
+          return;
+        }
+        if (e.code === 'Digit4') {
+          this.selectPlaneAmmo('plasma');
+          return;
+        }
+        if (e.code === 'KeyF' || e.code === 'KeyG' || e.code === 'KeyJ') {
+          e.preventDefault();
+          this.firePlaneWeapon(false);
+          return;
+        }
+        if (e.code === 'KeyC' || e.code === 'F5') {
+          e.preventDefault();
+          this.toggleCameraMode();
+          return;
+        }
+        if (e.code === 'Space' || e.code === 'ControlLeft' || e.code === 'ControlRight') {
           e.preventDefault();
           return;
         }
@@ -11837,6 +13020,11 @@ export class RpgWorldEngine {
     }
 
     if (e.button === 0 && document.pointerLockElement === this.renderer.domElement) {
+      if (this.planeMode === 'taxi' || this.planeMode === 'flying') {
+        this.planeFireHeld = true;
+        this.firePlaneWeapon(false);
+        return;
+      }
       this.leftFireHeld = true;
       this.fireActiveWeapon(false);
       return;
@@ -11908,6 +13096,7 @@ export class RpgWorldEngine {
       this.isAiming = this.aimToggled;
     }
     this.leftFireHeld = false;
+    this.planeFireHeld = false;
     if (this.lookPointer?.id === e.pointerId) {
       this.lookPointer = null;
     }
@@ -11923,6 +13112,7 @@ export class RpgWorldEngine {
       return;
     }
     this.leftFireHeld = false;
+    this.planeFireHeld = false;
 
     const lp = this.lookPointer;
     if (lp && lp.id === e.pointerId) {
@@ -11933,6 +13123,12 @@ export class RpgWorldEngine {
     }
     if (this.phase !== 'playing') return;
     if (this.carMode !== 'none') return;
+    if (this.planeMode !== 'none') {
+      if ((this.planeMode === 'taxi' || this.planeMode === 'flying') && document.pointerLockElement !== this.renderer.domElement) {
+        this.firePlaneWeapon(false);
+      }
+      return;
+    }
     if (document.pointerLockElement === this.renderer.domElement) return;
 
     const hasArmedWeapon =
@@ -11966,6 +13162,7 @@ export class RpgWorldEngine {
         !obj.userData.monsterId &&
         !obj.userData.portal &&
         !obj.userData.driveableCar &&
+        !obj.userData.driveablePlane &&
         !obj.userData.dungeonExit &&
         !obj.userData.academyExit &&
         !obj.userData.oceanExit &&
@@ -11984,6 +13181,10 @@ export class RpgWorldEngine {
       if (obj) {
         if (obj.userData.driveableCar && this.worldMode === 'overworld') {
           this.enterOrExitCar(obj.userData.vehicleId as string | undefined);
+          return;
+        }
+        if (obj.userData.driveablePlane && this.worldMode === 'overworld') {
+          this.enterOrExitPlane(obj.userData.planeId as string | undefined);
           return;
         }
         if (obj.userData.oceanExit && this.worldMode === 'ocean' && this.oceanRig) {
@@ -12797,6 +13998,7 @@ export class RpgWorldEngine {
         if (
           m.combatOnly &&
           this.carMode === 'none' &&
+          this.planeMode === 'none' &&
           this.phase === 'playing' &&
           this.encounterGraceTimer <= 0 &&
           distSqLocal < (1.85 + spec.baseScale * 0.4) ** 2 &&
@@ -13177,6 +14379,7 @@ export class RpgWorldEngine {
             !shieldBlocked &&
             !jumpedOver &&
             this.carMode === 'none' &&
+            this.planeMode === 'none' &&
             nearestBrawlerTgt.isLocal &&
             this.phase === 'playing' &&
             this.encounterGraceTimer <= 0 &&
@@ -14094,6 +15297,7 @@ export class RpgWorldEngine {
     }
 
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
+    this.planeFireCooldown = Math.max(0, this.planeFireCooldown - dt);
     this.allyHelpCooldown = Math.max(0, this.allyHelpCooldown - dt);
     if (this.multiplayerActive && this.remotePeers.size > 0) {
       let bestInjured: NearbyInjuredPeer | null = null;
@@ -14152,6 +15356,7 @@ export class RpgWorldEngine {
     }
     const continuousHold =
       this.carMode === 'none' &&
+      this.planeMode === 'none' &&
       (this.hudFireHeld ||
         this.leftFireHeld ||
         this.voiceAutoFire ||
@@ -14160,7 +15365,7 @@ export class RpgWorldEngine {
       this.fireActiveWeapon(true);
     }
 
-    // 1. Movement (Car Mode physics/animation OR On-Foot Keyboard + Analog + Voice + Tap-to-Move)
+    // 1. Movement (Car / Plane Physics OR On-Foot Keyboard + Analog + Voice + Tap-to-Move)
     let mx = 0;
     let mz = 0;
     const prevHeroY = this.heroPos.y;
@@ -14169,7 +15374,14 @@ export class RpgWorldEngine {
 
     if (this.worldMode === 'overworld' && this.carMode !== 'none') {
       this.nearCar = true;
+      this.nearPlaneId = null;
+      soundEngine.setPlaneEngine(false, 0);
       this.updateCarPhysicsAndAnimation(dt);
+    } else if (this.worldMode === 'overworld' && this.planeMode !== 'none') {
+      this.nearCar = false;
+      this.nearPlaneId = null;
+      soundEngine.setCarEngine(false, 0);
+      this.updatePlanePhysicsAndAnimation(dt);
     } else {
       mx = this.virtualMove.x;
       mz = -this.virtualMove.z; // screen up = +forward
@@ -15375,15 +16587,37 @@ export class RpgWorldEngine {
         this.nearCar = false;
         this.nearVehicleId = null;
       }
+      if (this.worldMode === 'overworld' && this.worldPlanes.length > 0) {
+        let bestPlane: WorldPlane | null = null;
+        let bestPlaneScore = Infinity;
+        for (let pi = 0; pi < this.worldPlanes.length; pi++) {
+          const pl = this.worldPlanes[pi];
+          const boardPt = this.getPlaneWorldPoint(pl, pl.rig.boardOutsideOffset);
+          const distCenter = Math.hypot(this.heroPos.x - pl.pos.x, this.heroPos.z - pl.pos.z);
+          const distBoard = Math.hypot(this.heroPos.x - boardPt.x, this.heroPos.z - boardPt.z);
+          if (Math.abs(this.heroPos.y - pl.pos.y) < 3.8 && (distCenter < 7.8 || distBoard < 5.2)) {
+            const score = Math.min(distCenter, distBoard);
+            if (score < bestPlaneScore) {
+              bestPlaneScore = score;
+              bestPlane = pl;
+            }
+          }
+        }
+        this.nearPlaneId = bestPlane?.id ?? null;
+      } else {
+        this.nearPlaneId = null;
+      }
       soundEngine.setCarEngine(false, 0);
+      soundEngine.setPlaneEngine(false, 0);
     }
 
-    if (wasAirborne && this.heroOnGround && this.carMode === 'none') {
+    if (wasAirborne && this.heroOnGround && this.carMode === 'none' && this.planeMode === 'none') {
       this.jumpLandTimer = 0.16;
     }
 
     if (
       this.carMode === 'none' &&
+      this.planeMode === 'none' &&
       (this.heroOnGround || this.coyoteTimer > 0 || this.isSwimming) &&
       this.jumpBufferTimer > 0
     ) {
@@ -15518,7 +16752,7 @@ export class RpgWorldEngine {
       this.walkCycle += dt * (8 + speed * 0.45);
     }
     soundEngine.setWalking(
-      speed > 0.8 && this.heroOnGround && !this.isSwimming && this.carMode === 'none',
+      speed > 0.8 && this.heroOnGround && !this.isSwimming && this.carMode === 'none' && this.planeMode === 'none',
       speed > 10.5 ? 1.2 : 1.0,
     );
     const isMovingInWater =
@@ -15543,6 +16777,7 @@ export class RpgWorldEngine {
       !this.heroOnGround ||
       this.isSwimming ||
       this.carMode !== 'none' ||
+      this.planeMode !== 'none' ||
       this.jumpBufferTimer > 0 ||
       continuousHold ||
       this.isAiming ||
@@ -15602,14 +16837,21 @@ export class RpgWorldEngine {
     const canHoldInCurrentEnv =
       hasEquippedWeapon &&
       this.carMode === 'none' &&
+      this.planeMode === 'none' &&
       (!this.isSwimming || underwaterNow || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
     const isHeroRigCar = Boolean(this.getActiveVehicle()?.rig);
     const carSeatedNow =
       this.carMode === 'driving' ||
       (this.carMode === 'entering' && this.carAnimTimer > (isHeroRigCar ? 1.35 : 0.45)) ||
       (this.carMode === 'exiting' && this.carAnimTimer < (isHeroRigCar ? 0.72 : 0.3));
+    const activePlanePose = this.planeMode !== 'none' ? this.getActivePlane() : undefined;
+    const planeSeatedNow =
+      this.planeMode === 'taxi' ||
+      this.planeMode === 'flying' ||
+      (this.planeMode === 'entering' && this.planeAnimTimer > 1.08) ||
+      (this.planeMode === 'exiting' && this.planeAnimTimer < 0.48);
     applyHeroWeaponPose(this.hero, this.activeWeapon, canHoldInCurrentEnv, {
-      speed: this.carMode !== 'none' ? 0 : speed,
+      speed: this.carMode !== 'none' || this.planeMode !== 'none' ? 0 : speed,
       walkCycle: this.walkCycle,
       aimAlpha,
       recoil,
@@ -15628,7 +16870,13 @@ export class RpgWorldEngine {
       ridingTurtle: this.isSwimming && this.ridingTurtle,
       jumpDiveTrick: this.activeJumpTrick,
       jumpDiveElapsed: this.jumpTrickElapsed,
-      carPose: carSeatedNow
+      carPose: planeSeatedNow && activePlanePose
+        ? {
+            seated: true,
+            steerAngle: activePlanePose.steerAngle,
+            speedRatio: THREE.MathUtils.clamp(activePlanePose.speed / 44, -1, 1),
+          }
+        : carSeatedNow
         ? {
             seated: true,
             steerAngle: this.carSteerAngle,
@@ -15702,7 +16950,7 @@ export class RpgWorldEngine {
       }
     }
 
-    // Auto-Chase Camera Follow while Driving Car
+    // Auto-Chase Camera Follow while Driving Car or Piloting Plane
     if (
       this.carMode === 'driving' &&
       !userDraggingCam &&
@@ -15721,6 +16969,25 @@ export class RpgWorldEngine {
       }
     }
 
+    const activeCamPlane = this.planeMode !== 'none' ? this.getActivePlane() : undefined;
+    if (
+      (this.planeMode === 'taxi' || this.planeMode === 'flying') &&
+      activeCamPlane &&
+      !userDraggingCam &&
+      (this.cameraMode === 'third_back' || this.cameraMode === 'first_person')
+    ) {
+      const desiredCamYaw = activeCamPlane.yaw + Math.PI;
+      let camYawDiff = desiredCamYaw - this.cameraYaw;
+      while (camYawDiff > Math.PI) camYawDiff -= Math.PI * 2;
+      while (camYawDiff < -Math.PI) camYawDiff += Math.PI * 2;
+      const rate = this.cameraMode === 'first_person' ? 9.5 : 4.8;
+      this.cameraYaw += camYawDiff * (1 - Math.exp(-rate * dt));
+      if (this.cameraMode === 'third_back') {
+        const targetFlightPitch = this.planeMode === 'flying' ? 0.16 - activeCamPlane.pitch * 0.45 : 0.22;
+        this.cameraPitch = THREE.MathUtils.damp(this.cameraPitch, THREE.MathUtils.clamp(targetFlightPitch, -0.25, 0.38), 3.6, dt);
+      }
+    }
+
     // Update Camera Rig (Over-the-Shoulder TPS + ADS Scope Zoom when Bidik Bebas, or Centered Classic RPG when Bidik Otomatis)
     const sinY = Math.sin(this.cameraYaw);
     const cosY = Math.cos(this.cameraYaw);
@@ -15732,9 +16999,11 @@ export class RpgWorldEngine {
     const cosP = Math.cos(effPitch);
     const sinP = Math.sin(effPitch);
     const isInCarView = this.carMode !== 'none';
-    const focusX = isInCarView ? this.carPos.x : this.heroPos.x;
-    const focusZ = isInCarView ? this.carPos.z : this.heroPos.z;
-    const targetY = isInCarView ? this.carPos.y + 2.25 : this.heroPos.y + 1.92;
+    const isInPlaneView = this.planeMode !== 'none' && Boolean(activeCamPlane);
+    const isInVehicleView = isInCarView || isInPlaneView;
+    const focusX = isInPlaneView && activeCamPlane ? activeCamPlane.pos.x : isInCarView ? this.carPos.x : this.heroPos.x;
+    const focusZ = isInPlaneView && activeCamPlane ? activeCamPlane.pos.z : isInCarView ? this.carPos.z : this.heroPos.z;
+    const targetY = isInPlaneView && activeCamPlane ? activeCamPlane.pos.y + 1.95 : isInCarView ? this.carPos.y + 2.25 : this.heroPos.y + 1.92;
 
     const carSpeedFov =
       this.carMode === 'driving'
@@ -15744,7 +17013,17 @@ export class RpgWorldEngine {
             ? 4
             : 0)
         : 0;
-    const targetFov = isInCarView
+    const planeSpeedFov =
+      isInPlaneView && activeCamPlane && (this.planeMode === 'flying' || this.planeMode === 'taxi')
+        ? Math.min(14, Math.abs(activeCamPlane.speed) * 0.25) +
+          ((this.planeCtrl.boost || this.heldKeys.has('ShiftLeft') || this.heldKeys.has('ShiftRight')) &&
+          activeCamPlane.speed > 18
+            ? 5
+            : 0)
+        : 0;
+    const targetFov = isInPlaneView
+      ? 60 + planeSpeedFov
+      : isInCarView
       ? 58 + carSpeedFov
       : !isManualAim
       ? 58
@@ -15760,7 +17039,9 @@ export class RpgWorldEngine {
 
     if (this.cameraMode === 'third_back' || this.cameraMode === 'third_front') {
       const sign = this.cameraMode === 'third_front' ? -1 : 1;
-      const baseDist = isInCarView
+      const baseDist = isInPlaneView
+        ? Math.max(this.thirdPersonDist + 6.4, 13.5)
+        : isInCarView
         ? Math.max(this.thirdPersonDist + 3.2, 9.6)
         : this.worldMode === 'dungeon'
         ? Math.min(this.thirdPersonDist, 6.2)
@@ -15771,18 +17052,18 @@ export class RpgWorldEngine {
           : 0;
       const skyShortenDist = THREE.MathUtils.lerp(baseDist, Math.min(baseDist, 4.8), skyUpT);
       const desiredDist =
-        !isInCarView && isManualAim && this.cameraMode === 'third_back'
+        !isInVehicleView && isManualAim && this.cameraMode === 'third_back'
           ? THREE.MathUtils.lerp(skyShortenDist, Math.min(skyShortenDist, 3.45), this.aimBlend)
           : skyShortenDist;
 
       // Offset camera to Hero's right shoulder only in Bidik Bebas TPS so center crosshair stays clear
       const shoulderRight =
-        !isInCarView && isManualAim && this.cameraMode === 'third_back'
+        !isInVehicleView && isManualAim && this.cameraMode === 'third_back'
           ? THREE.MathUtils.lerp(0.86, 1.06, this.aimBlend)
           : 0;
       const pivotX = focusX + cosY * shoulderRight;
       const pivotY =
-        !isInCarView && isManualAim && this.cameraMode === 'third_back'
+        !isInVehicleView && isManualAim && this.cameraMode === 'third_back'
           ? this.heroPos.y + THREE.MathUtils.lerp(2.04, 2.22, this.aimBlend)
           : targetY;
       const pivotZ = focusZ - sinY * shoulderRight;
@@ -15791,7 +17072,7 @@ export class RpgWorldEngine {
       const dirY = sinP;
       const dirZ = sign * cosY * cosP;
 
-      // Trace spring-arm from Hero/Car center toward desired camera position (terrain-aware floor!)
+      // Trace spring-arm from Hero/Car/Plane center toward desired camera position (terrain-aware floor!)
       const goalX = pivotX + dirX * desiredDist;
       const goalZ = pivotZ + dirZ * desiredDist;
       const camFloorY =
@@ -15805,15 +17086,17 @@ export class RpgWorldEngine {
       const ry = goalY - pivotY;
       const rz = goalZ - focusZ;
       const rayLen = Math.hypot(rx, ry, rz) || 1;
-      const blockedDist = this.computeSpringArmDist(
-        focusX,
-        pivotY,
-        focusZ,
-        rx / rayLen,
-        ry / rayLen,
-        rz / rayLen,
-        rayLen,
-      );
+      const blockedDist = isInPlaneView && this.planeMode === 'flying'
+        ? rayLen
+        : this.computeSpringArmDist(
+            focusX,
+            pivotY,
+            focusZ,
+            rx / rayLen,
+            ry / rayLen,
+            rz / rayLen,
+            rayLen,
+          );
 
       // Snap inward ultra-fast when hitting a wall/pillar; ease outward smoothly when clear
       const distAlpha =
@@ -15840,7 +17123,14 @@ export class RpgWorldEngine {
 
       _v1.set(camX, camY, camZ);
       this.camera.position.lerp(_v1, 1 - Math.exp(-28 * dt));
-      if (isManualAim && this.cameraMode === 'third_back') {
+      if (isInPlaneView && activeCamPlane && this.cameraMode === 'third_back') {
+        const lookAhead = this.planeMode === 'flying' ? 14 : 6;
+        this.camera.lookAt(
+          activeCamPlane.pos.x + Math.sin(activeCamPlane.yaw) * lookAhead,
+          activeCamPlane.pos.y + 1.85 + Math.sin(activeCamPlane.pitch) * lookAhead * 0.65,
+          activeCamPlane.pos.z + Math.cos(activeCamPlane.yaw) * lookAhead,
+        );
+      } else if (isManualAim && this.cameraMode === 'third_back') {
         this.camera.lookAt(
           pivotX - dirX * 24,
           pivotY - dirY * 24,
@@ -15879,12 +17169,14 @@ export class RpgWorldEngine {
         this.camera.lookAt(focusX, targetY, focusZ);
       }
     } else if (this.cameraMode === 'first_person') {
-      const eyeY = this.heroPos.y + 2.55;
-      this.camera.position.set(this.heroPos.x, eyeY, this.heroPos.z);
+      const eyeX = isInPlaneView && activeCamPlane ? activeCamPlane.pos.x : this.heroPos.x;
+      const eyeY = isInPlaneView && activeCamPlane ? activeCamPlane.pos.y + 2.05 : this.heroPos.y + 2.55;
+      const eyeZ = isInPlaneView && activeCamPlane ? activeCamPlane.pos.z : this.heroPos.z;
+      this.camera.position.set(eyeX, eyeY, eyeZ);
       this.camera.lookAt(
-        this.heroPos.x - sinY * cosP * 10,
+        eyeX - sinY * cosP * 10,
         eyeY - sinP * 10,
-        this.heroPos.z - cosY * cosP * 10,
+        eyeZ - cosY * cosP * 10,
       );
       const walkBob = speed > 0.6 ? Math.sin(this.walkCycle) : 0;
       const swing = this.fpSwingTimer > 0 ? Math.sin((1 - this.fpSwingTimer / 0.24) * Math.PI) : 0;
@@ -15997,7 +17289,7 @@ export class RpgWorldEngine {
 
       let bestNpc: string | null = null;
       let bestNpcScore = Infinity;
-      if (this.carMode === 'none') {
+      if (this.carMode === 'none' && this.planeMode === 'none') {
         for (const npc of ALL_OVERWORLD_NPCS) {
           const live = this.npcs.get(npc.id);
           if (live && live.koTimer > 0) continue;
@@ -16018,7 +17310,7 @@ export class RpgWorldEngine {
       this.nearbyNpcId = bestNpc;
       let bestZoneDoor: ZoneId | null = null;
       let bestZoneDoorDist = 4.8;
-      if (this.carMode === 'none') {
+      if (this.carMode === 'none' && this.planeMode === 'none') {
         for (const [zKey, door] of Object.entries(OVERWORLD_ZONE_DOORS) as Array<
           [ZoneId, (typeof OVERWORLD_ZONE_DOORS)[ZoneId]]
         >) {
@@ -16199,7 +17491,7 @@ export class RpgWorldEngine {
           }
         }
       }
-      if (this.carMode === 'none' && d < triggerDist && this.encounterGraceTimer <= 0) {
+      if (this.carMode === 'none' && this.planeMode === 'none' && d < triggerDist && this.encounterGraceTimer <= 0) {
         this.engageMonster(m);
         break;
       }
@@ -16952,6 +18244,44 @@ export class RpgWorldEngine {
         p.mesh.visible = false;
         continue;
       }
+      if (p.gravity) {
+        p.vy -= p.gravity * dt;
+      }
+      if (p.homingTargetId) {
+        let tx: number | null = null;
+        let ty = 0;
+        let tz = 0;
+        const tm = this.getActiveMonsters().find((item) => item.id === p.homingTargetId && item.alive);
+        if (tm) {
+          const spec = MONSTER_SPECS[tm.type];
+          const mBaseY =
+            tm.y ??
+            (this.worldMode === 'overworld'
+              ? getArchipelagoGroundY(tm.x, tm.z) + spec.hoverY
+              : spec.hoverY);
+          tx = tm.x;
+          ty = mBaseY + (tm.isBoss ? 2.1 : spec.hitCenterY);
+          tz = tm.z;
+        } else {
+          const ts = this.shooters.find((item) => item.id === p.homingTargetId && item.alive);
+          if (ts) {
+            tx = ts.x;
+            ty = (this.worldMode === 'overworld' ? getArchipelagoGroundY(ts.x, ts.z) : 0) + 1.45;
+            tz = ts.z;
+          }
+        }
+        if (tx !== null) {
+          const curSpd = Math.max(12, Math.hypot(p.vx, p.vy, p.vz));
+          const dx = tx - p.x;
+          const dy = ty - (p.y ?? 1.35);
+          const dz = tz - p.z;
+          const d3 = Math.max(0.5, Math.hypot(dx, dy, dz));
+          const steerAlpha = 1 - Math.exp(-5.6 * dt);
+          p.vx = THREE.MathUtils.lerp(p.vx, (dx / d3) * curSpd, steerAlpha);
+          p.vy = THREE.MathUtils.lerp(p.vy, (dy / d3) * curSpd, steerAlpha);
+          p.vz = THREE.MathUtils.lerp(p.vz, (dz / d3) * curSpd, steerAlpha);
+        }
+      }
       p.x += p.vx * dt;
       p.y = (p.y ?? 1.35) + p.vy * dt;
       p.z += p.vz * dt;
@@ -16964,7 +18294,19 @@ export class RpgWorldEngine {
       if (p.y < projFloor + 0.06) {
         p.active = false;
         p.mesh.visible = false;
-        this.spawnBurst(p.x, projFloor + 0.12, p.z, 0x94a3b8, 5);
+        if (p.fromPlayer && p.aoeRadius) {
+          this.triggerPlaneExplosionAoe(
+            p.x,
+            projFloor + 0.25,
+            p.z,
+            p.aoeRadius,
+            p.damage,
+            p.shieldDamage,
+            p.explosionColor ?? 0xf97316,
+          );
+        } else {
+          this.spawnBurst(p.x, projFloor + 0.12, p.z, 0x94a3b8, 5);
+        }
         continue;
       }
       p.mesh.position.set(p.x, p.y, p.z);
@@ -17006,7 +18348,19 @@ export class RpgWorldEngine {
         if (hitSolid) {
           p.active = false;
           p.mesh.visible = false;
-          this.spawnBurst(p.x, p.y, p.z, 0x94a3b8, 5);
+          if (p.fromPlayer && p.aoeRadius) {
+            this.triggerPlaneExplosionAoe(
+              p.x,
+              p.y,
+              p.z,
+              p.aoeRadius,
+              p.damage,
+              p.shieldDamage,
+              p.explosionColor ?? 0xf97316,
+            );
+          } else {
+            this.spawnBurst(p.x, p.y, p.z, 0x94a3b8, 5);
+          }
           continue;
         }
       } else if (this.worldMode === 'ocean' && this.oceanRig) {
@@ -17086,8 +18440,23 @@ export class RpgWorldEngine {
         for (const s of this.shooters) {
           if (!s.alive || p.hitIds.has(s.id)) continue;
           const sy = this.worldMode === 'overworld' ? getArchipelagoGroundY(s.x, s.z) : 0;
-          if (Math.hypot(p.x - s.x, p.z - s.z) < 1.6 && Math.abs(p.y - (sy + 1.35)) < 1.75) {
+          const hitDist = p.fromPlane ? 2.4 : 1.6;
+          const hitAlt = p.fromPlane ? 2.4 : 1.75;
+          if (Math.hypot(p.x - s.x, p.z - s.z) < hitDist && Math.abs(p.y - (sy + 1.35)) < hitAlt) {
             p.hitIds.add(s.id);
+            if (p.aoeRadius) {
+              this.triggerPlaneExplosionAoe(
+                p.x,
+                p.y,
+                p.z,
+                p.aoeRadius,
+                p.damage,
+                p.shieldDamage,
+                p.explosionColor ?? 0xf97316,
+              );
+              consumed = true;
+              break;
+            }
             if (this.worldMode === 'overworld' && this.multiplayerActive && this.hasConnectedPeers && !this.isWorldAuthority()) {
               s.hitSquashTimer = 0.24;
               s.hp = Math.max(1, s.hp - p.damage);
@@ -17196,19 +18565,32 @@ export class RpgWorldEngine {
         for (const m of this.getActiveMonsters()) {
           if (!m.alive || m.angryTimer > 0) continue;
           const spec = MONSTER_SPECS[m.type];
-          const hitRadius = m.isBoss ? Math.max(2.1, spec.hitRadius * 1.15) : spec.hitRadius + 0.35;
+          const hitRadius = (m.isBoss ? Math.max(2.1, spec.hitRadius * 1.15) : spec.hitRadius + 0.35) + (p.fromPlane ? 1.1 : 0);
           const mBaseY =
             m.y ??
             (this.worldMode === 'overworld'
               ? getArchipelagoGroundY(m.x, m.z) + spec.hoverY
               : spec.hoverY);
           const targetCenterY = mBaseY + (m.isBoss ? 2.1 : spec.hitCenterY);
-          const halfH = m.isBoss ? Math.max(2.4, spec.hitHalfH * 1.2) : spec.hitHalfH + 0.35;
+          const halfH = (m.isBoss ? Math.max(2.4, spec.hitHalfH * 1.2) : spec.hitHalfH + 0.35) + (p.fromPlane ? 0.85 : 0);
           if (Math.hypot(p.x - m.x, p.z - m.z) < hitRadius && Math.abs(p.y - targetCenterY) < halfH) {
             p.active = false;
             p.mesh.visible = false;
 
-            if (m.isSeaMonster && this.worldMode === 'overworld') {
+            if (p.aoeRadius) {
+              this.triggerPlaneExplosionAoe(
+                p.x,
+                p.y,
+                p.z,
+                p.aoeRadius,
+                p.damage,
+                p.shieldDamage,
+                p.explosionColor ?? 0xf97316,
+              );
+              break;
+            }
+
+            if (m.isSeaMonster && this.worldMode === 'overworld' && !p.fromPlane) {
               const eff = spec.effectiveWeapons;
               if (eff && (!p.weaponId || !eff.includes(p.weaponId))) {
                 soundEngine.playNo();
@@ -17267,6 +18649,8 @@ export class RpgWorldEngine {
                 `Kena ${m.name}! Perisai Kata ${nextStance}/${maxStance} — bidik lagi!`,
                 1.6,
               );
+            } else if (p.fromPlane) {
+              this.handleRealTimeMonsterDefeated(m);
             } else {
               m.stanceHp = maxStance;
               m.angryTimer = 0.65;
@@ -17293,10 +18677,22 @@ export class RpgWorldEngine {
             }
           }
           if (blockedByCar) continue;
+          const activePlaneHit = this.planeMode !== 'none' ? this.getActivePlane() : undefined;
+          if (
+            activePlaneHit &&
+            Math.hypot(p.x - activePlaneHit.pos.x, p.z - activePlaneHit.pos.z) < 3.4 &&
+            Math.abs(p.y - (activePlaneHit.pos.y + 1.1)) < 1.9
+          ) {
+            p.active = false;
+            p.mesh.visible = false;
+            this.spawnBurst(p.x, p.y, p.z, 0x38bdf8, 6);
+            continue;
+          }
         }
-        // Enemy projectile hitting Hoot (blocked when protected inside any car)
+        // Enemy projectile hitting Hoot (blocked when protected inside any car or fighter plane)
         if (
           this.carMode === 'none' &&
+          this.planeMode === 'none' &&
           this.encounterGraceTimer <= 0 &&
           Math.hypot(p.x - this.heroPos.x, p.z - this.heroPos.z) < 1.35 &&
           Math.abs(p.y - (this.heroPos.y + 1.35)) < 1.85
@@ -17633,7 +19029,7 @@ export class RpgWorldEngine {
       }
     }
 
-    if (this.phase === 'playing' && this.carMode === 'none') {
+    if (this.phase === 'playing' && this.carMode === 'none' && this.planeMode === 'none') {
       for (let vi = 0; vi < this.worldVehicles.length; vi++) {
         const v = this.worldVehicles[vi];
         const carDistSq = (this.heroPos.x - v.pos.x) ** 2 + (this.heroPos.z - v.pos.z) ** 2;
@@ -17656,6 +19052,22 @@ export class RpgWorldEngine {
             : isNearThis
             ? 'Klik atau tekan Masuk Mobil'
             : 'Kosong — bisa dikendarai!',
+          kind: 'pickup',
+        });
+      }
+      for (let pi = 0; pi < this.worldPlanes.length; pi++) {
+        const pl = this.worldPlanes[pi];
+        const plDistSq = (this.heroPos.x - pl.pos.x) ** 2 + (this.heroPos.z - pl.pos.z) ** 2;
+        if (plDistSq > 40 * 40) continue;
+        const plLabelPos = projectPoint(pl.pos.x, pl.pos.y + pl.rig.height + 1.5, pl.pos.z);
+        if (!plLabelPos) continue;
+        const isNearPl = pl.id === this.nearPlaneId;
+        labels.push({
+          id: `plane_${pl.id}`,
+          x: plLabelPos.x,
+          y: plLabelPos.y,
+          title: isNearPl ? `✈️ ${pl.name} (Tekan E untuk Naik)` : `✈️ ${pl.name}`,
+          subtext: isNearPl ? 'Siap lepas landas!' : 'Pesawat Tempur — bisa diterbangkan!',
           kind: 'pickup',
         });
       }
@@ -17953,6 +19365,7 @@ export class RpgWorldEngine {
 
       if (
         this.carMode === 'none' &&
+        this.planeMode === 'none' &&
         nearestSeaTgt.isLocal &&
         this.phase === 'playing' &&
         this.encounterGraceTimer <= 0 &&
@@ -18235,6 +19648,7 @@ export class RpgWorldEngine {
 
       if (
         this.carMode === 'none' &&
+        this.planeMode === 'none' &&
         nearestSkyTgt.isLocal &&
         this.phase === 'playing' &&
         this.encounterGraceTimer <= 0 &&
@@ -18567,6 +19981,28 @@ export class RpgWorldEngine {
           label: v.driverKind === 'npc' ? `${v.name} (NPC)` : v.name,
         });
       }
+      for (let bi = 0; bi < AIRBASE_ISLANDS.length; bi++) {
+        const b = AIRBASE_ISLANDS[bi];
+        blips.push({
+          id: b.id,
+          x: b.cx,
+          z: b.cz,
+          kind: 'airbase',
+          color: b.radarColor,
+          label: b.name,
+        });
+      }
+      for (let pi = 0; pi < this.worldPlanes.length; pi++) {
+        const pl = this.worldPlanes[pi];
+        blips.push({
+          id: `plane_${pl.id}`,
+          x: pl.pos.x,
+          z: pl.pos.z,
+          kind: 'plane',
+          color: pl.occupied ? '#38bdf8' : '#7dd3fc',
+          label: pl.name,
+        });
+      }
       const spotKindByZone: Record<ZoneId, RadarBlipKind> = {
         desa_sapaan: 'spot_desa',
         pasar_rasa: 'spot_pasar',
@@ -18858,17 +20294,17 @@ export class RpgWorldEngine {
         ? isMini
           ? {
               worldMode: 'overworld',
-              centerX: THREE.MathUtils.clamp(this.heroPos.x, -210, 195),
-              centerZ: THREE.MathUtils.clamp(this.heroPos.z, -215, 175),
+              centerX: THREE.MathUtils.clamp(this.heroPos.x, -225, 245),
+              centerZ: THREE.MathUtils.clamp(this.heroPos.z, -225, 220),
               halfW: 36,
               halfH: 36,
             }
           : {
               worldMode: 'overworld',
-              centerX: -6,
-              centerZ: -26,
-              halfW: 368,
-              halfH: 230,
+              centerX: -4,
+              centerZ: -20,
+              halfW: 410,
+              halfH: 256,
             }
         : this.worldMode === 'ocean'
         ? isMini
@@ -19291,6 +20727,7 @@ export class RpgWorldEngine {
       waveMission: this.getWaveMissionState(),
       localMabarStats: { ...this.localMabarStats },
       carState: this.buildCarHudState(),
+      planeState: this.buildPlaneHudState(),
     });
   }
 
@@ -19955,6 +21392,7 @@ export class RpgWorldEngine {
     soundEngine.setWalking(false);
     soundEngine.setSwimmingAudio(false);
     soundEngine.setCarEngine(false, 0);
+    soundEngine.setPlaneEngine(false, 0);
     soundEngine.setAmbientMode('none');
     cancelAnimationFrame(this.frameId);
     clearTimeout(this.frameId);
@@ -19981,6 +21419,11 @@ export class RpgWorldEngine {
     this.worldObstaclesRig?.disposables.forEach((d) => d.dispose());
     this.oceanRig?.disposables.forEach((d) => d.dispose());
     this.carRig?.disposables.forEach((d) => d.dispose());
+    this.worldPlanes.forEach((p) => p.rig.disposables.forEach((d) => d.dispose()));
+    if (this.bombReticleMesh) {
+      this.bombReticleMesh.geometry.dispose();
+      (this.bombReticleMesh.material as THREE.Material).dispose();
+    }
     this.palette.dispose();
     this.mapRtMinimap.dispose();
     this.mapRtFull.dispose();

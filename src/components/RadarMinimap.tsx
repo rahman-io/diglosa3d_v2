@@ -216,6 +216,27 @@ export const SpotLegendIcon: React.FC<{ kind: RadarBlipKind; className?: string 
       </svg>
     );
   }
+  if (kind === 'plane') {
+    return (
+      <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+        <path
+          d="M12 2.5l2.2 6.2 7.3 4.3v2.2l-7.3-2.1v4.4l2.3 1.7v1.8L12 19.8 7.5 21v-1.8l2.3-1.7v-4.4L2.5 15.2V13l7.3-4.3L12 2.5z"
+          fill="#38bdf8"
+          stroke="#0f172a"
+          strokeWidth="1.4"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+  if (kind === 'airbase') {
+    return (
+      <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+        <rect x="4" y="4" width="16" height="16" rx="3" fill="#334155" stroke="#facc15" strokeWidth="1.6" />
+        <path d="M12 6.5v11M8.5 9h7M8.5 15h7" stroke="#f8fafc" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+    );
+  }
   if (kind === 'door') {
     return (
       <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -531,6 +552,57 @@ function drawIcon(
     ctx.fillStyle = '#facc15';
     ctx.fillRect(-4.4, 1.2, 2.2, 1.3);
     ctx.fillRect(2.2, 1.2, 2.2, 1.3);
+    ctx.restore();
+    return;
+  }
+
+  if (kind === 'airbase') {
+    ctx.beginPath();
+    ctx.arc(0, 0, 9.2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.72)';
+    ctx.fill();
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = color || '#38bdf8';
+    ctx.stroke();
+
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(-5.5, -3.4, 11, 6.8);
+    ctx.strokeStyle = '#facc15';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(-4, 0);
+    ctx.lineTo(4, 0);
+    ctx.stroke();
+    ctx.restore();
+    return;
+  }
+
+  if (kind === 'plane') {
+    ctx.beginPath();
+    ctx.arc(0, 0, 8.2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(56, 189, 248, 0.26)';
+    ctx.fill();
+    ctx.fillStyle = color || '#38bdf8';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(0, -7.2);
+    ctx.lineTo(1.8, -2.0);
+    ctx.lineTo(7.4, 1.2);
+    ctx.lineTo(7.4, 3.0);
+    ctx.lineTo(1.6, 1.5);
+    ctx.lineTo(1.6, 4.8);
+    ctx.lineTo(3.6, 6.5);
+    ctx.lineTo(0, 5.4);
+    ctx.lineTo(-3.6, 6.5);
+    ctx.lineTo(-1.6, 4.8);
+    ctx.lineTo(-1.6, 1.5);
+    ctx.lineTo(-7.4, 3.0);
+    ctx.lineTo(-7.4, 1.2);
+    ctx.lineTo(-1.8, -2.0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
     ctx.restore();
     return;
   }
@@ -1149,8 +1221,8 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
       radar.worldMode === 'overworld'
         ? {
             worldMode: 'overworld',
-            centerX: Math.max(-210, Math.min(195, radar.heroX)),
-            centerZ: Math.max(-215, Math.min(175, radar.heroZ)),
+            centerX: Math.max(-225, Math.min(245, radar.heroX)),
+            centerZ: Math.max(-225, Math.min(220, radar.heroZ)),
             halfW: 36,
             halfH: 36,
           }
@@ -1195,7 +1267,7 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
     const rank = (k: RadarBlipKind) =>
       k === 'starter' || k === 'swimsuit'
         ? 6
-        : k === 'portal' || k === 'boss' || k === 'exit' || k === 'car'
+        : k === 'portal' || k === 'boss' || k === 'exit' || k === 'car' || k === 'plane' || k === 'airbase'
         ? 5
         : k.startsWith('spot_') || k === 'guardian' || k === 'key' || k === 'prison'
         ? 4
@@ -1216,6 +1288,8 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
         b.kind === 'starter' ||
         b.kind === 'swimsuit' ||
         b.kind === 'car' ||
+        b.kind === 'plane' ||
+        b.kind === 'airbase' ||
         b.kind.startsWith('spot_') ||
         b.kind === 'npc' ||
         b.kind === 'portal' ||
@@ -1483,7 +1557,7 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
 
       const fallbackBounds: LiveMapBounds =
         worldMode === 'overworld'
-          ? { worldMode: 'overworld', centerX: -6, centerZ: -26, halfW: 368, halfH: 230 }
+          ? { worldMode: 'overworld', centerX: -4, centerZ: -20, halfW: 410, halfH: 256 }
           : worldMode === 'ocean'
           ? { worldMode: 'ocean', centerX: 0, centerZ: -6, halfW: 48, halfH: 30 }
           : { worldMode, centerX: 0, centerZ: 0, halfW: 36.8, halfH: 23 };
@@ -1521,7 +1595,7 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
       }> = [];
 
       if (worldMode === 'overworld') {
-        // Active night/roaming/sea/sky monsters from live radar blips
+        // Active night/roaming/sea/sky monsters + vehicles + airbases & fighter jets from live radar blips
         if (curRadar) {
           for (const b of curRadar.blips) {
             if (
@@ -1529,7 +1603,9 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
               b.kind !== 'monster_quiz' &&
               b.kind !== 'sea_monster' &&
               b.kind !== 'sky_monster' &&
-              b.kind !== 'car'
+              b.kind !== 'car' &&
+              b.kind !== 'plane' &&
+              b.kind !== 'airbase'
             ) {
               continue;
             }
@@ -1543,8 +1619,24 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
               false,
               false,
               pulse,
-              b.kind === 'car' ? 1.05 : b.kind === 'sea_monster' || b.kind === 'sky_monster' ? 1.0 : 0.9,
+              b.kind === 'airbase'
+                ? 1.25
+                : b.kind === 'plane' || b.kind === 'car'
+                ? 1.08
+                : b.kind === 'sea_monster' || b.kind === 'sky_monster'
+                ? 1.0
+                : 0.9,
             );
+            if (b.kind === 'airbase' && b.label) {
+              ctx.font = '800 9.5px system-ui, -apple-system, sans-serif';
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'top';
+              ctx.lineWidth = 3;
+              ctx.strokeStyle = '#090d16';
+              ctx.strokeText(b.label, mp.sx, mp.sy + 12);
+              ctx.fillStyle = '#7dd3fc';
+              ctx.fillText(b.label, mp.sx, mp.sy + 12);
+            }
           }
         }
 
@@ -1794,6 +1886,14 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
               <span className="inline-flex items-center gap-1">
                 <SpotLegendIcon kind="car" className="h-4 w-4" />
                 <span className="text-sky-300">Mobil</span>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <SpotLegendIcon kind="plane" className="h-4 w-4" />
+                <span className="text-cyan-300">Pesawat</span>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <SpotLegendIcon kind="airbase" className="h-4 w-4" />
+                <span className="text-amber-300">Pangkalan Udara</span>
               </span>
               <span className="inline-flex items-center gap-1">
                 <SpotLegendIcon kind="monster_brawl" className="h-4 w-4" />

@@ -255,6 +255,7 @@ const INITIAL_HUD: RpgHudSnapshot = {
     nightWaveTotal: 0,
   },
   carState: null,
+  planeState: null,
 };
 
 function DiglosaRpgApp() {
@@ -2693,6 +2694,11 @@ function DiglosaRpgApp() {
           onToggleCarHandbrake={() => engineRef.current?.toggleCarHandbrake()}
           onToggleCarHeadlights={() => engineRef.current?.toggleCarHeadlights()}
           onCarHorn={() => engineRef.current?.honkCarHorn()}
+          onTogglePlane={() => engineRef.current?.enterOrExitPlane()}
+          onPlaneControl={(ctrl, held) => engineRef.current?.setPlaneControl(ctrl, held)}
+          onSelectPlaneAmmo={(ammo) => engineRef.current?.selectPlaneAmmo(ammo)}
+          onFirePlaneWeapon={() => engineRef.current?.firePlaneWeapon()}
+          onSetPlaneFireHeld={(held) => engineRef.current?.setPlaneFireHeld(held)}
           tutorialRunKey={hudTutorialRunKey}
           suppressTutorial={
             Boolean(vsIntroData) ||
