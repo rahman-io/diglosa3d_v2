@@ -755,6 +755,20 @@ export class RpgWorldEngine {
     {
       mesh: THREE.Group;
       alertMesh: THREE.Mesh;
+      aura: {
+        group: THREE.Group;
+        outerBeam: THREE.Mesh;
+        innerBeam: THREE.Mesh;
+        outerBeamMat: THREE.MeshBasicMaterial;
+        innerBeamMat: THREE.MeshBasicMaterial;
+        ringInner: THREE.Mesh;
+        ringOuter: THREE.Mesh;
+        ringInnerMat: THREE.MeshBasicMaterial;
+        ringOuterMat: THREE.MeshBasicMaterial;
+        rayGroup: THREE.Group;
+        rayMat: THREE.MeshBasicMaterial;
+        motes: Array<{ mesh: THREE.Mesh; phase: number; speed: number }>;
+      };
       x: number;
       z: number;
       standX: number;
@@ -1412,6 +1426,7 @@ export class RpgWorldEngine {
     this.npcs.forEach((n) => {
       dyn.add(n.mesh);
       dyn.add(n.alertMesh);
+      dyn.add(n.aura.group);
       dyn.add(n.guardPost.torchFlame);
     });
     for (const m of this.overworldAllMonsters) dyn.add(m.mesh);
@@ -1883,6 +1898,12 @@ export class RpgWorldEngine {
   private initNpcs(): void {
     const alertGeo = new THREE.OctahedronGeometry(0.42, 0);
     const alertMat = this.palette.getMat(0xfacc15, 'emissive');
+    const outerBeamGeo = new THREE.CylinderGeometry(0.55, 1.48, 22, 6, 1, true);
+    const innerBeamGeo = new THREE.CylinderGeometry(0.16, 0.38, 24, 8, 1, true);
+    const ringInnerGeo = new THREE.RingGeometry(1.12, 1.46, 28);
+    const ringOuterGeo = new THREE.RingGeometry(1.62, 1.88, 28);
+    const rayBladeGeo = new THREE.PlaneGeometry(0.36, 5.4);
+    const moteGeo = new THREE.OctahedronGeometry(0.22, 0);
     const startAtNight = this.getCurrentDayPhase() === 'malam';
 
     for (const def of NPC_CATALOG) {
@@ -1914,9 +1935,131 @@ export class RpgWorldEngine {
       alertMesh.position.set(initX, startAtNight ? guardPost.bedY + 1.4 : ny + 4.4, initZ);
       this.overworldGroup.add(alertMesh);
 
+      const accentColor = new THREE.Color(def.accentColor);
+      const auraGroup = new THREE.Group();
+      const auraBaseY = startAtNight ? guardPost.bedY - 0.54 : ny;
+      auraGroup.position.set(initX, auraBaseY, initZ);
+
+      const outerBeamMat = new THREE.MeshBasicMaterial({
+        color: accentColor,
+        transparent: true,
+        opacity: startAtNight ? 0.3 : 0.22,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        fog: false,
+      });
+      const outerBeam = new THREE.Mesh(outerBeamGeo, outerBeamMat);
+      outerBeam.position.y = 11.1;
+      auraGroup.add(outerBeam);
+
+      const innerBeamMat = new THREE.MeshBasicMaterial({
+        color: 0xfffbeb,
+        transparent: true,
+        opacity: startAtNight ? 0.42 : 0.34,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        fog: false,
+      });
+      const innerBeam = new THREE.Mesh(innerBeamGeo, innerBeamMat);
+      innerBeam.position.y = 12.1;
+      auraGroup.add(innerBeam);
+
+      const ringInnerMat = new THREE.MeshBasicMaterial({
+        color: accentColor,
+        transparent: true,
+        opacity: 0.72,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        fog: false,
+      });
+      const ringInner = new THREE.Mesh(ringInnerGeo, ringInnerMat);
+      ringInner.rotation.x = -Math.PI / 2;
+      ringInner.position.y = 0.09;
+      auraGroup.add(ringInner);
+
+      const ringOuterMat = new THREE.MeshBasicMaterial({
+        color: 0xfef08a,
+        transparent: true,
+        opacity: 0.52,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        fog: false,
+      });
+      const ringOuter = new THREE.Mesh(ringOuterGeo, ringOuterMat);
+      ringOuter.rotation.x = -Math.PI / 2;
+      ringOuter.position.y = 0.06;
+      auraGroup.add(ringOuter);
+
+      const rayGroup = new THREE.Group();
+      const rayMat = new THREE.MeshBasicMaterial({
+        color: accentColor,
+        transparent: true,
+        opacity: 0.44,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+        fog: false,
+      });
+      const rayCount = 5;
+      for (let ri = 0; ri < rayCount; ri++) {
+        const ang = (ri / rayCount) * Math.PI * 2;
+        const rayBlade = new THREE.Mesh(rayBladeGeo, rayMat);
+        rayBlade.position.set(Math.sin(ang) * 1.32, 2.85, Math.cos(ang) * 1.32);
+        rayBlade.rotation.order = 'YXZ';
+        rayBlade.rotation.y = ang;
+        rayBlade.rotation.x = 0.24;
+        rayGroup.add(rayBlade);
+      }
+      auraGroup.add(rayGroup);
+
+      const moteMatAccent = new THREE.MeshBasicMaterial({
+        color: accentColor,
+        transparent: true,
+        opacity: 0.92,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        fog: false,
+      });
+      const moteMatGold = new THREE.MeshBasicMaterial({
+        color: 0xfef08a,
+        transparent: true,
+        opacity: 0.95,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        fog: false,
+      });
+      const motes: Array<{ mesh: THREE.Mesh; phase: number; speed: number }> = [];
+      for (let mi = 0; mi < 4; mi++) {
+        const moteMesh = new THREE.Mesh(moteGeo, mi % 2 === 0 ? moteMatAccent : moteMatGold);
+        const phase = (mi / 4) * Math.PI * 2;
+        moteMesh.position.set(Math.cos(phase) * 1.35, 1.0 + mi * 0.85, Math.sin(phase) * 1.35);
+        auraGroup.add(moteMesh);
+        motes.push({ mesh: moteMesh, phase, speed: 1.7 + (mi % 2) * 0.45 });
+      }
+
+      this.overworldGroup.add(auraGroup);
+
       this.npcs.set(def.id, {
         mesh,
         alertMesh,
+        aura: {
+          group: auraGroup,
+          outerBeam,
+          innerBeam,
+          outerBeamMat,
+          innerBeamMat,
+          ringInner,
+          ringOuter,
+          ringInnerMat,
+          ringOuterMat,
+          rayGroup,
+          rayMat,
+          motes,
+        },
         x: initX,
         z: initZ,
         standX: def.x,
@@ -7315,6 +7458,12 @@ export class RpgWorldEngine {
           resetAtNight ? npc.guardPost.bedY : npc.standY,
           npc.z,
         );
+        npc.aura.group.visible = true;
+        npc.aura.group.position.set(
+          npc.x,
+          resetAtNight ? npc.guardPost.bedY - 0.54 : npc.standY,
+          npc.z,
+        );
       }
       for (const v of this.worldVehicles) {
         v.pos.copy(v.spawnPos);
@@ -8616,6 +8765,7 @@ export class RpgWorldEngine {
           npc.fleeTimer = 0;
           npc.mesh.visible = false;
           npc.alertMesh.visible = false;
+          npc.aura.group.visible = false;
           if (this.nearbyNpcId === npcId) this.nearbyNpcId = null;
           const def = NPC_CATALOG.find((item) => item.id === npcId);
           soundEngine.playHurt();
@@ -13526,6 +13676,7 @@ export class RpgWorldEngine {
         npc.koTimer = Math.max(0, npc.koTimer - dt);
         npc.mesh.visible = false;
         npc.alertMesh.visible = false;
+        npc.aura.group.visible = false;
         if (npc.koTimer <= 0) {
           npc.x = npc.standX;
           npc.z = npc.standZ;
@@ -13534,12 +13685,15 @@ export class RpgWorldEngine {
           npc.fleeTimer = 0;
           npc.mesh.position.set(npc.standX, npc.standY, npc.standZ);
           npc.mesh.visible = true;
+          npc.aura.group.position.set(npc.standX, npc.standY, npc.standZ);
+          npc.aura.group.visible = true;
           this.spawnBurst(npc.standX, npc.standY + 1.2, npc.standZ, 0x38bdf8, 12);
         }
         npcIdx++;
         continue;
       }
       npc.mesh.visible = true;
+      npc.aura.group.visible = true;
 
       const def = NPC_CATALOG.find((item) => item.id === npcId);
       const q = this.quests.find((item) => item.npcId === npcId);
@@ -13730,6 +13884,33 @@ export class RpgWorldEngine {
           ? npc.guardPost.bedY
           : getArchipelagoGroundY(npc.x, npc.z);
       npc.mesh.rotation.y = npc.yaw;
+      const auraBaseY = npc.poseMode === 'sleep' ? npc.guardPost.bedY - 0.54 : npcGroundY;
+      npc.aura.group.position.set(npc.x, auraBaseY, npc.z);
+      if (distHero < 180 || this.phase === 'title') {
+        const pulse = Math.sin(this.elapsed * 3.1 + npcIdx * 1.15);
+        const beamWidthScale = 1 + pulse * 0.14;
+        npc.aura.outerBeam.rotation.y += dt * 0.65;
+        npc.aura.outerBeam.scale.set(beamWidthScale, 1, beamWidthScale);
+        npc.aura.outerBeamMat.opacity = (isNightShift ? 0.3 : 0.22) + pulse * 0.06;
+        npc.aura.innerBeamMat.opacity =
+          (isNightShift ? 0.42 : 0.34) + Math.sin(this.elapsed * 4.5 + npcIdx) * 0.08;
+        npc.aura.rayGroup.rotation.y += dt * 1.35;
+        npc.aura.rayGroup.position.y = Math.sin(this.elapsed * 2.5 + npcIdx) * 0.22;
+        npc.aura.rayMat.opacity = (isNightShift ? 0.52 : 0.42) + pulse * 0.1;
+        npc.aura.ringInner.scale.setScalar(1 + pulse * 0.12);
+        npc.aura.ringOuter.scale.setScalar(1.06 - pulse * 0.1);
+        npc.aura.ringInnerMat.opacity = 0.65 + pulse * 0.18;
+        npc.aura.ringOuterMat.opacity = 0.46 - pulse * 0.12;
+        for (let mi = 0; mi < npc.aura.motes.length; mi++) {
+          const m = npc.aura.motes[mi];
+          const mPhase = this.elapsed * m.speed + m.phase + npcIdx * 0.8;
+          const cycle = (mPhase * 0.45) % 1;
+          const r = 1.32 + Math.sin(mPhase * 1.7) * 0.22;
+          m.mesh.position.set(Math.cos(mPhase) * r, 0.75 + cycle * 4.1, Math.sin(mPhase) * r);
+          m.mesh.rotation.y += dt * 2.6;
+          m.mesh.scale.setScalar(0.75 + Math.sin(cycle * Math.PI) * 0.55);
+        }
+      }
       npc.alertMesh.visible = showAlert;
       if (showAlert && (distHero < 85 || this.phase === 'title')) {
         const alertY = npc.poseMode === 'sleep' ? npc.guardPost.bedY + 1.4 : npcGroundY + 4.2;
