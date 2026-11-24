@@ -20057,7 +20057,7 @@ export class RpgWorldEngine {
           x: m.x,
           z: m.z,
           kind: 'sea_monster',
-          color: '#06b6d4',
+          color: '#fb7185',
           label: m.name,
         });
       }
@@ -20310,17 +20310,17 @@ export class RpgWorldEngine {
         ? isMini
           ? {
               worldMode: 'ocean',
-              centerX: THREE.MathUtils.clamp(this.heroPos.x, -28, 28),
-              centerZ: THREE.MathUtils.clamp(this.heroPos.z, -34, 24),
+              centerX: THREE.MathUtils.clamp(this.heroPos.x, -26, 26),
+              centerZ: THREE.MathUtils.clamp(this.heroPos.z, -38, 22),
               halfW: 18,
               halfH: 18,
             }
           : {
               worldMode: 'ocean',
               centerX: 0,
-              centerZ: -6,
-              halfW: 48,
-              halfH: 30,
+              centerZ: -12,
+              halfW: 60.8,
+              halfH: 38,
             }
         : isMini
         ? {

@@ -296,14 +296,15 @@ export const SpotLegendIcon: React.FC<{ kind: RadarBlipKind; className?: string 
   if (kind === 'sea_monster') {
     return (
       <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+        <circle cx="12" cy="12" r="9.5" fill="#0f172a" stroke="#fb7185" strokeWidth="2" />
         <path
-          d="M5 17c3.5-7 7-11 10-12-.8 4 .2 8.2 3 12H5z"
-          fill="#06b6d4"
-          stroke="#0f172a"
-          strokeWidth="1.6"
+          d="M6.5 15.5c2.6-5.2 5.4-8.2 7.8-9-.6 3 .2 6.2 2.4 9H6.5z"
+          fill="#22d3ee"
+          stroke="#ffffff"
+          strokeWidth="1.2"
           strokeLinejoin="round"
         />
-        <path d="M3 18.5c3-1.2 6-1.2 9 0s6 1.2 9 0" stroke="#67e8f9" strokeWidth="1.7" strokeLinecap="round" />
+        <path d="M6 17.6c2.2-.9 4.2-.9 6 0s3.8.9 6 0" stroke="#67e8f9" strokeWidth="1.5" strokeLinecap="round" />
       </svg>
     );
   }
@@ -798,20 +799,42 @@ function drawIcon(
     ctx.lineTo(-2.1, 2.1);
     ctx.stroke();
   } else if (kind === 'sea_monster') {
-    ctx.fillStyle = '#06b6d4';
-    ctx.strokeStyle = '#e0f2fe';
-    ctx.lineWidth = 1.4;
+    const rim = color && color !== '#06b6d4' ? color : '#fb7185';
     ctx.beginPath();
-    ctx.moveTo(-4.8, 3.8);
-    ctx.quadraticCurveTo(-1.2, -5.2, 2.8, -5.8);
-    ctx.quadraticCurveTo(1.8, -0.5, 4.8, 3.8);
+    ctx.arc(0, 0, 7.2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(244, 63, 94, 0.28)';
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.arc(0, 0, 5.6, 0, Math.PI * 2);
+    ctx.fillStyle = '#0f172a';
+    ctx.fill();
+    ctx.lineWidth = 1.5;
+    ctx.strokeStyle = rim;
+    ctx.stroke();
+
+    ctx.fillStyle = '#22d3ee';
+    ctx.strokeStyle = '#f8fafc';
+    ctx.lineWidth = 1.0;
+    ctx.beginPath();
+    ctx.moveTo(-3.4, 2.3);
+    ctx.quadraticCurveTo(-0.8, -3.5, 1.9, -3.9);
+    ctx.quadraticCurveTo(1.2, -0.3, 3.4, 2.3);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+
     ctx.fillStyle = '#fef08a';
     ctx.beginPath();
-    ctx.arc(0, 1.4, 1.4, 0, Math.PI * 2);
+    ctx.arc(-0.2, 0.4, 1.0, 0, Math.PI * 2);
     ctx.fill();
+
+    ctx.strokeStyle = '#67e8f9';
+    ctx.lineWidth = 1.1;
+    ctx.beginPath();
+    ctx.moveTo(-3.4, 3.2);
+    ctx.quadraticCurveTo(0, 2.3, 3.4, 3.2);
+    ctx.stroke();
   } else if (kind === 'sky_monster') {
     ctx.fillStyle = color || '#f97316';
     ctx.strokeStyle = '#fef08a';
@@ -1229,8 +1252,8 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
         : radar.worldMode === 'ocean'
         ? {
             worldMode: 'ocean',
-            centerX: Math.max(-28, Math.min(28, radar.heroX)),
-            centerZ: Math.max(-34, Math.min(24, radar.heroZ)),
+            centerX: Math.max(-26, Math.min(26, radar.heroX)),
+            centerZ: Math.max(-38, Math.min(22, radar.heroZ)),
             halfW: 18,
             halfH: 18,
           }
@@ -1278,6 +1301,40 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
         : 1;
     const orderedBlips = [...radar.blips].sort((a, b) => rank(a.kind) - rank(b.kind));
 
+    const nearClampLimitSq = 145 * 145;
+    const clampedThreatIds = new Set<string>();
+    const nearestSea = radar.blips
+      .filter(
+        (b) =>
+          b.kind === 'sea_monster' &&
+          (radar.worldMode === 'ocean' ||
+            (b.x - radar.heroX) ** 2 + (b.z - radar.heroZ) ** 2 <= nearClampLimitSq),
+      )
+      .sort(
+        (a, b) =>
+          (a.x - radar.heroX) ** 2 +
+          (a.z - radar.heroZ) ** 2 -
+          ((b.x - radar.heroX) ** 2 + (b.z - radar.heroZ) ** 2),
+      );
+    for (let i = 0; i < (radar.worldMode === 'ocean' ? 3 : 2) && i < nearestSea.length; i++) {
+      clampedThreatIds.add(nearestSea[i].id);
+    }
+    const nearestSky = radar.blips
+      .filter(
+        (b) =>
+          b.kind === 'sky_monster' &&
+          (b.x - radar.heroX) ** 2 + (b.z - radar.heroZ) ** 2 <= nearClampLimitSq,
+      )
+      .sort(
+        (a, b) =>
+          (a.x - radar.heroX) ** 2 +
+          (a.z - radar.heroZ) ** 2 -
+          ((b.x - radar.heroX) ** 2 + (b.z - radar.heroZ) ** 2),
+      );
+    for (let i = 0; i < 2 && i < nearestSky.length; i++) {
+      clampedThreatIds.add(nearestSky[i].id);
+    }
+
     const minClampX = pad + 9;
     const maxClampX = pad + viewSize - 9;
     const minClampY = pad + 9;
@@ -1297,7 +1354,8 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
         b.kind === 'exit' ||
         b.kind === 'key' ||
         b.kind === 'prison' ||
-        b.kind === 'hero_friend';
+        b.kind === 'hero_friend' ||
+        clampedThreatIds.has(b.id);
 
       const pt = worldToMapPx(b.x, b.z, bounds, pad, pad, viewSize, viewSize);
       const outOfBox =
@@ -1309,8 +1367,10 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
       const drawY = Math.max(minClampY, Math.min(maxClampY, pt.sy));
       const scale = outOfBox
         ? 0.72
-        : b.kind === 'sea_monster' || b.kind === 'sky_monster'
-        ? 0.92
+        : b.kind === 'sea_monster'
+        ? 1.02
+        : b.kind === 'sky_monster'
+        ? 0.94
         : b.kind === 'monster_brawl' || b.kind === 'monster_quiz'
         ? 0.8
         : 0.86;
@@ -1559,7 +1619,7 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
         worldMode === 'overworld'
           ? { worldMode: 'overworld', centerX: -4, centerZ: -20, halfW: 410, halfH: 256 }
           : worldMode === 'ocean'
-          ? { worldMode: 'ocean', centerX: 0, centerZ: -6, halfW: 48, halfH: 30 }
+          ? { worldMode: 'ocean', centerX: 0, centerZ: -12, halfW: 60.8, halfH: 38 }
           : { worldMode, centerX: 0, centerZ: 0, halfW: 36.8, halfH: 23 };
       const bounds = snap ? snap.bounds : fallbackBounds;
 
@@ -1597,18 +1657,26 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
       if (worldMode === 'overworld') {
         // Active night/roaming/sea/sky monsters + vehicles + airbases & fighter jets from live radar blips
         if (curRadar) {
-          for (const b of curRadar.blips) {
-            if (
-              b.kind !== 'monster_brawl' &&
-              b.kind !== 'monster_quiz' &&
-              b.kind !== 'sea_monster' &&
-              b.kind !== 'sky_monster' &&
-              b.kind !== 'car' &&
-              b.kind !== 'plane' &&
-              b.kind !== 'airbase'
-            ) {
-              continue;
-            }
+          const mapRank = (k: RadarBlipKind) =>
+            k === 'airbase' || k === 'plane' || k === 'car'
+              ? 3
+              : k === 'sea_monster' || k === 'sky_monster'
+              ? 2
+              : 1;
+          const mapBlips = curRadar.blips
+            .filter(
+              (b) =>
+                b.kind === 'monster_brawl' ||
+                b.kind === 'monster_quiz' ||
+                b.kind === 'sea_monster' ||
+                b.kind === 'sky_monster' ||
+                b.kind === 'car' ||
+                b.kind === 'plane' ||
+                b.kind === 'airbase',
+            )
+            .sort((a, b) => mapRank(a.kind) - mapRank(b.kind));
+
+          for (const b of mapBlips) {
             const mp = worldToMapPx(b.x, b.z, bounds, 0, 0, width, height);
             drawIcon(
               ctx,
@@ -1623,9 +1691,11 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
                 ? 1.25
                 : b.kind === 'plane' || b.kind === 'car'
                 ? 1.08
-                : b.kind === 'sea_monster' || b.kind === 'sky_monster'
-                ? 1.0
-                : 0.9,
+                : b.kind === 'sea_monster'
+                ? 1.18
+                : b.kind === 'sky_monster'
+                ? 1.08
+                : 0.94,
             );
             if (b.kind === 'airbase' && b.label) {
               ctx.font = '800 9.5px system-ui, -apple-system, sans-serif';
@@ -1897,7 +1967,15 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
               </span>
               <span className="inline-flex items-center gap-1">
                 <SpotLegendIcon kind="monster_brawl" className="h-4 w-4" />
-                <span>Monster</span>
+                <span>Monster Darat</span>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <SpotLegendIcon kind="sea_monster" className="h-4 w-4" />
+                <span className="text-rose-300">Monster Laut</span>
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <SpotLegendIcon kind="sky_monster" className="h-4 w-4" />
+                <span className="text-orange-300">Monster Udara</span>
               </span>
             </div>
             <span className="text-[10px] font-extrabold text-amber-300">

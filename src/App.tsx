@@ -862,6 +862,8 @@ function DiglosaRpgApp() {
       if (nextUser) {
         if (typeof navigator !== 'undefined' && !navigator.onLine) return;
         try {
+          const reachable = await probeFirestoreReachable();
+          if (!reachable || disposed) return;
           const profile = await loadUserProgress(nextUser.uid);
           if (!disposed) {
             setUserProfile(profile);
@@ -1414,11 +1416,16 @@ function DiglosaRpgApp() {
       return;
     }
     let cancelled = false;
-    void checkSavedRoomMembership(activeUid).then((found) => {
-      if (!cancelled) {
-        setResumableRoom(found);
-      }
-    });
+    void probeFirestoreReachable()
+      .then((reachable) => {
+        if (!reachable || cancelled) return null;
+        return checkSavedRoomMembership(activeUid);
+      })
+      .then((found) => {
+        if (!cancelled && found !== undefined) {
+          setResumableRoom(found);
+        }
+      });
     return () => {
       cancelled = true;
     };

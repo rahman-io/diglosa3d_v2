@@ -38,8 +38,8 @@ function createFirestoreInstance(): Firestore {
   }
   try {
     const settings = {
-      experimentalAutoDetectLongPolling: true,
-      useFetchStreams: true,
+      experimentalForceLongPolling: true,
+      useFetchStreams: false,
     } as FirestoreSettings & { useFetchStreams?: boolean };
     return initializeFirestore(app, settings, databaseId);
   } catch {
@@ -186,18 +186,30 @@ export async function probeFirestoreReachable(timeoutMs = 4500): Promise<boolean
 }
 
 let connectionTested = false;
+let onlineRetryBound = false;
+
+function scheduleOnlineConnectionRetry(): void {
+  if (typeof window === 'undefined' || onlineRetryBound) return;
+  onlineRetryBound = true;
+  window.addEventListener(
+    'online',
+    () => {
+      onlineRetryBound = false;
+      void testConnection();
+    },
+    { once: true },
+  );
+}
+
 export async function testConnection(): Promise<void> {
   if (connectionTested) return;
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
-    if (typeof window !== 'undefined') {
-      window.addEventListener(
-        'online',
-        () => {
-          void testConnection();
-        },
-        { once: true },
-      );
-    }
+    scheduleOnlineConnectionRetry();
+    return;
+  }
+  const reachable = await probeFirestoreReachable();
+  if (!reachable) {
+    scheduleOnlineConnectionRetry();
     return;
   }
   connectionTested = true;
@@ -208,6 +220,13 @@ export async function testConnection(): Promise<void> {
     const msg = error instanceof Error ? error.message : String(error);
     if (msg.includes('the client is offline')) {
       console.error('Please check your Firebase configuration.');
+      connectionTested = false;
+      lastReachableAt = 0;
+      scheduleOnlineConnectionRetry();
+    } else if (msg.includes('unavailable')) {
+      connectionTested = false;
+      lastReachableAt = 0;
+      scheduleOnlineConnectionRetry();
     } else if (msg.includes('permission') || msg.includes('Missing or insufficient')) {
       // Server responded normally (rules denied reading test/connection), so Firestore is reachable
       lastReachableAt = Date.now();
@@ -222,13 +241,7 @@ function scheduleInitialConnectionTest(): void {
       if (typeof navigator === 'undefined' || navigator.onLine) {
         void testConnection();
       } else {
-        window.addEventListener(
-          'online',
-          () => {
-            void testConnection();
-          },
-          { once: true },
-        );
+        scheduleOnlineConnectionRetry();
       }
     }, 350);
   };
