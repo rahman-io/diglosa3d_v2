@@ -463,7 +463,8 @@ export type RadarBlipKind =
   | 'collectible'
   | 'door'
   | 'exit'
-  | 'hero_friend';
+  | 'hero_friend'
+  | 'car';
 
 export interface RadarBlip {
   id: string;
@@ -614,6 +615,20 @@ export interface RpgHudSnapshot {
     challenges: number;
     zonesCleared: number;
   };
+  carState?: CarHudState | null;
+}
+
+export interface CarHudState {
+  available: boolean;
+  nearCar: boolean;
+  mode: 'none' | 'entering' | 'driving' | 'exiting';
+  speedKmh: number;
+  gear: 'R' | 'N' | 'D';
+  headlightsOn: boolean;
+  handbrakeOn: boolean;
+  braking: boolean;
+  turboActive: boolean;
+  distanceMeters: number;
 }
 
 export interface WaveMonsterGroupSummary {

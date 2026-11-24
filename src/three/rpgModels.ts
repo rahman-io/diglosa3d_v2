@@ -853,20 +853,31 @@ export function createHeroAvatar(
     flippers.push(fin);
   }
 
-  // Rideable Sea Turtle Mount ("MOUNT: Yes")
+  // Rideable Sea Turtle Mount ("MOUNT: Yes") - saddle-proportioned so Hero sits cleanly ON TOP of shell
   const turtleMount = new THREE.Group();
-  const tShell = new THREE.Mesh(new THREE.BoxGeometry(1.52, 0.56, 1.72), palette.getMat(0x166534, 'matte'));
-  tShell.position.y = 0.42;
-  const tShellCap = new THREE.Mesh(new THREE.BoxGeometry(1.18, 0.22, 1.32), palette.getMat(0x22c55e, 'matte'));
-  tShellCap.position.y = 0.78;
-  const tHead = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.46, 0.68), palette.getMat(0x4ade80, 'matte'));
-  tHead.position.set(0, 0.48, 1.08);
-  const tFlapL = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.14, 0.48), palette.getMat(0x22c55e, 'matte'));
-  tFlapL.position.set(1.08, 0.32, 0.42);
-  const tFlapR = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.14, 0.48), palette.getMat(0x22c55e, 'matte'));
-  tFlapR.position.set(-1.08, 0.32, 0.42);
-  turtleMount.add(tShell, tShellCap, tHead, tFlapL, tFlapR);
-  turtleMount.userData.flaps = [tFlapL, tFlapR];
+  const tShell = new THREE.Mesh(new THREE.BoxGeometry(1.48, 0.48, 1.78), palette.getMat(0x166534, 'matte'));
+  tShell.position.y = 0.36;
+  const tShellRim = new THREE.Mesh(new THREE.BoxGeometry(1.62, 0.14, 1.92), palette.getMat(0x14532d, 'matte'));
+  tShellRim.position.y = 0.2;
+  const tShellCap = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.22, 1.32), palette.getMat(0x22c55e, 'matte'));
+  tShellCap.position.y = 0.68;
+  const tHead = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.44, 0.68), palette.getMat(0x4ade80, 'matte'));
+  tHead.position.set(0, 0.46, 1.12);
+  const tEyeMat = palette.getMat(0x0f172a, 'gloss');
+  const tEyeL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.1), tEyeMat);
+  tEyeL.position.set(0.26, 0.56, 1.28);
+  const tEyeR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.12, 0.1), tEyeMat);
+  tEyeR.position.set(-0.26, 0.56, 1.28);
+  const tFlapL = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.12, 0.46), palette.getMat(0x22c55e, 'matte'));
+  tFlapL.position.set(1.06, 0.26, 0.44);
+  const tFlapR = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.12, 0.46), palette.getMat(0x22c55e, 'matte'));
+  tFlapR.position.set(-1.06, 0.26, 0.44);
+  const tRearL = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.1, 0.38), palette.getMat(0x16a34a, 'matte'));
+  tRearL.position.set(0.72, 0.22, -0.78);
+  const tRearR = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.1, 0.38), palette.getMat(0x16a34a, 'matte'));
+  tRearR.position.set(-0.72, 0.22, -0.78);
+  turtleMount.add(tShell, tShellRim, tShellCap, tHead, tEyeL, tEyeR, tFlapL, tFlapR, tRearL, tRearR);
+  turtleMount.userData.flaps = [tFlapL, tFlapR, tRearL, tRearR];
   turtleMount.visible = false;
   root.add(turtleMount);
 
@@ -1003,6 +1014,11 @@ export interface HeroWeaponPoseInput {
   ridingTurtle?: boolean;
   jumpDiveTrick?: JumpDiveTrick | null;
   jumpDiveElapsed?: number;
+  carPose?: {
+    seated: boolean;
+    steerAngle: number;
+    speedRatio: number;
+  } | null;
 }
 
 /**
@@ -1035,6 +1051,7 @@ export function applyHeroWeaponPose(
     ridingTurtle = false,
     jumpDiveTrick = null,
     jumpDiveElapsed = 0,
+    carPose = null,
   } = input;
   const clampedAimPitch = THREE.MathUtils.clamp(aimPitch, -0.68, 1.32);
   const moving = speed > 0.6;
@@ -1642,19 +1659,51 @@ export function applyHeroWeaponPose(
     }
   }
 
+  const turtleBobY = Math.sin(elapsed * 3.2) * 0.04;
   if (isSwimming && ridingTurtle) {
-    targetBodyRotX = 0.36;
-    targetBodyY = 0.72 + Math.sin(elapsed * 3.2) * 0.05;
-    targetUpperX = 0.18;
-    targetHeadX = -0.32;
-    targetRightArmX = -0.78;
-    targetRightArmZ = -0.25;
-    targetLeftArmX = -0.78;
-    targetLeftArmZ = 0.25;
-    targetLeftLegX = -0.35;
-    targetRightLegX = -0.35;
-    targetLeftLegZ = 0.48;
-    targetRightLegZ = -0.48;
+    // Lower body so pelvis (y=1.10) lands at y=0.84 directly ON TOP of the turtle shell (top=0.79)
+    // and straddle thighs outward around the shell sides!
+    targetBodyRotX = 0.08;
+    targetBodyRotZ = 0;
+    targetBodyY = -0.25 + turtleBobY;
+    targetUpperX = 0.24;
+    targetUpperY = 0;
+    targetUpperZ = 0;
+    targetHeadX = -0.22;
+    targetHeadY = 0;
+    targetHeadZ = 0;
+    targetRightArmX = -0.88;
+    targetRightArmZ = -0.16;
+    targetLeftArmX = -0.88;
+    targetLeftArmZ = 0.16;
+    targetLeftLegX = -0.92;
+    targetRightLegX = -0.92;
+    targetLeftLegZ = 0.62;
+    targetRightLegZ = -0.62;
+  }
+
+  if (carPose?.seated) {
+    const steer = THREE.MathUtils.clamp(carPose.steerAngle, -0.7, 0.7);
+    const engineVib = Math.sin(elapsed * 26) * 0.008 * (0.35 + Math.abs(carPose.speedRatio));
+    targetBodyRotX = 0;
+    targetBodyRotZ = 0;
+    targetBodyY = -0.32 + engineVib;
+    targetUpperX = 0.05;
+    targetUpperY = 0;
+    targetUpperZ = -steer * 0.09;
+    targetHeadX = -0.02;
+    targetHeadY = steer * 0.24;
+    targetHeadZ = 0;
+    targetLeftLegX = -1.42;
+    targetRightLegX = -1.42;
+    targetLeftLegZ = 0.06;
+    targetRightLegZ = -0.06;
+    targetLeftArmX = -1.18 + steer * 0.22;
+    targetRightArmX = -1.18 - steer * 0.22;
+    targetLeftArmY = -0.18;
+    targetRightArmY = 0.18;
+    targetLeftArmZ = -0.16;
+    targetRightArmZ = 0.16;
   }
 
   const showSwimSuitLook = Boolean(wearingSwimsuit && isSwimming);
@@ -1676,11 +1725,15 @@ export function applyHeroWeaponPose(
   rig.turtleMount.visible = ridingTurtle && isSwimming;
   if (rig.turtleMount.visible) {
     rig.turtleMount.rotation.y = rig.body.rotation.y;
+    rig.turtleMount.rotation.x = 0.08;
+    rig.turtleMount.position.y = turtleBobY;
     const flaps = rig.turtleMount.userData.flaps as THREE.Mesh[] | undefined;
     if (flaps) {
-      const f = Math.sin(elapsed * 4.2) * 0.32;
+      const f = Math.sin(elapsed * 4.2) * 0.34;
       if (flaps[0]) flaps[0].rotation.z = f;
       if (flaps[1]) flaps[1].rotation.z = -f;
+      if (flaps[2]) flaps[2].rotation.z = -f * 0.65;
+      if (flaps[3]) flaps[3].rotation.z = f * 0.65;
     }
   }
 

@@ -86,6 +86,22 @@ export const SpotLegendIcon: React.FC<{ kind: RadarBlipKind; className?: string 
 }) => {
   if (kind === 'starter') return <StarterWeaponPixelIcon className={className} />;
   if (kind === 'swimsuit') return <SwimSuitIcon className={className} />;
+  if (kind === 'car') {
+    return (
+      <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+        <path
+          d="M5 12l2-5h10l2 5v5h-2v-1.5H7V17H5v-5z"
+          fill="#0ea5e9"
+          stroke="#0f172a"
+          strokeWidth="1.5"
+          strokeLinejoin="round"
+        />
+        <rect x="7.5" y="8" width="9" height="3" rx="0.8" fill="#bae6fd" />
+        <circle cx="8" cy="14" r="1.2" fill="#fef08a" />
+        <circle cx="16" cy="14" r="1.2" fill="#fef08a" />
+      </svg>
+    );
+  }
   if (kind === 'spot_gua') {
     return (
       <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -442,6 +458,32 @@ function drawIcon(
     ctx.fillRect(0.6, -2.2, 3.0, 2.2);
     ctx.fillStyle = '#facc15';
     ctx.fillRect(-1.0, 0.8, 2.0, 2.6);
+    ctx.restore();
+    return;
+  }
+
+  if (kind === 'car') {
+    ctx.beginPath();
+    ctx.arc(0, 0, 8.2, 0, Math.PI * 2);
+    ctx.fillStyle = 'rgba(14, 165, 233, 0.28)';
+    ctx.fill();
+    ctx.lineWidth = 1.4;
+    ctx.strokeStyle = '#7dd3fc';
+    ctx.stroke();
+
+    ctx.fillStyle = '#0284c7';
+    ctx.strokeStyle = '#0f172a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect(-5.6, -3.4, 11.2, 6.8, 2);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.fillStyle = '#bae6fd';
+    ctx.fillRect(-3.6, -2.0, 7.2, 2.6);
+    ctx.fillStyle = '#facc15';
+    ctx.fillRect(-4.4, 1.2, 2.2, 1.3);
+    ctx.fillRect(2.2, 1.2, 2.2, 1.3);
     ctx.restore();
     return;
   }
@@ -1052,7 +1094,7 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
     const rank = (k: RadarBlipKind) =>
       k === 'starter' || k === 'swimsuit'
         ? 6
-        : k === 'portal' || k === 'boss' || k === 'exit'
+        : k === 'portal' || k === 'boss' || k === 'exit' || k === 'car'
         ? 5
         : k.startsWith('spot_') || k === 'guardian' || k === 'key' || k === 'prison'
         ? 4
@@ -1072,6 +1114,7 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
       const keepClamped =
         b.kind === 'starter' ||
         b.kind === 'swimsuit' ||
+        b.kind === 'car' ||
         b.kind.startsWith('spot_') ||
         b.kind === 'npc' ||
         b.kind === 'portal' ||
@@ -1384,7 +1427,8 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
               b.kind !== 'monster_brawl' &&
               b.kind !== 'monster_quiz' &&
               b.kind !== 'sea_monster' &&
-              b.kind !== 'sky_monster'
+              b.kind !== 'sky_monster' &&
+              b.kind !== 'car'
             ) {
               continue;
             }
@@ -1398,7 +1442,7 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
               false,
               false,
               pulse,
-              b.kind === 'sea_monster' || b.kind === 'sky_monster' ? 1.0 : 0.9,
+              b.kind === 'car' ? 1.05 : b.kind === 'sea_monster' || b.kind === 'sky_monster' ? 1.0 : 0.9,
             );
           }
         }
@@ -1644,6 +1688,10 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
                   <span className="text-cyan-300">Pakaian Renang</span>
                 </span>
               )}
+              <span className="inline-flex items-center gap-1">
+                <SpotLegendIcon kind="car" className="h-4 w-4" />
+                <span className="text-sky-300">Mobil</span>
+              </span>
               <span className="inline-flex items-center gap-1">
                 <SpotLegendIcon kind="monster_brawl" className="h-4 w-4" />
                 <span>Monster</span>

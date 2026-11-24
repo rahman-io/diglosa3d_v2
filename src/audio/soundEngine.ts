@@ -70,6 +70,10 @@ class SoundEngine {
   private introActive = false;
   private ambientAudios: Partial<Record<Exclude<AmbientMode, 'none'>, HTMLAudioElement>> = {};
   private ambientMode: AmbientMode = 'none';
+  private carEngineOsc: OscillatorNode | null = null;
+  private carEngineGain: GainNode | null = null;
+  private carEngineFilter: BiquadFilterNode | null = null;
+  private carEngineActive = false;
 
   constructor() {
     if (typeof window !== 'undefined' && typeof Audio !== 'undefined') {
@@ -283,6 +287,9 @@ class SoundEngine {
     this.syncWalkPlayback();
     this.syncSwimPlayback();
     this.syncAmbientPlayback();
+    if (muted) {
+      this.setCarEngine(false, 0);
+    }
   }
 
   public isMuted(): boolean {
@@ -472,6 +479,87 @@ class SoundEngine {
 
   public playHeartPickup(): void {
     this.playPick();
+  }
+
+  public playCarDoor(opening: boolean): void {
+    if (opening) {
+      this.noise(0.06, 0.055, 0, 1200);
+      this.beep(260, 0.09, 'triangle', 0.065, 340, 0.02);
+      this.beep(170, 0.22, 'sine', 0.045, 220, 0.08);
+    } else {
+      this.noise(0.08, 0.08, 0, 500);
+      this.beep(135, 0.14, 'triangle', 0.11, 72);
+      this.beep(310, 0.05, 'square', 0.03, 180, 0.02);
+    }
+  }
+
+  public playCarHorn(): void {
+    this.beep(415, 0.26, 'sawtooth', 0.065);
+    this.beep(523.25, 0.26, 'sawtooth', 0.055);
+  }
+
+  public playCarEngineStart(): void {
+    this.noise(0.14, 0.045, 0, 380);
+    this.beep(78, 0.16, 'sawtooth', 0.075, 130);
+    this.beep(112, 0.24, 'triangle', 0.06, 68, 0.14);
+  }
+
+  public setCarEngine(active: boolean, speedRatio = 0, turbo = false): void {
+    if (this.muted || !active) {
+      if (this.carEngineGain && this.ctx) {
+        const now = this.ctx.currentTime;
+        this.carEngineGain.gain.setTargetAtTime(0.0001, now, 0.08);
+      }
+      if (this.carEngineActive && (!active || this.muted)) {
+        this.carEngineActive = false;
+        const osc = this.carEngineOsc;
+        const gain = this.carEngineGain;
+        this.carEngineOsc = null;
+        this.carEngineGain = null;
+        this.carEngineFilter = null;
+        if (osc) {
+          window.setTimeout(() => {
+            try {
+              osc.stop();
+              osc.disconnect();
+              gain?.disconnect();
+            } catch {
+              // ignore
+            }
+          }, 160);
+        }
+      }
+      return;
+    }
+
+    const ctx = this.ensureContext();
+    if (!ctx) return;
+    if (!this.carEngineOsc || !this.carEngineGain || !this.carEngineFilter) {
+      const osc = ctx.createOscillator();
+      const filter = ctx.createBiquadFilter();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(52, ctx.currentTime);
+      filter.type = 'lowpass';
+      filter.frequency.setValueAtTime(210, ctx.currentTime);
+      gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+      osc.connect(filter);
+      filter.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      this.carEngineOsc = osc;
+      this.carEngineFilter = filter;
+      this.carEngineGain = gain;
+    }
+    this.carEngineActive = true;
+    const clamped = Math.max(0, Math.min(1.3, speedRatio));
+    const targetFreq = 48 + clamped * 92 + (turbo ? 24 : 0);
+    const targetCutoff = 180 + clamped * 380 + (turbo ? 160 : 0);
+    const targetGain = 0.024 + clamped * 0.032 + (turbo ? 0.015 : 0);
+    const now = ctx.currentTime;
+    this.carEngineOsc.frequency.setTargetAtTime(targetFreq, now, 0.08);
+    this.carEngineFilter.frequency.setTargetAtTime(targetCutoff, now, 0.08);
+    this.carEngineGain.gain.setTargetAtTime(targetGain, now, 0.08);
   }
 
   public speakEnglish(text: string, rate = 0.88, pitch = 1.0): void {

@@ -12,12 +12,31 @@ import {
   subscribeIncomingSignals,
 } from './multiplayerRoomService';
 
-const RTC_ICE_CONFIG: RTCConfiguration = {
-  iceServers: [
+function buildRtcIceConfig(): RTCConfiguration {
+  const iceServers: RTCIceServer[] = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-  ],
-};
+    { urls: 'stun:stun2.l.google.com:19302' },
+    { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun.cloudflare.com:3478' },
+  ];
+  const turnUrl = (import.meta.env.VITE_TURN_URL as string | undefined)?.trim();
+  if (turnUrl) {
+    const turnUser = (import.meta.env.VITE_TURN_USERNAME as string | undefined)?.trim();
+    const turnCred = (import.meta.env.VITE_TURN_CREDENTIAL as string | undefined)?.trim();
+    iceServers.push({
+      urls: turnUrl.split(',').map((u) => u.trim()).filter(Boolean),
+      ...(turnUser ? { username: turnUser } : {}),
+      ...(turnCred ? { credential: turnCred } : {}),
+    });
+  }
+  return {
+    iceServers,
+    iceCandidatePoolSize: 4,
+  };
+}
+
+const RTC_ICE_CONFIG: RTCConfiguration = buildRtcIceConfig();
 
 // Lightweight client-side profanity filter (Indonesian + English common slang)
 const BLOCKED_WORDS = [
@@ -108,8 +127,11 @@ export class P2pMeshTransport {
   private memberMeta = new Map<string, MultiplayerMemberDoc>();
   private memberUpdatedAtMs = new Map<string, number>();
   private remoteStates = new Map<string, RemotePlayerState>();
+  private fallbackStates = new Map<string, RemotePlayerState>();
   private lastActivityMs = new Map<string, number>();
   private disconnectedSinceMs = new Map<string, number>();
+  private reconnectAttempts = new Map<string, number>();
+  private nextReconnectAtMs = new Map<string, number>();
   private departedPeers = new Set<string>();
   private everHadLiveState = new Set<string>();
   private lastHealthCheckMs = 0;
@@ -170,6 +192,8 @@ export class P2pMeshTransport {
 
       const existingSlot = this.peers.get(m.uid);
       if (!existingSlot) {
+        this.reconnectAttempts.delete(m.uid);
+        this.nextReconnectAtMs.delete(m.uid);
         this.createPeer(m.uid);
       } else if (memberUpdatedFresh) {
         const dcOpen =
@@ -179,9 +203,9 @@ export class P2pMeshTransport {
         const iceState = existingSlot.pc.iceConnectionState;
         const handshakeAgeMs = Date.now() - existingSlot.createdAtMs;
         const isActivelyNegotiating =
-          pcState === 'connecting' || iceState === 'checking' || handshakeAgeMs < 8000;
+          pcState === 'connecting' || iceState === 'checking' || handshakeAgeMs < 10000;
         const isHardBroken =
-          pcState === 'failed' || pcState === 'closed' || (pcState === 'disconnected' && handshakeAgeMs >= 3000);
+          pcState === 'failed' || pcState === 'closed' || (pcState === 'disconnected' && handshakeAgeMs >= 5000);
         if (isHardBroken || (!dcOpen && !isActivelyNegotiating)) {
           this.closePeer(m.uid);
           this.createPeer(m.uid);
@@ -194,6 +218,7 @@ export class P2pMeshTransport {
       ...this.peers.keys(),
       ...this.memberMeta.keys(),
       ...this.remoteStates.keys(),
+      ...this.fallbackStates.keys(),
     ]);
     for (const uid of allTrackedUids) {
       if (!activeUids.has(uid)) {
@@ -201,12 +226,71 @@ export class P2pMeshTransport {
         this.handlePeerDeparture(uid, meta?.displayName, 'left');
         this.memberMeta.delete(uid);
         this.memberUpdatedAtMs.delete(uid);
+        this.fallbackStates.delete(uid);
+        this.reconnectAttempts.delete(uid);
+        this.nextReconnectAtMs.delete(uid);
         this.departedPeers.delete(uid);
         this.everHadLiveState.delete(uid);
       }
     }
 
     this.emitRemotePlayers();
+    this.emitConnectionStats();
+  }
+
+  public ingestFallbackStates(states: RemotePlayerState[]): void {
+    if (this.disposed) return;
+    const seenUids = new Set<string>();
+    for (const st of states) {
+      if (!st.uid || st.uid === this.myUid) continue;
+      seenUids.add(st.uid);
+      const prevFallback = this.fallbackStates.get(st.uid);
+      const prevP2p = this.remoteStates.get(st.uid);
+      this.fallbackStates.set(st.uid, {
+        ...st,
+        speaking: prevP2p?.speaking ?? prevFallback?.speaking ?? false,
+        lastChatText: prevP2p?.lastChatText ?? prevFallback?.lastChatText,
+        lastChatAt: prevP2p?.lastChatAt ?? prevFallback?.lastChatAt,
+      });
+    }
+    for (const uid of Array.from(this.fallbackStates.keys())) {
+      if (!seenUids.has(uid)) {
+        this.fallbackStates.delete(uid);
+      }
+    }
+    this.emitRemotePlayers();
+  }
+
+  public hasMissingP2pPeers(): boolean {
+    if (this.disposed) return false;
+    for (const uid of this.memberMeta.keys()) {
+      if (this.departedPeers.has(uid)) continue;
+      const slot = this.peers.get(uid);
+      const open =
+        slot &&
+        ((slot.dc && slot.dc.readyState === 'open') ||
+          (slot.reliableDc && slot.reliableDc.readyState === 'open'));
+      if (!open) return true;
+    }
+    return false;
+  }
+
+  public reconnectAllPeers(): void {
+    if (this.disposed) return;
+    for (const uid of this.memberMeta.keys()) {
+      this.departedPeers.delete(uid);
+      const slot = this.peers.get(uid);
+      const dcOpen =
+        slot &&
+        ((slot.dc && slot.dc.readyState === 'open') ||
+          (slot.reliableDc && slot.reliableDc.readyState === 'open'));
+      if (!dcOpen) {
+        this.closePeer(uid);
+        this.reconnectAttempts.delete(uid);
+        this.nextReconnectAtMs.delete(uid);
+        this.createPeer(uid);
+      }
+    }
     this.emitConnectionStats();
   }
 
@@ -234,7 +318,7 @@ export class P2pMeshTransport {
         (p.dc && p.dc.readyState === 'open') ||
         (p.reliableDc && p.reliableDc.readyState === 'open');
       const lastAct = this.lastActivityMs.get(uid) ?? 0;
-      if (dcOpen || (lastAct > 0 && now - lastAct < 5500)) {
+      if (dcOpen || (lastAct > 0 && now - lastAct < 7500)) {
         active.push(uid);
       }
     }
@@ -342,10 +426,18 @@ export class P2pMeshTransport {
   }
 
   public applyRemoteChatBubble(senderUid: string, text: string): void {
+    const now = Date.now();
     const existing = this.remoteStates.get(senderUid);
     if (existing) {
       existing.lastChatText = text;
-      existing.lastChatAt = Date.now();
+      existing.lastChatAt = now;
+    }
+    const existingFb = this.fallbackStates.get(senderUid);
+    if (existingFb) {
+      existingFb.lastChatText = text;
+      existingFb.lastChatAt = now;
+    }
+    if (existing || existingFb) {
       this.emitRemotePlayers();
     }
   }
@@ -488,27 +580,84 @@ export class P2pMeshTransport {
 
   private checkPeerHealth(nowMs: number): void {
     if (this.disposed) return;
+
+    // Retry WebRTC connection for active Firestore room members whose P2P slot was closed for backoff
+    for (const uid of this.memberMeta.keys()) {
+      if (this.departedPeers.has(uid) || this.peers.has(uid)) continue;
+      const retryAt = this.nextReconnectAtMs.get(uid) ?? 0;
+      if (nowMs >= retryAt) {
+        this.nextReconnectAtMs.delete(uid);
+        this.createPeer(uid);
+      }
+    }
+
     for (const [uid, slot] of Array.from(this.peers.entries())) {
       if (this.departedPeers.has(uid)) continue;
       const pcState = slot.pc.connectionState;
+      const dcOpen =
+        (slot.dc && slot.dc.readyState === 'open') ||
+        (slot.reliableDc && slot.reliableDc.readyState === 'open');
+      const stillInRoom = this.memberMeta.has(uid);
+
+      const scheduleRetry = () => {
+        const attempts = (this.reconnectAttempts.get(uid) ?? 0) + 1;
+        this.reconnectAttempts.set(uid, attempts);
+        const delayMs = Math.min(25_000, 4000 * Math.pow(1.65, Math.min(attempts - 1, 4)));
+        this.nextReconnectAtMs.set(uid, nowMs + delayMs);
+        this.disconnectedSinceMs.delete(uid);
+        this.closePeer(uid);
+        this.emitConnectionStats();
+      };
+
       if (pcState === 'failed' || pcState === 'closed') {
-        this.handlePeerDeparture(uid, undefined, 'timeout');
+        if (stillInRoom) {
+          scheduleRetry();
+        } else {
+          this.handlePeerDeparture(uid, undefined, 'timeout');
+        }
         continue;
       }
+
       if (pcState === 'disconnected') {
         const discAt = this.disconnectedSinceMs.get(uid);
         if (!discAt) {
           this.disconnectedSinceMs.set(uid, nowMs);
-        } else if (nowMs - discAt >= 3500) {
-          this.handlePeerDeparture(uid, undefined, 'timeout');
+          if (!this.isPoliteFor(uid) && slot.pc.signalingState === 'stable') {
+            try {
+              slot.pc.restartIce();
+            } catch {
+              // ignore unsupported restartIce
+            }
+          }
+        } else if (nowMs - discAt >= 7500) {
+          if (stillInRoom) {
+            scheduleRetry();
+          } else {
+            this.handlePeerDeparture(uid, undefined, 'timeout');
+          }
           continue;
         }
       } else if (pcState === 'connected') {
         this.disconnectedSinceMs.delete(uid);
+        if (dcOpen) {
+          this.reconnectAttempts.delete(uid);
+          this.nextReconnectAtMs.delete(uid);
+        }
+      }
+
+      // If cross-country ICE handshake stalled without opening DataChannel after 15s, retry cleanly
+      if (!dcOpen && stillInRoom && nowMs - slot.createdAtMs >= 15_000) {
+        scheduleRetry();
+        continue;
       }
 
       const lastAct = this.lastActivityMs.get(uid);
-      if (this.remoteStates.has(uid) && typeof lastAct === 'number' && nowMs - lastAct >= 5500) {
+      if (
+        !stillInRoom &&
+        this.remoteStates.has(uid) &&
+        typeof lastAct === 'number' &&
+        nowMs - lastAct >= 8500
+      ) {
         this.handlePeerDeparture(uid, undefined, 'timeout');
       }
     }
@@ -520,15 +669,18 @@ export class P2pMeshTransport {
     reason: 'left' | 'timeout' = 'left',
   ): void {
     if (this.departedPeers.has(uid)) return;
-    const prevState = this.remoteStates.get(uid);
+    const prevState = this.remoteStates.get(uid) ?? this.fallbackStates.get(uid);
     const meta = this.memberMeta.get(uid);
     const wasInWorld = Boolean(prevState) || this.everHadLiveState.has(uid);
     const displayName = (explicitName || prevState?.displayName || meta?.displayName || 'Rekan Tim').slice(0, 32);
 
     this.departedPeers.add(uid);
     this.remoteStates.delete(uid);
+    this.fallbackStates.delete(uid);
     this.lastActivityMs.delete(uid);
     this.disconnectedSinceMs.delete(uid);
+    this.reconnectAttempts.delete(uid);
+    this.nextReconnectAtMs.delete(uid);
     this.closePeer(uid);
     this.emitRemotePlayers();
     this.emitConnectionStats();
@@ -647,12 +799,20 @@ export class P2pMeshTransport {
       const state = pc.connectionState;
       if (state === 'connected') {
         this.disconnectedSinceMs.delete(remoteUid);
+        this.reconnectAttempts.delete(remoteUid);
+        this.nextReconnectAtMs.delete(remoteUid);
       } else if (state === 'disconnected') {
         if (!this.disconnectedSinceMs.has(remoteUid)) {
           this.disconnectedSinceMs.set(remoteUid, Date.now());
         }
       } else if (state === 'failed' || state === 'closed') {
-        if (this.remoteStates.has(remoteUid)) {
+        if (this.memberMeta.has(remoteUid)) {
+          const attempts = (this.reconnectAttempts.get(remoteUid) ?? 0) + 1;
+          this.reconnectAttempts.set(remoteUid, attempts);
+          const delayMs = Math.min(25_000, 4000 * Math.pow(1.65, Math.min(attempts - 1, 4)));
+          this.nextReconnectAtMs.set(remoteUid, Date.now() + delayMs);
+          this.closePeer(remoteUid);
+        } else if (this.remoteStates.has(remoteUid)) {
           this.handlePeerDeparture(remoteUid, undefined, 'timeout');
         }
       }
@@ -902,7 +1062,34 @@ export class P2pMeshTransport {
   }
 
   private emitRemotePlayers(): void {
-    this.callbacks.onRemotePlayersChange(Array.from(this.remoteStates.values()));
+    const now = Date.now();
+    const merged = new Map<string, RemotePlayerState>();
+
+    for (const [uid, fb] of this.fallbackStates.entries()) {
+      if (this.departedPeers.has(uid)) continue;
+      merged.set(uid, fb);
+    }
+
+    for (const [uid, p2p] of this.remoteStates.entries()) {
+      if (this.departedPeers.has(uid)) continue;
+      const slot = this.peers.get(uid);
+      const dcOpen =
+        slot &&
+        ((slot.dc && slot.dc.readyState === 'open') ||
+          (slot.reliableDc && slot.reliableDc.readyState === 'open'));
+      const lastAct = this.lastActivityMs.get(uid) ?? p2p.updatedAtMs ?? 0;
+      const p2pFresh = dcOpen || (lastAct > 0 && now - lastAct < 4500) || !merged.has(uid);
+      if (p2pFresh) {
+        const fb = merged.get(uid);
+        merged.set(uid, {
+          ...p2p,
+          lastChatText: p2p.lastChatText ?? fb?.lastChatText,
+          lastChatAt: p2p.lastChatAt ?? fb?.lastChatAt,
+        });
+      }
+    }
+
+    this.callbacks.onRemotePlayersChange(Array.from(merged.values()));
   }
 
   private emitConnectionStats(): void {
@@ -934,8 +1121,11 @@ export class P2pMeshTransport {
     }
     this.memberMeta.clear();
     this.remoteStates.clear();
+    this.fallbackStates.clear();
     this.lastActivityMs.clear();
     this.disconnectedSinceMs.clear();
+    this.reconnectAttempts.clear();
+    this.nextReconnectAtMs.clear();
     this.departedPeers.clear();
     this.everHadLiveState.clear();
   }

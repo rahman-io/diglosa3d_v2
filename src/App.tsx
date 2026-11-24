@@ -78,6 +78,7 @@ import {
   leaveMultiplayerRoom,
   normalizeRoomCode,
   pruneDisconnectedMember,
+  publishPlayerLiveState,
   readLatestRoomMeta,
   rejoinRoomById,
   RoomSquadMeta,
@@ -85,6 +86,7 @@ import {
   sendFallbackChatMessage,
   startMultiplayerMatch,
   subscribeFallbackChatMessages,
+  subscribePlayerLiveStates,
   subscribeRoom,
   subscribeRoomMembers,
   touchRoomHeartbeat,
@@ -236,6 +238,7 @@ const INITIAL_HUD: RpgHudSnapshot = {
     nightWaveDefeated: 0,
     nightWaveTotal: 0,
   },
+  carState: null,
 };
 
 function DiglosaRpgApp() {
@@ -1489,10 +1492,15 @@ function DiglosaRpgApp() {
       },
     );
 
+    const unsubLiveStates = subscribePlayerLiveStates(activeRoomId, activeUid, (states) => {
+      transport.ingestFallbackStates(states);
+    });
+
     return () => {
       unsubRoom();
       unsubMembers();
       unsubFallbackChat();
+      unsubLiveStates();
       transport.dispose();
       if (transportRef.current === transport) {
         transportRef.current = null;
@@ -1564,24 +1572,47 @@ function DiglosaRpgApp() {
     enterMultiplayerMatch,
   ]);
 
-  // ~12 Hz P2P player state broadcast while active in multiplayer match (zero extra cost, smart idle throttling)
+  // ~12 Hz P2P player state broadcast + automatic lightweight Firestore fallback when any peer lacks P2P DataChannel
   useEffect(() => {
     if (!isMultiplayerPlaying || !activeRoomId) return;
     lastPacketSigRef.current = '';
     lastPacketSentAtRef.current = 0;
+    let lastFallbackSig = '';
+    let lastFallbackSentAt = 0;
 
     const id = window.setInterval(() => {
       const engine = engineRef.current;
       const transport = transportRef.current;
-      if (!engine || !transport || transport.getOpenChannelCount() === 0) return;
+      if (!engine || !transport) return;
+
+      const hasOpenP2p = transport.getOpenChannelCount() > 0;
+      const needsFallback = transport.hasMissingP2pPeers();
+      if (!hasOpenP2p && !needsFallback) return;
 
       const pkt = engine.getLocalSyncPacket();
       const sig = `${pkt.w}|${Math.round(pkt.x * 20)}|${Math.round(pkt.y * 20)}|${Math.round(pkt.z * 20)}|${Math.round(pkt.yaw * 20)}|${pkt.spd.toFixed(1)}|${pkt.og ? 1 : 0}|${pkt.sw ? 1 : 0}|${pkt.wp}|${pkt.wo ? 1 : 0}|${pkt.ch}`;
       const now = Date.now();
-      if (sig !== lastPacketSigRef.current || now - lastPacketSentAtRef.current >= 850) {
+
+      if (hasOpenP2p && (sig !== lastPacketSigRef.current || now - lastPacketSentAtRef.current >= 850)) {
         lastPacketSigRef.current = sig;
         lastPacketSentAtRef.current = now;
         transport.broadcastState(pkt);
+      }
+
+      if (needsFallback) {
+        const fbSig = `${pkt.w}|${Math.round(pkt.x * 5)}|${Math.round(pkt.y * 5)}|${Math.round(pkt.z * 5)}|${Math.round(pkt.yaw * 6)}|${pkt.og ? 1 : 0}|${pkt.sw ? 1 : 0}|${pkt.wp}|${pkt.wo ? 1 : 0}|${pkt.ch}`;
+        const minMoveIntervalMs = 380;
+        const idleHeartbeatMs = 4500;
+        const elapsed = now - lastFallbackSentAt;
+        if (
+          lastFallbackSentAt === 0 ||
+          (fbSig !== lastFallbackSig && elapsed >= minMoveIntervalMs) ||
+          elapsed >= idleHeartbeatMs
+        ) {
+          lastFallbackSig = fbSig;
+          lastFallbackSentAt = now;
+          void publishPlayerLiveState(activeRoomId, pkt);
+        }
       }
     }, 85);
 
@@ -1985,6 +2016,9 @@ function DiglosaRpgApp() {
     try {
       const actual = await transport.setMicEnabled(next);
       setMicEnabled(actual);
+      if (actual && transport.hasMissingP2pPeers()) {
+        transport.reconnectAllPeers();
+      }
     } catch (err) {
       setMicEnabled(false);
       setVoiceChatError(
@@ -2231,6 +2265,11 @@ function DiglosaRpgApp() {
           onToggleVoice={handleToggleVoice}
           multiplayerActive={Boolean(activeRoom && isMultiplayerPlaying)}
           onHelpTeammate={() => engineRef.current?.helpNearbyTeammate()}
+          onToggleCar={() => engineRef.current?.enterOrExitCar()}
+          onCarControl={(ctrl, held) => engineRef.current?.setCarControl(ctrl, held)}
+          onToggleCarHandbrake={() => engineRef.current?.toggleCarHandbrake()}
+          onToggleCarHeadlights={() => engineRef.current?.toggleCarHeadlights()}
+          onCarHorn={() => engineRef.current?.honkCarHorn()}
         />
       )}
 

@@ -45,6 +45,7 @@ import {
   AreaMonsterStats,
   BattleContext,
   CameraMode,
+  CarHudState,
   CaveSealContext,
   CharacterPresetId,
   DayPhaseId,
@@ -170,6 +171,11 @@ import {
   setHeroWeaponVisual,
   updateDoorRigVisual,
 } from './rpgModels';
+import {
+  createDriveableCarRig,
+  DriveableCarRig,
+  updateCarRigVisuals,
+} from './carModel';
 import {
   createWorldObstacles,
   getObstacleSupportHeight,
@@ -522,6 +528,7 @@ export class RpgWorldEngine {
   private portalRig: PortalArchRig;
   private starterPickupMesh: THREE.Group;
   private swimSuitPickupMesh: THREE.Group;
+  private carRig!: DriveableCarRig;
   private areaMists: Map<ZoneId, THREE.Mesh>;
   private isSoftwareGl: boolean;
   private isMobileDevice: boolean;
@@ -643,6 +650,36 @@ export class RpgWorldEngine {
     OVERWORLD_ANCHORS.desaSpawn.y,
     OVERWORLD_ANCHORS.desaSpawn.z,
   );
+
+  // Driveable 3D Explorer Car state (parked at Alun-Alun Desa, full slow door animation + driving physics)
+  private carPos = new THREE.Vector3(3.2, getArchipelagoGroundY(3.2, 119.5), 119.5);
+  private carYaw = -Math.PI * 0.72;
+  private carSpeed = 0;
+  private carSteerAngle = 0;
+  private carWheelSpin = 0;
+  private carDoorAngle = 0;
+  private carPitchLean = 0;
+  private carRollLean = 0;
+  private carMode: 'none' | 'entering' | 'driving' | 'exiting' = 'none';
+  private carAnimTimer = 0;
+  private carExitBrakeWait = 0;
+  private carEnterStartPos = new THREE.Vector3();
+  private carEnterStartYaw = 0;
+  private carExitSafePos = new THREE.Vector3();
+  private carDoorOpenPlayed = false;
+  private carDoorClosePlayed = false;
+  private carHeadlightsOn = false;
+  private carHandbrakeOn = false;
+  private carExhaustTimer = 0;
+  private nearCar = false;
+  private carCtrl = {
+    gas: false,
+    brake: false,
+    left: false,
+    right: false,
+    handbrake: false,
+    boost: false,
+  };
 
   // Voxel Cave State
   private caveTorches: Array<{
@@ -1140,6 +1177,13 @@ export class RpgWorldEngine {
     this.overworldGroup.add(this.swimSuitPickupMesh);
     this.overworldClickables.push(this.swimSuitPickupMesh);
 
+    this.carRig = createDriveableCarRig(this.palette);
+    this.carRig.root.position.copy(this.carPos);
+    this.carRig.root.rotation.y = this.carYaw;
+    this.carRig.root.userData.driveableCar = true;
+    this.overworldGroup.add(this.carRig.root);
+    this.overworldClickables.push(this.carRig.root);
+
     this.cloudsMesh = createVoxelClouds(36, this.preferLiteShader);
     this.cloudsMesh.userData.isMapHidden = true;
     this.overworldGroup.add(this.cloudsMesh);
@@ -1301,6 +1345,7 @@ export class RpgWorldEngine {
     dyn.add(this.portalRig.ringInner);
     dyn.add(this.starterPickupMesh);
     dyn.add(this.swimSuitPickupMesh);
+    dyn.add(this.carRig.root);
     dyn.add(this.cloudsMesh);
     dyn.add(this.diamondInstanced);
     dyn.add(this.heartInstanced);
@@ -2877,12 +2922,15 @@ export class RpgWorldEngine {
 
   private refreshWeaponVisual(): void {
     const canHoldWeapon =
+      this.carMode === 'none' &&
       this.activeHotbarSlot <= 7 &&
       this.ownedWeapons.has(this.activeWeapon) &&
       (!this.isSwimming || this.worldMode === 'ocean' || this.isHeroUnderwater() || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
     setHeroWeaponVisual(this.hero, this.activeWeapon, canHoldWeapon);
 
-    if (this.isSwimming) {
+    if (this.carMode !== 'none') {
+      setFirstPersonHeldVisual(this.fpViewRig, 'bare', this.activeWeapon, this.pickaxeTier);
+    } else if (this.isSwimming) {
       setFirstPersonHeldVisual(
         this.fpViewRig,
         canHoldWeapon ? 'weapon' : 'bare',
@@ -2935,7 +2983,7 @@ export class RpgWorldEngine {
     const isPlaying = this.phase === 'playing';
     const inFirstPerson = isPlaying && this.cameraMode === 'first_person';
     this.hero.body.visible = !inFirstPerson;
-    this.fpViewRig.root.visible = inFirstPerson;
+    this.fpViewRig.root.visible = inFirstPerson && this.carMode === 'none';
     this.controls.enabled = isPlaying && this.cameraMode === 'orbit';
   }
 
@@ -3197,6 +3245,7 @@ export class RpgWorldEngine {
       return;
     }
     this.clearSubScenes();
+    this.resetCarToParked();
     this.worldMode = 'overworld';
     this.overworldGroup.visible = true;
     this.phase = 'playing';
@@ -4456,6 +4505,7 @@ export class RpgWorldEngine {
     this.oceanOxygen = 35;
     this.ridingTurtle = false;
     this.heroDiveActive = false;
+    this.resetCarToParked(true);
     if (this.archipelagoUnderwaterRig) {
       for (const ch of this.archipelagoUnderwaterRig.chests) {
         ch.opened = false;
@@ -5278,6 +5328,13 @@ export class RpgWorldEngine {
     this.jumpToSwimPlayedForAir = false;
     this.diveTransition = null;
     soundEngine.setSwimmingAudio(false);
+    soundEngine.setCarEngine(false, 0);
+    this.clearCarControls();
+    if (this.carMode !== 'none') {
+      this.carMode = 'none';
+      this.carSpeed = 0;
+      this.carDoorAngle = 0;
+    }
     this.clearCaveBoulders();
     this.activeTnts.forEach((t) => {
       if (t.mesh.parent) t.mesh.parent.remove(t.mesh);
@@ -6027,6 +6084,8 @@ export class RpgWorldEngine {
       this.rightAimHeld = false;
       this.leftFireHeld = false;
       this.hudFireHeld = false;
+      this.clearCarControls();
+      soundEngine.setCarEngine(false, 0);
       if (document.pointerLockElement === this.renderer.domElement) {
         try {
           document.exitPointerLock?.();
@@ -6518,7 +6577,7 @@ export class RpgWorldEngine {
   }
 
   public toggleOceanTurtleMount(): void {
-    if (this.worldMode !== 'ocean' && !this.isHeroUnderwater()) return;
+    if (this.worldMode !== 'ocean' && !this.isHeroUnderwater() && !this.isSwimming) return;
     if (this.ridingTurtle) {
       this.ridingTurtle = false;
       soundEngine.playSplash(0.6);
@@ -6535,10 +6594,521 @@ export class RpgWorldEngine {
     this.discoveredBiota.add('sea_turtle');
     soundEngine.playPick();
     this.spawnBurst(this.heroPos.x, this.heroPos.y + 0.5, this.heroPos.z, 0x22c55e, 14);
-    this.showBanner('🐢 Menunggangi Penyu Hijau! Kecepatan renang meningkat pesat!', 2.8);
+    this.showBanner('🐢 Menunggangi Penyu Hijau! Karakter duduk di atas tempurungnya.', 2.8);
     this.saveProgress();
     this.pushHud(true);
   }
+
+  private getCarWorldPoint(localOffset: THREE.Vector3, out = new THREE.Vector3()): THREE.Vector3 {
+    const s = Math.sin(this.carYaw);
+    const c = Math.cos(this.carYaw);
+    out.set(
+      this.carPos.x + localOffset.x * c + localOffset.z * s,
+      this.carPos.y + localOffset.y,
+      this.carPos.z - localOffset.x * s + localOffset.z * c,
+    );
+    return out;
+  }
+
+  private clearCarControls(): void {
+    this.carCtrl.gas = false;
+    this.carCtrl.brake = false;
+    this.carCtrl.left = false;
+    this.carCtrl.right = false;
+    this.carCtrl.handbrake = false;
+    this.carCtrl.boost = false;
+  }
+
+  private resetCarToParked(resetPosition = false): void {
+    this.clearCarControls();
+    this.carMode = 'none';
+    this.carSpeed = 0;
+    this.carSteerAngle = 0;
+    this.carDoorAngle = 0;
+    this.carPitchLean = 0;
+    this.carRollLean = 0;
+    this.carAnimTimer = 0;
+    this.carExitBrakeWait = 0;
+    soundEngine.setCarEngine(false, 0);
+    if (resetPosition) {
+      this.carPos.set(3.2, getArchipelagoGroundY(3.2, 119.5), 119.5);
+      this.carYaw = -Math.PI * 0.72;
+    }
+    if (this.carRig) {
+      this.carRig.root.position.copy(this.carPos);
+      this.carRig.root.rotation.set(0, this.carYaw, 0);
+      updateCarRigVisuals(this.carRig, {
+        doorAngle: 0,
+        steerAngle: 0,
+        wheelSpin: this.carWheelSpin,
+        headlightsOn: this.carHeadlightsOn,
+        braking: false,
+        reversing: false,
+        pitchLean: 0,
+        rollLean: 0,
+      });
+    }
+    this.refreshWeaponVisual();
+    this.applyCameraVisibilityAndControls();
+  }
+
+  private findSafeCarExitSpot(): THREE.Vector3 {
+    const candidates = [
+      this.carRig.boardOutsideOffset,
+      new THREE.Vector3(-2.48, 0, -0.05),
+      new THREE.Vector3(0, 0, -3.7),
+      new THREE.Vector3(0, 0, 3.7),
+    ];
+    for (const off of candidates) {
+      const p = this.getCarWorldPoint(off);
+      const s = sampleArchipelagoTerrain(p.x, p.z);
+      if (s.isLandOrBridge && s.groundY >= 0.05 && Math.abs(s.groundY - this.carPos.y) < 1.8) {
+        p.y = s.groundY;
+        return p;
+      }
+    }
+    const fallback = this.getCarWorldPoint(this.carRig.boardOutsideOffset);
+    fallback.y = Math.max(0.1, getArchipelagoGroundY(fallback.x, fallback.z));
+    return fallback;
+  }
+
+  public enterOrExitCar(): void {
+    this.lastInputActivityMs = performance.now();
+    if (this.phase !== 'playing' || this.worldMode !== 'overworld') return;
+
+    if (this.carMode === 'none') {
+      if (!this.nearCar) {
+        const doorPt = this.getCarWorldPoint(this.carRig.boardOutsideOffset);
+        this.tapMoveTarget = doorPt;
+        this.showBanner('🚗 Berjalan menuju Mobil Petualang...', 2.2);
+        return;
+      }
+      this.carMode = 'entering';
+      this.carAnimTimer = 0;
+      this.carDoorOpenPlayed = false;
+      this.carDoorClosePlayed = false;
+      this.carEnterStartPos.copy(this.heroPos);
+      this.carEnterStartYaw = this.heroYaw;
+      this.tapMoveTarget = null;
+      this.heroVel.set(0, 0, 0);
+      this.heroVelY = 0;
+      this.heroOnGround = true;
+      this.isSwimming = false;
+      this.heroDiveActive = false;
+      this.ridingTurtle = false;
+      this.diveTransition = null;
+      this.isAiming = false;
+      this.aimToggled = false;
+      this.hudFireHeld = false;
+      this.leftFireHeld = false;
+      this.clearCarControls();
+      soundEngine.setWalking(false);
+      soundEngine.setSwimmingAudio(false);
+      this.refreshWeaponVisual();
+      this.applyCameraVisibilityAndControls();
+      this.showBanner('🚗 Membuka pintu mobil secara perlahan...', 2.1);
+      this.pushHud(true);
+      return;
+    }
+
+    if (this.carMode === 'driving') {
+      this.carMode = 'exiting';
+      this.carAnimTimer = 0;
+      this.carExitBrakeWait = Math.abs(this.carSpeed) > 1.2 ? 0.3 : 0;
+      this.carDoorOpenPlayed = false;
+      this.carDoorClosePlayed = false;
+      this.carExitSafePos.copy(this.findSafeCarExitSpot());
+      this.clearCarControls();
+      soundEngine.setCarEngine(false, 0);
+      this.showBanner('🚗 Menghentikan mobil & membuka pintu keluar...', 1.8);
+      this.pushHud(true);
+    }
+  }
+
+  public setCarControl(
+    ctrl: 'gas' | 'brake' | 'left' | 'right' | 'handbrake' | 'boost',
+    held: boolean,
+  ): void {
+    this.lastInputActivityMs = performance.now();
+    this.carCtrl[ctrl] = held;
+  }
+
+  public toggleCarHandbrake(): void {
+    this.lastInputActivityMs = performance.now();
+    if (this.carMode !== 'driving') return;
+    this.carHandbrakeOn = !this.carHandbrakeOn;
+    soundEngine.playCarDoor(false);
+    this.showBanner(
+      this.carHandbrakeOn ? '🅿️ Rem Tangan AKTIF' : '🚗 Rem Tangan Dilepas',
+      1.6,
+    );
+    this.pushHud(true);
+  }
+
+  public toggleCarHeadlights(): void {
+    this.lastInputActivityMs = performance.now();
+    if (this.worldMode !== 'overworld') return;
+    this.carHeadlightsOn = !this.carHeadlightsOn;
+    soundEngine.playPick();
+    this.showBanner(
+      this.carHeadlightsOn ? '💡 Lampu Depan Mobil NYALA' : '💡 Lampu Depan Mobil MATI',
+      1.6,
+    );
+    this.pushHud(true);
+  }
+
+  public honkCarHorn(): void {
+    this.lastInputActivityMs = performance.now();
+    if (this.worldMode !== 'overworld') return;
+    soundEngine.playCarHorn();
+    this.spawnBurst(this.carPos.x, this.carPos.y + 2.2, this.carPos.z, 0xfacc15, 6);
+  }
+
+  private buildCarHudState(): CarHudState | null {
+    if (this.phase !== 'playing' || this.worldMode !== 'overworld') return null;
+    const speedKmh = Math.round(Math.abs(this.carSpeed) * 3.6);
+    const gasHeld = this.carCtrl.gas || this.heldKeys.has('KeyW') || this.heldKeys.has('ArrowUp');
+    const brakeHeld = this.carCtrl.brake || this.heldKeys.has('KeyS') || this.heldKeys.has('ArrowDown');
+    const gear: CarHudState['gear'] =
+      this.carMode !== 'driving'
+        ? 'N'
+        : this.carSpeed < -0.5
+        ? 'R'
+        : this.carSpeed > 0.5 || gasHeld
+        ? 'D'
+        : 'N';
+    const distanceMeters = Math.round(
+      Math.hypot(this.heroPos.x - this.carPos.x, this.heroPos.z - this.carPos.z),
+    );
+    return {
+      available: Boolean(this.carRig),
+      mode: this.carMode,
+      nearCar: this.nearCar,
+      speedKmh,
+      gear,
+      headlightsOn: this.carHeadlightsOn,
+      handbrakeOn: this.carHandbrakeOn || this.carCtrl.handbrake || this.heldKeys.has('Space'),
+      braking: this.carMode === 'driving' && brakeHeld && this.carSpeed > 0.4,
+      turboActive:
+        this.carMode === 'driving' &&
+        (this.carCtrl.boost || this.heldKeys.has('ShiftLeft') || this.heldKeys.has('ShiftRight')) &&
+        gasHeld,
+      distanceMeters,
+    };
+  }
+
+  private resolveHeroParkedCarCollision(): void {
+    const dx = this.heroPos.x - this.carPos.x;
+    const dz = this.heroPos.z - this.carPos.z;
+    if (Math.abs(dx) > 4.5 || Math.abs(dz) > 4.5 || Math.abs(this.heroPos.y - this.carPos.y) > 3.2) {
+      return;
+    }
+    const s = Math.sin(this.carYaw);
+    const c = Math.cos(this.carYaw);
+    const localX = dx * c - dz * s;
+    const localZ = dx * s + dz * c;
+    const halfW = 1.98;
+    const halfL = 3.45;
+    const clampedX = THREE.MathUtils.clamp(localX, -halfW, halfW);
+    const clampedZ = THREE.MathUtils.clamp(localZ, -halfL, halfL);
+    const diffX = localX - clampedX;
+    const diffZ = localZ - clampedZ;
+    if (diffX === 0 && diffZ === 0) {
+      const pushOutX = halfW - Math.abs(localX) < halfL - Math.abs(localZ);
+      const fixLX = pushOutX ? (localX >= 0 ? halfW : -halfW) : localX;
+      const fixLZ = pushOutX ? localZ : localZ >= 0 ? halfL : -halfL;
+      this.heroPos.x = this.carPos.x + fixLX * c + fixLZ * s;
+      this.heroPos.z = this.carPos.z - fixLX * s + fixLZ * c;
+    } else if (diffX * diffX + diffZ * diffZ < 0.02) {
+      return;
+    }
+    const pushLX = localX - clampedX;
+    const pushLZ = localZ - clampedZ;
+    if (Math.abs(pushLX) > 0.001 || Math.abs(pushLZ) > 0.001) {
+      const len = Math.hypot(pushLX, pushLZ);
+      if (len < 0.55) {
+        const nx = pushLX / len;
+        const nz = pushLZ / len;
+        const fixLX = clampedX + nx * 0.55;
+        const fixLZ = clampedZ + nz * 0.55;
+        this.heroPos.x = this.carPos.x + fixLX * c + fixLZ * s;
+        this.heroPos.z = this.carPos.z - fixLX * s + fixLZ * c;
+      }
+    }
+  }
+
+  private updateCarPhysicsAndAnimation(dt: number): void {
+    const smoothstep = (v: number) => {
+      const t = THREE.MathUtils.clamp(v, 0, 1);
+      return t * t * (3 - 2 * t);
+    };
+    const seatPt = this.getCarWorldPoint(this.carRig.driverSeatOffset);
+    const outsidePt = this.getCarWorldPoint(this.carRig.boardOutsideOffset);
+    let brakingVisual = false;
+    let reversingVisual = false;
+
+    if (this.carMode === 'entering') {
+      this.carSpeed = THREE.MathUtils.damp(this.carSpeed, 0, 12, dt);
+      this.carAnimTimer += dt;
+      const t = this.carAnimTimer;
+      if (!this.carDoorOpenPlayed && t >= 0.04) {
+        this.carDoorOpenPlayed = true;
+        soundEngine.playCarDoor(true);
+      }
+
+      if (t < 0.55) {
+        const e1 = smoothstep(t / 0.55);
+        this.heroPos.lerpVectors(this.carEnterStartPos, outsidePt, e1);
+        this.heroPos.y = THREE.MathUtils.lerp(this.carEnterStartPos.y, this.carPos.y, e1);
+        this.carDoorAngle = THREE.MathUtils.lerp(0, 1.05, e1);
+        const faceYaw = Math.atan2(seatPt.x - this.heroPos.x, seatPt.z - this.heroPos.z);
+        let dYaw = faceYaw - this.carEnterStartYaw;
+        while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+        while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+        this.heroYaw = this.carEnterStartYaw + dYaw * e1;
+      } else if (t < 1.55) {
+        const e2 = smoothstep((t - 0.55) / 1.0);
+        this.carDoorAngle = 1.05;
+        this.heroPos.lerpVectors(outsidePt, seatPt, e2);
+        this.heroPos.y += Math.sin(e2 * Math.PI) * 0.16;
+        const enterYaw = Math.atan2(seatPt.x - outsidePt.x, seatPt.z - outsidePt.z);
+        let dYaw = this.carYaw - enterYaw;
+        while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+        while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+        this.heroYaw = enterYaw + dYaw * e2;
+      } else {
+        const e3 = smoothstep((t - 1.55) / 0.65);
+        this.heroPos.copy(seatPt);
+        this.heroYaw = this.carYaw;
+        this.carDoorAngle = THREE.MathUtils.lerp(1.05, 0, e3);
+        if (!this.carDoorClosePlayed && t >= 1.65) {
+          this.carDoorClosePlayed = true;
+          soundEngine.playCarDoor(false);
+        }
+        if (t >= 2.2) {
+          this.carDoorAngle = 0;
+          this.carMode = 'driving';
+          this.carHandbrakeOn = false;
+          soundEngine.playCarEngineStart();
+          this.showBanner('🚗 Mesin menyala! Gunakan GAS, REM & Kemudi untuk menjelajah.', 2.8);
+          this.pushHud(true);
+        }
+      }
+      soundEngine.setCarEngine(false, 0);
+    } else if (this.carMode === 'exiting') {
+      if (Math.abs(this.carSpeed) > 0.6 || this.carExitBrakeWait > 0) {
+        this.carExitBrakeWait = Math.max(0, this.carExitBrakeWait - dt);
+        this.carSpeed = THREE.MathUtils.damp(this.carSpeed, 0, 12, dt);
+        this.carWheelSpin += (this.carSpeed / 0.56) * dt;
+        const prevX = this.carPos.x;
+        const prevZ = this.carPos.z;
+        this.carPos.x += Math.sin(this.carYaw) * this.carSpeed * dt;
+        this.carPos.z += Math.cos(this.carYaw) * this.carSpeed * dt;
+        const s = sampleArchipelagoTerrain(this.carPos.x, this.carPos.z);
+        if (!s.isLandOrBridge || s.groundY < -0.18) {
+          this.carPos.x = prevX;
+          this.carPos.z = prevZ;
+          this.carSpeed = 0;
+        } else {
+          this.carPos.y = THREE.MathUtils.damp(this.carPos.y, Math.max(-0.05, s.groundY), 16, dt);
+        }
+        const liveSeat = this.getCarWorldPoint(this.carRig.driverSeatOffset);
+        this.heroPos.copy(liveSeat);
+        this.heroYaw = this.carYaw;
+        brakingVisual = true;
+        this.carExitSafePos.copy(this.findSafeCarExitSpot());
+      } else {
+        this.carSpeed = 0;
+        this.carAnimTimer += dt;
+        const t = this.carAnimTimer;
+        if (!this.carDoorOpenPlayed && t >= 0.03) {
+          this.carDoorOpenPlayed = true;
+          soundEngine.playCarDoor(true);
+        }
+        if (t < 0.6) {
+          const e1 = smoothstep(t / 0.6);
+          this.carDoorAngle = THREE.MathUtils.lerp(0, 1.05, e1);
+          this.heroPos.copy(seatPt);
+          this.heroYaw = this.carYaw;
+        } else if (t < 1.35) {
+          const e2 = smoothstep((t - 0.6) / 0.75);
+          this.carDoorAngle = 1.05;
+          this.heroPos.lerpVectors(seatPt, this.carExitSafePos, e2);
+          this.heroPos.y += Math.sin(e2 * Math.PI) * 0.14;
+          const outYaw = Math.atan2(this.carExitSafePos.x - seatPt.x, this.carExitSafePos.z - seatPt.z);
+          let dYaw = outYaw - this.carYaw;
+          while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+          while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+          this.heroYaw = this.carYaw + dYaw * e2;
+        } else {
+          const e3 = smoothstep((t - 1.35) / 0.6);
+          this.heroPos.copy(this.carExitSafePos);
+          this.carDoorAngle = THREE.MathUtils.lerp(1.05, 0, e3);
+          if (!this.carDoorClosePlayed && t >= 1.45) {
+            this.carDoorClosePlayed = true;
+            soundEngine.playCarDoor(false);
+          }
+          if (t >= 1.95) {
+            this.carDoorAngle = 0;
+            this.carMode = 'none';
+            this.heroPos.copy(this.carExitSafePos);
+            this.heroVel.set(0, 0, 0);
+            this.heroVelY = 0;
+            this.heroOnGround = true;
+            this.refreshWeaponVisual();
+            this.applyCameraVisibilityAndControls();
+            this.showBanner('🚶 Kamu keluar dari mobil.', 1.8);
+            this.pushHud(true);
+          }
+        }
+      }
+      soundEngine.setCarEngine(false, 0);
+    } else if (this.carMode === 'driving') {
+      const gasInput = this.carCtrl.gas || this.heldKeys.has('KeyW') || this.heldKeys.has('ArrowUp');
+      const brakeInput =
+        this.carCtrl.brake || this.heldKeys.has('KeyS') || this.heldKeys.has('ArrowDown');
+      const leftInput = this.carCtrl.left || this.heldKeys.has('KeyA') || this.heldKeys.has('ArrowLeft');
+      const rightInput =
+        this.carCtrl.right || this.heldKeys.has('KeyD') || this.heldKeys.has('ArrowRight');
+      const handbrakeActive =
+        this.carHandbrakeOn || this.carCtrl.handbrake || this.heldKeys.has('Space');
+      const boostInput =
+        this.carCtrl.boost || this.heldKeys.has('ShiftLeft') || this.heldKeys.has('ShiftRight');
+
+      const steerTarget = ((leftInput ? 1 : 0) - (rightInput ? 1 : 0)) * 0.52;
+      this.carSteerAngle = THREE.MathUtils.damp(this.carSteerAngle, steerTarget, 10, dt);
+
+      const prevSpd = this.carSpeed;
+      const maxFwd = boostInput && !handbrakeActive ? 32 : 23;
+      const maxRev = -9.5;
+      if (handbrakeActive) {
+        this.carSpeed = THREE.MathUtils.damp(this.carSpeed, 0, 9.5, dt);
+        brakingVisual = true;
+      } else if (gasInput && !brakeInput) {
+        if (this.carSpeed < 0) {
+          this.carSpeed = Math.min(0, this.carSpeed + 34 * dt);
+          brakingVisual = true;
+        } else {
+          const accel = boostInput ? 26 : 16.5;
+          this.carSpeed = Math.min(maxFwd, this.carSpeed + accel * dt);
+        }
+      } else if (brakeInput && !gasInput) {
+        if (this.carSpeed > 0.6) {
+          this.carSpeed = Math.max(0, this.carSpeed - 32 * dt);
+          brakingVisual = true;
+        } else {
+          this.carSpeed = Math.max(maxRev, this.carSpeed - 12 * dt);
+          reversingVisual = true;
+        }
+      } else {
+        this.carSpeed *= Math.exp(-2.6 * dt);
+        if (Math.abs(this.carSpeed) < 0.08) this.carSpeed = 0;
+      }
+
+      if (Math.abs(this.carSpeed) > 0.25) {
+        const speedFactor = THREE.MathUtils.clamp(Math.abs(this.carSpeed) / 7.5, 0.25, 1.0);
+        const turnDir = this.carSpeed >= 0 ? 1 : -1;
+        this.carYaw += this.carSteerAngle * 2.15 * speedFactor * turnDir * dt;
+      }
+
+      const prevX = this.carPos.x;
+      const prevZ = this.carPos.z;
+      this.carPos.x += Math.sin(this.carYaw) * this.carSpeed * dt;
+      this.carPos.z += Math.cos(this.carYaw) * this.carSpeed * dt;
+      constrainHeroToWorldBounds(this.carPos, 2.2);
+
+      const checkWaterEdge = sampleArchipelagoTerrain(this.carPos.x, this.carPos.z);
+      if (!checkWaterEdge.isLandOrBridge || checkWaterEdge.groundY < -0.18) {
+        const tryX = sampleArchipelagoTerrain(this.carPos.x, prevZ);
+        const tryZ = sampleArchipelagoTerrain(prevX, this.carPos.z);
+        if (tryX.isLandOrBridge && tryX.groundY >= -0.18) {
+          this.carPos.z = prevZ;
+        } else if (tryZ.isLandOrBridge && tryZ.groundY >= -0.18) {
+          this.carPos.x = prevX;
+        } else {
+          this.carPos.x = prevX;
+          this.carPos.z = prevZ;
+        }
+        this.carSpeed *= 0.25;
+      }
+
+      resolveObstacleBoxes(this.carPos, 1.95, this.villageRig.obstacles);
+      resolveArchipelagoVehicleCollisions(this.archipelagoRig, this.carPos, 2.05, 2.65);
+      if (this.worldObstaclesRig) {
+        resolveSolidObstacleCollisions(this.worldObstaclesRig, this.carPos, 1.9, 2.65);
+      }
+
+      const postWater = sampleArchipelagoTerrain(this.carPos.x, this.carPos.z);
+      if (!postWater.isLandOrBridge || postWater.groundY < -0.18) {
+        this.carPos.x = prevX;
+        this.carPos.z = prevZ;
+        this.carSpeed = 0;
+      } else {
+        this.carPos.y = THREE.MathUtils.damp(
+          this.carPos.y,
+          Math.max(-0.05, postWater.groundY),
+          16,
+          dt,
+        );
+      }
+
+      this.carWheelSpin += (this.carSpeed / 0.56) * dt;
+      const accelRate = (this.carSpeed - prevSpd) / Math.max(0.001, dt);
+      const targetPitch = THREE.MathUtils.clamp(-accelRate * 0.0022, -0.05, 0.05);
+      const targetRoll = THREE.MathUtils.clamp(
+        this.carSteerAngle * THREE.MathUtils.clamp(this.carSpeed / 16, -1, 1) * 0.14,
+        -0.085,
+        0.085,
+      );
+      this.carPitchLean = THREE.MathUtils.damp(this.carPitchLean, targetPitch, 10, dt);
+      this.carRollLean = THREE.MathUtils.damp(this.carRollLean, targetRoll, 10, dt);
+
+      const liveSeat = this.getCarWorldPoint(this.carRig.driverSeatOffset);
+      this.heroPos.copy(liveSeat);
+      this.heroYaw = this.carYaw;
+      this.heroVel.set(
+        Math.sin(this.carYaw) * this.carSpeed,
+        0,
+        Math.cos(this.carYaw) * this.carSpeed,
+      );
+      this.heroVelY = 0;
+      this.heroOnGround = true;
+      this.isSwimming = false;
+
+      this.carExhaustTimer -= dt;
+      if (this.carExhaustTimer <= 0) {
+        this.carExhaustTimer = boostInput ? 0.06 : Math.abs(this.carSpeed) > 3 ? 0.12 : 0.28;
+        const exPt = this.getCarWorldPoint(new THREE.Vector3(-0.92, 0.58, -3.15));
+        this.spawnBurst(
+          exPt.x,
+          exPt.y,
+          exPt.z,
+          boostInput && gasInput ? 0x38bdf8 : 0xcbd5e1,
+          boostInput && gasInput ? 4 : 1,
+        );
+      }
+
+      soundEngine.setCarEngine(
+        true,
+        THREE.MathUtils.clamp(Math.abs(this.carSpeed) / 26, 0, 1.25),
+        boostInput && gasInput && !handbrakeActive,
+      );
+    }
+
+    this.carRig.root.position.copy(this.carPos);
+    this.carRig.root.rotation.set(0, this.carYaw, 0);
+    updateCarRigVisuals(this.carRig, {
+      doorAngle: this.carDoorAngle,
+      steerAngle: this.carSteerAngle,
+      wheelSpin: this.carWheelSpin,
+      headlightsOn: this.carHeadlightsOn,
+      braking: brakingVisual,
+      reversing: reversingVisual || this.carSpeed < -0.5,
+      pitchLean: this.carPitchLean,
+      rollLean: this.carRollLean,
+    });
+  }
+
 
   private interactWithOceanChest(ch: OceanSupplyChest): void {
     if (ch.opened) return;
@@ -7534,7 +8104,13 @@ export class RpgWorldEngine {
     this.lastInputActivityMs = performance.now();
     if (this.phase !== 'playing') return;
 
-    if (this.worldMode === 'ocean' || this.isHeroUnderwater()) {
+    if (this.worldMode === 'overworld' && (this.carMode === 'driving' || (this.carMode === 'none' && this.nearCar))) {
+      this.enterOrExitCar();
+      return;
+    }
+    if (this.carMode !== 'none') return;
+
+    if (this.worldMode === 'ocean' || this.isHeroUnderwater() || this.ridingTurtle) {
       if (this.worldMode === 'ocean' && this.nearDungeonExit) {
         this.exitDungeon();
         return;
@@ -8502,7 +9078,7 @@ export class RpgWorldEngine {
 
   public jumpHero(): void {
     this.lastInputActivityMs = performance.now();
-    if (this.phase !== 'playing') return;
+    if (this.phase !== 'playing' || this.carMode !== 'none') return;
     if (this.worldMode === 'ocean' || this.isHeroUnderwater()) {
       this.heroVelY = Math.min(7.2, this.heroVelY + 4.8);
       soundEngine.playSplash(0.65);
@@ -8916,7 +9492,7 @@ export class RpgWorldEngine {
   }
 
   public fireActiveWeapon(fromHold = false, skipTurnWait = false): void {
-    if (this.phase !== 'playing') return;
+    if (this.phase !== 'playing' || this.carMode !== 'none') return;
     if (this.isSwimming && this.worldMode !== 'ocean' && !this.isHeroUnderwater()) {
       const slotWpn = this.activeHotbarSlot <= 7 ? WEAPON_ORDER[this.activeHotbarSlot] : undefined;
       const canShootWater = Boolean(
@@ -9369,6 +9945,7 @@ export class RpgWorldEngine {
 
   private onWindowBlur = (): void => {
     this.heldKeys.clear();
+    this.clearCarControls();
     this.lookPointer = null;
     this.rightAimHeld = false;
     this.leftFireHeld = false;
@@ -9385,6 +9962,38 @@ export class RpgWorldEngine {
     if (e.repeat) return;
 
     if (this.phase === 'playing') {
+      if (this.carMode !== 'none') {
+        if (e.code === 'KeyE' || e.code === 'Enter') {
+          e.preventDefault();
+          if (this.carMode === 'driving') this.enterOrExitCar();
+          return;
+        }
+        if (e.code === 'KeyH') {
+          e.preventDefault();
+          this.honkCarHorn();
+          return;
+        }
+        if (e.code === 'KeyL') {
+          e.preventDefault();
+          this.toggleCarHeadlights();
+          return;
+        }
+        if (e.code === 'KeyP') {
+          e.preventDefault();
+          this.toggleCarHandbrake();
+          return;
+        }
+        if (e.code === 'KeyC' || e.code === 'F5') {
+          e.preventDefault();
+          this.toggleCameraMode();
+          return;
+        }
+        if (e.code === 'Space') {
+          e.preventDefault();
+          return;
+        }
+        return;
+      }
       if (e.code.startsWith('Digit')) {
         const num = Number(e.code.slice(5));
         if (num >= 1 && num <= 9) {
@@ -9592,6 +10201,7 @@ export class RpgWorldEngine {
       return;
     }
     if (this.phase !== 'playing') return;
+    if (this.carMode !== 'none') return;
     if (document.pointerLockElement === this.renderer.domElement) return;
 
     const hasArmedWeapon =
@@ -9624,6 +10234,7 @@ export class RpgWorldEngine {
         !obj.userData.npcId &&
         !obj.userData.monsterId &&
         !obj.userData.portal &&
+        !obj.userData.driveableCar &&
         !obj.userData.dungeonExit &&
         !obj.userData.academyExit &&
         !obj.userData.oceanExit &&
@@ -9640,6 +10251,10 @@ export class RpgWorldEngine {
         obj = obj.parent;
       }
       if (obj) {
+        if (obj.userData.driveableCar && this.worldMode === 'overworld') {
+          this.enterOrExitCar();
+          return;
+        }
         if (obj.userData.oceanExit && this.worldMode === 'ocean' && this.oceanRig) {
           if (
             Math.hypot(
@@ -11185,7 +11800,7 @@ export class RpgWorldEngine {
         this.oceanGear,
         this.isHeroUnderwater(),
         this.isMobileDevice || this.isLowEndMobile || this.settings.fxLevel !== 'full',
-        this.ridingTurtle,
+        this.ridingTurtle && this.isSwimming,
       );
     }
 
@@ -11648,27 +12263,38 @@ export class RpgWorldEngine {
       this.voiceAutoFire = false;
     }
     const continuousHold =
-      this.hudFireHeld ||
-      this.leftFireHeld ||
-      this.voiceAutoFire ||
-      this.heldKeys.has('Space');
+      this.carMode === 'none' &&
+      (this.hudFireHeld ||
+        this.leftFireHeld ||
+        this.voiceAutoFire ||
+        this.heldKeys.has('Space'));
     if (continuousHold && this.fireCooldown <= 0 && !this.pendingTurnShot && hasEquippedWeapon) {
       this.fireActiveWeapon(true);
     }
 
-    // 1. Movement (Keyboard + Virtual Analog Joystick + Voice Move + Tap-to-Move)
-    let mx = this.virtualMove.x;
-    let mz = -this.virtualMove.z; // screen up = +forward
-    if (this.heldKeys.has('KeyW') || this.heldKeys.has('ArrowUp')) mz += 1;
-    if (this.heldKeys.has('KeyS') || this.heldKeys.has('ArrowDown')) mz -= 1;
-    if (this.heldKeys.has('KeyA') || this.heldKeys.has('ArrowLeft')) mx -= 1;
-    if (this.heldKeys.has('KeyD') || this.heldKeys.has('ArrowRight')) mx += 1;
+    // 1. Movement (Car Mode physics/animation OR On-Foot Keyboard + Analog + Voice + Tap-to-Move)
+    let mx = 0;
+    let mz = 0;
+    const prevHeroY = this.heroPos.y;
+    const wasAirborne = !this.heroOnGround;
+    const wasSwimming = this.isSwimming;
 
-    const hasManualMove = Math.hypot(mx, mz) > 0.08;
-    if (hasManualMove) {
-      this.voiceMoveTimer = 0;
-      this.voiceMoveVec = { x: 0, z: 0 };
-      this.voiceSprint = false;
+    if (this.worldMode === 'overworld' && this.carMode !== 'none') {
+      this.nearCar = true;
+      this.updateCarPhysicsAndAnimation(dt);
+    } else {
+      mx = this.virtualMove.x;
+      mz = -this.virtualMove.z; // screen up = +forward
+      if (this.heldKeys.has('KeyW') || this.heldKeys.has('ArrowUp')) mz += 1;
+      if (this.heldKeys.has('KeyS') || this.heldKeys.has('ArrowDown')) mz -= 1;
+      if (this.heldKeys.has('KeyA') || this.heldKeys.has('ArrowLeft')) mx -= 1;
+      if (this.heldKeys.has('KeyD') || this.heldKeys.has('ArrowRight')) mx += 1;
+
+      const hasManualMove = Math.hypot(mx, mz) > 0.08;
+      if (hasManualMove) {
+        this.voiceMoveTimer = 0;
+        this.voiceMoveVec = { x: 0, z: 0 };
+        this.voiceSprint = false;
       if (this.diveTransition?.stage === 'swim_to_water') {
         this.diveTransition = null;
         this.pushHud(true);
@@ -11800,10 +12426,7 @@ export class RpgWorldEngine {
 
     this.heroVel.multiplyScalar(Math.exp(-(this.heroOnIce ? 1.85 : 7.5) * dt));
     const prevHeroX = this.heroPos.x;
-    const prevHeroY = this.heroPos.y;
     const prevHeroZ = this.heroPos.z;
-    const wasAirborne = !this.heroOnGround;
-    const wasSwimming = this.isSwimming;
 
     this.swimLeapTimer = Math.max(0, this.swimLeapTimer - dt);
     this.coyoteTimer = this.heroOnGround && !this.isSwimming ? 0.14 : Math.max(0, this.coyoteTimer - dt);
@@ -12230,6 +12853,7 @@ export class RpgWorldEngine {
         heroRad,
         2.55,
       );
+      this.resolveHeroParkedCarCollision();
 
       // Prevent clipping through solid obstacle housings (pistons, vents, turrets, lasers, moving platform sides)
       if (this.worldObstaclesRig) {
@@ -12353,14 +12977,14 @@ export class RpgWorldEngine {
         prevHeroY < curSample.groundY - 1.35 &&
         !(this.swimLeapTimer > 0 && this.heroVelY > 0.5);
       const inWaterZone = !effLandOrBridge || effGroundY < -0.15 || underDeckNow;
-      // Lower pivot so swimming & diving poses skim cleanly at ocean surface y=0 without disappearing under opaque water
+      // Lower pivot so swimming poses skim at water surface y=0; raise pivot when riding sea turtle so shell stays above water!
       const floatOffset =
         this.activeSwimStyle === 'deep_submerge' || this.activeSwimStyle === 'underwater_glide'
           ? -0.04
           : this.activeSwimStyle === 'backstroke' || this.activeSwimStyle === 'surface_paddle'
           ? 0.03
           : 0;
-      const SWIM_FLOAT_Y = -1.16 + floatOffset;
+      const SWIM_FLOAT_Y = this.ridingTurtle ? -0.58 : -1.16 + floatOffset;
 
       const activeDiveSubmerge =
         this.diveTransition?.active &&
@@ -12502,13 +13126,16 @@ export class RpgWorldEngine {
             this.heroPos.y = THREE.MathUtils.clamp(
               this.heroPos.y + this.heroVelY * dt,
               localSeabedY + 0.45,
-              -1.05,
+              this.ridingTurtle ? -0.58 : -1.05,
             );
-            if (this.heroPos.y >= -1.22 && (upHeld || this.heroVelY > 0.35)) {
+            if (this.heroPos.y >= (this.ridingTurtle ? -0.66 : -1.22) && (upHeld || this.heroVelY > 0.35)) {
               this.heroDiveActive = false;
-              this.ridingTurtle = false;
             }
           } else {
+            if (this.ridingTurtle) {
+              this.heroPos.x += this.heroVel.x * 0.48 * dt;
+              this.heroPos.z += this.heroVel.z * 0.48 * dt;
+            }
             const waveBobY = SWIM_FLOAT_Y + Math.sin(this.elapsed * 3.1 + this.heroPos.x * 0.2) * 0.07;
             this.heroVelY += (waveBobY - this.heroPos.y) * 20 * dt;
             this.heroVelY *= Math.exp(-6.5 * dt);
@@ -12824,13 +13451,39 @@ export class RpgWorldEngine {
           this.pushHud(true);
         }
       }
+      }
+      if (this.worldMode === 'overworld' && this.carRig) {
+        const doorPt = this.getCarWorldPoint(this.carRig.boardOutsideOffset);
+        this.nearCar =
+          Math.hypot(this.heroPos.x - this.carPos.x, this.heroPos.z - this.carPos.z) < 5.6 ||
+          Math.hypot(this.heroPos.x - doorPt.x, this.heroPos.z - doorPt.z) < 4.0;
+        this.carRig.root.position.copy(this.carPos);
+        this.carRig.root.rotation.set(0, this.carYaw, 0);
+        updateCarRigVisuals(this.carRig, {
+          doorAngle: this.carDoorAngle,
+          steerAngle: this.carSteerAngle,
+          wheelSpin: this.carWheelSpin,
+          headlightsOn: this.carHeadlightsOn,
+          braking: false,
+          reversing: false,
+          pitchLean: 0,
+          rollLean: 0,
+        });
+      } else {
+        this.nearCar = false;
+      }
+      soundEngine.setCarEngine(false, 0);
     }
 
-    if (wasAirborne && this.heroOnGround) {
+    if (wasAirborne && this.heroOnGround && this.carMode === 'none') {
       this.jumpLandTimer = 0.16;
     }
 
-    if ((this.heroOnGround || this.coyoteTimer > 0 || this.isSwimming) && this.jumpBufferTimer > 0) {
+    if (
+      this.carMode === 'none' &&
+      (this.heroOnGround || this.coyoteTimer > 0 || this.isSwimming) &&
+      this.jumpBufferTimer > 0
+    ) {
       this.jumpHero();
     }
 
@@ -12962,7 +13615,7 @@ export class RpgWorldEngine {
       this.walkCycle += dt * (8 + speed * 0.45);
     }
     soundEngine.setWalking(
-      speed > 0.8 && this.heroOnGround && !this.isSwimming,
+      speed > 0.8 && this.heroOnGround && !this.isSwimming && this.carMode === 'none',
       speed > 10.5 ? 1.2 : 1.0,
     );
     const isMovingInWater =
@@ -12986,6 +13639,7 @@ export class RpgWorldEngine {
     const isBusyAction =
       !this.heroOnGround ||
       this.isSwimming ||
+      this.carMode !== 'none' ||
       this.jumpBufferTimer > 0 ||
       continuousHold ||
       this.isAiming ||
@@ -13044,9 +13698,14 @@ export class RpgWorldEngine {
     const underwaterNow = this.worldMode === 'ocean' || this.isHeroUnderwater();
     const canHoldInCurrentEnv =
       hasEquippedWeapon &&
+      this.carMode === 'none' &&
       (!this.isSwimming || underwaterNow || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
+    const carSeatedNow =
+      this.carMode === 'driving' ||
+      (this.carMode === 'entering' && this.carAnimTimer > 1.35) ||
+      (this.carMode === 'exiting' && this.carAnimTimer < 0.72);
     applyHeroWeaponPose(this.hero, this.activeWeapon, canHoldInCurrentEnv, {
-      speed,
+      speed: this.carMode !== 'none' ? 0 : speed,
       walkCycle: this.walkCycle,
       aimAlpha,
       recoil,
@@ -13062,9 +13721,16 @@ export class RpgWorldEngine {
       swimBankRoll: this.swimDodgeTimer > 0 ? this.swimDodgeRoll : 0,
       divingGear: underwaterNow ? Array.from(this.oceanGear) : [],
       wearingSwimsuit: this.swimSuitPicked,
-      ridingTurtle: underwaterNow && this.ridingTurtle,
+      ridingTurtle: this.isSwimming && this.ridingTurtle,
       jumpDiveTrick: this.activeJumpTrick,
       jumpDiveElapsed: this.jumpTrickElapsed,
+      carPose: carSeatedNow
+        ? {
+            seated: true,
+            steerAngle: this.carSteerAngle,
+            speedRatio: THREE.MathUtils.clamp(this.carSpeed / 24, -1, 1),
+          }
+        : null,
     });
 
     this.dashCooldown = Math.max(0, this.dashCooldown - dt);
@@ -13132,6 +13798,25 @@ export class RpgWorldEngine {
       }
     }
 
+    // Auto-Chase Camera Follow while Driving Car
+    if (
+      this.carMode === 'driving' &&
+      !userDraggingCam &&
+      (this.cameraMode === 'third_back' || this.cameraMode === 'first_person')
+    ) {
+      if (this.cameraMode === 'first_person' || Math.abs(this.carSpeed) > 1.0) {
+        const desiredCamYaw = this.carYaw + Math.PI;
+        let camYawDiff = desiredCamYaw - this.cameraYaw;
+        while (camYawDiff > Math.PI) camYawDiff -= Math.PI * 2;
+        while (camYawDiff < -Math.PI) camYawDiff += Math.PI * 2;
+        const rate = this.cameraMode === 'first_person' ? 8.5 : 4.5;
+        this.cameraYaw += camYawDiff * (1 - Math.exp(-rate * dt));
+      }
+      if (this.cameraMode === 'third_back' && this.cameraPitch > 0.35) {
+        this.cameraPitch = THREE.MathUtils.damp(this.cameraPitch, 0.24, 3.2, dt);
+      }
+    }
+
     // Update Camera Rig (Over-the-Shoulder TPS + ADS Scope Zoom when Bidik Bebas, or Centered Classic RPG when Bidik Otomatis)
     const sinY = Math.sin(this.cameraYaw);
     const cosY = Math.cos(this.cameraYaw);
@@ -13142,9 +13827,22 @@ export class RpgWorldEngine {
     );
     const cosP = Math.cos(effPitch);
     const sinP = Math.sin(effPitch);
-    const targetY = this.heroPos.y + 1.92;
+    const isInCarView = this.carMode !== 'none';
+    const focusX = isInCarView ? this.carPos.x : this.heroPos.x;
+    const focusZ = isInCarView ? this.carPos.z : this.heroPos.z;
+    const targetY = isInCarView ? this.carPos.y + 2.25 : this.heroPos.y + 1.92;
 
-    const targetFov = !isManualAim
+    const carSpeedFov =
+      this.carMode === 'driving'
+        ? Math.min(10, Math.abs(this.carSpeed) * 0.28) +
+          ((this.carCtrl.boost || this.heldKeys.has('ShiftLeft') || this.heldKeys.has('ShiftRight')) &&
+          Math.abs(this.carSpeed) > 6
+            ? 4
+            : 0)
+        : 0;
+    const targetFov = isInCarView
+      ? 58 + carSpeedFov
+      : !isManualAim
       ? 58
       : this.cameraMode === 'first_person'
       ? THREE.MathUtils.lerp(58, 40, this.aimBlend)
@@ -13158,35 +13856,38 @@ export class RpgWorldEngine {
 
     if (this.cameraMode === 'third_back' || this.cameraMode === 'third_front') {
       const sign = this.cameraMode === 'third_front' ? -1 : 1;
-      const baseDist =
-        this.worldMode === 'dungeon' ? Math.min(this.thirdPersonDist, 6.2) : this.thirdPersonDist;
+      const baseDist = isInCarView
+        ? Math.max(this.thirdPersonDist + 3.2, 9.6)
+        : this.worldMode === 'dungeon'
+        ? Math.min(this.thirdPersonDist, 6.2)
+        : this.thirdPersonDist;
       const skyUpT =
         this.cameraMode === 'third_back' && effPitch < -0.15
           ? THREE.MathUtils.clamp((-effPitch - 0.15) / 0.88, 0, 1)
           : 0;
       const skyShortenDist = THREE.MathUtils.lerp(baseDist, Math.min(baseDist, 4.8), skyUpT);
       const desiredDist =
-        isManualAim && this.cameraMode === 'third_back'
+        !isInCarView && isManualAim && this.cameraMode === 'third_back'
           ? THREE.MathUtils.lerp(skyShortenDist, Math.min(skyShortenDist, 3.45), this.aimBlend)
           : skyShortenDist;
 
       // Offset camera to Hero's right shoulder only in Bidik Bebas TPS so center crosshair stays clear
       const shoulderRight =
-        isManualAim && this.cameraMode === 'third_back'
+        !isInCarView && isManualAim && this.cameraMode === 'third_back'
           ? THREE.MathUtils.lerp(0.86, 1.06, this.aimBlend)
           : 0;
-      const pivotX = this.heroPos.x + cosY * shoulderRight;
+      const pivotX = focusX + cosY * shoulderRight;
       const pivotY =
-        isManualAim && this.cameraMode === 'third_back'
+        !isInCarView && isManualAim && this.cameraMode === 'third_back'
           ? this.heroPos.y + THREE.MathUtils.lerp(2.04, 2.22, this.aimBlend)
           : targetY;
-      const pivotZ = this.heroPos.z - sinY * shoulderRight;
+      const pivotZ = focusZ - sinY * shoulderRight;
 
       const dirX = sign * sinY * cosP;
       const dirY = sinP;
       const dirZ = sign * cosY * cosP;
 
-      // Trace spring-arm from Hero center toward desired camera position (terrain-aware floor!)
+      // Trace spring-arm from Hero/Car center toward desired camera position (terrain-aware floor!)
       const goalX = pivotX + dirX * desiredDist;
       const goalZ = pivotZ + dirZ * desiredDist;
       const camFloorY =
@@ -13196,14 +13897,14 @@ export class RpgWorldEngine {
           ? getOceanFloorY(goalX, goalZ)
           : 0) + 0.55;
       const goalY = Math.max(camFloorY, pivotY + dirY * desiredDist);
-      const rx = goalX - this.heroPos.x;
+      const rx = goalX - focusX;
       const ry = goalY - pivotY;
-      const rz = goalZ - this.heroPos.z;
+      const rz = goalZ - focusZ;
       const rayLen = Math.hypot(rx, ry, rz) || 1;
       const blockedDist = this.computeSpringArmDist(
-        this.heroPos.x,
+        focusX,
         pivotY,
-        this.heroPos.z,
+        focusZ,
         rx / rayLen,
         ry / rayLen,
         rz / rayLen,
@@ -13217,8 +13918,8 @@ export class RpgWorldEngine {
           : 1 - Math.exp(-9.5 * dt);
       this.currentCamDist += (blockedDist - this.currentCamDist) * distAlpha;
 
-      const camX = this.heroPos.x + (rx / rayLen) * this.currentCamDist;
-      const camZ = this.heroPos.z + (rz / rayLen) * this.currentCamDist;
+      const camX = focusX + (rx / rayLen) * this.currentCamDist;
+      const camZ = focusZ + (rz / rayLen) * this.currentCamDist;
       const liveCamFloorY =
         (this.worldMode === 'overworld'
           ? getArchipelagoGroundY(camX, camZ)
@@ -13271,7 +13972,7 @@ export class RpgWorldEngine {
           THREE.MathUtils.lerp(this.heroPos.z, pivotZ - dirZ * 24, skyLookT),
         );
       } else {
-        this.camera.lookAt(this.heroPos.x, targetY, this.heroPos.z);
+        this.camera.lookAt(focusX, targetY, focusZ);
       }
     } else if (this.cameraMode === 'first_person') {
       const eyeY = this.heroPos.y + 2.55;
@@ -14983,6 +15684,24 @@ export class RpgWorldEngine {
       }
     }
 
+    if (this.phase === 'playing' && this.carMode === 'none') {
+      const carDistSq =
+        (this.heroPos.x - this.carPos.x) ** 2 + (this.heroPos.z - this.carPos.z) ** 2;
+      if (carDistSq <= 24 * 24) {
+        const carLabelPos = projectPoint(this.carPos.x, this.carPos.y + 3.8, this.carPos.z);
+        if (carLabelPos) {
+          labels.push({
+            id: 'driveable_car',
+            x: carLabelPos.x,
+            y: carLabelPos.y,
+            title: this.nearCar ? '🚗 Mobil Petualang (Tekan E untuk Masuk)' : '🚗 Mobil Petualang',
+            subtext: this.nearCar ? 'Klik atau tekan Masuk Mobil' : 'Bisa dikendarai!',
+            kind: 'pickup',
+          });
+        }
+      }
+    }
+
     for (const npc of NPC_CATALOG) {
       const liveNpc = this.npcs.get(npc.id);
       const nx = liveNpc?.x ?? npc.x;
@@ -15838,6 +16557,14 @@ export class RpgWorldEngine {
           label: 'Pakaian Renang',
         });
       }
+      blips.push({
+        id: 'driveable_car',
+        x: this.carPos.x,
+        z: this.carPos.z,
+        kind: 'car',
+        color: '#38bdf8',
+        label: 'Mobil Petualang',
+      });
       const spotKindByZone: Record<ZoneId, RadarBlipKind> = {
         desa_sapaan: 'spot_desa',
         pasar_rasa: 'spot_pasar',
@@ -16556,11 +17283,12 @@ export class RpgWorldEngine {
       squadName: this.currentSquadName || undefined,
       waveMission: this.getWaveMissionState(),
       localMabarStats: { ...this.localMabarStats },
+      carState: this.buildCarHudState(),
     });
   }
 
   private buildOceanSurvivalState(): OceanSurvivalState | null {
-    if (this.worldMode !== 'ocean' && !this.isHeroUnderwater()) return null;
+    if (this.worldMode !== 'ocean' && !this.isHeroUnderwater() && !this.ridingTurtle) return null;
     const zone =
       this.worldMode === 'ocean'
         ? getOceanZoneInfo(this.heroPos.z, this.heroPos.y)
@@ -17196,6 +17924,7 @@ export class RpgWorldEngine {
     this.disposed = true;
     soundEngine.setWalking(false);
     soundEngine.setSwimmingAudio(false);
+    soundEngine.setCarEngine(false, 0);
     soundEngine.setAmbientMode('none');
     cancelAnimationFrame(this.frameId);
     clearTimeout(this.frameId);
@@ -17221,6 +17950,7 @@ export class RpgWorldEngine {
     this.villageRig?.disposables.forEach((d) => d.dispose());
     this.worldObstaclesRig?.disposables.forEach((d) => d.dispose());
     this.oceanRig?.disposables.forEach((d) => d.dispose());
+    this.carRig?.disposables.forEach((d) => d.dispose());
     this.palette.dispose();
     this.mapRtMinimap.dispose();
     this.mapRtFull.dispose();

@@ -20,8 +20,10 @@ import { auth, db, handleFirestoreError, OperationType } from '../firebase';
 import {
   CharacterPresetId,
   DifficultyMode,
+  LocalPlayerSyncPacket,
   MultiplayerMemberDoc,
   MultiplayerRoomDoc,
+  RemotePlayerState,
   RoomChatMessage,
   WebRtcSignalDoc,
 } from '../types/game';
@@ -133,6 +135,7 @@ const ROOM_META_PREFIX = '__DIGLOSA_META__:';
 const ROOM_META_DOC_ID = 'squad_meta';
 const roomsCreatedMetaByMe = new Set<string>();
 const roomsWithFallbackChatSent = new Set<string>();
+const myFallbackChatDocIds = new Map<string, string[]>();
 
 export interface RoomSquadMeta {
   g?: string;
@@ -244,8 +247,7 @@ export async function readLatestRoomMeta(roomId: string): Promise<RoomSquadMeta>
     const q = query(
       collection(db, path),
       where('roomId', '==', roomId),
-      orderBy('createdAt', 'desc'),
-      limit(6),
+      limit(15),
     );
     const snap = await getDocs(q);
     for (const d of snap.docs) {
@@ -913,6 +915,7 @@ export async function pruneDisconnectedMember(
     if (roomData.hostUid !== user.uid) return;
 
     await deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', targetUid)).catch(() => undefined);
+    await deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'states', targetUid)).catch(() => undefined);
 
     const remainingSnap = await getDocs(
       query(
@@ -960,6 +963,7 @@ export async function claimHostAndRemoveDeadHost(
     if (!claimed) return false;
 
     await deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', deadHostUid)).catch(() => undefined);
+    await deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'states', deadHostUid)).catch(() => undefined);
     await updateDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', user.uid), {
       isHost: true,
       updatedAt: serverTimestamp(),
@@ -992,10 +996,14 @@ export async function leaveMultiplayerRoom(
 
   const roomRef = doc(db, ROOMS_COLLECTION, roomId);
   const myMemberRef = doc(db, ROOMS_COLLECTION, roomId, 'members', user.uid);
+  const myStateRef = doc(db, ROOMS_COLLECTION, roomId, 'states', user.uid);
 
-  // Clean up my member doc first (ignore if already removed)
+  // Clean up my member & state docs first (ignore if already removed)
   try {
-    await deleteDoc(myMemberRef);
+    await Promise.all([
+      deleteDoc(myMemberRef).catch(() => undefined),
+      deleteDoc(myStateRef).catch(() => undefined),
+    ]);
   } catch {
     // ignore
   }
@@ -1032,9 +1040,10 @@ export async function leaveMultiplayerRoom(
       await deleteUserMessagesAndSignals(roomId, user.uid, false);
       if (roomData.hostUid === user.uid) {
         await Promise.all(
-          remaining.map((m) =>
+          remaining.flatMap((m) => [
             deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', m.uid)).catch(() => undefined),
-          ),
+            deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'states', m.uid)).catch(() => undefined),
+          ]),
         );
         await deleteDoc(roomRef).catch(() => undefined);
       } else if (roomData.memberCount >= 2) {
@@ -1215,7 +1224,7 @@ export async function sendFallbackChatMessage(params: {
   if (!cleanText) return;
   const path = `${ROOMS_COLLECTION}/${params.roomId}/messages`;
   try {
-    await addDoc(collection(db, path), {
+    const docRef = await addDoc(collection(db, path), {
       roomId: params.roomId,
       senderUid: user.uid,
       senderName: sanitizeDisplayName(params.senderName, user.displayName || 'Petualang'),
@@ -1223,6 +1232,15 @@ export async function sendFallbackChatMessage(params: {
       createdAt: serverTimestamp(),
     });
     roomsWithFallbackChatSent.add(params.roomId);
+    const list = myFallbackChatDocIds.get(params.roomId) ?? [];
+    list.push(docRef.id);
+    if (list.length > 10) {
+      const oldestId = list.shift();
+      if (oldestId) {
+        void deleteDoc(doc(db, path, oldestId)).catch(() => undefined);
+      }
+    }
+    myFallbackChatDocIds.set(params.roomId, list);
   } catch (error) {
     handleFirestoreError(error, OperationType.CREATE, path);
   }
@@ -1234,19 +1252,19 @@ export function subscribeFallbackChatMessages(
   onRoomMeta?: (meta: RoomSquadMeta) => void,
 ): Unsubscribe {
   const path = `${ROOMS_COLLECTION}/${roomId}/messages`;
+  // Use single-field where('roomId', '==', roomId) without orderBy to avoid requiring a custom composite index
   const q = query(
     collection(db, path),
     where('roomId', '==', roomId),
-    orderBy('createdAt', 'desc'),
-    limit(6),
+    limit(30),
   );
   const seen = new Set<string>();
   let initialized = false;
   return onSnapshot(
     q,
     (snap) => {
-      const additions: RoomChatMessage[] = [];
-      const metaAdditions: RoomSquadMeta[] = [];
+      const additions: Array<RoomChatMessage & { _sortTs: number }> = [];
+      const metaAdditions: Array<RoomSquadMeta & { _sortTs: number }> = [];
       snap.docChanges().forEach((chg) => {
         if (chg.type !== 'added') return;
         if (seen.has(chg.doc.id)) return;
@@ -1256,10 +1274,12 @@ export function subscribeFallbackChatMessages(
           senderUid: string;
           senderName: string;
           text: string;
+          createdAt?: unknown;
         };
+        const sortTs = getTimestampMs(d.createdAt) || Date.now();
         const parsedMeta = parseRoomMetaText(d.text);
         if (parsedMeta) {
-          metaAdditions.push(parsedMeta);
+          metaAdditions.push({ ...parsedMeta, _sortTs: parsedMeta.ts ?? sortTs });
           return;
         }
         additions.push({
@@ -1268,21 +1288,135 @@ export function subscribeFallbackChatMessages(
           senderUid: d.senderUid,
           senderName: d.senderName,
           text: d.text,
-          createdAtMs: Date.now(),
+          createdAtMs: sortTs,
           source: 'firestore',
+          _sortTs: sortTs,
         });
       });
+      if (metaAdditions.length > 1) {
+        metaAdditions.sort((a, b) => a._sortTs - b._sortTs);
+      }
+      if (additions.length > 1) {
+        additions.sort((a, b) => a._sortTs - b._sortTs);
+      }
       if (!initialized) {
         initialized = true;
-        metaAdditions.reverse().forEach((m) => onRoomMeta?.(m));
-        additions.reverse().forEach(onMessage);
-      } else {
-        metaAdditions.forEach((m) => onRoomMeta?.(m));
-        additions.forEach(onMessage);
       }
+      metaAdditions.forEach(({ _sortTs: _ignored, ...m }) => onRoomMeta?.(m));
+      additions.forEach(({ _sortTs: _ignored, ...msg }) => onMessage(msg));
     },
     () => {
       // Ignore fallback chat listener teardown errors
+    },
+  );
+}
+
+function clampNum(val: number, min: number, max: number, fallback: number): number {
+  if (!Number.isFinite(val)) return fallback;
+  return Math.min(max, Math.max(min, val));
+}
+
+export async function publishPlayerLiveState(
+  roomId: string,
+  pkt: LocalPlayerSyncPacket,
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified || !roomId) return;
+  const worldMode =
+    pkt.w === 'dungeon' || pkt.w === 'academy' || pkt.w === 'ocean' ? pkt.w : 'overworld';
+  const payload = {
+    uid: user.uid,
+    roomId,
+    displayName: sanitizeDisplayName(pkt.nm, user.displayName || 'Petualang'),
+    characterId: (pkt.ch || 'hoot_emerald').slice(0, 40),
+    worldMode,
+    x: Math.round(clampNum(pkt.x, -1000, 1000, -6) * 100) / 100,
+    y: Math.round(clampNum(pkt.y, -200, 500, 2.6) * 100) / 100,
+    z: Math.round(clampNum(pkt.z, -1000, 1000, 126) * 100) / 100,
+    yaw: Math.round(clampNum(pkt.yaw, -100, 100, 0) * 1000) / 1000,
+    spd: Math.round(clampNum(pkt.spd, 0, 120, 0) * 100) / 100,
+    og: Boolean(pkt.og),
+    sw: Boolean(pkt.sw),
+    wp: (pkt.wp || 'ketapel').slice(0, 32),
+    wo: Boolean(pkt.wo),
+    hp: Math.round(clampNum(pkt.hp ?? 5, 0, 20, 5)),
+    mhp: Math.round(clampNum(pkt.mhp ?? 5, 1, 20, 5)),
+    ic: Boolean(pkt.ic),
+    zn: (pkt.zn || 'Desa Sapaan').slice(0, 60),
+    updatedAt: serverTimestamp(),
+  };
+
+  try {
+    await setDoc(doc(db, ROOMS_COLLECTION, roomId, 'states', user.uid), payload);
+  } catch {
+    // Best-effort fallback position relay
+  }
+}
+
+export function subscribePlayerLiveStates(
+  roomId: string,
+  myUid: string,
+  onStates: (states: RemotePlayerState[]) => void,
+): Unsubscribe {
+  const path = `${ROOMS_COLLECTION}/${roomId}/states`;
+  const q = query(collection(db, path), where('roomId', '==', roomId), limit(10));
+  return onSnapshot(
+    q,
+    (snap) => {
+      const now = Date.now();
+      const out: RemotePlayerState[] = [];
+      snap.docs.forEach((docSnap) => {
+        const d = docSnap.data() as {
+          uid?: string;
+          displayName?: string;
+          characterId?: string;
+          worldMode?: RemotePlayerState['worldMode'];
+          x?: number;
+          y?: number;
+          z?: number;
+          yaw?: number;
+          spd?: number;
+          og?: boolean;
+          sw?: boolean;
+          wp?: RemotePlayerState['activeWeapon'];
+          wo?: boolean;
+          hp?: number;
+          mhp?: number;
+          ic?: boolean;
+          zn?: string;
+          updatedAt?: unknown;
+        };
+        if (!d.uid || d.uid === myUid) return;
+        const updatedAtMs = getTimestampMs(d.updatedAt);
+        // Ignore stale zombie state docs older than 45 seconds
+        if (updatedAtMs > 0 && now - updatedAtMs > 45_000) return;
+        out.push({
+          uid: d.uid,
+          displayName: (d.displayName || 'Teman').slice(0, 32),
+          characterId: (d.characterId || 'hoot_emerald') as CharacterPresetId,
+          worldMode: d.worldMode || 'overworld',
+          x: typeof d.x === 'number' && Number.isFinite(d.x) ? d.x : -6,
+          y: typeof d.y === 'number' && Number.isFinite(d.y) ? d.y : 2.6,
+          z: typeof d.z === 'number' && Number.isFinite(d.z) ? d.z : 126,
+          yaw: typeof d.yaw === 'number' && Number.isFinite(d.yaw) ? d.yaw : 0,
+          speed: typeof d.spd === 'number' && Number.isFinite(d.spd) ? d.spd : 0,
+          walkCycle: 0,
+          onGround: Boolean(d.og),
+          isSwimming: Boolean(d.sw),
+          activeWeapon: d.wp || 'ketapel',
+          weaponOwned: Boolean(d.wo),
+          aimPitch: 0,
+          hp: typeof d.hp === 'number' ? d.hp : undefined,
+          maxHp: typeof d.mhp === 'number' ? d.mhp : undefined,
+          inChallenge: typeof d.ic === 'boolean' ? d.ic : undefined,
+          zoneName: typeof d.zn === 'string' ? d.zn : undefined,
+          updatedAtMs: updatedAtMs || now,
+        });
+      });
+      onStates(out);
+    },
+    () => {
+      // Ignore state listener teardown errors
     },
   );
 }

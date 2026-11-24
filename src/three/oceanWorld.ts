@@ -1253,11 +1253,32 @@ function updateAndSeparateOceanBiota(
   isArchipelago = false,
 ): void {
   const heroRad = 0.68;
+  let mountedTurtleIdx = -1;
+  if (ridingTurtle) {
+    let bestSq = 64;
+    for (let i = 0; i < biotaNodes.length; i++) {
+      const n = biotaNodes[i];
+      if (n.speciesId !== 'sea_turtle') continue;
+      const dSq =
+        (n.x - heroPos.x) * (n.x - heroPos.x) + (n.z - heroPos.z) * (n.z - heroPos.z);
+      if (dSq < bestSq) {
+        bestSq = dSq;
+        mountedTurtleIdx = i;
+      }
+    }
+  }
   // Pass 1: Patrol & obstacle avoidance
   for (let i = 0; i < biotaNodes.length; i++) {
     const node = biotaNodes[i];
     if (node.harvestCooldown > 0) {
       node.harvestCooldown = Math.max(0, node.harvestCooldown - dt);
+    }
+    if (i === mountedTurtleIdx) {
+      node.rig.root.visible = false;
+      node.x = heroPos.x;
+      node.y = Math.min(-1.25, heroPos.y);
+      node.z = heroPos.z;
+      continue;
     }
     const dxH = node.x - heroPos.x;
     const dzH = node.z - heroPos.z;
@@ -1266,8 +1287,11 @@ function updateAndSeparateOceanBiota(
       const visible = distSqXZ <= maxDistSq;
       node.rig.root.visible = visible;
       if (!visible) continue;
-    } else if (distSqXZ + (node.y - heroPos.y) * (node.y - heroPos.y) > maxDistSq) {
-      continue;
+    } else {
+      node.rig.root.visible = true;
+      if (distSqXZ + (node.y - heroPos.y) * (node.y - heroPos.y) > maxDistSq) {
+        continue;
+      }
     }
 
     const nextScale = node.scale * (node.harvestCooldown > 0 ? 0.76 : 1.0);

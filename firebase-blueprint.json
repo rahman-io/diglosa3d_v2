@@ -312,6 +312,105 @@
         "text",
         "createdAt"
       ]
+    },
+    "PlayerLiveState": {
+      "title": "PlayerLiveState",
+      "description": "Lightweight Firestore fallback position and avatar state when WebRTC P2P is blocked across networks.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "roomId": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 64
+        },
+        "displayName": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "characterId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "worldMode": {
+          "type": "string",
+          "enum": ["overworld", "dungeon", "academy", "ocean"]
+        },
+        "x": {
+          "type": "number"
+        },
+        "y": {
+          "type": "number"
+        },
+        "z": {
+          "type": "number"
+        },
+        "yaw": {
+          "type": "number"
+        },
+        "spd": {
+          "type": "number"
+        },
+        "og": {
+          "type": "boolean"
+        },
+        "sw": {
+          "type": "boolean"
+        },
+        "wp": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 32
+        },
+        "wo": {
+          "type": "boolean"
+        },
+        "hp": {
+          "type": "integer"
+        },
+        "mhp": {
+          "type": "integer"
+        },
+        "ic": {
+          "type": "boolean"
+        },
+        "zn": {
+          "type": "string",
+          "minLength": 0,
+          "maxLength": 60
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "uid",
+        "roomId",
+        "displayName",
+        "characterId",
+        "worldMode",
+        "x",
+        "y",
+        "z",
+        "yaw",
+        "spd",
+        "og",
+        "sw",
+        "wp",
+        "wo",
+        "hp",
+        "mhp",
+        "ic",
+        "zn",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -350,6 +449,12 @@
         "$ref": "#/entities/RoomChatMessage"
       },
       "description": "Fallback room text chat when P2P DataChannel is unavailable."
+    },
+    "/rooms/{roomId}/states/{stateId}": {
+      "schema": {
+        "$ref": "#/entities/PlayerLiveState"
+      },
+      "description": "Lightweight fallback player position/avatar state when P2P WebRTC is blocked across networks."
     }
   }
 }

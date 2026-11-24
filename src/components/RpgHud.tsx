@@ -96,6 +96,14 @@ interface RpgHudProps {
   onToggleVoice?: () => void;
   multiplayerActive?: boolean;
   onHelpTeammate?: () => void;
+  onToggleCar?: () => void;
+  onCarControl?: (
+    ctrl: 'gas' | 'brake' | 'left' | 'right' | 'handbrake' | 'boost',
+    held: boolean,
+  ) => void;
+  onToggleCarHandbrake?: () => void;
+  onToggleCarHeadlights?: () => void;
+  onCarHorn?: () => void;
 }
 
 export const RpgHud: React.FC<RpgHudProps> = ({
@@ -139,6 +147,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   onToggleVoice,
   multiplayerActive = false,
   onHelpTeammate,
+  onToggleCar,
+  onCarControl,
+  onToggleCarHandbrake,
+  onToggleCarHeadlights,
+  onCarHorn,
 }) => {
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const [touchUsed, setTouchUsed] = useState(false);
@@ -166,6 +179,23 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   onVirtualMoveRef.current = onVirtualMove;
   const onSetFireHeldRef = useRef(onSetFireHeld);
   onSetFireHeldRef.current = onSetFireHeld;
+  const onCarControlRef = useRef(onCarControl);
+  onCarControlRef.current = onCarControl;
+
+  const carMode = hud.carState?.mode ?? 'none';
+  const inCar = carMode !== 'none';
+  const isCarDriving = carMode === 'driving';
+
+  useEffect(() => {
+    if (!isCarDriving) {
+      onCarControlRef.current?.('gas', false);
+      onCarControlRef.current?.('brake', false);
+      onCarControlRef.current?.('left', false);
+      onCarControlRef.current?.('right', false);
+      onCarControlRef.current?.('handbrake', false);
+      onCarControlRef.current?.('boost', false);
+    }
+  }, [isCarDriving]);
 
   useEffect(() => {
     if (hud.phase !== 'playing' || hud.worldMode !== 'ocean') {
@@ -533,7 +563,8 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
         {/* Top-Right Utility Medallion Row (Icon-Only: Mouse Lock, Camera Eye View, Fullscreen, Mute, Menu) */}
         <div className="flex items-center gap-1.5 sm:gap-2">
-          {!showTouchControls &&
+          {!inCar &&
+            !showTouchControls &&
             hud.phase === 'playing' &&
             hud.settings.aimMode === 'manual' &&
             (hud.cameraMode === 'third_back' || hud.cameraMode === 'first_person') && (
@@ -555,36 +586,38 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             </button>
           )}
 
-          <button
-            type="button"
-            onClick={onToggleAimMode}
-            title={
-              hud.settings.aimMode === 'auto'
-                ? 'Mode Bidik: Otomatis (Klik untuk ganti ke Bidik Bebas)'
-                : 'Mode Bidik: Bebas / Crosshair (Klik untuk ganti ke Bidik Otomatis)'
-            }
-            aria-label={
-              hud.settings.aimMode === 'auto'
-                ? 'Ganti Mode Bidik (Aktif: Bidik Otomatis)'
-                : 'Ganti Mode Bidik (Aktif: Bidik Bebas)'
-            }
-            className={`relative flex h-9 w-9 items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10 ${
-              hud.settings.aimMode === 'auto'
-                ? 'shadow-[0_3px_8px_rgba(251,191,36,0.42)]'
-                : 'shadow-[0_3px_8px_rgba(34,211,238,0.42)]'
-            }`}
-          >
-            <img
-              src={
+          {!inCar && (
+            <button
+              type="button"
+              onClick={onToggleAimMode}
+              title={
                 hud.settings.aimMode === 'auto'
-                  ? './assets/ui/btn_aim_auto.png'
-                  : './assets/ui/btn_aim_manual.png'
+                  ? 'Mode Bidik: Otomatis (Klik untuk ganti ke Bidik Bebas)'
+                  : 'Mode Bidik: Bebas / Crosshair (Klik untuk ganti ke Bidik Otomatis)'
               }
-              alt={hud.settings.aimMode === 'auto' ? 'Bidik Otomatis' : 'Bidik Bebas'}
-              className="pointer-events-none h-full w-full select-none object-contain"
-              draggable={false}
-            />
-          </button>
+              aria-label={
+                hud.settings.aimMode === 'auto'
+                  ? 'Ganti Mode Bidik (Aktif: Bidik Otomatis)'
+                  : 'Ganti Mode Bidik (Aktif: Bidik Bebas)'
+              }
+              className={`relative flex h-9 w-9 items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10 ${
+                hud.settings.aimMode === 'auto'
+                  ? 'shadow-[0_3px_8px_rgba(251,191,36,0.42)]'
+                  : 'shadow-[0_3px_8px_rgba(34,211,238,0.42)]'
+              }`}
+            >
+              <img
+                src={
+                  hud.settings.aimMode === 'auto'
+                    ? './assets/ui/btn_aim_auto.png'
+                    : './assets/ui/btn_aim_manual.png'
+                }
+                alt={hud.settings.aimMode === 'auto' ? 'Bidik Otomatis' : 'Bidik Bebas'}
+                className="pointer-events-none h-full w-full select-none object-contain"
+                draggable={false}
+              />
+            </button>
+          )}
 
           <button
             type="button"
@@ -1361,8 +1394,9 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           );
         })()}
 
-      {/* Dynamic Tactical Crosshair & Hit Marker in Bidik Bebas TPS & FPS Modes */}
-      {hud.phase === 'playing' &&
+      {/* Dynamic Tactical Crosshair & Hit Marker in Bidik Bebas TPS & FPS Modes (hidden in Car Mode) */}
+      {!inCar &&
+        hud.phase === 'playing' &&
         (hud.cameraMode === 'first_person' ||
           (hud.settings.aimMode === 'manual' &&
             hud.cameraMode === 'third_back' &&
@@ -1463,8 +1497,8 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         </div>
       )}
 
-      {/* Clean GTA-style Left Floating Joystick Zone (invisible when idle, spawns under finger) */}
-      {showTouchControls && (
+      {/* Clean GTA-style Left Floating Joystick Zone (hidden while inside Car Mode) */}
+      {showTouchControls && !inCar && (
         <>
           <div
             onPointerDown={(e) => {
@@ -2170,7 +2204,24 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           </button>
         )}
 
+        {!inCar &&
+          hud.worldMode === 'overworld' &&
+          hud.carState?.nearCar &&
+          onToggleCar && (
+            <button
+              type="button"
+              onClick={onToggleCar}
+              title="Buka Pintu & Masuk Mobil (E)"
+              aria-label="Masuk Mobil"
+              className="flex h-[52px] items-center gap-1.5 rounded-full border-2 border-sky-300 bg-sky-600/95 px-3.5 text-xs font-black text-white shadow-[0_5px_16px_rgba(14,165,233,0.62)] transition-transform hover:scale-105 active:scale-90"
+            >
+              <span>🚗</span>
+              <span>Masuk Mobil (E)</span>
+            </button>
+          )}
+
         {(hud.oceanSurvival?.nearTurtleMount || hud.oceanSurvival?.ridingTurtle) &&
+          !inCar &&
           onToggleOceanTurtle && (
             <button
               type="button"
@@ -2185,7 +2236,8 @@ export const RpgHud: React.FC<RpgHudProps> = ({
       </div>
 
       {/* OCEAN DEPTH CONTROLS (Holdable Naik / Turun buttons cleanly above Attack) */}
-      {hud.phase === 'playing' &&
+      {!inCar &&
+        hud.phase === 'playing' &&
         (hud.worldMode === 'ocean' || Boolean(hud.oceanSurvival)) &&
         onOceanVertical && (
           <div className="pointer-events-auto fixed bottom-[92px] right-3 z-20 flex flex-col gap-1.5 sm:bottom-[108px] sm:right-5">
@@ -2222,184 +2274,375 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           </div>
         )}
 
-      {/* BOTTOM-RIGHT: Mobile Legends Style Thumb Cluster (Dive, Jump, Scope, Attack) */}
-      <div className="pointer-events-none fixed bottom-3 right-3 z-20 h-[144px] w-[216px] sm:bottom-5 sm:right-5 sm:h-[168px] sm:w-[244px]">
-
-        {/* Dive / Surface Ocean Medallion right next to Jump */}
-        {(hud.worldMode === 'overworld' || hud.worldMode === 'ocean') &&
-          Boolean(onDiveOcean || onEnterOcean) && (() => {
-            const isUnderwaterHud = hud.worldMode === 'ocean' || Boolean(hud.oceanSurvival);
-            return (
-              <button
-                type="button"
-                data-no-click-sfx="true"
-                onPointerDown={(e) => {
-                  e.preventDefault();
-                  (onDiveOcean ?? onEnterOcean)?.();
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
+      {/* BOTTOM-RIGHT: On-Foot / Combat / Swim Thumb Cluster (hidden completely when in Car Mode!) */}
+      {!inCar && (
+        <div className="pointer-events-none fixed bottom-3 right-3 z-20 h-[144px] w-[216px] sm:bottom-5 sm:right-5 sm:h-[168px] sm:w-[244px]">
+          {/* Dive / Surface Ocean Medallion right next to Jump */}
+          {(hud.worldMode === 'overworld' || hud.worldMode === 'ocean') &&
+            Boolean(onDiveOcean || onEnterOcean) && (() => {
+              const isUnderwaterHud = hud.worldMode === 'ocean' || Boolean(hud.oceanSurvival);
+              return (
+                <button
+                  type="button"
+                  data-no-click-sfx="true"
+                  onPointerDown={(e) => {
                     e.preventDefault();
                     (onDiveOcean ?? onEnterOcean)?.();
-                  }
-                }}
-                title={
-                  isUnderwaterHud
-                    ? 'Berenang Naik ke Permukaan Laut (X)'
-                    : hud.swimSuitPicked
-                    ? 'Berenang & Menyelam Masuk ke Laut (X)'
-                    : 'Ambil Pakaian Renang di Dekat Desa untuk Menyelam'
-                }
-                aria-label={
-                  isUnderwaterHud
-                    ? 'Berenang Naik ke Permukaan Laut'
-                    : hud.swimSuitPicked
-                    ? 'Menyelam ke Laut'
-                    : 'Cari Pakaian Renang'
-                }
-                className={`pointer-events-auto absolute bottom-[10px] right-[152px] flex h-[52px] w-[52px] touch-none select-none items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:bottom-[14px] sm:right-[176px] sm:h-[58px] sm:w-[58px] ${
-                  hud.diveTransitionStage && hud.diveTransitionStage !== 'idle'
-                    ? 'animate-pulse ring-2 ring-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.85)]'
-                    : isUnderwaterHud
-                    ? 'shadow-[0_5px_14px_rgba(16,185,129,0.58)] ring-2 ring-emerald-300/75'
-                    : hud.swimSuitPicked
-                    ? 'shadow-[0_5px_14px_rgba(34,211,238,0.56)] ring-2 ring-cyan-300/75'
-                    : 'opacity-90 shadow-[0_5px_14px_rgba(245,158,11,0.45)] ring-2 ring-amber-300/70'
-                }`}
-              >
-                <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
-                  <img
-                    src={
-                      isUnderwaterHud
-                        ? './assets/aistudio/Gemini_Generated_Image_aoej87aoej87aoej_de96d052.jpeg'
-                        : './assets/aistudio/Gemini_Generated_Image_p9qrl3p9qrl3p9qr_c81c9878.jpeg'
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      (onDiveOcean ?? onEnterOcean)?.();
                     }
-                    alt={isUnderwaterHud ? 'Naik ke Permukaan' : 'Menyelam ke Laut'}
-                    className="pointer-events-none h-full w-full scale-[1.09] select-none object-cover"
-                    draggable={false}
-                  />
-                </span>
-                {!isUnderwaterHud && !hud.swimSuitPicked && (
-                  <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-amber-300 bg-slate-950/95 text-amber-200 shadow sm:h-5 sm:w-5">
-                    <Lock className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                  }}
+                  title={
+                    isUnderwaterHud
+                      ? 'Berenang Naik ke Permukaan Laut (X)'
+                      : hud.swimSuitPicked
+                      ? 'Berenang & Menyelam Masuk ke Laut (X)'
+                      : 'Ambil Pakaian Renang di Dekat Desa untuk Menyelam'
+                  }
+                  aria-label={
+                    isUnderwaterHud
+                      ? 'Berenang Naik ke Permukaan Laut'
+                      : hud.swimSuitPicked
+                      ? 'Menyelam ke Laut'
+                      : 'Cari Pakaian Renang'
+                  }
+                  className={`pointer-events-auto absolute bottom-[10px] right-[152px] flex h-[52px] w-[52px] touch-none select-none items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:bottom-[14px] sm:right-[176px] sm:h-[58px] sm:w-[58px] ${
+                    hud.diveTransitionStage && hud.diveTransitionStage !== 'idle'
+                      ? 'animate-pulse ring-2 ring-cyan-300 shadow-[0_0_18px_rgba(34,211,238,0.85)]'
+                      : isUnderwaterHud
+                      ? 'shadow-[0_5px_14px_rgba(16,185,129,0.58)] ring-2 ring-emerald-300/75'
+                      : hud.swimSuitPicked
+                      ? 'shadow-[0_5px_14px_rgba(34,211,238,0.56)] ring-2 ring-cyan-300/75'
+                      : 'opacity-90 shadow-[0_5px_14px_rgba(245,158,11,0.45)] ring-2 ring-amber-300/70'
+                  }`}
+                >
+                  <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                    <img
+                      src={
+                        isUnderwaterHud
+                          ? './assets/aistudio/Gemini_Generated_Image_aoej87aoej87aoej_de96d052.jpeg'
+                          : './assets/aistudio/Gemini_Generated_Image_p9qrl3p9qrl3p9qr_c81c9878.jpeg'
+                      }
+                      alt={isUnderwaterHud ? 'Naik ke Permukaan' : 'Menyelam ke Laut'}
+                      className="pointer-events-none h-full w-full scale-[1.09] select-none object-cover"
+                      draggable={false}
+                    />
                   </span>
-                )}
-                <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-300/65 bg-slate-950/90 px-1.5 text-[8px] font-black leading-tight text-cyan-100 shadow sm:text-[9px]">
-                  {isUnderwaterHud ? 'Naik' : hud.swimSuitPicked ? 'Selam' : 'Baju'}
-                </span>
-              </button>
-            );
-          })()}
+                  {!isUnderwaterHud && !hud.swimSuitPicked && (
+                    <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full border border-amber-300 bg-slate-950/95 text-amber-200 shadow sm:h-5 sm:w-5">
+                      <Lock className="h-2.5 w-2.5 sm:h-3 sm:w-3" />
+                    </span>
+                  )}
+                  <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-300/65 bg-slate-950/90 px-1.5 text-[8px] font-black leading-tight text-cyan-100 shadow sm:text-[9px]">
+                    {isUnderwaterHud ? 'Naik' : hud.swimSuitPicked ? 'Selam' : 'Baju'}
+                  </span>
+                </button>
+              );
+            })()}
 
-        {/* Button 2 (Arc Left): Winged-Boot Jump Medallion */}
-        <button
-          type="button"
-          data-no-click-sfx="true"
-          onPointerDown={(e) => {
-            e.preventDefault();
-            onJump();
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              onJump();
-            }
-          }}
-          title={hud.isSwimming ? 'Lompat Naik dari Air (J / Spasi)' : 'Lompat (J)'}
-          aria-label={hud.isSwimming ? 'Lompat Naik dari Air' : 'Lompat'}
-          className="pointer-events-auto absolute bottom-[6px] right-[88px] flex h-[58px] w-[58px] touch-none select-none items-center justify-center rounded-full shadow-[0_5px_14px_rgba(16,185,129,0.44)] transition-transform hover:scale-105 active:scale-90 sm:bottom-[8px] sm:right-[102px] sm:h-[66px] sm:w-[66px]"
-        >
-          <img
-            src="./assets/ui/btn_jump.png"
-            alt="Lompat"
-            className="pointer-events-none h-full w-full select-none object-contain"
-            draggable={false}
-          />
-        </button>
-
-        {/* Optional ADS / Scope Bidik Button (shows in Bidik Bebas mode when holding an owned weapon) */}
-        {hud.settings.aimMode === 'manual' &&
-          hud.activeHotbarSlot <= 7 &&
-          hud.ownedWeapons.includes(hud.activeWeapon) && (
+          {/* Button 2 (Arc Left): Winged-Boot Jump Medallion */}
           <button
             type="button"
-            onClick={onToggleAim}
-            title={hud.isAiming ? 'Keluar Mode Scope (Klik Kanan / Q)' : 'Mode Scope / Bidik Presisi (Klik Kanan / Q)'}
-            aria-label="Mode Scope"
-            className={`pointer-events-auto absolute bottom-[88px] right-[82px] flex h-[54px] w-[54px] items-center justify-center rounded-full transition-transform active:scale-90 sm:bottom-[102px] sm:right-[96px] sm:h-[60px] sm:w-[60px] ${
-              hud.isAiming
-                ? 'scale-110 ring-2 ring-rose-300 shadow-[0_0_16px_rgba(244,63,94,0.85)]'
-                : 'shadow-[0_5px_14px_rgba(244,63,94,0.45)] hover:scale-105'
-            }`}
+            data-no-click-sfx="true"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              onJump();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                onJump();
+              }
+            }}
+            title={hud.isSwimming ? 'Lompat Naik dari Air (J / Spasi)' : 'Lompat (J)'}
+            aria-label={hud.isSwimming ? 'Lompat Naik dari Air' : 'Lompat'}
+            className="pointer-events-auto absolute bottom-[6px] right-[88px] flex h-[58px] w-[58px] touch-none select-none items-center justify-center rounded-full shadow-[0_5px_14px_rgba(16,185,129,0.44)] transition-transform hover:scale-105 active:scale-90 sm:bottom-[8px] sm:right-[102px] sm:h-[66px] sm:w-[66px]"
           >
             <img
-              src="./assets/ui/btn_scope.png"
-              alt="Mode Scope"
+              src="./assets/ui/btn_jump.png"
+              alt="Lompat"
               className="pointer-events-none h-full w-full select-none object-contain"
               draggable={false}
             />
           </button>
-        )}
 
-        {/* Button 3 (Primary Thumb Anchor): Large Attack / Active Tool Medallion (Hold to Spray!) */}
-        <button
-          type="button"
-          data-no-click-sfx="true"
-          onPointerDown={(e) => {
+          {/* Optional ADS / Scope Bidik Button (shows in Bidik Bebas mode when holding an owned weapon) */}
+          {hud.settings.aimMode === 'manual' &&
+            hud.activeHotbarSlot <= 7 &&
+            hud.ownedWeapons.includes(hud.activeWeapon) && (
+            <button
+              type="button"
+              onClick={onToggleAim}
+              title={hud.isAiming ? 'Keluar Mode Scope (Klik Kanan / Q)' : 'Mode Scope / Bidik Presisi (Klik Kanan / Q)'}
+              aria-label="Mode Scope"
+              className={`pointer-events-auto absolute bottom-[88px] right-[82px] flex h-[54px] w-[54px] items-center justify-center rounded-full transition-transform active:scale-90 sm:bottom-[102px] sm:right-[96px] sm:h-[60px] sm:w-[60px] ${
+                hud.isAiming
+                  ? 'scale-110 ring-2 ring-rose-300 shadow-[0_0_16px_rgba(244,63,94,0.85)]'
+                  : 'shadow-[0_5px_14px_rgba(244,63,94,0.45)] hover:scale-105'
+              }`}
+            >
+              <img
+                src="./assets/ui/btn_scope.png"
+                alt="Mode Scope"
+                className="pointer-events-none h-full w-full select-none object-contain"
+                draggable={false}
+              />
+            </button>
+          )}
+
+          {/* Button 3 (Primary Thumb Anchor): Large Attack / Active Tool Medallion (Hold to Spray!) */}
+          <button
+            type="button"
+            data-no-click-sfx="true"
+            onPointerDown={(e) => {
+              e.preventDefault();
+              firePointerId.current = e.pointerId;
+              try {
+                (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+              } catch {
+                // ignore
+              }
+              onSetFireHeld(true);
+            }}
+            onPointerUp={(e) => {
+              if (firePointerId.current === null || firePointerId.current === e.pointerId) {
+                firePointerId.current = null;
+                onSetFireHeld(false);
+              }
+            }}
+            onPointerCancel={(e) => {
+              if (firePointerId.current === null || firePointerId.current === e.pointerId) {
+                firePointerId.current = null;
+                onSetFireHeld(false);
+              }
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                onFireWeapon();
+              }
+            }}
+            title="Tahan / Tekan untuk Menembak ke Crosshair (Spasi / Klik Kiri)"
+            aria-label="Tembak"
+            className="pointer-events-auto absolute bottom-0 right-0 flex h-[78px] w-[78px] touch-none select-none items-center justify-center rounded-full shadow-[0_6px_16px_rgba(34,211,238,0.48)] transition-transform hover:scale-105 active:scale-90 sm:h-[90px] sm:w-[90px]"
+          >
+            <img
+              src="./assets/ui/btn_attack.png"
+              alt="Tembak"
+              className="pointer-events-none h-full w-full select-none object-contain"
+              draggable={false}
+            />
+            {hud.activeHotbarSlot >= 8 && (
+              <span className="pointer-events-none absolute flex h-10 w-10 items-center justify-center rounded-full border border-cyan-300/60 bg-slate-950/88 p-1 shadow-inner sm:h-12 sm:w-12">
+                <img
+                  src={activeItemIconSrc}
+                  alt="Alat Aktif"
+                  className="h-full w-full object-contain"
+                  draggable={false}
+                />
+              </span>
+            )}
+            {activeSlotBadgeText !== null && (
+              <span className="pointer-events-none absolute -bottom-0.5 rounded-full border border-cyan-300/60 bg-slate-950/90 px-1.5 font-mono-nums text-[10px] font-black leading-tight text-amber-300 shadow">
+                {activeSlotBadgeText}
+              </span>
+            )}
+          </button>
+        </div>
+      )}
+
+      {/* FULL DRIVING HUD (replaces joystick, jump, swim & weapon buttons when in Car Mode!) */}
+      {inCar && hud.carState && (() => {
+        const cs = hud.carState;
+        const bindHold = (ctrl: 'gas' | 'brake' | 'left' | 'right' | 'boost') => ({
+          onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
             e.preventDefault();
-            firePointerId.current = e.pointerId;
             try {
-              (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+              e.currentTarget.setPointerCapture(e.pointerId);
             } catch {
               // ignore
             }
-            onSetFireHeld(true);
-          }}
-          onPointerUp={(e) => {
-            if (firePointerId.current === null || firePointerId.current === e.pointerId) {
-              firePointerId.current = null;
-              onSetFireHeld(false);
-            }
-          }}
-          onPointerCancel={(e) => {
-            if (firePointerId.current === null || firePointerId.current === e.pointerId) {
-              firePointerId.current = null;
-              onSetFireHeld(false);
-            }
-          }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' || e.key === ' ') {
-              e.preventDefault();
-              onFireWeapon();
-            }
-          }}
-          title="Tahan / Tekan untuk Menembak ke Crosshair (Spasi / Klik Kiri)"
-          aria-label="Tembak"
-          className="pointer-events-auto absolute bottom-0 right-0 flex h-[78px] w-[78px] touch-none select-none items-center justify-center rounded-full shadow-[0_6px_16px_rgba(34,211,238,0.48)] transition-transform hover:scale-105 active:scale-90 sm:h-[90px] sm:w-[90px]"
-        >
-          <img
-            src="./assets/ui/btn_attack.png"
-            alt="Tembak"
-            className="pointer-events-none h-full w-full select-none object-contain"
-            draggable={false}
-          />
-          {hud.activeHotbarSlot >= 8 && (
-            <span className="pointer-events-none absolute flex h-10 w-10 items-center justify-center rounded-full border border-cyan-300/60 bg-slate-950/88 p-1 shadow-inner sm:h-12 sm:w-12">
-              <img
-                src={activeItemIconSrc}
-                alt="Alat Aktif"
-                className="h-full w-full object-contain"
-                draggable={false}
-              />
-            </span>
-          )}
-          {activeSlotBadgeText !== null && (
-            <span className="pointer-events-none absolute -bottom-0.5 rounded-full border border-cyan-300/60 bg-slate-950/90 px-1.5 font-mono-nums text-[10px] font-black leading-tight text-amber-300 shadow">
-              {activeSlotBadgeText}
-            </span>
-          )}
-        </button>
-      </div>
+            onCarControl?.(ctrl, true);
+          },
+          onPointerUp: () => onCarControl?.(ctrl, false),
+          onPointerCancel: () => onCarControl?.(ctrl, false),
+          onPointerLeave: () => onCarControl?.(ctrl, false),
+        });
+
+        return (
+          <>
+            {/* Bottom-Center Speedometer & Gear Dashboard */}
+            <div className="pointer-events-none fixed bottom-3 left-1/2 z-20 -translate-x-1/2 sm:bottom-5">
+              {carMode === 'entering' || carMode === 'exiting' ? (
+                <div className="flex items-center gap-2 rounded-2xl border border-sky-300/65 bg-slate-950/92 px-4 py-2 text-xs font-black text-sky-100 shadow-2xl">
+                  <span className="animate-pulse text-base">🚗</span>
+                  <span>
+                    {carMode === 'entering'
+                      ? 'Membuka pintu & masuk ke kursi pengemudi...'
+                      : 'Menghentikan mobil & membuka pintu keluar...'}
+                  </span>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 rounded-2xl border border-sky-300/50 bg-slate-950/92 px-3.5 py-2 text-white shadow-2xl">
+                  <div
+                    className={`flex h-9 w-9 items-center justify-center rounded-xl border font-mono-nums text-base font-black ${
+                      cs.gear === 'R'
+                        ? 'border-rose-400 bg-rose-600/35 text-rose-200'
+                        : cs.gear === 'D'
+                        ? 'border-emerald-400 bg-emerald-600/35 text-emerald-200'
+                        : 'border-slate-500 bg-slate-800/80 text-slate-200'
+                    }`}
+                  >
+                    {cs.gear}
+                  </div>
+                  <div className="flex flex-col leading-none">
+                    <div className="flex items-baseline gap-1 font-mono-nums">
+                      <span className="text-xl font-black text-sky-200 sm:text-2xl">
+                        {cs.speedKmh}
+                      </span>
+                      <span className="text-[10px] font-extrabold text-slate-400">KM/H</span>
+                    </div>
+                    <div className="mt-1 flex items-center gap-1.5 text-[9px] font-black">
+                      <span className={cs.handbrakeOn ? 'text-rose-300' : 'text-slate-400'}>
+                        {cs.handbrakeOn ? '🅿️ REM TANGAN' : 'WASD / Tombol'}
+                      </span>
+                      {cs.headlightsOn && <span className="text-amber-300">💡 LAMPU</span>}
+                      {cs.turboActive && <span className="text-cyan-300">⚡ TURBO</span>}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Bottom-Left Steering Paddles + Horn & Headlights */}
+            <div className="pointer-events-auto fixed bottom-14 left-2.5 z-20 flex flex-col gap-1.5 sm:bottom-16 sm:left-4">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  data-no-click-sfx="true"
+                  onClick={() => onCarHorn?.()}
+                  title="Bunyikan Klakson (H)"
+                  className="flex h-8 items-center gap-1 rounded-xl border border-amber-300/60 bg-slate-950/92 px-2.5 text-[10px] font-black text-amber-200 shadow-lg transition hover:bg-slate-900 active:scale-95 sm:h-9 sm:text-[11px]"
+                >
+                  <span>🔊</span>
+                  <span>Klakson</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onToggleCarHeadlights?.()}
+                  title="Nyalakan / Matikan Lampu Depan (L)"
+                  className={`flex h-8 items-center gap-1 rounded-xl border px-2.5 text-[10px] font-black shadow-lg transition active:scale-95 sm:h-9 sm:text-[11px] ${
+                    cs.headlightsOn
+                      ? 'border-amber-300 bg-amber-500/85 text-slate-950'
+                      : 'border-slate-500/60 bg-slate-950/92 text-slate-200 hover:bg-slate-900'
+                  }`}
+                >
+                  <span>💡</span>
+                  <span>Lampu</span>
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  disabled={!isCarDriving}
+                  data-no-click-sfx="true"
+                  {...bindHold('left')}
+                  title="Belok Kiri (A / Panah Kiri)"
+                  aria-label="Belok Kiri"
+                  className="flex h-14 w-16 touch-none select-none items-center justify-center rounded-2xl border-2 border-sky-300/75 bg-slate-950/92 text-sm font-black text-sky-100 shadow-xl transition active:scale-95 active:bg-sky-700 disabled:opacity-45 sm:h-16 sm:w-20 sm:text-base"
+                >
+                  ◀ Kiri
+                </button>
+                <button
+                  type="button"
+                  disabled={!isCarDriving}
+                  data-no-click-sfx="true"
+                  {...bindHold('right')}
+                  title="Belok Kanan (D / Panah Kanan)"
+                  aria-label="Belok Kanan"
+                  className="flex h-14 w-16 touch-none select-none items-center justify-center rounded-2xl border-2 border-sky-300/75 bg-slate-950/92 text-sm font-black text-sky-100 shadow-xl transition active:scale-95 active:bg-sky-700 disabled:opacity-45 sm:h-16 sm:w-20 sm:text-base"
+                >
+                  Kanan ▶
+                </button>
+              </div>
+            </div>
+
+            {/* Bottom-Right Gas, Brake/Reverse, Handbrake, Turbo & Exit Car */}
+            <div className="pointer-events-auto fixed bottom-3 right-2.5 z-20 flex flex-col items-end gap-1.5 sm:bottom-5 sm:right-5">
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  disabled={!isCarDriving}
+                  onClick={() => onToggleCarHandbrake?.()}
+                  title="Aktif / Lepas Rem Tangan (Spasi)"
+                  className={`flex h-8 items-center gap-1 rounded-xl border px-2.5 text-[10px] font-black shadow-lg transition active:scale-95 disabled:opacity-45 sm:h-9 sm:text-[11px] ${
+                    cs.handbrakeOn
+                      ? 'border-rose-300 bg-rose-600/95 text-white ring-1 ring-rose-200'
+                      : 'border-white/25 bg-slate-950/92 text-slate-200 hover:bg-slate-900'
+                  }`}
+                >
+                  <span>🅿️</span>
+                  <span>Rem Tangan</span>
+                </button>
+                {onToggleCar && (
+                  <button
+                    type="button"
+                    disabled={!isCarDriving}
+                    onClick={onToggleCar}
+                    title="Berhenti & Keluar Mobil (E)"
+                    className="flex h-8 items-center gap-1 rounded-xl border border-amber-300/80 bg-amber-600/95 px-3 text-[10px] font-black text-white shadow-lg transition hover:bg-amber-500 active:scale-95 disabled:opacity-45 sm:h-9 sm:text-[11px]"
+                  >
+                    <span>🚪</span>
+                    <span>Keluar (E)</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-end gap-1.5 sm:gap-2">
+                <button
+                  type="button"
+                  disabled={!isCarDriving}
+                  data-no-click-sfx="true"
+                  {...bindHold('boost')}
+                  title="Tahan untuk Turbo (Shift)"
+                  aria-label="Turbo"
+                  className="flex h-12 w-14 touch-none select-none flex-col items-center justify-center rounded-2xl border-2 border-cyan-300/80 bg-cyan-900/92 text-[10px] font-black text-cyan-100 shadow-xl transition active:scale-95 active:bg-cyan-500 active:text-slate-950 disabled:opacity-45 sm:h-14 sm:w-16 sm:text-[11px]"
+                >
+                  <span className="text-sm leading-none">⚡</span>
+                  <span>TURBO</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!isCarDriving}
+                  data-no-click-sfx="true"
+                  {...bindHold('brake')}
+                  title="Tahan untuk Rem / Mundur (S / Panah Bawah)"
+                  aria-label="Rem dan Mundur"
+                  className="flex h-14 w-[72px] touch-none select-none flex-col items-center justify-center rounded-2xl border-2 border-rose-400/85 bg-rose-900/92 text-[10px] font-black text-rose-100 shadow-xl transition active:scale-95 active:bg-rose-600 disabled:opacity-45 sm:h-16 sm:w-[82px] sm:text-xs"
+                >
+                  <span className="text-sm leading-none">🛑</span>
+                  <span>REM/MUNDUR</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={!isCarDriving}
+                  data-no-click-sfx="true"
+                  {...bindHold('gas')}
+                  title="Tahan untuk Gas Maju (W / Panah Atas)"
+                  aria-label="Gas Maju"
+                  className="flex h-16 w-[74px] touch-none select-none flex-col items-center justify-center rounded-2xl border-2 border-emerald-300 bg-emerald-600/95 text-xs font-black text-white shadow-[0_6px_18px_rgba(16,185,129,0.55)] transition active:scale-95 active:bg-emerald-400 active:text-slate-950 disabled:opacity-45 sm:h-[76px] sm:w-[86px] sm:text-sm"
+                >
+                  <span className="text-base leading-none">⛽</span>
+                  <span>GAS</span>
+                </button>
+              </div>
+            </div>
+          </>
+        );
+      })()}
 
       {/* VOICE COMMAND BUTTON CLUSTER (Bottom-left below floating joystick zone so it never overlaps tracker or combat buttons) */}
       {onToggleVoice && (
