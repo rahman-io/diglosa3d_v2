@@ -747,6 +747,9 @@ function DiglosaRpgApp() {
         },
       });
       engine.setLocalAppearance(characterId, playerName);
+      engine.setBackgroundIdle(
+        showAssetDownloader || !authChecked || !Boolean(user && user.emailVerified),
+      );
       engineRef.current = engine;
     });
     return () => {
@@ -2245,6 +2248,16 @@ function DiglosaRpgApp() {
   }, [hud, leaderboardOpen, refreshLeaderboard]);
 
   const isAuthenticatedUser = Boolean(user && user.emailVerified);
+  const shouldIdle3dWorld =
+    showAssetDownloader ||
+    !authChecked ||
+    !isAuthenticatedUser ||
+    ((hud.phase === 'title' || !activeRoom || !isMultiplayerPlaying) &&
+      (difficultyPromptOpen || leaderboardOpen || Boolean(sideTab) || Boolean(vsIntroData)));
+
+  useEffect(() => {
+    engineRef.current?.setBackgroundIdle(shouldIdle3dWorld);
+  }, [shouldIdle3dWorld, worldBootReady]);
   const waveVictoryOpen =
     !vsIntroData &&
     hud.phase === 'playing' &&

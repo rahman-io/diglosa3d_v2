@@ -630,6 +630,7 @@ export class RpgWorldEngine {
   private animFrameCounter = 0;
   private hasActiveParticles = false;
   private forceRenderNextFrame = true;
+  private backgroundIdle = false;
   private elapsed = 0;
   private disposed = false;
   private lastHudHeroX = 9999;
@@ -6296,7 +6297,28 @@ export class RpgWorldEngine {
     if ((next === 'paused' || next === 'title') && this.hasSave) {
       this.saveProgress();
     }
+    if (!this.disposed) {
+      cancelAnimationFrame(this.frameId);
+      clearTimeout(this.frameId);
+      this.scheduleNextTick();
+    }
     this.pushHud(true);
+  }
+
+  public setBackgroundIdle(idle: boolean): void {
+    if (this.backgroundIdle === idle) return;
+    this.backgroundIdle = idle;
+    if (this.disposed) return;
+    if (!idle) {
+      this.lastTimeMs = performance.now();
+      this.lastFrameRenderMs = 0;
+      this.forceRenderNextFrame = true;
+      cancelAnimationFrame(this.frameId);
+      clearTimeout(this.frameId);
+      this.scheduleNextTick();
+    } else {
+      this.forceRenderNextFrame = true;
+    }
   }
 
   public toggleAimMode(): void {
@@ -11310,6 +11332,9 @@ export class RpgWorldEngine {
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
     this.forceRenderNextFrame = true;
+    cancelAnimationFrame(this.frameId);
+    clearTimeout(this.frameId);
+    this.scheduleNextTick();
   };
 
   private onWindowBlur = (): void => {
@@ -11877,6 +11902,7 @@ export class RpgWorldEngine {
 
   private getTargetFrameIntervalMs(now: number): number {
     if (
+      this.backgroundIdle ||
       this.phase === 'paused' ||
       this.phase === 'gameover' ||
       this.phase === 'battle' ||
@@ -11886,7 +11912,7 @@ export class RpgWorldEngine {
       return 650;
     }
     if (this.phase === 'title') {
-      return 32;
+      return this.isLowEndMobile ? 44 : this.isMobileDevice ? 38 : 32;
     }
     if (this.phase === 'dialogue' || this.phase === 'story') {
       return this.isMobileDevice ? 32 : 16;
@@ -11918,6 +11944,17 @@ export class RpgWorldEngine {
 
   private scheduleNextTick(): void {
     if (this.disposed || document.hidden) return;
+    const isIdle =
+      this.backgroundIdle ||
+      this.phase === 'paused' ||
+      this.phase === 'gameover' ||
+      this.phase === 'battle' ||
+      this.phase === 'learning' ||
+      this.phase === 'academy';
+    if (isIdle && !this.forceRenderNextFrame) {
+      this.frameId = window.setTimeout(this.tick, 650);
+      return;
+    }
     if (this.isSoftwareGl) {
       this.afterDraw(this.tick);
     } else {
@@ -11959,6 +11996,7 @@ export class RpgWorldEngine {
     this.elapsed += dt;
 
     const isModalIdlePhase =
+      this.backgroundIdle ||
       this.phase === 'paused' ||
       this.phase === 'gameover' ||
       this.phase === 'battle' ||
@@ -12006,7 +12044,7 @@ export class RpgWorldEngine {
       this.shadowFrameCounter += 1;
       const shadowMod =
         this.phase === 'title'
-          ? 5
+          ? 12
           : this.isLowEndMobile
           ? 4
           : this.isMobileDevice
@@ -12020,7 +12058,9 @@ export class RpgWorldEngine {
           Math.abs(this.sunLight.position.x - this.lastShadowSunX) > 0.95 ||
           Math.abs(this.sunLight.position.y - this.lastShadowSunY) > 0.95;
         const modeChanged = this.worldMode !== this.lastShadowMode;
-        const timeRefresh = now - this.lastShadowUpdateMs > (this.isLowEndMobile ? 1250 : 900);
+        const timeRefresh =
+          now - this.lastShadowUpdateMs >
+          (this.phase === 'title' ? 3200 : this.isLowEndMobile ? 1250 : 900);
         if (heroMoved || sunMoved || modeChanged || timeRefresh) {
           this.renderer.shadowMap.needsUpdate = true;
           this.lastShadowHeroX = this.heroPos.x;
@@ -13170,7 +13210,10 @@ export class RpgWorldEngine {
       this.camera.position,
     );
 
-    if (this.archipelagoUnderwaterRig) {
+    if (
+      this.archipelagoUnderwaterRig &&
+      (this.isHeroUnderwater() || this.camera.position.y <= 22)
+    ) {
       updateArchipelagoUnderwaterProps(
         this.archipelagoUnderwaterRig,
         dt,
