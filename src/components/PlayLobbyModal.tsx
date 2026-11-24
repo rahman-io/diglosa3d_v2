@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import {
   ArrowLeft,
@@ -38,9 +38,8 @@ import {
   PlayModeType,
   SpawnPreference,
 } from '../types/game';
+import type { LobbyDraftState, LobbyWizardStep } from '../utils/sessionStage';
 import { HeroPreviewCanvas } from './HeroPreviewCanvas';
-
-type LobbyWizardStep = 'character' | 'name' | 'mode';
 
 interface PlayLobbyModalProps {
   open: boolean;
@@ -73,6 +72,8 @@ interface PlayLobbyModalProps {
   onEnterPlayingRoom: () => void;
   onLeaveRoom: () => Promise<void>;
   onCancel: () => void;
+  restoredLobbyDraft?: LobbyDraftState | null;
+  onLobbyDraftChange?: (draft: LobbyDraftState) => void;
 }
 
 interface DifficultyCardSpec {
@@ -182,26 +183,58 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
   onEnterPlayingRoom,
   onLeaveRoom,
   onCancel,
+  restoredLobbyDraft,
+  onLobbyDraftChange,
 }) => {
-  const [wizardStep, setWizardStep] = useState<LobbyWizardStep>('character');
-  const [playMode, setPlayMode] = useState<PlayModeType>('solo');
-  const [difficulty, setDifficulty] = useState<DifficultyMode>(initialDifficulty);
-  const [spawnPref, setSpawnPref] = useState<SpawnPreference>('random');
-  const [joinCode, setJoinCode] = useState('');
+  const [wizardStep, setWizardStep] = useState<LobbyWizardStep>(
+    () => restoredLobbyDraft?.wizardStep ?? 'character',
+  );
+  const [playMode, setPlayMode] = useState<PlayModeType>(
+    () => restoredLobbyDraft?.playMode ?? 'solo',
+  );
+  const [difficulty, setDifficulty] = useState<DifficultyMode>(
+    () => restoredLobbyDraft?.difficulty ?? initialDifficulty,
+  );
+  const [spawnPref, setSpawnPref] = useState<SpawnPreference>(
+    () => restoredLobbyDraft?.spawnPref ?? 'random',
+  );
+  const [joinCode, setJoinCode] = useState(() => restoredLobbyDraft?.joinCode ?? '');
   const [editingRoomGroup, setEditingRoomGroup] = useState(false);
   const [roomGroupDraft, setRoomGroupDraft] = useState('');
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
+  const prevOpenRef = useRef(false);
 
   useEffect(() => {
-    if (open) {
-      setDifficulty(initialDifficulty);
+    const justOpened = open && !prevOpenRef.current;
+    prevOpenRef.current = open;
+    if (justOpened) {
       setErrorMsg(null);
-      setWizardStep('character');
       setEditingRoomGroup(false);
+      if (restoredLobbyDraft) {
+        setWizardStep(restoredLobbyDraft.wizardStep);
+        setPlayMode(restoredLobbyDraft.playMode);
+        setDifficulty(restoredLobbyDraft.difficulty);
+        setSpawnPref(restoredLobbyDraft.spawnPref);
+        setJoinCode(restoredLobbyDraft.joinCode);
+      } else {
+        setDifficulty(initialDifficulty);
+        setWizardStep('character');
+      }
     }
-  }, [open, initialDifficulty]);
+  }, [open, initialDifficulty, restoredLobbyDraft]);
+
+  useEffect(() => {
+    if (!open) return;
+    onLobbyDraftChange?.({
+      wizardStep,
+      playMode,
+      difficulty,
+      spawnPref,
+      joinCode,
+    });
+  }, [open, wizardStep, playMode, difficulty, spawnPref, joinCode, onLobbyDraftChange]);
 
   useEffect(() => {
     if (!open) return;

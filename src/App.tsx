@@ -68,6 +68,13 @@ import {
   savePlayerName,
 } from './data/characterPresets';
 import {
+  ActiveSessionSnapshot,
+  clearActiveSessionStage,
+  loadActiveSessionStage,
+  LobbyDraftState,
+  saveActiveSessionStage,
+} from './utils/sessionStage';
+import {
   checkSavedRoomMembership,
   claimHostAndRemoveDeadHost,
   clearLastActiveRoomSession,
@@ -253,6 +260,13 @@ function DiglosaRpgApp() {
   const engineRef = useRef<RpgWorldEngine | null>(null);
   const prevPhaseRef = useRef<RpgHudSnapshot['phase']>('title');
 
+  const initialSessionRef = useRef<ActiveSessionSnapshot | null>(null);
+  const sessionCheckedOnBootRef = useRef(false);
+  if (!sessionCheckedOnBootRef.current) {
+    sessionCheckedOnBootRef.current = true;
+    initialSessionRef.current = loadActiveSessionStage();
+  }
+
   const [hud, setHud] = useState<RpgHudSnapshot>(INITIAL_HUD);
   const [muted, setMuted] = useState(false);
   const [activeBattle, setActiveBattle] = useState<BattleContext | null>(null);
@@ -263,11 +277,38 @@ function DiglosaRpgApp() {
   const [dialogueNpcId, setDialogueNpcId] = useState<string | null>(null);
   const [sideTab, setSideTab] = useState<SideModalTab>(null);
   const [difficultyPromptOpen, setDifficultyPromptOpen] = useState(false);
-  const [pendingDifficulty, setPendingDifficulty] = useState<DifficultyMode>('petualang');
+  const [pendingDifficulty, setPendingDifficulty] = useState<DifficultyMode>(
+    () => initialSessionRef.current?.lobbyDraft.difficulty ?? 'petualang',
+  );
+  const [lobbyDraft, setLobbyDraft] = useState<LobbyDraftState>(
+    () =>
+      initialSessionRef.current?.lobbyDraft ?? {
+        wizardStep: 'character',
+        playMode: 'solo',
+        difficulty: 'petualang',
+        spawnPref: 'random',
+        joinCode: '',
+      },
+  );
+  const [restoredLobbyDraft, setRestoredLobbyDraft] = useState<LobbyDraftState | null>(() =>
+    initialSessionRef.current?.lobbyOpen ? initialSessionRef.current.lobbyDraft : null,
+  );
+  const [engineMounted, setEngineMounted] = useState(false);
+  const [sessionRestoreDone, setSessionRestoreDone] = useState(
+    () => !initialSessionRef.current || initialSessionRef.current.stage === 'title',
+  );
+  const sessionRestoreStartedRef = useRef(false);
+  const quickLearnStandaloneRef = useRef(false);
 
-  const [characterId, setCharacterId] = useState<CharacterPresetId>(() => loadSavedCharacterId());
-  const [playerName, setPlayerName] = useState<string>(() => loadSavedPlayerName());
-  const [groupName, setGroupName] = useState<string>('ELITE SQUAD');
+  const [characterId, setCharacterId] = useState<CharacterPresetId>(
+    () => initialSessionRef.current?.characterId ?? loadSavedCharacterId(),
+  );
+  const [playerName, setPlayerName] = useState<string>(() =>
+    initialSessionRef.current ? initialSessionRef.current.playerName : loadSavedPlayerName(),
+  );
+  const [groupName, setGroupName] = useState<string>(
+    () => initialSessionRef.current?.groupName || 'ELITE SQUAD',
+  );
   const [vsIntroData, setVsIntroData] = useState<{
     squadName: string;
     isMultiplayer: boolean;
@@ -752,10 +793,12 @@ function DiglosaRpgApp() {
         showAssetDownloader || !authChecked || !Boolean(user && user.emailVerified),
       );
       engineRef.current = engine;
+      setEngineMounted(true);
     });
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(rafId);
+      setEngineMounted(false);
       if (engine) {
         engine.dispose();
       }
@@ -803,7 +846,8 @@ function DiglosaRpgApp() {
       setAuthChecked(true);
       if (nextUser?.displayName) {
         setPlayerName((prev) => {
-          if (!prev || prev === 'Petualang') {
+          const wasEditingLobby = initialSessionRef.current?.stage === 'lobby';
+          if ((!prev && !wasEditingLobby) || prev === 'Petualang') {
             const cleaned = nextUser.displayName!.trim().slice(0, 24);
             if (cleaned) savePlayerName(cleaned);
             return cleaned || prev;
@@ -1878,6 +1922,7 @@ function DiglosaRpgApp() {
 
   const handleStartNew = useCallback(() => {
     if (getAlwaysFullscreenPref()) void requestAppFullscreen();
+    setRestoredLobbyDraft(null);
     setPendingDifficulty(hud.settings.difficulty);
     setDifficultyPromptOpen(true);
     if (user?.uid && user?.emailVerified && !activeRoom && !resumableRoom) {
@@ -1899,6 +1944,7 @@ function DiglosaRpgApp() {
         void leaveMultiplayerRoom(oldRoomId);
       }
       setIsMultiplayerPlaying(false);
+      quickLearnStandaloneRef.current = false;
       setPendingDifficulty(difficulty);
       setDifficultyPromptOpen(false);
       setActiveBattle(null);
@@ -2203,6 +2249,8 @@ function DiglosaRpgApp() {
       clearLastActiveRoomSession();
       await leaveMultiplayerRoom(oldRoomId).catch(() => undefined);
     }
+    clearActiveSessionStage();
+    quickLearnStandaloneRef.current = false;
     setSideTab(null);
     setDifficultyPromptOpen(false);
     setLeaderboardOpen(false);
@@ -2259,6 +2307,203 @@ function DiglosaRpgApp() {
   useEffect(() => {
     engineRef.current?.setBackgroundIdle(shouldIdle3dWorld);
   }, [shouldIdle3dWorld, worldBootReady]);
+
+  // Restore exact active stage after browser refresh or PWA update reload
+  useEffect(() => {
+    if (
+      sessionRestoreStartedRef.current ||
+      !engineMounted ||
+      showAssetDownloader ||
+      !authChecked ||
+      !isAuthenticatedUser
+    ) {
+      return;
+    }
+    sessionRestoreStartedRef.current = true;
+    const saved = initialSessionRef.current;
+
+    const finishRestore = () => {
+      setSessionRestoreDone(true);
+    };
+
+    if (!saved || saved.stage === 'title') {
+      if (saved?.sideTab) setSideTab(saved.sideTab);
+      if (saved?.leaderboardOpen) setLeaderboardOpen(true);
+      finishRestore();
+      return;
+    }
+
+    const engine = engineRef.current;
+    if (!engine) {
+      finishRestore();
+      return;
+    }
+
+    const resolvedName = (saved.playerName || playerName || 'Petualang').trim() || 'Petualang';
+    engine.setLocalAppearance(saved.characterId, resolvedName);
+
+    if (saved.stage === 'lobby') {
+      quickLearnStandaloneRef.current = false;
+      setRestoredLobbyDraft(saved.lobbyDraft);
+      if (saved.sideTab) setSideTab(saved.sideTab);
+      if (saved.leaderboardOpen) setLeaderboardOpen(true);
+      if (saved.mpRoomId) {
+        void rejoinRoomById({
+          roomId: saved.mpRoomId,
+          displayName: resolvedName,
+          characterId: saved.characterId,
+        })
+          .then((res) => {
+            setResumableRoom(null);
+            setMySpawnIndex(res.spawnIndex);
+            applyMetaToRoomRef(res.room.roomId, {
+              g: res.room.groupName,
+              ws: res.room.waveSeed,
+              wc: res.room.waveCount,
+              ts: Date.now(),
+            });
+            if (res.room.groupName) setGroupName(res.room.groupName);
+            setActiveRoom(res.room);
+            if (res.room.status === 'playing') {
+              enterMultiplayerMatch(res.room, res.spawnIndex, true);
+            } else {
+              setDifficultyPromptOpen(true);
+            }
+          })
+          .catch(() => {
+            setDifficultyPromptOpen(true);
+          })
+          .finally(finishRestore);
+        return;
+      }
+      setDifficultyPromptOpen(true);
+      finishRestore();
+      return;
+    }
+
+    if (saved.stage === 'playing_mp' && saved.mpRoomId) {
+      quickLearnStandaloneRef.current = false;
+      void rejoinRoomById({
+        roomId: saved.mpRoomId,
+        displayName: resolvedName,
+        characterId: saved.characterId,
+      })
+        .then((res) => {
+          setResumableRoom(null);
+          setMySpawnIndex(res.spawnIndex);
+          applyMetaToRoomRef(res.room.roomId, {
+            g: res.room.groupName,
+            ws: res.room.waveSeed,
+            wc: res.room.waveCount,
+            ts: Date.now(),
+          });
+          if (res.room.groupName) setGroupName(res.room.groupName);
+          setActiveRoom(res.room);
+          if (res.room.status === 'playing') {
+            enterMultiplayerMatch(res.room, res.spawnIndex, !saved.vsIntroData);
+            if (saved.vsIntroData) {
+              setVsIntroData(saved.vsIntroData);
+            }
+            if (saved.sideTab) setSideTab(saved.sideTab);
+            if (saved.leaderboardOpen) setLeaderboardOpen(true);
+          } else {
+            setDifficultyPromptOpen(true);
+          }
+        })
+        .catch(() => {
+          setDifficultyPromptOpen(false);
+        })
+        .finally(finishRestore);
+      return;
+    }
+
+    if (saved.stage === 'quick_learn' && saved.activeLearning) {
+      quickLearnStandaloneRef.current = true;
+      setActiveLearning(saved.activeLearning);
+      engine.setPhase('learning');
+      finishRestore();
+      return;
+    }
+
+    if (saved.stage === 'playing_solo') {
+      quickLearnStandaloneRef.current = false;
+      const targetPhase =
+        saved.phase === 'paused' || saved.phase === 'gameover' ? saved.phase : 'playing';
+      engine.setMultiplayerActive(false);
+      engine.continueGame({ silent: true, targetPhase });
+      if (saved.vsIntroData) {
+        setVsIntroData(saved.vsIntroData);
+      }
+      if (saved.activeLearning) {
+        setActiveLearning(saved.activeLearning);
+        engine.setPhase('learning');
+      }
+      if (saved.sideTab) setSideTab(saved.sideTab);
+      if (saved.leaderboardOpen) setLeaderboardOpen(true);
+      finishRestore();
+      return;
+    }
+
+    finishRestore();
+  }, [
+    engineMounted,
+    showAssetDownloader,
+    authChecked,
+    isAuthenticatedUser,
+    playerName,
+    applyMetaToRoomRef,
+    enterMultiplayerMatch,
+  ]);
+
+  // Continuously persist current stage in sessionStorage so browser refresh preserves exact screen/progress
+  useEffect(() => {
+    if (!sessionRestoreDone || !authChecked || !isAuthenticatedUser) return;
+    if (hud.phase !== 'learning') {
+      quickLearnStandaloneRef.current = false;
+    }
+    const stage: ActiveSessionSnapshot['stage'] = isMultiplayerPlaying
+      ? 'playing_mp'
+      : difficultyPromptOpen
+      ? 'lobby'
+      : quickLearnStandaloneRef.current && hud.phase === 'learning' && Boolean(activeLearning)
+      ? 'quick_learn'
+      : hud.phase !== 'title'
+      ? 'playing_solo'
+      : 'title';
+
+    saveActiveSessionStage({
+      version: 1,
+      stage,
+      phase: hud.phase,
+      characterId,
+      playerName,
+      groupName,
+      lobbyOpen: difficultyPromptOpen,
+      lobbyDraft,
+      mpRoomId: activeRoom?.roomId ?? null,
+      sideTab,
+      leaderboardOpen,
+      vsIntroData,
+      activeLearning: hud.phase === 'learning' ? activeLearning : null,
+      updatedAt: Date.now(),
+    });
+  }, [
+    sessionRestoreDone,
+    authChecked,
+    isAuthenticatedUser,
+    isMultiplayerPlaying,
+    difficultyPromptOpen,
+    hud.phase,
+    characterId,
+    playerName,
+    groupName,
+    lobbyDraft,
+    activeRoom?.roomId,
+    sideTab,
+    leaderboardOpen,
+    vsIntroData,
+    activeLearning,
+  ]);
   const waveVictoryOpen =
     !vsIntroData &&
     hud.phase === 'playing' &&
@@ -2350,7 +2595,11 @@ function DiglosaRpgApp() {
         />
       )}
 
-      {hud.phase === 'title' && authChecked && isAuthenticatedUser && (
+      {hud.phase === 'title' &&
+        authChecked &&
+        isAuthenticatedUser &&
+        sessionRestoreDone &&
+        !difficultyPromptOpen && (
         <TitleScreen
           hasSavedGame={hud.hasSavedGame}
           hasResumableRoom={Boolean(resumableRoom)}
@@ -2359,6 +2608,7 @@ function DiglosaRpgApp() {
           onPlayMenu={handleStartNew}
           onQuickLearn={(mode) => {
             if (getAlwaysFullscreenPref()) void requestAppFullscreen();
+            quickLearnStandaloneRef.current = true;
             engineRef.current?.startQuickLearning(mode);
           }}
           onOpenLeaderboard={() => setLeaderboardOpen(true)}
@@ -2582,6 +2832,8 @@ function DiglosaRpgApp() {
           onResume={() => engineRef.current?.setPhase('playing')}
           onRestart={handleStartNew}
           onQuitToTitle={() => {
+            clearActiveSessionStage();
+            quickLearnStandaloneRef.current = false;
             if (activeRoom) {
               void handleLeaveMultiplayerRoom(true);
             } else {
@@ -2664,7 +2916,12 @@ function DiglosaRpgApp() {
           }
         }}
         onLeaveRoom={() => handleLeaveMultiplayerRoom(false)}
-        onCancel={() => setDifficultyPromptOpen(false)}
+        onCancel={() => {
+          setRestoredLobbyDraft(null);
+          setDifficultyPromptOpen(false);
+        }}
+        restoredLobbyDraft={restoredLobbyDraft}
+        onLobbyDraftChange={setLobbyDraft}
       />
 
       <LeaderboardModal

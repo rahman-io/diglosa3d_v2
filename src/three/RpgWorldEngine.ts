@@ -3408,7 +3408,9 @@ export class RpgWorldEngine {
     this.camera.lookAt(this.heroPos.x, targetY, this.heroPos.z);
   }
 
-  public continueGame(): void {
+  public continueGame(options?: { silent?: boolean; targetPhase?: GamePhase }): void {
+    const silent = Boolean(options?.silent);
+    const targetPhase = options?.targetPhase;
     if (!this.loadProgress()) {
       this.startNewGame();
       return;
@@ -3462,16 +3464,30 @@ export class RpgWorldEngine {
 
     if (this.restoredWorldMode === 'dungeon' && this.restoredDungeonZoneId) {
       this.enterZoneDungeon(this.restoredDungeonZoneId, this.restoredDungeonMixed, true);
-      this.showBanner('Selamat datang kembali, Hoot! Lanjutkan petualanganmu di gua!', 3.6);
-      soundEngine.playWin();
+      if (targetPhase === 'gameover') {
+        this.hp = 0;
+        this.setPhase('gameover');
+      } else if (targetPhase === 'paused') {
+        this.setPhase('paused');
+      } else if (!silent) {
+        this.showBanner('Selamat datang kembali, Hoot! Lanjutkan petualanganmu di gua!', 3.6);
+        soundEngine.playWin();
+      }
       this.pushHud(true);
       return;
     }
 
     if (this.restoredWorldMode === 'academy' && !IELTS_TEMPORARILY_LOCKED) {
       this.enterAcademy(true);
-      this.showBanner('Selamat datang kembali, Hoot! Lanjutkan di Istana IELTS!', 3.6);
-      soundEngine.playWin();
+      if (targetPhase === 'gameover') {
+        this.hp = 0;
+        this.setPhase('gameover');
+      } else if (targetPhase === 'paused') {
+        this.setPhase('paused');
+      } else if (!silent) {
+        this.showBanner('Selamat datang kembali, Hoot! Lanjutkan di Istana IELTS!', 3.6);
+        soundEngine.playWin();
+      }
       this.pushHud(true);
       return;
     }
@@ -3505,6 +3521,7 @@ export class RpgWorldEngine {
     this.restoredDefeatedSeaSkyIds.clear();
 
     const sp = OVERWORLD_ANCHORS.desaSpawn;
+    let restoredInWater = false;
     if (this.restoredWorldMode === 'ocean') {
       const diveY = Math.max(getArchipelagoSeabedY(-18, 192) + 0.8, -4.4);
       this.heroPos.set(-18, diveY, 192);
@@ -3512,7 +3529,10 @@ export class RpgWorldEngine {
       this.heroDiveActive = true;
       this.isSwimming = true;
       this.heroOnGround = false;
-      this.showBanner('🐠 Selamat datang kembali di Dunia Bawah Laut Kepulauan!', 3.6);
+      restoredInWater = true;
+      if (!silent) {
+        this.showBanner('🐠 Selamat datang kembali di Dunia Bawah Laut Kepulauan!', 3.6);
+      }
     } else if (this.restoredHeroPos && this.restoredWorldMode === 'overworld') {
       const rx = this.restoredHeroPos.x;
       const rz = this.restoredHeroPos.z;
@@ -3531,6 +3551,7 @@ export class RpgWorldEngine {
         this.isSwimming = true;
         this.heroDiveActive = ry < -1.65;
         this.heroOnGround = false;
+        restoredInWater = true;
       }
     } else if (isWalkableArchipelago(this.savedOverworldHeroPos.x, this.savedOverworldHeroPos.z)) {
       const hy = getArchipelagoGroundY(this.savedOverworldHeroPos.x, this.savedOverworldHeroPos.z);
@@ -3543,28 +3564,39 @@ export class RpgWorldEngine {
       this.heroDiveActive = false;
     }
     this.oceanOxygen = this.getOceanMaxOxygen();
-    this.savedOverworldHeroPos.copy(this.heroPos);
+    if (!restoredInWater) {
+      this.savedOverworldHeroPos.copy(this.heroPos);
+    }
     this.hero.root.position.copy(this.heroPos);
     this.hero.body.rotation.y = this.heroYaw;
     this.heroVel.set(0, 0, 0);
     this.heroVelY = 0;
-    this.heroOnGround = true;
-    this.isSwimming = false;
+    this.heroOnGround = !restoredInWater;
+    this.isSwimming = restoredInWater;
     this.refreshWeaponVisual();
     this.tapMoveTarget = null;
     this.encounterGraceTimer = 2.0;
 
     if (this.cameraMode === 'orbit') this.cameraMode = 'third_back';
-    this.applyCameraVisibilityAndControls();
+    if (targetPhase === 'gameover') {
+      this.hp = 0;
+      this.setPhase('gameover');
+    } else if (targetPhase === 'paused') {
+      this.setPhase('paused');
+    } else {
+      this.applyCameraVisibilityAndControls();
+    }
     this.snapCameraBehindHero();
 
-    this.showBanner(
-      this.restoredWorldMode === 'academy' && IELTS_TEMPORARILY_LOCKED
-        ? '🔒 Istana IELTS ditutup sementara — selamat datang kembali di Desa Sapaan!'
-        : 'Selamat datang kembali, Hoot! Lanjutkan petualanganmu!',
-      3.8,
-    );
-    soundEngine.playWin();
+    if (!silent) {
+      this.showBanner(
+        this.restoredWorldMode === 'academy' && IELTS_TEMPORARILY_LOCKED
+          ? '🔒 Istana IELTS ditutup sementara — selamat datang kembali di Desa Sapaan!'
+          : 'Selamat datang kembali, Hoot! Lanjutkan petualanganmu!',
+        3.8,
+      );
+      soundEngine.playWin();
+    }
     this.pushHud(true);
   }
 
@@ -11334,14 +11366,14 @@ export class RpgWorldEngine {
   }
 
   private onPageHideSave = (): void => {
-    if (this.phase !== 'title' && this.hasSave) {
+    if (this.phase !== 'title' && !this.multiplayerActive) {
       this.saveProgress();
     }
   };
 
   private onVisibilitySave = (): void => {
     if (document.visibilityState === 'hidden') {
-      if (this.phase !== 'title' && this.hasSave) {
+      if (this.phase !== 'title' && !this.multiplayerActive) {
         this.saveProgress();
       }
       soundEngine.setWalking(false);
