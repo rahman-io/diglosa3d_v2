@@ -1,6 +1,7 @@
 import { registerSW } from 'virtual:pwa-register';
 
-export const OFFLINE_CACHE_NAME = 'diglosa-offline-assets-v2';
+export const OFFLINE_CACHE_NAME = 'diglosa-offline-assets-v3';
+const LEGACY_OFFLINE_CACHE_NAMES = ['diglosa-offline-assets-v2'];
 
 const LS_ENROLLED = 'diglosa_offline_enrolled';
 const LS_BUILD_HASH = 'diglosa_offline_build_hash';
@@ -172,6 +173,11 @@ export async function inspectLocalCache(
     };
   }
 
+  // Drop legacy poisoned caches automatically
+  for (const legacyName of LEGACY_OFFLINE_CACHE_NAMES) {
+    caches.delete(legacyName).catch(() => false);
+  }
+
   const cache = await caches.open(OFFLINE_CACHE_NAME);
   const cachedRequests = await cache.keys();
   const cachedUrls = new Set(cachedRequests.map((r) => r.url));
@@ -196,6 +202,15 @@ export async function inspectLocalCache(
     const isPresent = cachedUrls.has(absUrl);
     if (!isPresent || storedHash !== entry.hash) {
       missingAssets.push(entry);
+      continue;
+    }
+    if (entry.kind === 'ui' || entry.kind === 'image' || entry.kind === 'audio') {
+      const matched = await cache.match(new Request(absUrl));
+      const ctype = (matched?.headers.get('Content-Type') || '').toLowerCase();
+      if (!matched || ctype.includes('text/html')) {
+        await cache.delete(new Request(absUrl)).catch(() => false);
+        missingAssets.push(entry);
+      }
     }
   }
 
@@ -276,6 +291,16 @@ async function fetchAssetAndCache(
   }
 
   const contentType = response.headers.get('Content-Type') || 'application/octet-stream';
+  const lowerContentType = contentType.toLowerCase();
+  if (
+    (entry.kind === 'ui' || entry.kind === 'image') &&
+    (lowerContentType.includes('text/html') || !lowerContentType.startsWith('image/'))
+  ) {
+    throw new Error(`Respons gambar tidak valid (${contentType}) untuk ${entry.url}`);
+  }
+  if (entry.kind === 'audio' && lowerContentType.includes('text/html')) {
+    throw new Error(`Respons audio tidak valid (${contentType}) untuk ${entry.url}`);
+  }
   let finalResponse: Response;
 
   if (response.body) {
@@ -471,6 +496,9 @@ export async function clearOfflineCacheAndReset(): Promise<void> {
   try {
     if (typeof caches !== 'undefined') {
       await caches.delete(OFFLINE_CACHE_NAME);
+      for (const legacyName of LEGACY_OFFLINE_CACHE_NAMES) {
+        await caches.delete(legacyName);
+      }
     }
     localStorage.removeItem(LS_ENROLLED);
     localStorage.removeItem(LS_BUILD_HASH);

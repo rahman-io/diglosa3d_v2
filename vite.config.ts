@@ -79,11 +79,26 @@ export default defineConfig(() => {
             },
             {
               urlPattern: ({ sameOrigin, url }) =>
-                sameOrigin && url.pathname.includes('/assets/'),
+                sameOrigin && url.pathname.includes('/assets/') && /\.mp3$/i.test(url.pathname),
               handler: 'CacheFirst',
               options: {
-                cacheName: 'diglosa-offline-assets-v2',
+                cacheName: 'diglosa-offline-assets-v3',
                 rangeRequests: true,
+                expiration: {
+                  maxEntries: 120,
+                  maxAgeSeconds: 60 * 60 * 24 * 365,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
+            {
+              urlPattern: ({ sameOrigin, url }) =>
+                sameOrigin && url.pathname.includes('/assets/') && !/\.mp3$/i.test(url.pathname),
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'diglosa-offline-assets-v3',
                 expiration: {
                   maxEntries: 250,
                   maxAgeSeconds: 60 * 60 * 24 * 365,

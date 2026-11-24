@@ -118,12 +118,57 @@ const ResilientMedallionImg: React.FC<{
   fallback: React.ReactNode;
 }> = ({ src, className = 'scale-[1.12] object-cover', fallback }) => {
   const [attempt, setAttempt] = useState(0);
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [cacheBust, setCacheBust] = useState<number>(() => Date.now());
 
   useEffect(() => {
     setAttempt(0);
+    setCacheBust(Date.now());
+    setBlobUrl((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
   }, [src]);
 
-  if (attempt >= 2) {
+  useEffect(() => {
+    if (attempt !== 1) return;
+    let cancelled = false;
+    const bustUrl = `${src}${src.includes('?') ? '&' : '?'}cb=${Date.now()}`;
+    fetch(bustUrl, { cache: 'no-store' })
+      .then(async (res) => {
+        const ct = (res.headers.get('content-type') || '').toLowerCase();
+        if (!res.ok || ct.includes('text/html')) {
+          throw new Error(`Invalid image response: ${res.status} ${ct}`);
+        }
+        const blob = await res.blob();
+        if (blob.size === 0 || (blob.type && blob.type.includes('html'))) {
+          throw new Error('Invalid image blob');
+        }
+        const objUrl = URL.createObjectURL(blob);
+        if (cancelled) {
+          URL.revokeObjectURL(objUrl);
+          return;
+        }
+        setBlobUrl(objUrl);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCacheBust(Date.now());
+          setAttempt(2);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [attempt, src]);
+
+  useEffect(() => {
+    return () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [blobUrl]);
+
+  if (attempt >= 3) {
     return (
       <span className="pointer-events-none flex h-full w-full items-center justify-center rounded-full bg-slate-900/95">
         {fallback}
@@ -131,7 +176,10 @@ const ResilientMedallionImg: React.FC<{
     );
   }
 
-  const resolvedSrc = attempt === 1 ? `${src}${src.includes('?') ? '&' : '?'}v=1` : src;
+  const resolvedSrc =
+    blobUrl ??
+    (attempt === 2 ? `${src}${src.includes('?') ? '&' : '?'}v=${cacheBust}` : src);
+
   return (
     <span className="pointer-events-none flex h-full w-full items-center justify-center overflow-hidden rounded-full bg-slate-950">
       <img
@@ -139,7 +187,18 @@ const ResilientMedallionImg: React.FC<{
         alt=""
         className={`pointer-events-none h-full w-full select-none ${className}`}
         draggable={false}
-        onError={() => setAttempt((prev) => prev + 1)}
+        onLoad={(e) => {
+          if (e.currentTarget.naturalWidth === 0) {
+            setAttempt((prev) => (prev < 3 ? prev + 1 : 3));
+          }
+        }}
+        onError={() => {
+          setBlobUrl((prev) => {
+            if (prev) URL.revokeObjectURL(prev);
+            return null;
+          });
+          setAttempt((prev) => (prev < 3 ? prev + 1 : 3));
+        }}
       />
     </span>
   );
@@ -2925,21 +2984,21 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         </div>
       )}
 
-      {/* MODAL DAFTAR 100+ PERINTAH SUARA */}
+      {/* PANEL DAFTAR 100+ PERINTAH SUARA (Ultra-transparan & non-blocking agar pemain tetap terlihat dan bisa digerakkan) */}
       {voiceHelpOpen && (
         <div
           style={{ top: `${voiceModalVp.offsetTop}px`, height: `${voiceModalVp.height}px` }}
-          className="pointer-events-auto fixed left-0 right-0 z-40 flex items-center justify-center bg-black/75 p-2 sm:p-3"
+          className="pointer-events-none fixed left-0 right-0 z-30 flex items-center justify-center p-2 sm:p-4"
         >
-          <div className="flex max-h-full w-full max-w-xl flex-col overflow-hidden rounded-2xl border border-cyan-300/40 bg-slate-950/95 p-3 text-slate-100 shadow-2xl sm:p-4">
-            <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2">
-              <div>
-                <h3 className="text-sm font-black text-cyan-300 sm:text-base">
+          <div className="pointer-events-auto flex max-h-[64dvh] w-full max-w-[min(32rem,calc(100vw-88px))] flex-col overflow-hidden rounded-2xl border border-cyan-300/35 bg-slate-950/22 p-2.5 text-slate-100 shadow-[0_8px_28px_rgba(0,0,0,0.45)] backdrop-blur-[1.5px] sm:max-h-[70dvh] sm:max-w-lg sm:p-3.5">
+            <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-1.5">
+              <div className="[text-shadow:0_1px_3px_rgba(0,0,0,0.95)]">
+                <h3 className="text-xs font-black text-cyan-200 sm:text-sm">
                   Daftar {VOICE_COMMAND_CATALOG.length}+ Perintah Suara
                 </h3>
                 {!voiceModalVp.isKeyboardOpen && (
-                  <p className="text-[11px] text-slate-300">
-                    Ketuk tombol <strong>Suara</strong> lalu ucapkan salah satu perintah di bawah ini dengan natural.
+                  <p className="text-[10px] font-semibold text-slate-100/90 sm:text-[11px]">
+                    Ketuk tombol <strong>Suara</strong> lalu ucapkan perintah di bawah sambil tetap bergerak.
                   </p>
                 )}
               </div>
@@ -2947,25 +3006,25 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                 type="button"
                 onClick={() => setVoiceHelpOpen(false)}
                 aria-label="Tutup Daftar Perintah Suara"
-                className="rounded-lg p-1.5 text-slate-300 hover:bg-white/10 hover:text-white"
+                className="rounded-lg border border-white/20 bg-slate-950/35 p-1.5 text-slate-100 hover:bg-slate-900/55"
               >
                 <X className="h-4 w-4" />
               </button>
             </div>
 
             <div className="relative mt-2 shrink-0">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" />
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-cyan-200/80" />
               <input
                 type="text"
                 value={voiceSearch}
                 onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
                 onChange={(e) => setVoiceSearch(e.target.value)}
                 placeholder="Cari perintah (mis. kiri, tembak, belakang, obor, portal)..."
-                className="w-full rounded-xl border border-white/15 bg-slate-900/90 py-1.5 pl-8 pr-3 text-xs text-white placeholder-slate-400 focus:border-cyan-400 focus:outline-none sm:py-2"
+                className="w-full rounded-xl border border-white/20 bg-slate-950/32 py-1.5 pl-8 pr-3 text-xs font-semibold text-white placeholder-slate-200/75 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)] focus:border-cyan-300/80 focus:bg-slate-950/48 focus:outline-none sm:py-2"
               />
             </div>
 
-            <div className="mt-2.5 min-h-0 flex-1 space-y-3 overflow-y-auto overscroll-contain touch-pan-y pr-1">
+            <div className="mt-2 min-h-0 flex-1 space-y-2.5 overflow-y-auto overscroll-contain touch-pan-y pr-1">
               {(
                 [
                   'Gerak & Navigasi',
@@ -2988,21 +3047,21 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                 });
                 if (items.length === 0) return null;
                 return (
-                  <div key={category} className="rounded-xl border border-white/10 bg-white/5 p-2.5">
-                    <div className="mb-1.5 flex items-center justify-between text-xs font-extrabold text-amber-300">
+                  <div key={category} className="rounded-xl border border-white/15 bg-slate-950/15 p-2">
+                    <div className="mb-1.5 flex items-center justify-between text-xs font-extrabold text-amber-300 [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]">
                       <span>{category}</span>
-                      <span className="font-mono-nums text-[10px] text-slate-300">{items.length} perintah</span>
+                      <span className="font-mono-nums text-[10px] text-slate-100/90">{items.length} perintah</span>
                     </div>
                     <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
                       {items.map((item) => (
                         <div
                           key={item.id}
-                          className="rounded-lg border border-white/10 bg-slate-900/75 px-2.5 py-1.5"
+                          className="rounded-lg border border-white/15 bg-slate-950/24 px-2.5 py-1.5 [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]"
                         >
                           <div className="text-[11px] font-extrabold text-cyan-200">
                             &ldquo;{item.phrase}&rdquo;
                           </div>
-                          <div className="text-[10px] text-slate-300">{item.description}</div>
+                          <div className="text-[10px] font-medium text-slate-100/90">{item.description}</div>
                         </div>
                       ))}
                     </div>
