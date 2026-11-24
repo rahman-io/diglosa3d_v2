@@ -2231,13 +2231,13 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           hud.worldMode === 'overworld' &&
           hud.carState?.nearCar &&
           onToggleCar && (
-            <button
-              type="button"
-              onClick={onToggleCar}
-              title="Buka Pintu & Masuk Mobil (E)"
-              aria-label="Masuk Mobil"
-              className="relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_16px_rgba(14,165,233,0.62)] ring-2 ring-sky-300/80 transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
-            >
+              <button
+                type="button"
+                onClick={onToggleCar}
+                title={`Buka Pintu & Masuk ${hud.carState.carName || 'Mobil'} (E)`}
+                aria-label={`Masuk ${hud.carState.carName || 'Mobil'}`}
+                className="relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_16px_rgba(14,165,233,0.62)] ring-2 ring-sky-300/80 transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
+              >
               <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
                 <img
                   src="./assets/aistudio/btn_car_enter_7623e10e.jpeg"
@@ -2547,6 +2547,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                         {cs.speedKmh}
                       </span>
                       <span className="text-[10px] font-extrabold text-slate-400">KM/H</span>
+                      {cs.carName && (
+                        <span className="ml-1.5 max-w-[115px] truncate rounded bg-sky-500/20 px-1.5 py-0.5 text-[9px] font-extrabold text-sky-200">
+                          {cs.carName}
+                        </span>
+                      )}
                     </div>
                     <div className="mt-1 flex items-center gap-1.5 text-[9px] font-black">
                       <button

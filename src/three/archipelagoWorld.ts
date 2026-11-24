@@ -1335,6 +1335,8 @@ export interface ArchipelagoRig {
   clockHands: THREE.Group[];
   cars: Array<{
     mesh: THREE.Group;
+    name: string;
+    variant: 'sedan' | 'taxi' | 'bus';
     baseX: number;
     rangeX: number;
     speed: number;
@@ -1342,6 +1344,7 @@ export interface ArchipelagoRig {
     halfX: number;
     halfZ: number;
     height: number;
+    managedByEngine?: boolean;
   }>;
   policeCar: THREE.Group;
   minecart: THREE.Group;
@@ -1574,15 +1577,30 @@ function createVoxelCar(
   palette: MaterialPalette,
   bodyColor: number,
   variant: 'sedan' | 'taxi' | 'police' | 'bus' = 'sedan',
+  disposables?: Array<{ dispose: () => void }>,
 ): THREE.Group {
+  const outer = new THREE.Group();
   const car = new THREE.Group();
+  // Rotate local +X forward into +Z forward so all world vehicles share identical yaw/steering kinematics
+  car.rotation.y = -Math.PI / 2;
+  outer.add(car);
+
   const isBus = variant === 'bus';
   const isPolice = variant === 'police';
   const isTaxi = variant === 'taxi';
 
   const bodyMat = palette.getMat(isPolice ? 0xf8fafc : bodyColor, 'gloss');
   const trimMat = palette.getMat(0x1e293b, 'matte');
-  const glassMat = palette.getPixelMat('glass_pane', 0xe0f2fe);
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0x7dd3fc,
+    roughness: 0.12,
+    metalness: 0.18,
+    transparent: true,
+    opacity: 0.36,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+  disposables?.push(glassMat);
   const wheelMat = palette.getMat(0x0f172a, 'matte');
   const rimMat = palette.getMat(0xcbd5e1, 'metal');
   const headlightMat = palette.getMat(0xfef08a, 'emissive');
@@ -1631,7 +1649,7 @@ function createVoxelCar(
       car.add(tire, hub);
     });
     car.add(bumper, lowerBody, beltStripe, glassCabin, roof, acUnit);
-    return car;
+    return outer;
   }
 
   // Human-proportional Sedan / Taxi / Police SUV (5.8m-6.4m long x 2.9m-3.1m wide x 3.45m-3.95m tall!)
@@ -1715,7 +1733,7 @@ function createVoxelCar(
   });
 
   car.add(bumper, chassis, cabin, roof);
-  return car;
+  return outer;
 }
 
 export function createArchipelagoWorld(
@@ -3727,9 +3745,9 @@ export function createArchipelagoWorld(
     });
 
     // White & Blue Police Patrol SUV parked inside the Fortress Courtyard (6.4m x 3.1m x 3.95m!)
-    policeCar = createVoxelCar(palette, 0xf8fafc, 'police');
+    policeCar = createVoxelCar(palette, 0xf8fafc, 'police', disposables);
     policeCar.position.set(-127.0, courtY + 0.04, -109.5);
-    policeCar.rotation.y = -0.35;
+    policeCar.rotation.y = -0.35 + Math.PI / 2;
     group.add(policeCar);
 
     // 4c. Terowongan Bawah Tanah (T: 12m / L: 14m) + 36m Cliff Overburden + Twin Traffic Lights!
@@ -3808,23 +3826,26 @@ export function createArchipelagoWorld(
 
     // 4d. Human-Proportional Vehicles on the 14m Lower City Highway (ALL >= Hero height!)
     [
-      { z: tunZ + 3.5, color: 0x2563eb, variant: 'sedan' as const, baseX: -152.0, range: 38.0, speed: 0.24, phase: 0.4 },
-      { z: tunZ - 3.5, color: 0xfacc15, variant: 'taxi' as const, baseX: -134.0, range: 34.0, speed: 0.28, phase: 2.6 },
-      { z: tunZ - 3.6, color: 0xdc2626, variant: 'bus' as const, baseX: -92.0, range: 15.0, speed: 0.22, phase: 4.2 },
-      { z: tunZ + 3.4, color: 0xf97316, variant: 'sedan' as const, baseX: -90.0, range: 14.0, speed: 0.26, phase: 1.1 },
+      { name: 'Sedan Biru', z: tunZ + 3.5, color: 0x2563eb, variant: 'sedan' as const, baseX: -152.0, range: 38.0, speed: 0.24, phase: 0.4 },
+      { name: 'Taksi Kuning', z: tunZ - 3.5, color: 0xfacc15, variant: 'taxi' as const, baseX: -134.0, range: 34.0, speed: 0.28, phase: 2.6 },
+      { name: 'Bus Kota Merah', z: tunZ - 3.6, color: 0xdc2626, variant: 'bus' as const, baseX: -92.0, range: 15.0, speed: 0.22, phase: 4.2 },
+      { name: 'Sedan Oranye', z: tunZ + 3.4, color: 0xf97316, variant: 'sedan' as const, baseX: -90.0, range: 14.0, speed: 0.26, phase: 1.1 },
     ].forEach((cfg) => {
-      const car = createVoxelCar(palette, cfg.color, cfg.variant);
+      const car = createVoxelCar(palette, cfg.color, cfg.variant, disposables);
       car.position.set(cfg.baseX, hwyY + 0.06, cfg.z);
+      car.rotation.y = Math.PI / 2;
       group.add(car);
       const isBus = cfg.variant === 'bus';
       cars.push({
         mesh: car,
+        name: cfg.name,
+        variant: cfg.variant,
         baseX: cfg.baseX,
         rangeX: cfg.range,
         speed: cfg.speed,
         phase: cfg.phase,
-        halfX: isBus ? 4.95 : 2.95,
-        halfZ: isBus ? 1.65 : 1.5,
+        halfX: isBus ? 1.65 : 1.5,
+        halfZ: isBus ? 4.95 : 2.95,
         height: isBus ? 4.65 : 3.55,
       });
     });
@@ -4611,11 +4632,12 @@ export function updateArchipelagoWorld(
   }
   for (let i = 0; i < rig.cars.length; i++) {
     const c = rig.cars[i];
+    if (c.managedByEngine) continue;
     const { wz } = getCachedObjXZ(c.mesh);
     if (!isPointNearViewer(c.baseX, wz, 118 * 118, heroPos, camPos)) continue;
     const s = Math.sin(elapsed * c.speed + c.phase);
     c.mesh.position.x = c.baseX + s * c.rangeX;
-    c.mesh.rotation.y = Math.cos(elapsed * c.speed + c.phase) >= 0 ? 0 : Math.PI;
+    c.mesh.rotation.y = Math.cos(elapsed * c.speed + c.phase) >= 0 ? Math.PI / 2 : -Math.PI / 2;
   }
 
   if (isPointNearViewer(20, -174, 122 * 122, heroPos, camPos)) {
@@ -4651,7 +4673,7 @@ export function updateArchipelagoWorld(
   }
 }
 
-function pushEntityFromOBB(
+export function pushEntityFromOBB(
   pos: { x: number; y?: number; z: number },
   vx: number,
   vy: number,
@@ -4726,6 +4748,7 @@ export function resolveArchipelagoVehicleCollisions(
 
   for (let i = 0; i < rig.cars.length; i++) {
     const c = rig.cars[i];
+    if (c.mesh.userData?.skipArchipelagoCol) continue;
     const r = pushEntityFromOBB(
       pos,
       c.mesh.position.x,
@@ -4742,15 +4765,15 @@ export function resolveArchipelagoVehicleCollisions(
     if (r.topY !== null && (supportY === null || r.topY > supportY)) supportY = r.topY;
   }
 
-  if (rig.policeCar) {
+  if (rig.policeCar && !rig.policeCar.userData?.skipArchipelagoCol) {
     const r = pushEntityFromOBB(
       pos,
       rig.policeCar.position.x,
       rig.policeCar.position.y,
       rig.policeCar.position.z,
       rig.policeCar.rotation.y,
-      3.25,
       1.6,
+      3.25,
       3.75,
       radius,
       entityHeight,
@@ -4785,19 +4808,22 @@ export function appendVehicleVillageColliders(
 ): void {
   for (let i = 0; i < rig.cars.length; i++) {
     const c = rig.cars[i];
+    if (c.mesh.userData?.skipArchipelagoCol) continue;
     out.push({
       x: c.mesh.position.x,
       z: c.mesh.position.z,
       halfW: c.halfX + 0.15,
       halfD: c.halfZ + 0.15,
+      rotY: c.mesh.rotation.y,
     });
   }
-  if (rig.policeCar) {
+  if (rig.policeCar && !rig.policeCar.userData?.skipArchipelagoCol) {
     out.push({
       x: rig.policeCar.position.x,
       z: rig.policeCar.position.z,
-      halfW: 3.1,
-      halfD: 2.2,
+      halfW: 1.75,
+      halfD: 3.35,
+      rotY: rig.policeCar.rotation.y,
     });
   }
   if (rig.minecart) {

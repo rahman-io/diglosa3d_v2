@@ -46,7 +46,21 @@ function computeVillageBlink(elapsed: number, phase = 0): number {
   return 1;
 }
 
-interface VillagerActor {
+export interface VehicleHazard {
+  id: string;
+  x: number;
+  y: number;
+  z: number;
+  vx: number;
+  vz: number;
+  yaw: number;
+  speed: number;
+  halfW: number;
+  halfL: number;
+  honking: boolean;
+}
+
+export interface VillagerActor {
   root: THREE.Group;
   bodyPivot: THREE.Group;
   headGroup: THREE.Group;
@@ -76,6 +90,12 @@ interface VillagerActor {
   walkPhase: number;
   stuckTimer: number;
   avoidSign: number;
+  alive: boolean;
+  fleeTimer: number;
+  fleeDirX: number;
+  fleeDirZ: number;
+  drivingVehicleId: string | null;
+  vehicleCooldown: number;
   interactable?: VillageInteractable;
 }
 
@@ -618,6 +638,12 @@ function createVillagerMesh(
     avoidSign: Math.random() < 0.5 ? 1 : -1,
     homeDoor: [0, 0],
     isInsideHouse: false,
+    alive: true,
+    fleeTimer: 0,
+    fleeDirX: 0,
+    fleeDirZ: 1,
+    drivingVehicleId: null,
+    vehicleCooldown: 0,
   };
 }
 
@@ -1651,6 +1677,12 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     v.z = _spawnScratch.z;
     v.wpIdx = 1;
     v.speed = cp.speed;
+    v.alive = true;
+    v.fleeTimer = 0;
+    v.fleeDirX = 0;
+    v.fleeDirZ = 1;
+    v.drivingVehicleId = null;
+    v.vehicleCooldown = 0;
     v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z), v.z);
     const id = `villager_${cp.archetype}_${idx}`;
     v.root.userData.villageId = id;
@@ -2284,6 +2316,37 @@ function getMinViewerDistSq(
   return minSq;
 }
 
+function pickSafeFleeDirection(
+  vx: number,
+  vz: number,
+  curY: number,
+  prefX: number,
+  prefZ: number,
+  obstacles: VillageObstacle[],
+  extraObstacles: VillageObstacle[],
+): [number, number] {
+  const baseAng = Math.atan2(prefX, prefZ);
+  const offsets = [0, 0.55, -0.55, 1.1, -1.1, 1.65, -1.65, Math.PI];
+  for (let k = 0; k < offsets.length; k++) {
+    const ang = baseAng + offsets[k];
+    const dx = Math.sin(ang);
+    const dz = Math.cos(ang);
+    const tx = vx + dx * 2.2;
+    const tz = vz + dz * 2.2;
+    if (!isWalkableArchipelago(tx, tz, 0.55)) continue;
+    const ny = getArchipelagoGroundY(tx, tz);
+    if (ny < 0.05 || Math.abs(ny - curY) > 2.3) continue;
+    if (
+      !hasAheadObstacle(vx, vz, dx, dz, 1.2, 0.56, obstacles) &&
+      !hasAheadObstacle(vx, vz, dx, dz, 1.2, 0.56, extraObstacles)
+    ) {
+      return [dx, dz];
+    }
+  }
+  const len = Math.hypot(prefX, prefZ) || 1;
+  return [prefX / len, prefZ / len];
+}
+
 export function updateMinecraftVillage(
   rig: MinecraftVillageRig,
   dt: number,
@@ -2296,6 +2359,7 @@ export function updateMinecraftVillage(
   camX?: number,
   camZ?: number,
   allowVisibilityCull = false,
+  vehicleHazards: VehicleHazard[] = [],
 ): void {
   _villageAnimCounter = (_villageAnimCounter + 1) & 0xffff;
   const hasHeroDist = heroX !== undefined && heroZ !== undefined;
@@ -2366,6 +2430,27 @@ export function updateMinecraftVillage(
     const v = rig.villagers[i];
     const inter = v.interactable;
 
+    if (!v.alive) {
+      if (v.root.visible) v.root.visible = false;
+      if (inter) {
+        inter.x = 9999;
+        inter.z = 9999;
+      }
+      continue;
+    }
+
+    if (v.vehicleCooldown > 0) {
+      v.vehicleCooldown = Math.max(0, v.vehicleCooldown - dt);
+    }
+
+    if (v.drivingVehicleId) {
+      if (inter) {
+        inter.x = 9999;
+        inter.z = 9999;
+      }
+      continue;
+    }
+
     if (!shouldGoHome && v.isInsideHouse) {
       // Pagi tiba -> keluar dari pintu rumah kembali beraktivitas
       v.isInsideHouse = false;
@@ -2373,6 +2458,7 @@ export function updateMinecraftVillage(
       v.z = v.homeDoor[1];
       v.pauseTimer = 0.15;
       v.stuckTimer = 0;
+      v.fleeTimer = 0;
       v.root.visible = true;
       v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z), v.z);
     }
@@ -2385,17 +2471,88 @@ export function updateMinecraftVillage(
       continue;
     }
 
+    // Check immediate vehicle threats so NPCs dodge quickly regardless of distance throttling
+    let nearThreat = false;
+    if (vehicleHazards.length > 0) {
+      const vGroundY = getArchipelagoGroundY(v.x, v.z);
+      let worstScore = 0;
+      let escapePrefX = 0;
+      let escapePrefZ = 0;
+
+      for (let h = 0; h < vehicleHazards.length; h++) {
+        const hz = vehicleHazards[h];
+        const absSpd = Math.abs(hz.speed);
+        if (absSpd < 0.75 && !hz.honking) continue;
+        if (Math.abs(vGroundY - hz.y) > 4.6) continue;
+        const rx = v.x - hz.x;
+        const rz = v.z - hz.z;
+        const d = Math.hypot(rx, rz);
+        const alertRadius = hz.honking ? 17.5 : absSpd >= 4.0 ? 17.5 : 11.5;
+        if (d > alertRadius) continue;
+
+        let approaching = hz.honking || d < 10.5;
+        if (!approaching && absSpd >= 0.75) {
+          const vLen = Math.hypot(hz.vx, hz.vz) || 1;
+          const dirX = hz.vx / vLen;
+          const dirZ = hz.vz / vLen;
+          const fwdDist = rx * dirX + rz * dirZ;
+          const perpDist = Math.abs(-rx * dirZ + rz * dirX);
+          if (fwdDist > -2.5 && fwdDist < 17.5 && perpDist < hz.halfW + 4.8) {
+            approaching = true;
+          }
+        }
+        if (!approaching) continue;
+        nearThreat = true;
+        const score = (alertRadius - d) + absSpd * 0.6 + (hz.honking ? 4 : 0);
+        if (score > worstScore) {
+          worstScore = score;
+          const invD = d > 0.05 ? 1 / d : 1;
+          const awayX = d > 0.05 ? rx * invD : 1;
+          const awayZ = d > 0.05 ? rz * invD : 0;
+          if (absSpd >= 0.75) {
+            const vLen = Math.hypot(hz.vx, hz.vz) || 1;
+            const cx = hz.vx / vLen;
+            const cz = hz.vz / vLen;
+            const side = -rx * cz + rz * cx >= 0 ? 1 : -1;
+            const perpX = -cz * side;
+            const perpZ = cx * side;
+            escapePrefX = awayX * 0.52 + perpX * 0.92;
+            escapePrefZ = awayZ * 0.52 + perpZ * 0.92;
+          } else {
+            escapePrefX = awayX;
+            escapePrefZ = awayZ;
+          }
+        }
+      }
+
+      if (nearThreat) {
+        const [safeDx, safeDz] = pickSafeFleeDirection(
+          v.x,
+          v.z,
+          vGroundY,
+          escapePrefX,
+          escapePrefZ,
+          rig.obstacles,
+          extraObstacles,
+        );
+        v.fleeDirX = safeDx;
+        v.fleeDirZ = safeDz;
+        v.fleeTimer = 1.2;
+        v.pauseTimer = 0;
+      }
+    }
+
     const distSq = hasHeroDist
       ? (v.x - heroX!) * (v.x - heroX!) + (v.z - heroZ!) * (v.z - heroZ!)
       : 0;
     const minViewerSq = getMinViewerDistSq(v.x, v.z, heroX, heroZ, camX, camZ);
-    if (allowVisibilityCull) {
+    if (allowVisibilityCull && !nearThreat && v.fleeTimer <= 0) {
       const wantVis = minViewerSq <= 135 * 135;
       if (v.root.visible !== wantVis) v.root.visible = wantVis;
     } else if (!v.root.visible) {
       v.root.visible = true;
     }
-    const isNearAnim = !hasHeroDist || distSq <= animDistSqLimit;
+    const isNearAnim = !hasHeroDist || distSq <= animDistSqLimit || nearThreat || v.fleeTimer > 0;
 
     if (!isNearAnim && (!shouldGoHome || distSq > 75 * 75)) {
       // Distant island citizens: step position cheaply every 8th frame, skip bone math & O(N^2) checks
@@ -2450,6 +2607,67 @@ export function updateMinecraftVillage(
       v.leftEye.scale.y = vBlink;
       v.rightEye.scale.y = vBlink;
     }
+
+    // Panic sprint away from approaching cars!
+    if (v.fleeTimer > 0) {
+      v.fleeTimer = Math.max(0, v.fleeTimer - dt);
+      const curGroundY = getArchipelagoGroundY(v.x, v.z);
+      const fleeSpeed = Math.max(7.6, v.speed * 4.2);
+      const step = fleeSpeed * dt;
+      const prevX = v.x;
+      const prevZ = v.z;
+      _moveScratch.x = v.x + v.fleeDirX * step;
+      _moveScratch.z = v.z + v.fleeDirZ * step;
+      resolveObstacleBoxes(_moveScratch, 0.56, rig.obstacles);
+      resolveObstacleBoxes(_moveScratch, 0.56, extraObstacles);
+      constrainToWalkableArchipelago(_moveScratch, 0.56);
+      const nextGroundY = getArchipelagoGroundY(_moveScratch.x, _moveScratch.z);
+      if (nextGroundY < 0.05 || Math.abs(nextGroundY - curGroundY) > 2.4) {
+        const [altX, altZ] = pickSafeFleeDirection(
+          prevX,
+          prevZ,
+          curGroundY,
+          -v.fleeDirZ,
+          v.fleeDirX,
+          rig.obstacles,
+          extraObstacles,
+        );
+        v.fleeDirX = altX;
+        v.fleeDirZ = altZ;
+        v.x = prevX;
+        v.z = prevZ;
+      } else {
+        v.x = _moveScratch.x;
+        v.z = _moveScratch.z;
+      }
+      const targetYaw = Math.atan2(v.fleeDirX, v.fleeDirZ);
+      let fDiff = targetYaw - v.yaw;
+      while (fDiff > Math.PI) fDiff -= Math.PI * 2;
+      while (fDiff < -Math.PI) fDiff += Math.PI * 2;
+      v.yaw += fDiff * (1 - Math.exp(-14 * dt));
+      v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z), v.z);
+      v.root.rotation.y = v.yaw;
+
+      v.walkPhase += dt * (10.5 + fleeSpeed);
+      const panicSwing = Math.sin(v.walkPhase) * 0.88;
+      const panicBounce = Math.abs(Math.sin(v.walkPhase));
+      v.leftLeg.rotation.x = panicSwing;
+      v.rightLeg.rotation.x = -panicSwing;
+      v.bodyPivot.position.y = panicBounce * 0.12;
+      v.bodyPivot.rotation.x = 0.2;
+      v.headGroup.rotation.y = Math.sin(elapsed * 11 + i) * 0.45;
+      v.headGroup.rotation.x = -0.06;
+      v.leftArm.rotation.x = -0.9 - panicSwing * 0.65;
+      v.rightArm.rotation.x = -0.9 + panicSwing * 0.65;
+      v.leftArm.rotation.z = 0.25;
+      v.rightArm.rotation.z = -0.25;
+      if (inter) {
+        inter.x = v.x;
+        inter.z = v.z;
+      }
+      continue;
+    }
+    v.bodyPivot.rotation.x = THREE.MathUtils.damp(v.bodyPivot.rotation.x, 0, 12, dt);
 
     if (!shouldGoHome && v.pauseTimer > 0) {
       v.pauseTimer -= dt;

@@ -621,6 +621,7 @@ export interface RpgHudSnapshot {
 export interface CarHudState {
   available: boolean;
   nearCar: boolean;
+  carName?: string;
   mode: 'none' | 'entering' | 'driving' | 'exiting';
   speedKmh: number;
   gear: 'R' | 'N' | 'D';

@@ -115,6 +115,7 @@ import {
   MinecraftVillageRig,
   resolveObstacleBoxes,
   updateMinecraftVillage,
+  VehicleHazard,
   VillageObstacle,
 } from './minecraftVillage';
 import {
@@ -129,6 +130,7 @@ import {
   IELTS_TEMPORARILY_LOCKED,
   isWalkableArchipelago,
   OVERWORLD_ANCHORS,
+  pushEntityFromOBB,
   resolveArchipelagoVehicleCollisions,
   sampleArchipelagoTerrain,
   updateArchipelagoWorld,
@@ -315,6 +317,39 @@ interface Projectile3D {
   life: number;
   mesh: THREE.Mesh;
   visualOnly?: boolean;
+}
+
+interface WorldVehicle {
+  id: string;
+  name: string;
+  kind: 'hero_car' | 'police' | 'sedan' | 'taxi' | 'bus';
+  root: THREE.Group;
+  rig?: DriveableCarRig;
+  pos: THREE.Vector3;
+  spawnPos: THREE.Vector3;
+  yaw: number;
+  spawnYaw: number;
+  speed: number;
+  steerAngle: number;
+  wheelSpin: number;
+  doorAngle: number;
+  pitchLean: number;
+  rollLean: number;
+  headlightsOn: boolean;
+  handbrakeOn: boolean;
+  halfW: number;
+  halfL: number;
+  height: number;
+  seatOffset: THREE.Vector3;
+  boardOffset: THREE.Vector3;
+  driverKind: 'none' | 'player' | 'npc';
+  initialNpcDriver: boolean;
+  npcDriverIdx: number | null;
+  npcDriveTimer: number;
+  npcParkTimer: number;
+  npcPatrolDir: 1 | -1;
+  npcHomeZone: 'highway' | 'courtyard' | 'desa';
+  radarColor: string;
 }
 
 interface ParticleItem {
@@ -672,6 +707,11 @@ export class RpgWorldEngine {
   private carHandbrakeOn = false;
   private carExhaustTimer = 0;
   private nearCar = false;
+  private worldVehicles: WorldVehicle[] = [];
+  private activeVehicleId = 'hero_car';
+  private nearVehicleId: string | null = null;
+  private carHornFleeTimer = 0;
+  private activeVehicleHazards: VehicleHazard[] = [];
   private carCtrl = {
     gas: false,
     brake: false,
@@ -717,6 +757,10 @@ export class RpgWorldEngine {
       poseMode: 'stand' | 'walk' | 'sleep';
       nightAwake: boolean;
       lastWakeBannerMs: number;
+      koTimer: number;
+      fleeTimer: number;
+      fleeDirX: number;
+      fleeDirZ: number;
     }
   > = new Map();
   private worldTimeTick = this.pickRandomWorldTimeTick();
@@ -1181,8 +1225,10 @@ export class RpgWorldEngine {
     this.carRig.root.position.copy(this.carPos);
     this.carRig.root.rotation.y = this.carYaw;
     this.carRig.root.userData.driveableCar = true;
+    this.carRig.root.userData.vehicleId = 'hero_car';
     this.overworldGroup.add(this.carRig.root);
     this.overworldClickables.push(this.carRig.root);
+    this.initWorldVehicles();
 
     this.cloudsMesh = createVoxelClouds(36, this.preferLiteShader);
     this.cloudsMesh.userData.isMapHidden = true;
@@ -1832,6 +1878,10 @@ export class RpgWorldEngine {
         poseMode: 'stand',
         nightAwake: false,
         lastWakeBannerMs: 0,
+        koTimer: 0,
+        fleeTimer: 0,
+        fleeDirX: 0,
+        fleeDirZ: 1,
       });
     }
   }
@@ -2254,12 +2304,12 @@ export class RpgWorldEngine {
       this.pushCircle2d(pos, os.x, os.z, selfRad + 0.85, 0.55);
     }
     for (const [nid, npc] of this.npcs.entries()) {
-      if (nid === selfNpcId || !this.isInDesaSapaanArea(npc.x, npc.z)) continue;
+      if (nid === selfNpcId || npc.koTimer > 0 || !this.isInDesaSapaanArea(npc.x, npc.z)) continue;
       this.pushCircle2d(pos, npc.x, npc.z, selfRad + 0.62, 0.85);
     }
     for (let i = 0; i < this.villageRig.villagers.length; i++) {
       const v = this.villageRig.villagers[i];
-      if (v.isInsideHouse || !this.isInDesaSapaanArea(v.x, v.z)) continue;
+      if (!v.alive || v.isInsideHouse || v.drivingVehicleId || !this.isInDesaSapaanArea(v.x, v.z)) continue;
       this.pushCircle2d(pos, v.x, v.z, selfRad + 0.56, 0.65);
     }
     for (let i = 0; i < this.villageRig.golems.length; i++) {
@@ -5365,6 +5415,12 @@ export class RpgWorldEngine {
     soundEngine.setCarEngine(false, 0);
     this.clearCarControls();
     if (this.carMode !== 'none') {
+      const av = this.getActiveVehicle();
+      if (av) {
+        av.driverKind = 'none';
+        av.speed = 0;
+        av.doorAngle = 0;
+      }
       this.carMode = 'none';
       this.carSpeed = 0;
       this.carDoorAngle = 0;
@@ -6633,7 +6689,209 @@ export class RpgWorldEngine {
     this.pushHud(true);
   }
 
+  private initWorldVehicles(): void {
+    this.worldVehicles = [];
+
+    // 1. Hero's Explorer SUV at Desa Sapaan
+    const heroSpawn = new THREE.Vector3(3.2, getArchipelagoGroundY(3.2, 119.5), 119.5);
+    const heroYaw = -Math.PI * 0.72;
+    this.carRig.root.userData.driveableCar = true;
+    this.carRig.root.userData.vehicleId = 'hero_car';
+    this.worldVehicles.push({
+      id: 'hero_car',
+      name: 'Mobil Petualang',
+      kind: 'hero_car',
+      root: this.carRig.root,
+      rig: this.carRig,
+      pos: heroSpawn.clone(),
+      spawnPos: heroSpawn.clone(),
+      yaw: heroYaw,
+      spawnYaw: heroYaw,
+      speed: 0,
+      steerAngle: 0,
+      wheelSpin: 0,
+      doorAngle: 0,
+      pitchLean: 0,
+      rollLean: 0,
+      headlightsOn: false,
+      handbrakeOn: false,
+      halfW: 1.52,
+      halfL: 3.05,
+      height: 3.45,
+      seatOffset: this.carRig.driverSeatOffset.clone(),
+      boardOffset: this.carRig.boardOutsideOffset.clone(),
+      driverKind: 'none',
+      initialNpcDriver: false,
+      npcDriverIdx: null,
+      npcDriveTimer: 0,
+      npcParkTimer: 0,
+      npcPatrolDir: 1,
+      npcHomeZone: 'desa',
+      radarColor: '#38bdf8',
+    });
+
+    // 2. Police Patrol SUV in Gerbang Kota Courtyard
+    if (this.archipelagoRig?.policeCar) {
+      const pc = this.archipelagoRig.policeCar;
+      pc.userData.driveableCar = true;
+      pc.userData.vehicleId = 'police_car';
+      pc.userData.skipArchipelagoCol = true;
+      this.overworldClickables.push(pc);
+      this.worldVehicles.push({
+        id: 'police_car',
+        name: 'Mobil Patroli Polisi',
+        kind: 'police',
+        root: pc,
+        pos: pc.position.clone(),
+        spawnPos: pc.position.clone(),
+        yaw: pc.rotation.y,
+        spawnYaw: pc.rotation.y,
+        speed: 0,
+        steerAngle: 0,
+        wheelSpin: 0,
+        doorAngle: 0,
+        pitchLean: 0,
+        rollLean: 0,
+        headlightsOn: false,
+        handbrakeOn: false,
+        halfW: 1.6,
+        halfL: 3.25,
+        height: 3.75,
+        seatOffset: new THREE.Vector3(0.62, 0.25, 0.05),
+        boardOffset: new THREE.Vector3(2.45, 0, 0),
+        driverKind: 'none',
+        initialNpcDriver: false,
+        npcDriverIdx: null,
+        npcDriveTimer: 0,
+        npcParkTimer: 0,
+        npcPatrolDir: 1,
+        npcHomeZone: 'courtyard',
+        radarColor: '#60a5fa',
+      });
+    }
+
+    // 3..6. Lower Highway Sedans, Taxi & City Bus
+    if (this.archipelagoRig?.cars) {
+      this.archipelagoRig.cars.forEach((c, idx) => {
+        const vid = `hwy_car_${idx}`;
+        const isBus = c.variant === 'bus';
+        c.managedByEngine = true;
+        c.mesh.userData.driveableCar = true;
+        c.mesh.userData.vehicleId = vid;
+        c.mesh.userData.skipArchipelagoCol = true;
+        this.overworldClickables.push(c.mesh);
+        const startDir: 1 | -1 = idx % 2 === 0 ? 1 : -1;
+        const startYaw = startDir > 0 ? Math.PI / 2 : -Math.PI / 2;
+        c.mesh.rotation.y = startYaw;
+        this.worldVehicles.push({
+          id: vid,
+          name: c.name,
+          kind: c.variant,
+          root: c.mesh,
+          pos: c.mesh.position.clone(),
+          spawnPos: c.mesh.position.clone(),
+          yaw: startYaw,
+          spawnYaw: startYaw,
+          speed: 0,
+          steerAngle: 0,
+          wheelSpin: 0,
+          doorAngle: 0,
+          pitchLean: 0,
+          rollLean: 0,
+          headlightsOn: false,
+          handbrakeOn: false,
+          halfW: c.halfX,
+          halfL: c.halfZ,
+          height: c.height,
+          seatOffset: isBus ? new THREE.Vector3(0.8, 0.45, 3.3) : new THREE.Vector3(0.58, 0.2, 0),
+          boardOffset: isBus ? new THREE.Vector3(2.5, 0, 3.1) : new THREE.Vector3(2.35, 0, 0),
+          driverKind: 'none',
+          initialNpcDriver: idx === 1 || idx === 2,
+          npcDriverIdx: null,
+          npcDriveTimer: 0,
+          npcParkTimer: 0,
+          npcPatrolDir: startDir,
+          npcHomeZone: 'highway',
+          radarColor: isBus ? '#f87171' : c.variant === 'taxi' ? '#facc15' : '#fb923c',
+        });
+      });
+    }
+
+    this.assignInitialNpcDrivers();
+    this.activeVehicleId = 'hero_car';
+    const heroCar = this.getActiveVehicle();
+    if (heroCar) this.syncCarFieldsFromVehicle(heroCar);
+  }
+
+  private assignInitialNpcDrivers(): void {
+    if (!this.villageRig) return;
+    for (const v of this.worldVehicles) {
+      if (!v.initialNpcDriver || v.driverKind !== 'none') continue;
+      let bestIdx = -1;
+      let bestScore = Infinity;
+      for (let i = 0; i < this.villageRig.villagers.length; i++) {
+        const vil = this.villageRig.villagers[i];
+        if (!vil.alive || vil.drivingVehicleId) continue;
+        const d = Math.hypot(vil.x - v.pos.x, vil.z - v.pos.z);
+        const archetypeBonus =
+          v.kind === 'bus' && vil.archetype === 'bus_driver'
+            ? -200
+            : vil.x < -45 && vil.z < -40
+            ? -80
+            : 0;
+        const score = d + archetypeBonus;
+        if (score < bestScore) {
+          bestScore = score;
+          bestIdx = i;
+        }
+      }
+      if (bestIdx >= 0) {
+        const vil = this.villageRig.villagers[bestIdx];
+        vil.drivingVehicleId = v.id;
+        vil.isInsideHouse = false;
+        vil.fleeTimer = 0;
+        v.driverKind = 'npc';
+        v.npcDriverIdx = bestIdx;
+        v.npcDriveTimer = 22 + Math.random() * 14;
+      }
+    }
+  }
+
+  private getActiveVehicle(): WorldVehicle | undefined {
+    return this.worldVehicles.find((v) => v.id === this.activeVehicleId) ?? this.worldVehicles[0];
+  }
+
+  private syncCarFieldsFromVehicle(v: WorldVehicle): void {
+    this.carPos.copy(v.pos);
+    this.carYaw = v.yaw;
+    this.carSpeed = v.speed;
+    this.carSteerAngle = v.steerAngle;
+    this.carWheelSpin = v.wheelSpin;
+    this.carDoorAngle = v.doorAngle;
+    this.carPitchLean = v.pitchLean;
+    this.carRollLean = v.rollLean;
+    this.carHeadlightsOn = v.headlightsOn;
+    this.carHandbrakeOn = v.handbrakeOn;
+  }
+
+  private getVehicleWorldPoint(
+    v: WorldVehicle,
+    localOffset: THREE.Vector3,
+    out = new THREE.Vector3(),
+  ): THREE.Vector3 {
+    const s = Math.sin(v.yaw);
+    const c = Math.cos(v.yaw);
+    out.set(
+      v.pos.x + localOffset.x * c + localOffset.z * s,
+      v.pos.y + localOffset.y,
+      v.pos.z - localOffset.x * s + localOffset.z * c,
+    );
+    return out;
+  }
+
   private getCarWorldPoint(localOffset: THREE.Vector3, out = new THREE.Vector3()): THREE.Vector3 {
+    const active = this.getActiveVehicle();
+    if (active) return this.getVehicleWorldPoint(active, localOffset, out);
     const s = Math.sin(this.carYaw);
     const c = Math.cos(this.carYaw);
     out.set(
@@ -6642,6 +6900,56 @@ export class RpgWorldEngine {
       this.carPos.z - localOffset.x * s + localOffset.z * c,
     );
     return out;
+  }
+
+  private isPointInsideVehicleOBB(
+    v: WorldVehicle,
+    px: number,
+    py: number,
+    pz: number,
+    margin = 0.25,
+    yPadBottom = 0.6,
+    yPadTop = 0.7,
+  ): boolean {
+    const dx = px - v.pos.x;
+    const dz = pz - v.pos.z;
+    const span = v.halfW + v.halfL + margin + 0.5;
+    if (Math.abs(dx) > span || Math.abs(dz) > span) return false;
+    if (py < v.pos.y - yPadBottom || py > v.pos.y + v.height + yPadTop) return false;
+    const cosY = Math.cos(v.yaw);
+    const sinY = Math.sin(v.yaw);
+    const lx = dx * cosY - dz * sinY;
+    const lz = dx * sinY + dz * cosY;
+    return Math.abs(lx) <= v.halfW + margin && Math.abs(lz) <= v.halfL + margin;
+  }
+
+  private resolveWorldVehiclesCollision(
+    pos: { x: number; y?: number; z: number },
+    radius = 0.72,
+    entityHeight = 2.6,
+    excludeVehicleId?: string,
+  ): { hitVehicle: boolean; supportY: number | null } {
+    let hitVehicle = false;
+    let supportY: number | null = null;
+    for (let i = 0; i < this.worldVehicles.length; i++) {
+      const v = this.worldVehicles[i];
+      if (v.id === excludeVehicleId) continue;
+      const r = pushEntityFromOBB(
+        pos,
+        v.pos.x,
+        v.pos.y,
+        v.pos.z,
+        v.yaw,
+        v.halfW + 0.08,
+        v.halfL + 0.08,
+        v.height,
+        radius,
+        entityHeight,
+      );
+      if (r.pushed) hitVehicle = true;
+      if (r.topY !== null && (supportY === null || r.topY > supportY)) supportY = r.topY;
+    }
+    return { hitVehicle, supportY };
   }
 
   private clearCarControls(): void {
@@ -6663,60 +6971,177 @@ export class RpgWorldEngine {
     this.carRollLean = 0;
     this.carAnimTimer = 0;
     this.carExitBrakeWait = 0;
+    this.carHornFleeTimer = 0;
     soundEngine.setCarEngine(false, 0);
+
     if (resetPosition) {
-      this.carPos.set(3.2, getArchipelagoGroundY(3.2, 119.5), 119.5);
-      this.carYaw = -Math.PI * 0.72;
-    }
-    if (this.carRig) {
-      this.carRig.root.position.copy(this.carPos);
-      this.carRig.root.rotation.set(0, this.carYaw, 0);
-      updateCarRigVisuals(this.carRig, {
-        doorAngle: 0,
-        steerAngle: 0,
-        wheelSpin: this.carWheelSpin,
-        headlightsOn: this.carHeadlightsOn,
-        braking: false,
-        reversing: false,
-        pitchLean: 0,
-        rollLean: 0,
-      });
+      if (this.villageRig) {
+        for (const vil of this.villageRig.villagers) {
+          vil.alive = true;
+          vil.fleeTimer = 0;
+          vil.drivingVehicleId = null;
+          vil.vehicleCooldown = 0;
+          vil.isInsideHouse = false;
+          vil.bodyPivot.position.y = 0;
+          vil.bodyPivot.rotation.x = 0;
+          vil.leftLeg.rotation.x = 0;
+          vil.rightLeg.rotation.x = 0;
+          vil.root.visible = true;
+          if (vil.interactable) {
+            vil.interactable.x = vil.x;
+            vil.interactable.z = vil.z;
+          }
+        }
+      }
+      for (const npc of this.npcs.values()) {
+        npc.koTimer = 0;
+        npc.fleeTimer = 0;
+        npc.x = npc.standX;
+        npc.z = npc.standZ;
+        npc.yaw = npc.standRotY;
+        npc.poseMode = 'stand';
+        npc.nightAwake = false;
+        npc.mesh.visible = true;
+        npc.mesh.position.set(npc.standX, npc.standY, npc.standZ);
+      }
+      for (const v of this.worldVehicles) {
+        v.pos.copy(v.spawnPos);
+        v.yaw = v.spawnYaw;
+        v.speed = 0;
+        v.steerAngle = 0;
+        v.doorAngle = 0;
+        v.pitchLean = 0;
+        v.rollLean = 0;
+        v.headlightsOn = false;
+        v.handbrakeOn = false;
+        v.driverKind = 'none';
+        v.npcDriverIdx = null;
+        v.npcDriveTimer = 0;
+        v.npcParkTimer = 0;
+        v.root.position.copy(v.pos);
+        v.root.rotation.set(0, v.yaw, 0);
+        if (v.rig) {
+          updateCarRigVisuals(v.rig, {
+            doorAngle: 0,
+            steerAngle: 0,
+            wheelSpin: v.wheelSpin,
+            headlightsOn: false,
+            braking: false,
+            reversing: false,
+            pitchLean: 0,
+            rollLean: 0,
+          });
+        }
+      }
+      this.assignInitialNpcDrivers();
+      this.activeVehicleId = 'hero_car';
+      const heroCar = this.getActiveVehicle();
+      if (heroCar) {
+        this.syncCarFieldsFromVehicle(heroCar);
+      } else {
+        this.carPos.set(3.2, getArchipelagoGroundY(3.2, 119.5), 119.5);
+        this.carYaw = -Math.PI * 0.72;
+      }
+    } else {
+      const active = this.getActiveVehicle();
+      if (active) {
+        if (active.driverKind === 'player') active.driverKind = 'none';
+        active.speed = 0;
+        active.doorAngle = 0;
+        active.pitchLean = 0;
+        active.rollLean = 0;
+        active.steerAngle = 0;
+        active.root.position.copy(active.pos);
+        active.root.rotation.set(0, active.yaw, 0);
+        this.syncCarFieldsFromVehicle(active);
+      }
+      if (this.carRig) {
+        updateCarRigVisuals(this.carRig, {
+          doorAngle: 0,
+          steerAngle: 0,
+          wheelSpin: this.carWheelSpin,
+          headlightsOn: this.carHeadlightsOn,
+          braking: false,
+          reversing: false,
+          pitchLean: 0,
+          rollLean: 0,
+        });
+      }
     }
     this.refreshWeaponVisual();
     this.applyCameraVisibilityAndControls();
   }
 
-  private findSafeCarExitSpot(): THREE.Vector3 {
+  private findSafeCarExitSpot(v?: WorldVehicle): THREE.Vector3 {
+    const veh = v ?? this.getActiveVehicle();
+    const board = veh ? veh.boardOffset : this.carRig.boardOutsideOffset;
+    const rearZ = -(veh ? veh.halfL + 1.15 : 3.7);
+    const frontZ = veh ? veh.halfL + 1.15 : 3.7;
     const candidates = [
-      this.carRig.boardOutsideOffset,
-      new THREE.Vector3(-2.48, 0, -0.05),
-      new THREE.Vector3(0, 0, -3.7),
-      new THREE.Vector3(0, 0, 3.7),
+      board,
+      new THREE.Vector3(-board.x, 0, board.z),
+      new THREE.Vector3(0, 0, rearZ),
+      new THREE.Vector3(0, 0, frontZ),
     ];
     for (const off of candidates) {
-      const p = this.getCarWorldPoint(off);
+      const p = veh ? this.getVehicleWorldPoint(veh, off) : this.getCarWorldPoint(off);
       const s = sampleArchipelagoTerrain(p.x, p.z);
-      if (s.isLandOrBridge && s.groundY >= 0.05 && Math.abs(s.groundY - this.carPos.y) < 1.8) {
+      const refY = veh ? veh.pos.y : this.carPos.y;
+      if (s.isLandOrBridge && s.groundY >= 0.05 && Math.abs(s.groundY - refY) < 2.2) {
         p.y = s.groundY;
         return p;
       }
     }
-    const fallback = this.getCarWorldPoint(this.carRig.boardOutsideOffset);
+    const fallback = veh ? this.getVehicleWorldPoint(veh, board) : this.getCarWorldPoint(board);
     fallback.y = Math.max(0.1, getArchipelagoGroundY(fallback.x, fallback.z));
     return fallback;
   }
 
-  public enterOrExitCar(): void {
+  public enterOrExitCar(targetVehicleId?: string): void {
     this.lastInputActivityMs = performance.now();
     if (this.phase !== 'playing' || this.worldMode !== 'overworld') return;
 
     if (this.carMode === 'none') {
-      if (!this.nearCar) {
-        const doorPt = this.getCarWorldPoint(this.carRig.boardOutsideOffset);
-        this.tapMoveTarget = doorPt;
-        this.showBanner('🚗 Berjalan menuju Mobil Petualang...', 2.2);
+      let target: WorldVehicle | undefined;
+      if (targetVehicleId) {
+        target = this.worldVehicles.find((v) => v.id === targetVehicleId);
+      } else if (this.nearVehicleId) {
+        target = this.worldVehicles.find((v) => v.id === this.nearVehicleId);
+      } else {
+        let bestDist = Infinity;
+        for (const v of this.worldVehicles) {
+          if (v.driverKind !== 'none') continue;
+          const d = Math.hypot(this.heroPos.x - v.pos.x, this.heroPos.z - v.pos.z);
+          if (d < bestDist) {
+            bestDist = d;
+            target = v;
+          }
+        }
+        if (!target) target = this.getActiveVehicle();
+      }
+      if (!target) return;
+
+      if (target.driverKind === 'npc') {
+        soundEngine.playNo();
+        this.showBanner(`🚕 ${target.name} sedang dikendarai NPC! Cari mobil yang kosong.`, 2.4);
         return;
       }
+
+      const doorPt = this.getVehicleWorldPoint(target, target.boardOffset);
+      const distCenter = Math.hypot(this.heroPos.x - target.pos.x, this.heroPos.z - target.pos.z);
+      const distDoor = Math.hypot(this.heroPos.x - doorPt.x, this.heroPos.z - doorPt.z);
+      const reachRadius = target.kind === 'bus' ? 7.4 : 6.0;
+      if (distCenter > reachRadius && distDoor > 4.4) {
+        this.tapMoveTarget = doorPt;
+        this.showBanner(`🚗 Berjalan menuju ${target.name}...`, 2.2);
+        return;
+      }
+
+      this.activeVehicleId = target.id;
+      target.driverKind = 'player';
+      target.npcDriverIdx = null;
+      target.speed = 0;
+      this.syncCarFieldsFromVehicle(target);
       this.carMode = 'entering';
       this.carAnimTimer = 0;
       this.carDoorOpenPlayed = false;
@@ -6740,21 +7165,22 @@ export class RpgWorldEngine {
       soundEngine.setSwimmingAudio(false);
       this.refreshWeaponVisual();
       this.applyCameraVisibilityAndControls();
-      this.showBanner('🚗 Membuka pintu mobil secara perlahan...', 2.1);
+      this.showBanner(`🚗 Masuk ke ${target.name}...`, 2.0);
       this.pushHud(true);
       return;
     }
 
     if (this.carMode === 'driving') {
+      const active = this.getActiveVehicle();
       this.carMode = 'exiting';
       this.carAnimTimer = 0;
       this.carExitBrakeWait = Math.abs(this.carSpeed) > 1.2 ? 0.3 : 0;
       this.carDoorOpenPlayed = false;
       this.carDoorClosePlayed = false;
-      this.carExitSafePos.copy(this.findSafeCarExitSpot());
+      this.carExitSafePos.copy(this.findSafeCarExitSpot(active));
       this.clearCarControls();
       soundEngine.setCarEngine(false, 0);
-      this.showBanner('🚗 Menghentikan mobil & membuka pintu keluar...', 1.8);
+      this.showBanner(`🚗 Menghentikan ${active?.name ?? 'mobil'} & keluar...`, 1.8);
       this.pushHud(true);
     }
   }
@@ -6771,6 +7197,8 @@ export class RpgWorldEngine {
     this.lastInputActivityMs = performance.now();
     if (this.carMode !== 'driving') return;
     this.carHandbrakeOn = !this.carHandbrakeOn;
+    const active = this.getActiveVehicle();
+    if (active) active.handbrakeOn = this.carHandbrakeOn;
     soundEngine.playCarDoor(false);
     this.showBanner(
       this.carHandbrakeOn ? '🅿️ Rem Tangan AKTIF' : '🚗 Rem Tangan Dilepas',
@@ -6783,6 +7211,8 @@ export class RpgWorldEngine {
     this.lastInputActivityMs = performance.now();
     if (this.worldMode !== 'overworld') return;
     this.carHeadlightsOn = !this.carHeadlightsOn;
+    const active = this.getActiveVehicle();
+    if (active) active.headlightsOn = this.carHeadlightsOn;
     soundEngine.playPick();
     this.showBanner(
       this.carHeadlightsOn ? '💡 Lampu Depan Mobil NYALA' : '💡 Lampu Depan Mobil MATI',
@@ -6795,11 +7225,20 @@ export class RpgWorldEngine {
     this.lastInputActivityMs = performance.now();
     if (this.worldMode !== 'overworld') return;
     soundEngine.playCarHorn();
-    this.spawnBurst(this.carPos.x, this.carPos.y + 2.2, this.carPos.z, 0xfacc15, 6);
+    this.carHornFleeTimer = 0.95;
+    const active = this.getActiveVehicle();
+    const hx = active ? active.pos.x : this.carPos.x;
+    const hy = active ? active.pos.y : this.carPos.y;
+    const hz = active ? active.pos.z : this.carPos.z;
+    this.spawnBurst(hx, hy + 2.2, hz, 0xfacc15, 6);
   }
 
   private buildCarHudState(): CarHudState | null {
     if (this.phase !== 'playing' || this.worldMode !== 'overworld') return null;
+    const active =
+      this.carMode !== 'none'
+        ? this.getActiveVehicle()
+        : this.worldVehicles.find((v) => v.id === this.nearVehicleId) ?? this.getActiveVehicle();
     const speedKmh = Math.round(Math.abs(this.carSpeed) * 3.6);
     const joyFwd = -this.virtualMove.z;
     const joySideSteerCrawl =
@@ -6823,13 +7262,15 @@ export class RpgWorldEngine {
         : this.carSpeed > 0.5 || gasHeld
         ? 'D'
         : 'N';
+    const refPos = active ? active.pos : this.carPos;
     const distanceMeters = Math.round(
-      Math.hypot(this.heroPos.x - this.carPos.x, this.heroPos.z - this.carPos.z),
+      Math.hypot(this.heroPos.x - refPos.x, this.heroPos.z - refPos.z),
     );
     return {
-      available: Boolean(this.carRig),
+      available: this.worldVehicles.length > 0 || Boolean(this.carRig),
       mode: this.carMode,
       nearCar: this.nearCar,
+      carName: active?.name ?? 'Mobil Petualang',
       speedKmh,
       gear,
       headlightsOn: this.carHeadlightsOn,
@@ -6844,52 +7285,21 @@ export class RpgWorldEngine {
   }
 
   private resolveHeroParkedCarCollision(): void {
-    const dx = this.heroPos.x - this.carPos.x;
-    const dz = this.heroPos.z - this.carPos.z;
-    if (Math.abs(dx) > 4.5 || Math.abs(dz) > 4.5 || Math.abs(this.heroPos.y - this.carPos.y) > 3.2) {
-      return;
-    }
-    const s = Math.sin(this.carYaw);
-    const c = Math.cos(this.carYaw);
-    const localX = dx * c - dz * s;
-    const localZ = dx * s + dz * c;
-    const halfW = 1.98;
-    const halfL = 3.45;
-    const clampedX = THREE.MathUtils.clamp(localX, -halfW, halfW);
-    const clampedZ = THREE.MathUtils.clamp(localZ, -halfL, halfL);
-    const diffX = localX - clampedX;
-    const diffZ = localZ - clampedZ;
-    if (diffX === 0 && diffZ === 0) {
-      const pushOutX = halfW - Math.abs(localX) < halfL - Math.abs(localZ);
-      const fixLX = pushOutX ? (localX >= 0 ? halfW : -halfW) : localX;
-      const fixLZ = pushOutX ? localZ : localZ >= 0 ? halfL : -halfL;
-      this.heroPos.x = this.carPos.x + fixLX * c + fixLZ * s;
-      this.heroPos.z = this.carPos.z - fixLX * s + fixLZ * c;
-    } else if (diffX * diffX + diffZ * diffZ < 0.02) {
-      return;
-    }
-    const pushLX = localX - clampedX;
-    const pushLZ = localZ - clampedZ;
-    if (Math.abs(pushLX) > 0.001 || Math.abs(pushLZ) > 0.001) {
-      const len = Math.hypot(pushLX, pushLZ);
-      if (len < 0.55) {
-        const nx = pushLX / len;
-        const nz = pushLZ / len;
-        const fixLX = clampedX + nx * 0.55;
-        const fixLZ = clampedZ + nz * 0.55;
-        this.heroPos.x = this.carPos.x + fixLX * c + fixLZ * s;
-        this.heroPos.z = this.carPos.z - fixLX * s + fixLZ * c;
-      }
-    }
+    this.resolveWorldVehiclesCollision(this.heroPos, 0.72, 2.55);
   }
 
   private updateCarPhysicsAndAnimation(dt: number): void {
+    const active = this.getActiveVehicle();
+    const hasCustomDoor = Boolean(active?.rig);
+    const seatOffset = active ? active.seatOffset : this.carRig.driverSeatOffset;
+    const boardOffset = active ? active.boardOffset : this.carRig.boardOutsideOffset;
+
     const smoothstep = (v: number) => {
       const t = THREE.MathUtils.clamp(v, 0, 1);
       return t * t * (3 - 2 * t);
     };
-    const seatPt = this.getCarWorldPoint(this.carRig.driverSeatOffset);
-    const outsidePt = this.getCarWorldPoint(this.carRig.boardOutsideOffset);
+    const seatPt = this.getCarWorldPoint(seatOffset);
+    const outsidePt = this.getCarWorldPoint(boardOffset);
     let brakingVisual = false;
     let reversingVisual = false;
 
@@ -6902,41 +7312,74 @@ export class RpgWorldEngine {
         soundEngine.playCarDoor(true);
       }
 
-      if (t < 0.55) {
-        const e1 = smoothstep(t / 0.55);
-        this.heroPos.lerpVectors(this.carEnterStartPos, outsidePt, e1);
-        this.heroPos.y = THREE.MathUtils.lerp(this.carEnterStartPos.y, this.carPos.y, e1);
-        this.carDoorAngle = THREE.MathUtils.lerp(0, 1.05, e1);
-        const faceYaw = Math.atan2(seatPt.x - this.heroPos.x, seatPt.z - this.heroPos.z);
-        let dYaw = faceYaw - this.carEnterStartYaw;
-        while (dYaw > Math.PI) dYaw -= Math.PI * 2;
-        while (dYaw < -Math.PI) dYaw += Math.PI * 2;
-        this.heroYaw = this.carEnterStartYaw + dYaw * e1;
-      } else if (t < 1.55) {
-        const e2 = smoothstep((t - 0.55) / 1.0);
-        this.carDoorAngle = 1.05;
-        this.heroPos.lerpVectors(outsidePt, seatPt, e2);
-        this.heroPos.y += Math.sin(e2 * Math.PI) * 0.16;
-        const enterYaw = Math.atan2(seatPt.x - outsidePt.x, seatPt.z - outsidePt.z);
-        let dYaw = this.carYaw - enterYaw;
-        while (dYaw > Math.PI) dYaw -= Math.PI * 2;
-        while (dYaw < -Math.PI) dYaw += Math.PI * 2;
-        this.heroYaw = enterYaw + dYaw * e2;
-      } else {
-        const e3 = smoothstep((t - 1.55) / 0.65);
-        this.heroPos.copy(seatPt);
-        this.heroYaw = this.carYaw;
-        this.carDoorAngle = THREE.MathUtils.lerp(1.05, 0, e3);
-        if (!this.carDoorClosePlayed && t >= 1.65) {
-          this.carDoorClosePlayed = true;
-          soundEngine.playCarDoor(false);
+      if (hasCustomDoor) {
+        if (t < 0.55) {
+          const e1 = smoothstep(t / 0.55);
+          this.heroPos.lerpVectors(this.carEnterStartPos, outsidePt, e1);
+          this.heroPos.y = THREE.MathUtils.lerp(this.carEnterStartPos.y, this.carPos.y, e1);
+          this.carDoorAngle = THREE.MathUtils.lerp(0, 1.05, e1);
+          const faceYaw = Math.atan2(seatPt.x - this.heroPos.x, seatPt.z - this.heroPos.z);
+          let dYaw = faceYaw - this.carEnterStartYaw;
+          while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+          while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+          this.heroYaw = this.carEnterStartYaw + dYaw * e1;
+        } else if (t < 1.55) {
+          const e2 = smoothstep((t - 0.55) / 1.0);
+          this.carDoorAngle = 1.05;
+          this.heroPos.lerpVectors(outsidePt, seatPt, e2);
+          this.heroPos.y += Math.sin(e2 * Math.PI) * 0.16;
+          const enterYaw = Math.atan2(seatPt.x - outsidePt.x, seatPt.z - outsidePt.z);
+          let dYaw = this.carYaw - enterYaw;
+          while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+          while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+          this.heroYaw = enterYaw + dYaw * e2;
+        } else {
+          const e3 = smoothstep((t - 1.55) / 0.65);
+          this.heroPos.copy(seatPt);
+          this.heroYaw = this.carYaw;
+          this.carDoorAngle = THREE.MathUtils.lerp(1.05, 0, e3);
+          if (!this.carDoorClosePlayed && t >= 1.65) {
+            this.carDoorClosePlayed = true;
+            soundEngine.playCarDoor(false);
+          }
+          if (t >= 2.2) {
+            this.carDoorAngle = 0;
+            this.carMode = 'driving';
+            this.carHandbrakeOn = false;
+            soundEngine.playCarEngineStart();
+            this.showBanner(`🚗 ${active?.name ?? 'Mobil'} siap! Gunakan Gas, Rem & Turbo.`, 2.6);
+            this.pushHud(true);
+          }
         }
-        if (t >= 2.2) {
-          this.carDoorAngle = 0;
+      } else {
+        if (t < 0.35) {
+          const e1 = smoothstep(t / 0.35);
+          this.heroPos.lerpVectors(this.carEnterStartPos, outsidePt, e1);
+          this.heroPos.y = THREE.MathUtils.lerp(this.carEnterStartPos.y, this.carPos.y, e1);
+          const faceYaw = Math.atan2(seatPt.x - this.heroPos.x, seatPt.z - this.heroPos.z);
+          let dYaw = faceYaw - this.carEnterStartYaw;
+          while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+          while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+          this.heroYaw = this.carEnterStartYaw + dYaw * e1;
+        } else if (t < 0.95) {
+          const e2 = smoothstep((t - 0.35) / 0.6);
+          this.heroPos.lerpVectors(outsidePt, seatPt, e2);
+          this.heroPos.y += Math.sin(e2 * Math.PI) * 0.22;
+          let dYaw = this.carYaw - this.carEnterStartYaw;
+          while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+          while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+          this.heroYaw = this.carEnterStartYaw + dYaw * e2;
+        } else {
+          this.heroPos.copy(seatPt);
+          this.heroYaw = this.carYaw;
+          if (!this.carDoorClosePlayed) {
+            this.carDoorClosePlayed = true;
+            soundEngine.playCarDoor(false);
+          }
           this.carMode = 'driving';
           this.carHandbrakeOn = false;
           soundEngine.playCarEngineStart();
-          this.showBanner('Mesin menyala! Gunakan Joystick, Gas, Rem & Turbo untuk berkendara.', 2.8);
+          this.showBanner(`🚗 ${active?.name ?? 'Mobil'} siap dikendarai!`, 2.6);
           this.pushHud(true);
         }
       }
@@ -6958,11 +7401,11 @@ export class RpgWorldEngine {
         } else {
           this.carPos.y = THREE.MathUtils.damp(this.carPos.y, Math.max(-0.05, s.groundY), 16, dt);
         }
-        const liveSeat = this.getCarWorldPoint(this.carRig.driverSeatOffset);
+        const liveSeat = this.getCarWorldPoint(seatOffset);
         this.heroPos.copy(liveSeat);
         this.heroYaw = this.carYaw;
         brakingVisual = true;
-        this.carExitSafePos.copy(this.findSafeCarExitSpot());
+        this.carExitSafePos.copy(this.findSafeCarExitSpot(active));
       } else {
         this.carSpeed = 0;
         this.carAnimTimer += dt;
@@ -6971,32 +7414,70 @@ export class RpgWorldEngine {
           this.carDoorOpenPlayed = true;
           soundEngine.playCarDoor(true);
         }
-        if (t < 0.6) {
-          const e1 = smoothstep(t / 0.6);
-          this.carDoorAngle = THREE.MathUtils.lerp(0, 1.05, e1);
-          this.heroPos.copy(seatPt);
-          this.heroYaw = this.carYaw;
-        } else if (t < 1.35) {
-          const e2 = smoothstep((t - 0.6) / 0.75);
-          this.carDoorAngle = 1.05;
-          this.heroPos.lerpVectors(seatPt, this.carExitSafePos, e2);
-          this.heroPos.y += Math.sin(e2 * Math.PI) * 0.14;
-          const outYaw = Math.atan2(this.carExitSafePos.x - seatPt.x, this.carExitSafePos.z - seatPt.z);
-          let dYaw = outYaw - this.carYaw;
-          while (dYaw > Math.PI) dYaw -= Math.PI * 2;
-          while (dYaw < -Math.PI) dYaw += Math.PI * 2;
-          this.heroYaw = this.carYaw + dYaw * e2;
-        } else {
-          const e3 = smoothstep((t - 1.35) / 0.6);
-          this.heroPos.copy(this.carExitSafePos);
-          this.carDoorAngle = THREE.MathUtils.lerp(1.05, 0, e3);
-          if (!this.carDoorClosePlayed && t >= 1.45) {
-            this.carDoorClosePlayed = true;
-            soundEngine.playCarDoor(false);
+        if (hasCustomDoor) {
+          if (t < 0.6) {
+            const e1 = smoothstep(t / 0.6);
+            this.carDoorAngle = THREE.MathUtils.lerp(0, 1.05, e1);
+            this.heroPos.copy(seatPt);
+            this.heroYaw = this.carYaw;
+          } else if (t < 1.35) {
+            const e2 = smoothstep((t - 0.6) / 0.75);
+            this.carDoorAngle = 1.05;
+            this.heroPos.lerpVectors(seatPt, this.carExitSafePos, e2);
+            this.heroPos.y += Math.sin(e2 * Math.PI) * 0.14;
+            const outYaw = Math.atan2(this.carExitSafePos.x - seatPt.x, this.carExitSafePos.z - seatPt.z);
+            let dYaw = outYaw - this.carYaw;
+            while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+            while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+            this.heroYaw = this.carYaw + dYaw * e2;
+          } else {
+            const e3 = smoothstep((t - 1.35) / 0.6);
+            this.heroPos.copy(this.carExitSafePos);
+            this.carDoorAngle = THREE.MathUtils.lerp(1.05, 0, e3);
+            if (!this.carDoorClosePlayed && t >= 1.45) {
+              this.carDoorClosePlayed = true;
+              soundEngine.playCarDoor(false);
+            }
+            if (t >= 1.95) {
+              this.carDoorAngle = 0;
+              this.carMode = 'none';
+              if (active) {
+                active.driverKind = 'none';
+                active.speed = 0;
+                active.npcParkTimer = 4.5;
+              }
+              this.heroPos.copy(this.carExitSafePos);
+              this.heroVel.set(0, 0, 0);
+              this.heroVelY = 0;
+              this.heroOnGround = true;
+              this.refreshWeaponVisual();
+              this.applyCameraVisibilityAndControls();
+              this.showBanner('🚶 Kamu keluar dari mobil.', 1.8);
+              this.pushHud(true);
+            }
           }
-          if (t >= 1.95) {
+        } else {
+          if (t < 0.7) {
+            const e2 = smoothstep(t / 0.7);
+            this.heroPos.lerpVectors(seatPt, this.carExitSafePos, e2);
+            this.heroPos.y += Math.sin(e2 * Math.PI) * 0.16;
+            const outYaw = Math.atan2(this.carExitSafePos.x - seatPt.x, this.carExitSafePos.z - seatPt.z);
+            let dYaw = outYaw - this.carYaw;
+            while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+            while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+            this.heroYaw = this.carYaw + dYaw * e2;
+          } else {
+            if (!this.carDoorClosePlayed) {
+              this.carDoorClosePlayed = true;
+              soundEngine.playCarDoor(false);
+            }
             this.carDoorAngle = 0;
             this.carMode = 'none';
+            if (active) {
+              active.driverKind = 'none';
+              active.speed = 0;
+              active.npcParkTimer = 4.5;
+            }
             this.heroPos.copy(this.carExitSafePos);
             this.heroVel.set(0, 0, 0);
             this.heroVelY = 0;
@@ -7011,7 +7492,7 @@ export class RpgWorldEngine {
       soundEngine.setCarEngine(false, 0);
     } else if (this.carMode === 'driving') {
       const joyX = THREE.MathUtils.clamp(this.virtualMove.x, -1, 1);
-      const joyY = THREE.MathUtils.clamp(-this.virtualMove.z, -1, 1); // + = screen up (maju), - = screen down (mundur/rem)
+      const joyY = THREE.MathUtils.clamp(-this.virtualMove.z, -1, 1);
       const pedalOrKeyGas =
         this.carCtrl.gas || this.heldKeys.has('KeyW') || this.heldKeys.has('ArrowUp');
       const pedalOrKeyBrake =
@@ -7049,7 +7530,8 @@ export class RpgWorldEngine {
         : 0;
 
       const prevSpd = this.carSpeed;
-      const maxFwd = (boostInput && !handbrakeActive ? 32 : 23) * Math.max(0.45, joyFwdScale);
+      const kindSpeedScale = active?.kind === 'bus' ? 0.86 : active?.kind === 'police' ? 1.08 : 1.0;
+      const maxFwd = (boostInput && !handbrakeActive ? 32 : 23) * kindSpeedScale * Math.max(0.45, joyFwdScale);
       const maxRev = -9.5 * Math.max(0.5, joyRevScale);
       if (handbrakeActive) {
         this.carSpeed = THREE.MathUtils.damp(this.carSpeed, 0, 9.5, dt);
@@ -7059,7 +7541,7 @@ export class RpgWorldEngine {
           this.carSpeed = Math.min(0, this.carSpeed + 34 * dt);
           brakingVisual = true;
         } else {
-          const accel = (boostInput ? 26 : 16.5) * Math.max(0.45, joyFwdScale);
+          const accel = (boostInput ? 26 : 16.5) * kindSpeedScale * Math.max(0.45, joyFwdScale);
           if (this.carSpeed > maxFwd) {
             this.carSpeed = THREE.MathUtils.damp(this.carSpeed, maxFwd, 4.5, dt);
           } else {
@@ -7089,7 +7571,9 @@ export class RpgWorldEngine {
       const prevZ = this.carPos.z;
       this.carPos.x += Math.sin(this.carYaw) * this.carSpeed * dt;
       this.carPos.z += Math.cos(this.carYaw) * this.carSpeed * dt;
-      constrainHeroToWorldBounds(this.carPos, 2.2);
+      const carRadius = active ? active.halfW + 0.35 : 1.95;
+      const carHeight = active ? active.height : 2.65;
+      constrainHeroToWorldBounds(this.carPos, carRadius + 0.25);
 
       const checkWaterEdge = sampleArchipelagoTerrain(this.carPos.x, this.carPos.z);
       if (!checkWaterEdge.isLandOrBridge || checkWaterEdge.groundY < -0.18) {
@@ -7106,10 +7590,11 @@ export class RpgWorldEngine {
         this.carSpeed *= 0.25;
       }
 
-      resolveObstacleBoxes(this.carPos, 1.95, this.villageRig.obstacles);
-      resolveArchipelagoVehicleCollisions(this.archipelagoRig, this.carPos, 2.05, 2.65);
+      resolveObstacleBoxes(this.carPos, carRadius, this.villageRig.obstacles);
+      resolveArchipelagoVehicleCollisions(this.archipelagoRig, this.carPos, carRadius, carHeight);
+      this.resolveWorldVehiclesCollision(this.carPos, carRadius, carHeight, active?.id);
       if (this.worldObstaclesRig) {
-        resolveSolidObstacleCollisions(this.worldObstaclesRig, this.carPos, 1.9, 2.65);
+        resolveSolidObstacleCollisions(this.worldObstaclesRig, this.carPos, carRadius, carHeight);
       }
 
       const postWater = sampleArchipelagoTerrain(this.carPos.x, this.carPos.z);
@@ -7137,7 +7622,7 @@ export class RpgWorldEngine {
       this.carPitchLean = THREE.MathUtils.damp(this.carPitchLean, targetPitch, 10, dt);
       this.carRollLean = THREE.MathUtils.damp(this.carRollLean, targetRoll, 10, dt);
 
-      const liveSeat = this.getCarWorldPoint(this.carRig.driverSeatOffset);
+      const liveSeat = this.getCarWorldPoint(seatOffset);
       this.heroPos.copy(liveSeat);
       this.heroYaw = this.carYaw;
       this.heroVel.set(
@@ -7152,7 +7637,8 @@ export class RpgWorldEngine {
       this.carExhaustTimer -= dt;
       if (this.carExhaustTimer <= 0) {
         this.carExhaustTimer = boostInput ? 0.06 : Math.abs(this.carSpeed) > 3 ? 0.12 : 0.28;
-        const exPt = this.getCarWorldPoint(new THREE.Vector3(-0.92, 0.58, -3.15));
+        const exZ = -(active ? active.halfL + 0.1 : 3.15);
+        const exPt = this.getCarWorldPoint(new THREE.Vector3(-0.92, 0.58, exZ));
         this.spawnBurst(
           exPt.x,
           exPt.y,
@@ -7169,18 +7655,491 @@ export class RpgWorldEngine {
       );
     }
 
-    this.carRig.root.position.copy(this.carPos);
-    this.carRig.root.rotation.set(0, this.carYaw, 0);
-    updateCarRigVisuals(this.carRig, {
-      doorAngle: this.carDoorAngle,
-      steerAngle: this.carSteerAngle,
-      wheelSpin: this.carWheelSpin,
-      headlightsOn: this.carHeadlightsOn,
-      braking: brakingVisual,
-      reversing: reversingVisual || this.carSpeed < -0.5,
-      pitchLean: this.carPitchLean,
-      rollLean: this.carRollLean,
-    });
+    if (active) {
+      active.pos.copy(this.carPos);
+      active.yaw = this.carYaw;
+      active.speed = this.carSpeed;
+      active.steerAngle = this.carSteerAngle;
+      active.wheelSpin = this.carWheelSpin;
+      active.doorAngle = this.carDoorAngle;
+      active.pitchLean = this.carPitchLean;
+      active.rollLean = this.carRollLean;
+      active.headlightsOn = this.carHeadlightsOn;
+      active.handbrakeOn = this.carHandbrakeOn;
+      active.root.position.copy(this.carPos);
+      active.root.rotation.set(0, this.carYaw, 0);
+      if (active.rig) {
+        updateCarRigVisuals(active.rig, {
+          doorAngle: this.carDoorAngle,
+          steerAngle: this.carSteerAngle,
+          wheelSpin: this.carWheelSpin,
+          headlightsOn: this.carHeadlightsOn,
+          braking: brakingVisual,
+          reversing: reversingVisual || this.carSpeed < -0.5,
+          pitchLean: this.carPitchLean,
+          rollLean: this.carRollLean,
+        });
+      }
+    }
+  }
+
+  private pickSafeNpcFleeDir(
+    x: number,
+    z: number,
+    curY: number,
+    prefX: number,
+    prefZ: number,
+  ): [number, number] {
+    const baseAng = Math.hypot(prefX, prefZ) > 0.001 ? Math.atan2(prefX, prefZ) : 0;
+    const offsets = [0, 0.55, -0.55, 1.1, -1.1, 1.7, -1.7, Math.PI];
+    for (let k = 0; k < offsets.length; k++) {
+      const a = baseAng + offsets[k];
+      const dx = Math.sin(a);
+      const dz = Math.cos(a);
+      const px = x + dx * 2.4;
+      const pz = z + dz * 2.4;
+      const s = sampleArchipelagoTerrain(px, pz);
+      if (s.isLandOrBridge && s.groundY >= 0.05 && Math.abs(s.groundY - curY) < 2.2) {
+        return [dx, dz];
+      }
+    }
+    return [Math.sin(baseAng), Math.cos(baseAng)];
+  }
+
+  private isNpcDrivePathClear(v: WorldVehicle, yaw: number, dist: number): boolean {
+    const px = v.pos.x + Math.sin(yaw) * dist;
+    const pz = v.pos.z + Math.cos(yaw) * dist;
+    const s = sampleArchipelagoTerrain(px, pz);
+    if (!s.isLandOrBridge || s.groundY < 0.05 || Math.abs(s.groundY - v.pos.y) > 1.4) {
+      return false;
+    }
+    const probe = { x: px, z: pz };
+    const r = v.halfW + 0.55;
+    resolveObstacleBoxes(probe, r, this.villageRig.obstacles);
+    if (Math.hypot(probe.x - px, probe.z - pz) > 0.35) return false;
+    for (let i = 0; i < this.worldVehicles.length; i++) {
+      const ov = this.worldVehicles[i];
+      if (ov.id === v.id) continue;
+      if (Math.hypot(ov.pos.x - px, ov.pos.z - pz) < ov.halfW + v.halfW + 2.6) return false;
+    }
+    return true;
+  }
+
+  private updateWorldVehiclesAndImpacts(dt: number): void {
+    if (this.carHornFleeTimer > 0) {
+      this.carHornFleeTimer = Math.max(0, this.carHornFleeTimer - dt);
+    }
+
+    const activeNpcDriverCount = this.worldVehicles.filter((v) => v.driverKind === 'npc').length;
+    let npcBoardingsAvailable = Math.max(0, 3 - activeNpcDriverCount);
+
+    for (let i = 0; i < this.worldVehicles.length; i++) {
+      const v = this.worldVehicles[i];
+      if (v.npcParkTimer > 0) v.npcParkTimer = Math.max(0, v.npcParkTimer - dt);
+
+      const isPlayerOccupied = this.carMode !== 'none' && v.id === this.activeVehicleId;
+      if (isPlayerOccupied) {
+        v.driverKind = 'player';
+        continue;
+      }
+
+      if (v.driverKind === 'npc') {
+        const vil = v.npcDriverIdx !== null ? this.villageRig.villagers[v.npcDriverIdx] : null;
+        if (!vil || !vil.alive) {
+          v.driverKind = 'none';
+          v.npcDriverIdx = null;
+          v.speed = 0;
+        } else {
+          v.npcDriveTimer -= dt;
+          if (v.npcDriveTimer <= 0 || this.phase !== 'playing') {
+            v.speed = THREE.MathUtils.damp(v.speed, 0, 5.5, dt);
+            if (Math.abs(v.speed) < 0.25) {
+              v.speed = 0;
+              const exitSpot = this.findSafeCarExitSpot(v);
+              vil.x = exitSpot.x;
+              vil.z = exitSpot.z;
+              vil.root.position.copy(exitSpot);
+              vil.bodyPivot.position.y = 0;
+              vil.bodyPivot.rotation.x = 0;
+              vil.leftLeg.rotation.x = 0;
+              vil.rightLeg.rotation.x = 0;
+              vil.leftArm.rotation.x = vil.baseLeftArmX;
+              vil.rightArm.rotation.x = vil.baseRightArmX;
+              vil.drivingVehicleId = null;
+              vil.vehicleCooldown = 14;
+              vil.root.visible = true;
+              if (vil.interactable) {
+                vil.interactable.x = vil.x;
+                vil.interactable.z = vil.z;
+              }
+              v.driverKind = 'none';
+              v.npcDriverIdx = null;
+              v.npcParkTimer = 14;
+            }
+          } else {
+            const cruiseSpd = v.kind === 'bus' ? 6.4 : v.npcHomeZone === 'highway' ? 8.6 : 7.0;
+            if (v.npcHomeZone === 'highway') {
+              // Gerbang Kota lower highway patrol lane
+              if (v.pos.x <= -171 && v.npcPatrolDir < 0) v.npcPatrolDir = 1;
+              else if (v.pos.x >= -84 && v.npcPatrolDir > 0) v.npcPatrolDir = -1;
+              const desiredYaw = v.npcPatrolDir > 0 ? Math.PI / 2 : -Math.PI / 2;
+              let yDiff = desiredYaw - v.yaw;
+              while (yDiff > Math.PI) yDiff -= Math.PI * 2;
+              while (yDiff < -Math.PI) yDiff += Math.PI * 2;
+              v.yaw += yDiff * Math.min(1, dt * 4.5);
+
+              // Check ahead for other cars / hero car
+              let blockedAhead = false;
+              for (let j = 0; j < this.worldVehicles.length; j++) {
+                if (j === i) continue;
+                const ov = this.worldVehicles[j];
+                const dx = ov.pos.x - v.pos.x;
+                const dz = ov.pos.z - v.pos.z;
+                if (Math.abs(dz) > 4.2) continue;
+                const fwd = dx * Math.sin(v.yaw) + dz * Math.cos(v.yaw);
+                if (fwd > 0 && fwd < v.halfL + ov.halfL + 4.5) {
+                  blockedAhead = true;
+                  break;
+                }
+              }
+              v.speed = THREE.MathUtils.damp(v.speed, blockedAhead ? 0 : cruiseSpd, 4.5, dt);
+            } else {
+              // Steer safely around island roads & plazas
+              const aheadDist = v.halfL + 4.2;
+              if (!this.isNpcDrivePathClear(v, v.yaw, aheadDist)) {
+                const tryOffsets = [0.55, -0.55, 1.05, -1.05, 1.65, -1.65];
+                let turned = false;
+                for (let k = 0; k < tryOffsets.length; k++) {
+                  const candYaw = v.yaw + tryOffsets[k];
+                  if (this.isNpcDrivePathClear(v, candYaw, aheadDist)) {
+                    v.yaw += Math.sign(tryOffsets[k]) * Math.min(Math.abs(tryOffsets[k]), dt * 2.8);
+                    turned = true;
+                    break;
+                  }
+                }
+                if (!turned) {
+                  v.yaw += dt * 2.2;
+                  v.speed = THREE.MathUtils.damp(v.speed, 2.6, 5, dt);
+                } else {
+                  v.speed = THREE.MathUtils.damp(v.speed, cruiseSpd * 0.72, 4, dt);
+                }
+              } else {
+                v.speed = THREE.MathUtils.damp(v.speed, cruiseSpd, 3.8, dt);
+              }
+            }
+
+            const prevX = v.pos.x;
+            const prevZ = v.pos.z;
+            v.pos.x += Math.sin(v.yaw) * v.speed * dt;
+            v.pos.z += Math.cos(v.yaw) * v.speed * dt;
+            const carRad = v.halfW + 0.3;
+            constrainHeroToWorldBounds(v.pos, carRad + 0.3);
+            resolveObstacleBoxes(v.pos, carRad, this.villageRig.obstacles);
+            resolveArchipelagoVehicleCollisions(this.archipelagoRig, v.pos, carRad, v.height);
+            this.resolveWorldVehiclesCollision(v.pos, carRad, v.height, v.id);
+            if (this.worldObstaclesRig) {
+              resolveSolidObstacleCollisions(this.worldObstaclesRig, v.pos, carRad, v.height);
+            }
+            const gSample = sampleArchipelagoTerrain(v.pos.x, v.pos.z);
+            if (!gSample.isLandOrBridge || gSample.groundY < 0.05 || Math.abs(gSample.groundY - v.pos.y) > 1.8) {
+              v.pos.x = prevX;
+              v.pos.z = prevZ;
+              v.speed = 0;
+              if (v.npcHomeZone === 'highway') {
+                v.npcPatrolDir = v.npcPatrolDir > 0 ? -1 : 1;
+              } else {
+                v.yaw += Math.PI * 0.65;
+              }
+            } else {
+              v.pos.y = THREE.MathUtils.damp(v.pos.y, gSample.groundY, 14, dt);
+            }
+            v.wheelSpin += (v.speed / 0.56) * dt;
+          }
+
+          if (v.driverKind === 'npc' && vil.alive) {
+            const seatPt = this.getVehicleWorldPoint(v, v.seatOffset);
+            vil.x = seatPt.x;
+            vil.z = seatPt.z;
+            vil.yaw = v.yaw;
+            vil.root.visible = true;
+            vil.root.position.set(seatPt.x, seatPt.y, seatPt.z);
+            vil.root.rotation.y = v.yaw;
+            vil.bodyPivot.position.y = -0.18;
+            vil.bodyPivot.rotation.x = 0.06;
+            vil.leftLeg.rotation.x = -1.25;
+            vil.rightLeg.rotation.x = -1.25;
+            vil.leftArm.rotation.x = -0.78;
+            vil.rightArm.rotation.x = -0.78;
+          }
+        }
+      } else {
+        // Unoccupied vehicle coasts safely to a stop
+        if (Math.abs(v.speed) > 0.05) {
+          v.speed *= Math.exp(-3.4 * dt);
+          const prevX = v.pos.x;
+          const prevZ = v.pos.z;
+          v.pos.x += Math.sin(v.yaw) * v.speed * dt;
+          v.pos.z += Math.cos(v.yaw) * v.speed * dt;
+          const s = sampleArchipelagoTerrain(v.pos.x, v.pos.z);
+          if (!s.isLandOrBridge || s.groundY < -0.1) {
+            v.pos.x = prevX;
+            v.pos.z = prevZ;
+            v.speed = 0;
+          } else {
+            v.pos.y = THREE.MathUtils.damp(v.pos.y, s.groundY, 14, dt);
+          }
+          resolveObstacleBoxes(v.pos, v.halfW + 0.3, this.villageRig.obstacles);
+          this.resolveWorldVehiclesCollision(v.pos, v.halfW + 0.3, v.height, v.id);
+          v.wheelSpin += (v.speed / 0.56) * dt;
+          if (Math.abs(v.speed) < 0.16) v.speed = 0;
+        } else {
+          v.speed = 0;
+        }
+
+        // Strict NPC Boarding Rule: ONLY if completely unoccupied, stationary (|speed| < 0.25), and hero is away
+        if (
+          npcBoardingsAvailable > 0 &&
+          this.phase === 'playing' &&
+          v.npcParkTimer <= 0 &&
+          v.driverKind === 'none' &&
+          Math.abs(v.speed) < 0.25 &&
+          Math.hypot(this.heroPos.x - v.pos.x, this.heroPos.z - v.pos.z) > 13.0
+        ) {
+          for (let j = 0; j < this.villageRig.villagers.length; j++) {
+            const vil = this.villageRig.villagers[j];
+            if (
+              !vil.alive ||
+              vil.isInsideHouse ||
+              vil.drivingVehicleId ||
+              vil.vehicleCooldown > 0 ||
+              vil.fleeTimer > 0
+            ) {
+              continue;
+            }
+            const dVil = Math.hypot(vil.x - v.pos.x, vil.z - v.pos.z);
+            const vilY = getArchipelagoGroundY(vil.x, vil.z);
+            if (dVil < 7.5 && Math.abs(vilY - v.pos.y) < 3.0) {
+              v.driverKind = 'npc';
+              v.npcDriverIdx = j;
+              v.npcDriveTimer = 16 + Math.random() * 14;
+              vil.drivingVehicleId = v.id;
+              vil.fleeTimer = 0;
+              npcBoardingsAvailable -= 1;
+              break;
+            }
+          }
+        }
+      }
+
+      v.root.position.copy(v.pos);
+      v.root.rotation.set(0, v.yaw, 0);
+      if (v.rig && !(this.carMode !== 'none' && v.id === this.activeVehicleId)) {
+        updateCarRigVisuals(v.rig, {
+          doorAngle: v.doorAngle,
+          steerAngle: v.steerAngle,
+          wheelSpin: v.wheelSpin,
+          headlightsOn: v.headlightsOn,
+          braking: false,
+          reversing: false,
+          pitchLean: v.pitchLean,
+          rollLean: v.rollLean,
+        });
+      }
+      if (v.id === this.activeVehicleId && this.carMode === 'none') {
+        this.syncCarFieldsFromVehicle(v);
+      }
+    }
+
+    // Rebuild live vehicle hazards for Villagers & Quest NPCs + village collision avoidance
+    this.activeVehicleHazards.length = 0;
+    for (let i = 0; i < this.worldVehicles.length; i++) {
+      const v = this.worldVehicles[i];
+      this.activeVehicleHazards.push({
+        id: v.id,
+        x: v.pos.x,
+        y: v.pos.y,
+        z: v.pos.z,
+        vx: Math.sin(v.yaw) * v.speed,
+        vz: Math.cos(v.yaw) * v.speed,
+        yaw: v.yaw,
+        speed: v.speed,
+        halfW: v.halfW,
+        halfL: v.halfL,
+        honking: this.carHornFleeTimer > 0 && v.id === this.activeVehicleId,
+      });
+    }
+
+    if (this.phase !== 'playing') return;
+
+    const isOverworldGuest = this.multiplayerActive && !this.isWorldAuthority();
+
+    // Moving cars crush & kill Monsters and hit & kill exposed NPCs!
+    for (let i = 0; i < this.worldVehicles.length; i++) {
+      const v = this.worldVehicles[i];
+      const absSpd = Math.abs(v.speed);
+      if (absSpd < 2.2) continue;
+
+      const byPlayer = v.driverKind === 'player';
+
+      // 1. Overworld Monsters (surface combat, quiz, coastal sea, low-flying sky)
+      const hitMonster = (m: RoamingMonster): boolean => {
+        if (!m.alive || m.sunburnTimer !== undefined) return false;
+        const spec = MONSTER_SPECS[m.type];
+        const my = m.y ?? getArchipelagoGroundY(m.x, m.z) + spec.hoverY;
+        if (m.isSkyMonster && my > v.pos.y + v.height + 1.25) return false;
+        const pad = 0.5 + spec.hitRadius * 0.55;
+        if (!this.isPointInsideVehicleOBB(v, m.x, my + spec.hitCenterY, m.z, pad, 1.2, 1.4)) {
+          return false;
+        }
+        if (byPlayer) {
+          if (isOverworldGuest) {
+            m.hitFlashTimer = 0.25;
+            this.spawnBurst(m.x, my + 1.4, m.z, 0xfacc15, 18);
+            soundEngine.playBoom();
+            this.triggerHitMarker(true);
+            this.emitMultiplayerPacket({
+              t: 'm_hit',
+              id: m.id,
+              dmg: 999,
+              dx: Math.sin(v.yaw) * v.speed,
+              dz: Math.cos(v.yaw) * v.speed,
+              md: 'overworld',
+            });
+          } else {
+            this.triggerHitMarker(true);
+            this.handleRealTimeMonsterDefeated(m);
+            this.showBanner(`🚗 ${m.name} tertabrak & hancur oleh ${v.name}!`, 2.2);
+          }
+        } else {
+          // NPC-driven vehicle crushes monster cleanly
+          m.alive = false;
+          m.respawnTimer = m.isSeaMonster ? 45 : m.isSkyMonster ? 50 : 0;
+          m.aggroActive = false;
+          m.windupTimer = -1;
+          m.lungeTimer = 0;
+          m.mesh.visible = false;
+          if (!m.isSeaMonster && !m.isSkyMonster) {
+            if (m.mesh.parent) m.mesh.parent.remove(m.mesh);
+            const clickIdx = this.overworldClickables.indexOf(m.mesh);
+            if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
+            this.checkMissionWaveCompletion();
+          }
+          if (this.multiplayerActive && this.hasConnectedPeers && this.isWorldAuthority()) {
+            this.emitMultiplayerPacket({
+              t: 'm_kill',
+              id: m.id,
+              killerUid: 'npc_driver',
+              killerName: v.name,
+              assists: [],
+              isQuiz: false,
+              md: 'overworld',
+              zn: m.zoneId,
+            });
+          }
+          soundEngine.playBoom();
+          this.spawnBurst(m.x, my + 1.5, m.z, 0xfacc15, 24);
+        }
+        v.speed *= 0.88;
+        return true;
+      };
+
+      for (let mi = 0; mi < this.monsters.length; mi++) hitMonster(this.monsters[mi]);
+      for (let si = 0; si < this.seaMonsters.length; si++) hitMonster(this.seaMonsters[si]);
+      for (let ki = 0; ki < this.skyMonsters.length; ki++) hitMonster(this.skyMonsters[ki]);
+
+      // 2. Enemy Shooters
+      for (let si = 0; si < this.shooters.length; si++) {
+        const s = this.shooters[si];
+        if (!s.alive || s.sunburnTimer !== undefined) continue;
+        const sy = getArchipelagoGroundY(s.x, s.z);
+        if (!this.isPointInsideVehicleOBB(v, s.x, sy + 1.2, s.z, 0.75, 1.0, 1.2)) continue;
+        if (byPlayer && isOverworldGuest) {
+          s.hitSquashTimer = 0.24;
+          soundEngine.playBoom();
+          this.spawnBurst(s.x, sy + 1.5, s.z, 0xfbbf24, 18);
+          this.emitMultiplayerPacket({
+            t: 'm_hit',
+            id: s.id,
+            dmg: 999,
+            dx: Math.sin(v.yaw) * v.speed,
+            dz: Math.cos(v.yaw) * v.speed,
+            md: 'overworld',
+            isSh: true,
+          });
+        } else {
+          s.alive = false;
+          s.mesh.visible = false;
+          s.respawnTimer = 0;
+          if (s.isNightShooter) {
+            const savedEntry = this.nightShooterSaved.find((entry) => entry.id === s.id);
+            if (savedEntry) savedEntry.alive = false;
+          }
+          if (this.multiplayerActive && this.hasConnectedPeers && this.isWorldAuthority()) {
+            const hostUid = byPlayer ? this.localMultiplayerUid || 'host' : 'npc_driver';
+            this.emitMultiplayerPacket({
+              t: 'm_kill',
+              id: s.id,
+              killerUid: hostUid,
+              killerName: byPlayer ? this.localPlayerName : v.name,
+              assists: [],
+              isSh: true,
+              md: 'overworld',
+            });
+          }
+          if (byPlayer) {
+            this.monstersDefeated += 1;
+            this.localMabarStats.kills += 1;
+            this.gainXp(5);
+            this.addScore(120);
+            this.triggerHitMarker(true);
+            this.showBanner(`🚗 Penembak Liar tertabrak & hancur oleh ${v.name}! (+5 XP)`, 2.2);
+          }
+          soundEngine.playBoom();
+          this.spawnBurst(s.x, sy + 1.6, s.z, 0xfbbf24, 22);
+        }
+        v.speed *= 0.88;
+      }
+
+      // 3. NPCs hit by fast cars (>= 2.6 m/s)
+      if (absSpd >= 2.6) {
+        for (let vi = 0; vi < this.villageRig.villagers.length; vi++) {
+          const vil = this.villageRig.villagers[vi];
+          if (!vil.alive || vil.isInsideHouse || vil.drivingVehicleId) continue;
+          const vy = getArchipelagoGroundY(vil.x, vil.z);
+          if (!this.isPointInsideVehicleOBB(v, vil.x, vy + 1.1, vil.z, 0.42, 0.8, 0.8)) continue;
+          vil.alive = false;
+          vil.root.visible = false;
+          if (vil.interactable) {
+            vil.interactable.x = 9999;
+            vil.interactable.z = 9999;
+          }
+          soundEngine.playHurt();
+          this.spawnBurst(vil.x, vy + 1.4, vil.z, 0xef4444, 20);
+          if (byPlayer) {
+            this.showBanner(`💥 Warga desa tertabrak ${v.name}!`, 2.6);
+          }
+          v.speed *= 0.84;
+        }
+
+        for (const [npcId, npc] of this.npcs.entries()) {
+          if (npc.koTimer > 0) continue;
+          const ny = getArchipelagoGroundY(npc.x, npc.z);
+          if (!this.isPointInsideVehicleOBB(v, npc.x, ny + 1.2, npc.z, 0.45, 0.8, 0.8)) continue;
+          npc.koTimer = 15.0;
+          npc.fleeTimer = 0;
+          npc.mesh.visible = false;
+          npc.alertMesh.visible = false;
+          if (this.nearbyNpcId === npcId) this.nearbyNpcId = null;
+          const def = NPC_CATALOG.find((item) => item.id === npcId);
+          soundEngine.playHurt();
+          this.spawnBurst(npc.x, ny + 1.5, npc.z, 0xef4444, 22);
+          if (byPlayer) {
+            this.showBanner(`💥 ${def?.name ?? 'Penjaga'} tertabrak ${v.name} & pingsan 15 detik!`, 2.8);
+          }
+          v.speed *= 0.84;
+        }
+      }
+    }
   }
 
 
@@ -9926,7 +10885,7 @@ export class RpgWorldEngine {
   }
 
   private engageMonster(m: RoamingMonster): void {
-    if (m.combatOnly || m.isCaveMob) return;
+    if (m.combatOnly || m.isCaveMob || this.carMode !== 'none') return;
     this.phase = 'battle';
     this.heldKeys.clear();
     this.tapMoveTarget = null;
@@ -10326,7 +11285,7 @@ export class RpgWorldEngine {
       }
       if (obj) {
         if (obj.userData.driveableCar && this.worldMode === 'overworld') {
-          this.enterOrExitCar();
+          this.enterOrExitCar(obj.userData.vehicleId as string | undefined);
           return;
         }
         if (obj.userData.oceanExit && this.worldMode === 'ocean' && this.oceanRig) {
@@ -11126,6 +12085,7 @@ export class RpgWorldEngine {
         }
         if (
           m.combatOnly &&
+          this.carMode === 'none' &&
           this.phase === 'playing' &&
           this.encounterGraceTimer <= 0 &&
           distSqLocal < (1.85 + spec.baseScale * 0.4) ** 2 &&
@@ -11505,6 +12465,7 @@ export class RpgWorldEngine {
           if (
             !shieldBlocked &&
             !jumpedOver &&
+            this.carMode === 'none' &&
             nearestBrawlerTgt.isLocal &&
             this.phase === 'playing' &&
             this.encounterGraceTimer <= 0 &&
@@ -11661,6 +12622,7 @@ export class RpgWorldEngine {
           resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles);
           this.resolveActiveDesaPickupBoxes(mobClamp, mRad);
           resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
+          this.resolveWorldVehiclesCollision(mobClamp, mRad, 2.2);
           if (this.worldObstaclesRig) {
             resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
           }
@@ -11680,6 +12642,7 @@ export class RpgWorldEngine {
             resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles);
             this.resolveActiveDesaPickupBoxes(mobClamp, mRad);
             resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
+            this.resolveWorldVehiclesCollision(mobClamp, mRad, 2.2);
             if (this.worldObstaclesRig) {
               resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
             }
@@ -11774,6 +12737,7 @@ export class RpgWorldEngine {
           resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles);
           this.resolveActiveDesaPickupBoxes(mobClamp, mRad);
           resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
+          this.resolveWorldVehiclesCollision(mobClamp, mRad, 2.2);
           if (this.worldObstaclesRig) {
             resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
           }
@@ -11793,6 +12757,7 @@ export class RpgWorldEngine {
             resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles);
             this.resolveActiveDesaPickupBoxes(mobClamp, mRad);
             resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
+            this.resolveWorldVehiclesCollision(mobClamp, mRad, 2.2);
             if (this.worldObstaclesRig) {
               resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
             }
@@ -11880,6 +12845,8 @@ export class RpgWorldEngine {
 
     const currentDayPhase = this.getCurrentDayPhase();
 
+    this.updateWorldVehiclesAndImpacts(dt);
+
     this.extraVillageColliders.length = 0;
     this.extraVillageColliders.push({
       x: this.heroPos.x,
@@ -11888,6 +12855,7 @@ export class RpgWorldEngine {
       halfD: 0.65,
     });
     for (const npc of this.npcs.values()) {
+      if (npc.koTimer > 0) continue;
       this.extraVillageColliders.push({
         x: npc.x,
         z: npc.z,
@@ -11925,6 +12893,16 @@ export class RpgWorldEngine {
       this.extraVillageColliders.push({ x: s.x, z: s.z, halfW: 0.82, halfD: 0.82 });
     }
     appendVehicleVillageColliders(this.archipelagoRig, this.extraVillageColliders);
+    for (let i = 0; i < this.worldVehicles.length; i++) {
+      const v = this.worldVehicles[i];
+      this.extraVillageColliders.push({
+        x: v.pos.x,
+        z: v.pos.z,
+        halfW: v.halfW + 0.25,
+        halfD: v.halfL + 0.25,
+        rotY: v.yaw,
+      });
+    }
     updateMinecraftVillage(
       this.villageRig,
       dt,
@@ -11937,6 +12915,7 @@ export class RpgWorldEngine {
       this.camera.position.x,
       this.camera.position.z,
       canVisCull,
+      this.activeVehicleHazards,
     );
 
     // Gentle blocky Minecraft-style voxel clouds drift across the sky
@@ -11990,12 +12969,84 @@ export class RpgWorldEngine {
     const isNightShift = currentDayPhase === 'sore' || currentDayPhase === 'malam';
     let npcIdx = 0;
     for (const [npcId, npc] of this.npcs.entries()) {
+      if (npc.koTimer > 0) {
+        npc.koTimer = Math.max(0, npc.koTimer - dt);
+        npc.mesh.visible = false;
+        npc.alertMesh.visible = false;
+        if (npc.koTimer <= 0) {
+          npc.x = npc.standX;
+          npc.z = npc.standZ;
+          npc.yaw = npc.standRotY;
+          npc.poseMode = 'stand';
+          npc.fleeTimer = 0;
+          npc.mesh.position.set(npc.standX, npc.standY, npc.standZ);
+          npc.mesh.visible = true;
+          this.spawnBurst(npc.standX, npc.standY + 1.2, npc.standZ, 0x38bdf8, 12);
+        }
+        npcIdx++;
+        continue;
+      }
+      npc.mesh.visible = true;
+
       const def = NPC_CATALOG.find((item) => item.id === npcId);
       const q = this.quests.find((item) => item.npcId === npcId);
       const showAlert = !q?.claimed;
       const distHero = Math.hypot(this.heroPos.x - npc.x, this.heroPos.z - npc.z);
 
-      if (!isNightShift) {
+      // Threat scan: Quest NPCs sprint away fast when a moving or honking car approaches
+      let threatX = 0;
+      let threatZ = 0;
+      let threatScore = 0;
+      const npcYNow = getArchipelagoGroundY(npc.x, npc.z);
+      for (let hi = 0; hi < this.activeVehicleHazards.length; hi++) {
+        const hz = this.activeVehicleHazards[hi];
+        const spd = Math.abs(hz.speed);
+        if (spd < 0.75 && !hz.honking) continue;
+        if (Math.abs(hz.y - npcYNow) > 4.2) continue;
+        const dx = npc.x - hz.x;
+        const dz = npc.z - hz.z;
+        const d = Math.hypot(dx, dz);
+        const dangerRange = hz.honking ? 18.5 : Math.min(20.0, 9.5 + spd * 0.65);
+        if (d > dangerRange) continue;
+        const invSpd = spd > 0.25 ? 1 / spd : 0;
+        const approachDot =
+          spd > 0.25 && d > 0.1 ? (dx / d) * (hz.vx * invSpd) + (dz / d) * (hz.vz * invSpd) : 0;
+        if (d < 8.8 || hz.honking || approachDot > 0.18) {
+          let awayX = dx;
+          let awayZ = dz;
+          if (spd > 0.5 && d > 0.2) {
+            const perpX = -hz.vz * invSpd;
+            const perpZ = hz.vx * invSpd;
+            const sideSign = dx * perpX + dz * perpZ >= 0 ? 1 : -1;
+            awayX = dx / d + perpX * sideSign * 1.45;
+            awayZ = dz / d + perpZ * sideSign * 1.45;
+          }
+          const score = dangerRange - d + (hz.honking ? 4 : 0);
+          if (score > threatScore) {
+            threatScore = score;
+            threatX = awayX;
+            threatZ = awayZ;
+          }
+        }
+      }
+      if (threatScore > 0) {
+        const [fx, fz] = this.pickSafeNpcFleeDir(npc.x, npc.z, npcYNow, threatX, threatZ);
+        npc.fleeDirX = fx;
+        npc.fleeDirZ = fz;
+        npc.fleeTimer = 1.25;
+      }
+
+      let isFleeingCar = false;
+      if (npc.fleeTimer > 0) {
+        npc.fleeTimer = Math.max(0, npc.fleeTimer - dt);
+        isFleeingCar = true;
+        npc.nightAwake = false;
+        npc.x += npc.fleeDirX * 7.6 * dt;
+        npc.z += npc.fleeDirZ * 7.6 * dt;
+        npc.yaw = Math.atan2(npc.fleeDirX, npc.fleeDirZ);
+        npc.poseMode = 'walk';
+        npc.mesh.position.set(npc.x, getArchipelagoGroundY(npc.x, npc.z), npc.z);
+      } else if (!isNightShift) {
         // Pagi - Sore: kembali ke posisi jaga berdiri seperti biasa
         npc.nightAwake = false;
         const dx = npc.standX - npc.x;
@@ -12077,7 +13128,7 @@ export class RpgWorldEngine {
         }
       }
 
-      if (npc.poseMode === 'walk' && this.isInDesaSapaanArea(npc.x, npc.z)) {
+      if (npc.poseMode === 'walk' && (isFleeingCar || this.isInDesaSapaanArea(npc.x, npc.z))) {
         const npcCol = this._desaColScratch;
         npcCol.x = npc.x;
         npcCol.z = npc.z;
@@ -12094,19 +13145,22 @@ export class RpgWorldEngine {
         resolveObstacleBoxes(npcCol, nRad, this.villageRig.obstacles);
         this.resolveActiveDesaPickupBoxes(npcCol, nRad);
         resolveArchipelagoVehicleCollisions(this.archipelagoRig, npcCol, nRad, 2.2);
+        this.resolveWorldVehiclesCollision(npcCol, nRad, 2.2);
         if (this.worldObstaclesRig) {
           resolveSolidObstacleCollisions(this.worldObstaclesRig, npcCol, nRad, 2.2);
         }
-        this.resolveDesaLivingSeparation(
-          npcCol,
-          nRad,
-          getArchipelagoGroundY(npcCol.x, npcCol.z),
-          undefined,
-          undefined,
-          npcId,
-        );
-        resolveObstacleBoxes(npcCol, nRad, this.villageRig.obstacles);
-        this.resolveActiveDesaPickupBoxes(npcCol, nRad);
+        if (this.isInDesaSapaanArea(npcCol.x, npcCol.z)) {
+          this.resolveDesaLivingSeparation(
+            npcCol,
+            nRad,
+            getArchipelagoGroundY(npcCol.x, npcCol.z),
+            undefined,
+            undefined,
+            npcId,
+          );
+          resolveObstacleBoxes(npcCol, nRad, this.villageRig.obstacles);
+          this.resolveActiveDesaPickupBoxes(npcCol, nRad);
+        }
         if (ownPostObs && nearOwnBed) {
           ownPostObs.halfW = prevObsHw;
           ownPostObs.halfD = prevObsHd;
@@ -12136,7 +13190,14 @@ export class RpgWorldEngine {
       }
       const isNear = distHero < 5.5;
       if (distHero < 38 || npc.poseMode === 'walk') {
-        animateZoneNpc(npc.mesh, this.elapsed, npcIdx * 1.15, isNear, dt, npc.poseMode);
+        animateZoneNpc(
+          npc.mesh,
+          isFleeingCar ? this.elapsed * 2.1 : this.elapsed,
+          npcIdx * 1.15,
+          isNear,
+          dt,
+          npc.poseMode,
+        );
       }
       npcIdx++;
     }
@@ -12953,13 +14014,14 @@ export class RpgWorldEngine {
 
       // Prevent Hero from walking straight through Quest NPCs
       for (const npc of this.npcs.values()) {
+        if (npc.koTimer > 0) continue;
         const ny = getArchipelagoGroundY(npc.x, npc.z);
         pushHeroCircle(npc.x, ny, npc.z, 1.05, 2.4);
       }
 
       // Prevent Hero from walking through Villagers, Golems, Llamas, Critters & Pillagers
       for (const v of this.villageRig.villagers) {
-        if (!v.root.visible) continue;
+        if (!v.alive || !v.root.visible || v.drivingVehicleId) continue;
         pushHeroCircle(v.x, v.root.position.y, v.z, 1.02);
       }
       for (const g of this.villageRig.golems) {
@@ -13526,25 +14588,34 @@ export class RpgWorldEngine {
         }
       }
       }
-      if (this.worldMode === 'overworld' && this.carRig) {
-        const doorPt = this.getCarWorldPoint(this.carRig.boardOutsideOffset);
-        this.nearCar =
-          Math.hypot(this.heroPos.x - this.carPos.x, this.heroPos.z - this.carPos.z) < 5.6 ||
-          Math.hypot(this.heroPos.x - doorPt.x, this.heroPos.z - doorPt.z) < 4.0;
-        this.carRig.root.position.copy(this.carPos);
-        this.carRig.root.rotation.set(0, this.carYaw, 0);
-        updateCarRigVisuals(this.carRig, {
-          doorAngle: this.carDoorAngle,
-          steerAngle: this.carSteerAngle,
-          wheelSpin: this.carWheelSpin,
-          headlightsOn: this.carHeadlightsOn,
-          braking: false,
-          reversing: false,
-          pitchLean: 0,
-          rollLean: 0,
-        });
+      if (this.worldMode === 'overworld' && this.worldVehicles.length > 0) {
+        let bestVeh: WorldVehicle | null = null;
+        let bestScore = Infinity;
+        for (let i = 0; i < this.worldVehicles.length; i++) {
+          const v = this.worldVehicles[i];
+          if (v.driverKind !== 'none') continue;
+          if (Math.abs(this.heroPos.y - v.pos.y) > 3.5) continue;
+          const distCenter = Math.hypot(this.heroPos.x - v.pos.x, this.heroPos.z - v.pos.z);
+          const doorPt = this.getVehicleWorldPoint(v, v.boardOffset);
+          const distDoor = Math.hypot(this.heroPos.x - doorPt.x, this.heroPos.z - doorPt.z);
+          const reachCenter = v.kind === 'bus' ? 7.4 : 6.0;
+          if (distCenter < reachCenter || distDoor < 4.4) {
+            const score = Math.min(distCenter, distDoor);
+            if (score < bestScore) {
+              bestScore = score;
+              bestVeh = v;
+            }
+          }
+        }
+        this.nearCar = Boolean(bestVeh);
+        this.nearVehicleId = bestVeh?.id ?? null;
+        const heroCar = this.worldVehicles.find((v) => v.id === 'hero_car');
+        if (heroCar) {
+          this.syncCarFieldsFromVehicle(heroCar);
+        }
       } else {
         this.nearCar = false;
+        this.nearVehicleId = null;
       }
       soundEngine.setCarEngine(false, 0);
     }
@@ -13774,10 +14845,11 @@ export class RpgWorldEngine {
       hasEquippedWeapon &&
       this.carMode === 'none' &&
       (!this.isSwimming || underwaterNow || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
+    const isHeroRigCar = Boolean(this.getActiveVehicle()?.rig);
     const carSeatedNow =
       this.carMode === 'driving' ||
-      (this.carMode === 'entering' && this.carAnimTimer > 1.35) ||
-      (this.carMode === 'exiting' && this.carAnimTimer < 0.72);
+      (this.carMode === 'entering' && this.carAnimTimer > (isHeroRigCar ? 1.35 : 0.45)) ||
+      (this.carMode === 'exiting' && this.carAnimTimer < (isHeroRigCar ? 0.72 : 0.3));
     applyHeroWeaponPose(this.hero, this.activeWeapon, canHoldInCurrentEnv, {
       speed: this.carMode !== 'none' ? 0 : speed,
       walkCycle: this.walkCycle,
@@ -14167,16 +15239,19 @@ export class RpgWorldEngine {
 
       let bestNpc: string | null = null;
       let bestNpcDist = 5.6;
-      for (const npc of NPC_CATALOG) {
-        const live = this.npcs.get(npc.id);
-        const nx = live?.x ?? npc.x;
-        const nz = live?.z ?? npc.z;
-        const ny = getArchipelagoGroundY(nx, nz);
-        if (Math.abs(this.heroPos.y - ny) > 3.5) continue;
-        const d = Math.hypot(this.heroPos.x - nx, this.heroPos.z - nz);
-        if (d < bestNpcDist) {
-          bestNpcDist = d;
-          bestNpc = npc.id;
+      if (this.carMode === 'none') {
+        for (const npc of NPC_CATALOG) {
+          const live = this.npcs.get(npc.id);
+          if (live && live.koTimer > 0) continue;
+          const nx = live?.x ?? npc.x;
+          const nz = live?.z ?? npc.z;
+          const ny = getArchipelagoGroundY(nx, nz);
+          if (Math.abs(this.heroPos.y - ny) > 3.5) continue;
+          const d = Math.hypot(this.heroPos.x - nx, this.heroPos.z - nz);
+          if (d < bestNpcDist) {
+            bestNpcDist = d;
+            bestNpc = npc.id;
+          }
         }
       }
       this.nearbyNpcId = bestNpc;
@@ -14344,7 +15419,7 @@ export class RpgWorldEngine {
           }
         }
       }
-      if (d < triggerDist && this.encounterGraceTimer <= 0) {
+      if (this.carMode === 'none' && d < triggerDist && this.encounterGraceTimer <= 0) {
         this.engageMonster(m);
         break;
       }
@@ -14970,6 +16045,7 @@ export class RpgWorldEngine {
         resolveObstacleBoxes(sClamp, sRad, this.villageRig.obstacles);
         this.resolveActiveDesaPickupBoxes(sClamp, sRad);
         resolveArchipelagoVehicleCollisions(this.archipelagoRig, sClamp, sRad, 2.2);
+        this.resolveWorldVehiclesCollision(sClamp, sRad, 2.2);
         if (this.worldObstaclesRig) {
           resolveSolidObstacleCollisions(this.worldObstaclesRig, sClamp, sRad, 2.2);
         }
@@ -14984,6 +16060,7 @@ export class RpgWorldEngine {
           resolveObstacleBoxes(sClamp, sRad, this.villageRig.obstacles);
           this.resolveActiveDesaPickupBoxes(sClamp, sRad);
           resolveArchipelagoVehicleCollisions(this.archipelagoRig, sClamp, sRad, 2.2);
+          this.resolveWorldVehiclesCollision(sClamp, sRad, 2.2);
           if (this.worldObstaclesRig) {
             resolveSolidObstacleCollisions(this.worldObstaclesRig, sClamp, sRad, 2.2);
           }
@@ -15420,8 +16497,23 @@ export class RpgWorldEngine {
           }
         }
       } else if (!p.fromPlayer && !p.visualOnly) {
-        // Enemy projectile hitting Hoot
+        if (this.worldMode === 'overworld') {
+          let blockedByCar = false;
+          for (let vi = 0; vi < this.worldVehicles.length; vi++) {
+            const v = this.worldVehicles[vi];
+            if (this.isPointInsideVehicleOBB(v, p.x, p.y, p.z, 0.25, 0.25, 0.35)) {
+              p.active = false;
+              p.mesh.visible = false;
+              this.spawnBurst(p.x, p.y, p.z, 0xfbbf24, 6);
+              blockedByCar = true;
+              break;
+            }
+          }
+          if (blockedByCar) continue;
+        }
+        // Enemy projectile hitting Hoot (blocked when protected inside any car)
         if (
+          this.carMode === 'none' &&
           this.encounterGraceTimer <= 0 &&
           Math.hypot(p.x - this.heroPos.x, p.z - this.heroPos.z) < 1.35 &&
           Math.abs(p.y - (this.heroPos.y + 1.35)) < 1.85
@@ -15759,25 +16851,36 @@ export class RpgWorldEngine {
     }
 
     if (this.phase === 'playing' && this.carMode === 'none') {
-      const carDistSq =
-        (this.heroPos.x - this.carPos.x) ** 2 + (this.heroPos.z - this.carPos.z) ** 2;
-      if (carDistSq <= 24 * 24) {
-        const carLabelPos = projectPoint(this.carPos.x, this.carPos.y + 3.8, this.carPos.z);
-        if (carLabelPos) {
-          labels.push({
-            id: 'driveable_car',
-            x: carLabelPos.x,
-            y: carLabelPos.y,
-            title: this.nearCar ? '🚗 Mobil Petualang (Tekan E untuk Masuk)' : '🚗 Mobil Petualang',
-            subtext: this.nearCar ? 'Klik atau tekan Masuk Mobil' : 'Bisa dikendarai!',
-            kind: 'pickup',
-          });
-        }
+      for (let vi = 0; vi < this.worldVehicles.length; vi++) {
+        const v = this.worldVehicles[vi];
+        const carDistSq = (this.heroPos.x - v.pos.x) ** 2 + (this.heroPos.z - v.pos.z) ** 2;
+        if (carDistSq > 26 * 26) continue;
+        const carLabelPos = projectPoint(v.pos.x, v.pos.y + v.height + 1.2, v.pos.z);
+        if (!carLabelPos) continue;
+        const isNearThis = v.id === this.nearVehicleId;
+        const isNpcDriving = v.driverKind === 'npc';
+        labels.push({
+          id: `car_${v.id}`,
+          x: carLabelPos.x,
+          y: carLabelPos.y,
+          title: isNpcDriving
+            ? `🚕 ${v.name} (Dikendarai NPC)`
+            : isNearThis
+            ? `🚗 ${v.name} (Tekan E untuk Masuk)`
+            : `🚗 ${v.name}`,
+          subtext: isNpcDriving
+            ? 'Sedang dipakai NPC'
+            : isNearThis
+            ? 'Klik atau tekan Masuk Mobil'
+            : 'Kosong — bisa dikendarai!',
+          kind: 'pickup',
+        });
       }
     }
 
     for (const npc of NPC_CATALOG) {
       const liveNpc = this.npcs.get(npc.id);
+      if (liveNpc && liveNpc.koTimer > 0) continue;
       const nx = liveNpc?.x ?? npc.x;
       const nz = liveNpc?.z ?? npc.z;
       const ny = getArchipelagoGroundY(nx, nz);
@@ -16041,6 +17144,7 @@ export class RpgWorldEngine {
       monAttackProg = 1 - m.lungeTimer / 0.32;
 
       if (
+        this.carMode === 'none' &&
         nearestSeaTgt.isLocal &&
         this.phase === 'playing' &&
         this.encounterGraceTimer <= 0 &&
@@ -16322,6 +17426,7 @@ export class RpgWorldEngine {
       monAttackProg = 1 - m.lungeTimer / 0.58;
 
       if (
+        this.carMode === 'none' &&
         nearestSkyTgt.isLocal &&
         this.phase === 'playing' &&
         this.encounterGraceTimer <= 0 &&
@@ -16631,14 +17736,17 @@ export class RpgWorldEngine {
           label: 'Pakaian Renang',
         });
       }
-      blips.push({
-        id: 'driveable_car',
-        x: this.carPos.x,
-        z: this.carPos.z,
-        kind: 'car',
-        color: '#38bdf8',
-        label: 'Mobil Petualang',
-      });
+      for (let vi = 0; vi < this.worldVehicles.length; vi++) {
+        const v = this.worldVehicles[vi];
+        blips.push({
+          id: `car_${v.id}`,
+          x: v.pos.x,
+          z: v.pos.z,
+          kind: 'car',
+          color: v.driverKind === 'npc' ? '#f59e0b' : v.radarColor,
+          label: v.driverKind === 'npc' ? `${v.name} (NPC)` : v.name,
+        });
+      }
       const spotKindByZone: Record<ZoneId, RadarBlipKind> = {
         desa_sapaan: 'spot_desa',
         pasar_rasa: 'spot_pasar',
