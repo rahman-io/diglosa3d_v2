@@ -2,11 +2,14 @@ import React, { useEffect, useRef, useState } from 'react';
 import {
   Heart,
   HelpCircle,
+  Lightbulb,
   Lock,
   Mic,
   MicOff,
+  ParkingCircle,
   Search,
   X,
+  Zap,
 } from 'lucide-react';
 import {
   VOICE_COMMAND_CATALOG,
@@ -1497,8 +1500,8 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         </div>
       )}
 
-      {/* Clean GTA-style Left Floating Joystick Zone (hidden while inside Car Mode) */}
-      {showTouchControls && !inCar && (
+      {/* Clean GTA-style Left Floating Joystick Zone (active On-Foot AND in Car Mode!) */}
+      {showTouchControls && (
         <>
           <div
             onPointerDown={(e) => {
@@ -1530,8 +1533,28 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               }
             }}
             className="pointer-events-auto fixed bottom-12 left-0 top-28 z-10 w-[44vw] touch-none sm:bottom-16 sm:top-32 sm:w-[40vw]"
-            aria-label="Area Floating Joystick"
+            aria-label={inCar ? 'Area Joystick Kemudi Mobil' : 'Area Floating Joystick'}
           />
+
+          {inCar && !floatingOrigin && (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none fixed bottom-16 left-5 z-10 flex h-[104px] w-[104px] items-center justify-center opacity-55 sm:bottom-20 sm:left-8 sm:h-[118px] sm:w-[118px]"
+            >
+              <img
+                src="./assets/ui/joystick_base.png"
+                alt=""
+                className="pointer-events-none h-full w-full select-none object-contain"
+                draggable={false}
+              />
+              <img
+                src="./assets/ui/joystick_knob.png"
+                alt=""
+                className="pointer-events-none absolute h-[42px] w-[42px] select-none object-contain sm:h-[48px] sm:w-[48px]"
+                draggable={false}
+              />
+            </div>
+          )}
 
           {floatingOrigin && (
             <div
@@ -2213,10 +2236,19 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               onClick={onToggleCar}
               title="Buka Pintu & Masuk Mobil (E)"
               aria-label="Masuk Mobil"
-              className="flex h-[52px] items-center gap-1.5 rounded-full border-2 border-sky-300 bg-sky-600/95 px-3.5 text-xs font-black text-white shadow-[0_5px_16px_rgba(14,165,233,0.62)] transition-transform hover:scale-105 active:scale-90"
+              className="relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_16px_rgba(14,165,233,0.62)] ring-2 ring-sky-300/80 transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
             >
-              <span>🚗</span>
-              <span>Masuk Mobil (E)</span>
+              <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                <img
+                  src="./assets/aistudio/btn_car_enter_7623e10e.jpeg"
+                  alt="Masuk Mobil"
+                  className="pointer-events-none h-full w-full scale-[1.24] select-none object-cover"
+                  draggable={false}
+                />
+              </span>
+              <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-sky-300/75 bg-slate-950/92 px-1.5 text-[8px] font-black leading-tight text-sky-100 shadow sm:text-[9px]">
+                Masuk (E)
+              </span>
             </button>
           )}
 
@@ -2454,10 +2486,10 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         </div>
       )}
 
-      {/* FULL DRIVING HUD (replaces joystick, jump, swim & weapon buttons when in Car Mode!) */}
+      {/* FULL DRIVING HUD (Joystick steers & moves left side; right thumb holds Gas/Brake/Turbo/Horn/Lights/Exit medallions!) */}
       {inCar && hud.carState && (() => {
         const cs = hud.carState;
-        const bindHold = (ctrl: 'gas' | 'brake' | 'left' | 'right' | 'boost') => ({
+        const bindHold = (ctrl: 'gas' | 'brake' | 'boost') => ({
           onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
             e.preventDefault();
             try {
@@ -2474,11 +2506,22 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
         return (
           <>
-            {/* Bottom-Center Speedometer & Gear Dashboard */}
-            <div className="pointer-events-none fixed bottom-3 left-1/2 z-20 -translate-x-1/2 sm:bottom-5">
+            {/* Bottom-Center Speedometer & Gear Dashboard (shifted cleanly above pedals on narrow portrait screens) */}
+            <div className="pointer-events-none fixed bottom-[154px] left-1/2 z-20 -translate-x-1/2 sm:bottom-5">
               {carMode === 'entering' || carMode === 'exiting' ? (
-                <div className="flex items-center gap-2 rounded-2xl border border-sky-300/65 bg-slate-950/92 px-4 py-2 text-xs font-black text-sky-100 shadow-2xl">
-                  <span className="animate-pulse text-base">🚗</span>
+                <div className="flex items-center gap-2.5 rounded-2xl border border-sky-300/65 bg-slate-950/92 px-3.5 py-2 text-xs font-black text-sky-100 shadow-2xl">
+                  <span className="h-7 w-7 shrink-0 overflow-hidden rounded-full border border-sky-300/70 bg-slate-900">
+                    <img
+                      src={
+                        carMode === 'entering'
+                          ? './assets/aistudio/btn_car_enter_7623e10e.jpeg'
+                          : './assets/aistudio/btn_car_exit_18ede182.jpeg'
+                      }
+                      alt=""
+                      className="h-full w-full scale-[1.2] object-cover"
+                      draggable={false}
+                    />
+                  </span>
                   <span>
                     {carMode === 'entering'
                       ? 'Membuka pintu & masuk ke kursi pengemudi...'
@@ -2486,7 +2529,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                   </span>
                 </div>
               ) : (
-                <div className="flex items-center gap-3 rounded-2xl border border-sky-300/50 bg-slate-950/92 px-3.5 py-2 text-white shadow-2xl">
+                <div className="pointer-events-auto flex items-center gap-3 rounded-2xl border border-sky-300/50 bg-slate-950/92 px-3.5 py-2 text-white shadow-2xl">
                   <div
                     className={`flex h-9 w-9 items-center justify-center rounded-xl border font-mono-nums text-base font-black ${
                       cs.gear === 'R'
@@ -2506,139 +2549,182 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                       <span className="text-[10px] font-extrabold text-slate-400">KM/H</span>
                     </div>
                     <div className="mt-1 flex items-center gap-1.5 text-[9px] font-black">
-                      <span className={cs.handbrakeOn ? 'text-rose-300' : 'text-slate-400'}>
-                        {cs.handbrakeOn ? '🅿️ REM TANGAN' : 'WASD / Tombol'}
-                      </span>
-                      {cs.headlightsOn && <span className="text-amber-300">💡 LAMPU</span>}
-                      {cs.turboActive && <span className="text-cyan-300">⚡ TURBO</span>}
+                      <button
+                        type="button"
+                        onClick={() => onToggleCarHandbrake?.()}
+                        title="Aktif / Lepas Rem Parkir (Spasi / P)"
+                        className={`inline-flex items-center gap-0.5 rounded px-1.5 py-0.5 transition active:scale-95 ${
+                          cs.handbrakeOn
+                            ? 'bg-rose-600/85 text-white ring-1 ring-rose-300/80'
+                            : 'bg-white/10 text-slate-300 hover:bg-white/15'
+                        }`}
+                      >
+                        <ParkingCircle className="h-2.5 w-2.5" />
+                        <span>{cs.handbrakeOn ? 'REM PARKIR' : 'Joystick / WASD'}</span>
+                      </button>
+                      {cs.headlightsOn && (
+                        <span className="inline-flex items-center gap-0.5 text-amber-300">
+                          <Lightbulb className="h-2.5 w-2.5" />
+                          <span>LAMPU</span>
+                        </span>
+                      )}
+                      {cs.turboActive && (
+                        <span className="inline-flex items-center gap-0.5 text-cyan-300">
+                          <Zap className="h-2.5 w-2.5" />
+                          <span>TURBO</span>
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
               )}
             </div>
 
-            {/* Bottom-Left Steering Paddles + Horn & Headlights */}
-            <div className="pointer-events-auto fixed bottom-14 left-2.5 z-20 flex flex-col gap-1.5 sm:bottom-16 sm:left-4">
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  data-no-click-sfx="true"
-                  onClick={() => onCarHorn?.()}
-                  title="Bunyikan Klakson (H)"
-                  className="flex h-8 items-center gap-1 rounded-xl border border-amber-300/60 bg-slate-950/92 px-2.5 text-[10px] font-black text-amber-200 shadow-lg transition hover:bg-slate-900 active:scale-95 sm:h-9 sm:text-[11px]"
-                >
-                  <span>🔊</span>
-                  <span>Klakson</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onToggleCarHeadlights?.()}
-                  title="Nyalakan / Matikan Lampu Depan (L)"
-                  className={`flex h-8 items-center gap-1 rounded-xl border px-2.5 text-[10px] font-black shadow-lg transition active:scale-95 sm:h-9 sm:text-[11px] ${
-                    cs.headlightsOn
-                      ? 'border-amber-300 bg-amber-500/85 text-slate-950'
-                      : 'border-slate-500/60 bg-slate-950/92 text-slate-200 hover:bg-slate-900'
-                  }`}
-                >
-                  <span>💡</span>
-                  <span>Lampu</span>
-                </button>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={!isCarDriving}
-                  data-no-click-sfx="true"
-                  {...bindHold('left')}
-                  title="Belok Kiri (A / Panah Kiri)"
-                  aria-label="Belok Kiri"
-                  className="flex h-14 w-16 touch-none select-none items-center justify-center rounded-2xl border-2 border-sky-300/75 bg-slate-950/92 text-sm font-black text-sky-100 shadow-xl transition active:scale-95 active:bg-sky-700 disabled:opacity-45 sm:h-16 sm:w-20 sm:text-base"
-                >
-                  ◀ Kiri
-                </button>
-                <button
-                  type="button"
-                  disabled={!isCarDriving}
-                  data-no-click-sfx="true"
-                  {...bindHold('right')}
-                  title="Belok Kanan (D / Panah Kanan)"
-                  aria-label="Belok Kanan"
-                  className="flex h-14 w-16 touch-none select-none items-center justify-center rounded-2xl border-2 border-sky-300/75 bg-slate-950/92 text-sm font-black text-sky-100 shadow-xl transition active:scale-95 active:bg-sky-700 disabled:opacity-45 sm:h-16 sm:w-20 sm:text-base"
-                >
-                  Kanan ▶
-                </button>
-              </div>
-            </div>
+            {/* Bottom-Right Ergonomic Medallion Cluster: Gas, Brake, Turbo, Horn, Lights, Exit */}
+            <div className="pointer-events-none fixed bottom-3 right-3 z-20 h-[156px] w-[212px] sm:bottom-5 sm:right-5 sm:h-[184px] sm:w-[248px]">
+              {/* Horn Medallion (Left of Brake) */}
+              <button
+                type="button"
+                data-no-click-sfx="true"
+                onClick={() => onCarHorn?.()}
+                title="Bunyikan Klakson (H)"
+                aria-label="Klakson"
+                className="pointer-events-auto absolute bottom-[8px] right-[156px] flex h-[48px] w-[48px] touch-none select-none items-center justify-center rounded-full shadow-[0_5px_14px_rgba(245,158,11,0.52)] ring-2 ring-amber-300/80 transition-transform hover:scale-105 active:scale-90 sm:bottom-[10px] sm:right-[184px] sm:h-[56px] sm:w-[56px]"
+              >
+                <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                  <img
+                    src="./assets/aistudio/btn_car_horn_e2392958.jpeg"
+                    alt="Klakson"
+                    className="pointer-events-none h-full w-full scale-[1.18] select-none object-cover"
+                    draggable={false}
+                  />
+                </span>
+                <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-amber-300/70 bg-slate-950/92 px-1.5 text-[8px] font-black leading-tight text-amber-100 shadow sm:text-[9px]">
+                  Klakson
+                </span>
+              </button>
 
-            {/* Bottom-Right Gas, Brake/Reverse, Handbrake, Turbo & Exit Car */}
-            <div className="pointer-events-auto fixed bottom-3 right-2.5 z-20 flex flex-col items-end gap-1.5 sm:bottom-5 sm:right-5">
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  disabled={!isCarDriving}
-                  onClick={() => onToggleCarHandbrake?.()}
-                  title="Aktif / Lepas Rem Tangan (Spasi)"
-                  className={`flex h-8 items-center gap-1 rounded-xl border px-2.5 text-[10px] font-black shadow-lg transition active:scale-95 disabled:opacity-45 sm:h-9 sm:text-[11px] ${
-                    cs.handbrakeOn
-                      ? 'border-rose-300 bg-rose-600/95 text-white ring-1 ring-rose-200'
-                      : 'border-white/25 bg-slate-950/92 text-slate-200 hover:bg-slate-900'
-                  }`}
-                >
-                  <span>🅿️</span>
-                  <span>Rem Tangan</span>
-                </button>
-                {onToggleCar && (
-                  <button
-                    type="button"
-                    disabled={!isCarDriving}
-                    onClick={onToggleCar}
-                    title="Berhenti & Keluar Mobil (E)"
-                    className="flex h-8 items-center gap-1 rounded-xl border border-amber-300/80 bg-amber-600/95 px-3 text-[10px] font-black text-white shadow-lg transition hover:bg-amber-500 active:scale-95 disabled:opacity-45 sm:h-9 sm:text-[11px]"
-                  >
-                    <span>🚪</span>
-                    <span>Keluar (E)</span>
-                  </button>
-                )}
-              </div>
+              {/* Headlights Medallion (Upper-Left of Brake) */}
+              <button
+                type="button"
+                onClick={() => onToggleCarHeadlights?.()}
+                title="Nyalakan / Matikan Lampu Depan (L)"
+                aria-label="Lampu Depan"
+                className={`pointer-events-auto absolute bottom-[68px] right-[140px] flex h-[48px] w-[48px] touch-none select-none items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:bottom-[80px] sm:right-[166px] sm:h-[56px] sm:w-[56px] ${
+                  cs.headlightsOn
+                    ? 'ring-2 ring-amber-300 shadow-[0_0_18px_rgba(251,191,36,0.85)]'
+                    : 'opacity-80 ring-2 ring-slate-400/60 grayscale-[25%] shadow-[0_5px_12px_rgba(15,23,42,0.7)]'
+                }`}
+              >
+                <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                  <img
+                    src="./assets/aistudio/btn_car_lights_8d7f17c4.jpeg"
+                    alt="Lampu"
+                    className="pointer-events-none h-full w-full scale-[1.16] select-none object-cover"
+                    draggable={false}
+                  />
+                </span>
+                <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-amber-300/70 bg-slate-950/92 px-1.5 text-[8px] font-black leading-tight text-amber-100 shadow sm:text-[9px]">
+                  Lampu
+                </span>
+              </button>
 
-              <div className="flex items-end gap-1.5 sm:gap-2">
+              {/* Turbo Boost Medallion (Upper-Left Arc above Gas & Brake) */}
+              <button
+                type="button"
+                disabled={!isCarDriving}
+                data-no-click-sfx="true"
+                {...bindHold('boost')}
+                title="Tahan untuk Turbo (Shift)"
+                aria-label="Turbo"
+                className={`pointer-events-auto absolute bottom-[84px] right-[72px] flex h-[54px] w-[54px] touch-none select-none items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 disabled:opacity-45 sm:bottom-[98px] sm:right-[86px] sm:h-[62px] sm:w-[62px] ${
+                  cs.turboActive
+                    ? 'scale-110 ring-2 ring-cyan-200 shadow-[0_0_20px_rgba(34,211,238,0.95)]'
+                    : 'ring-2 ring-cyan-300/80 shadow-[0_5px_15px_rgba(34,211,238,0.55)]'
+                }`}
+              >
+                <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                  <img
+                    src="./assets/aistudio/btn_car_turbo_7ad57721.jpeg"
+                    alt="Turbo"
+                    className="pointer-events-none h-full w-full scale-[1.14] select-none object-cover"
+                    draggable={false}
+                  />
+                </span>
+                <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-cyan-300/75 bg-slate-950/92 px-1.5 text-[8px] font-black leading-tight text-cyan-100 shadow sm:text-[9px]">
+                  TURBO
+                </span>
+              </button>
+
+              {/* Exit Car Medallion (Directly above Gas) */}
+              {onToggleCar && (
                 <button
                   type="button"
                   disabled={!isCarDriving}
-                  data-no-click-sfx="true"
-                  {...bindHold('boost')}
-                  title="Tahan untuk Turbo (Shift)"
-                  aria-label="Turbo"
-                  className="flex h-12 w-14 touch-none select-none flex-col items-center justify-center rounded-2xl border-2 border-cyan-300/80 bg-cyan-900/92 text-[10px] font-black text-cyan-100 shadow-xl transition active:scale-95 active:bg-cyan-500 active:text-slate-950 disabled:opacity-45 sm:h-14 sm:w-16 sm:text-[11px]"
+                  onClick={onToggleCar}
+                  title="Berhenti & Keluar Mobil (E)"
+                  aria-label="Keluar Mobil"
+                  className="pointer-events-auto absolute bottom-[90px] right-[4px] flex h-[52px] w-[52px] touch-none select-none items-center justify-center rounded-full shadow-[0_5px_15px_rgba(249,115,22,0.58)] ring-2 ring-amber-300/85 transition-transform hover:scale-105 active:scale-90 disabled:opacity-45 sm:bottom-[106px] sm:right-[6px] sm:h-[60px] sm:w-[60px]"
                 >
-                  <span className="text-sm leading-none">⚡</span>
-                  <span>TURBO</span>
+                  <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                    <img
+                      src="./assets/aistudio/btn_car_exit_18ede182.jpeg"
+                      alt="Keluar Mobil"
+                      className="pointer-events-none h-full w-full scale-[1.16] select-none object-cover"
+                      draggable={false}
+                    />
+                  </span>
+                  <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-amber-300/75 bg-slate-950/92 px-1.5 text-[8px] font-black leading-tight text-amber-100 shadow sm:text-[9px]">
+                    Keluar (E)
+                  </span>
                 </button>
-                <button
-                  type="button"
-                  disabled={!isCarDriving}
-                  data-no-click-sfx="true"
-                  {...bindHold('brake')}
-                  title="Tahan untuk Rem / Mundur (S / Panah Bawah)"
-                  aria-label="Rem dan Mundur"
-                  className="flex h-14 w-[72px] touch-none select-none flex-col items-center justify-center rounded-2xl border-2 border-rose-400/85 bg-rose-900/92 text-[10px] font-black text-rose-100 shadow-xl transition active:scale-95 active:bg-rose-600 disabled:opacity-45 sm:h-16 sm:w-[82px] sm:text-xs"
-                >
-                  <span className="text-sm leading-none">🛑</span>
-                  <span>REM/MUNDUR</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={!isCarDriving}
-                  data-no-click-sfx="true"
-                  {...bindHold('gas')}
-                  title="Tahan untuk Gas Maju (W / Panah Atas)"
-                  aria-label="Gas Maju"
-                  className="flex h-16 w-[74px] touch-none select-none flex-col items-center justify-center rounded-2xl border-2 border-emerald-300 bg-emerald-600/95 text-xs font-black text-white shadow-[0_6px_18px_rgba(16,185,129,0.55)] transition active:scale-95 active:bg-emerald-400 active:text-slate-950 disabled:opacity-45 sm:h-[76px] sm:w-[86px] sm:text-sm"
-                >
-                  <span className="text-base leading-none">⛽</span>
-                  <span>GAS</span>
-                </button>
-              </div>
+              )}
+
+              {/* Brake / Reverse Medallion (Left of Gas) */}
+              <button
+                type="button"
+                disabled={!isCarDriving}
+                data-no-click-sfx="true"
+                {...bindHold('brake')}
+                title="Tahan untuk Rem / Mundur (S / Panah Bawah)"
+                aria-label="Rem dan Mundur"
+                className="pointer-events-auto absolute bottom-[4px] right-[86px] flex h-[60px] w-[60px] touch-none select-none items-center justify-center rounded-full shadow-[0_5px_16px_rgba(244,63,94,0.58)] ring-2 ring-rose-400/85 transition-transform hover:scale-105 active:scale-90 disabled:opacity-45 sm:bottom-[6px] sm:right-[102px] sm:h-[70px] sm:w-[70px]"
+              >
+                <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                  <img
+                    src="./assets/aistudio/btn_car_brake_ea27cd8a.jpeg"
+                    alt="Rem dan Mundur"
+                    className="pointer-events-none h-full w-full scale-[1.1] select-none object-cover"
+                    draggable={false}
+                  />
+                </span>
+                <span className="pointer-events-none absolute -bottom-1.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-rose-300/75 bg-slate-950/92 px-1.5 text-[8px] font-black leading-tight text-rose-100 shadow sm:text-[9px]">
+                  REM
+                </span>
+              </button>
+
+              {/* Gas / Accelerator Primary Thumb Medallion */}
+              <button
+                type="button"
+                disabled={!isCarDriving}
+                data-no-click-sfx="true"
+                {...bindHold('gas')}
+                title="Tahan untuk Gas Maju (W / Panah Atas)"
+                aria-label="Gas Maju"
+                className="pointer-events-auto absolute bottom-0 right-0 flex h-[76px] w-[76px] touch-none select-none items-center justify-center rounded-full shadow-[0_6px_18px_rgba(16,185,129,0.62)] ring-2 ring-emerald-300/90 transition-transform hover:scale-105 active:scale-90 disabled:opacity-45 sm:h-[90px] sm:w-[90px]"
+              >
+                <span className="pointer-events-none h-full w-full overflow-hidden rounded-full bg-slate-950">
+                  <img
+                    src="./assets/aistudio/btn_car_gas_3821c6db.jpeg"
+                    alt="Gas Maju"
+                    className="pointer-events-none h-full w-full scale-[1.1] select-none object-cover"
+                    draggable={false}
+                  />
+                </span>
+                <span className="pointer-events-none absolute -bottom-1 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full border border-emerald-300/80 bg-slate-950/92 px-2 text-[9px] font-black leading-tight text-emerald-100 shadow sm:text-[10px]">
+                  GAS
+                </span>
+              </button>
             </div>
           </>
         );

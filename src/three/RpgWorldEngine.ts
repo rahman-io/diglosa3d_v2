@@ -6801,8 +6801,20 @@ export class RpgWorldEngine {
   private buildCarHudState(): CarHudState | null {
     if (this.phase !== 'playing' || this.worldMode !== 'overworld') return null;
     const speedKmh = Math.round(Math.abs(this.carSpeed) * 3.6);
-    const gasHeld = this.carCtrl.gas || this.heldKeys.has('KeyW') || this.heldKeys.has('ArrowUp');
-    const brakeHeld = this.carCtrl.brake || this.heldKeys.has('KeyS') || this.heldKeys.has('ArrowDown');
+    const joyFwd = -this.virtualMove.z;
+    const joySideSteerCrawl =
+      Math.abs(this.virtualMove.x) > 0.32 && Math.abs(joyFwd) <= 0.16 && !this.carHandbrakeOn;
+    const gasHeld =
+      this.carCtrl.gas ||
+      this.heldKeys.has('KeyW') ||
+      this.heldKeys.has('ArrowUp') ||
+      joyFwd > 0.16 ||
+      joySideSteerCrawl;
+    const brakeHeld =
+      this.carCtrl.brake ||
+      this.heldKeys.has('KeyS') ||
+      this.heldKeys.has('ArrowDown') ||
+      joyFwd < -0.2;
     const gear: CarHudState['gear'] =
       this.carMode !== 'driving'
         ? 'N'
@@ -6924,7 +6936,7 @@ export class RpgWorldEngine {
           this.carMode = 'driving';
           this.carHandbrakeOn = false;
           soundEngine.playCarEngineStart();
-          this.showBanner('🚗 Mesin menyala! Gunakan GAS, REM & Kemudi untuk menjelajah.', 2.8);
+          this.showBanner('Mesin menyala! Gunakan Joystick, Gas, Rem & Turbo untuk berkendara.', 2.8);
           this.pushHud(true);
         }
       }
@@ -6998,23 +7010,47 @@ export class RpgWorldEngine {
       }
       soundEngine.setCarEngine(false, 0);
     } else if (this.carMode === 'driving') {
-      const gasInput = this.carCtrl.gas || this.heldKeys.has('KeyW') || this.heldKeys.has('ArrowUp');
-      const brakeInput =
+      const joyX = THREE.MathUtils.clamp(this.virtualMove.x, -1, 1);
+      const joyY = THREE.MathUtils.clamp(-this.virtualMove.z, -1, 1); // + = screen up (maju), - = screen down (mundur/rem)
+      const pedalOrKeyGas =
+        this.carCtrl.gas || this.heldKeys.has('KeyW') || this.heldKeys.has('ArrowUp');
+      const pedalOrKeyBrake =
         this.carCtrl.brake || this.heldKeys.has('KeyS') || this.heldKeys.has('ArrowDown');
+      const handbrakeActive =
+        this.carHandbrakeOn || this.carCtrl.handbrake || this.heldKeys.has('Space');
+      const joyGas = joyY > 0.16;
+      const joyBrake = joyY < -0.2;
+      const joySideCrawl = Math.abs(joyX) > 0.32 && !joyGas && !joyBrake && !pedalOrKeyBrake;
+
+      const gasInput = pedalOrKeyGas || joyGas || joySideCrawl;
+      const brakeInput = pedalOrKeyBrake || joyBrake;
       const leftInput = this.carCtrl.left || this.heldKeys.has('KeyA') || this.heldKeys.has('ArrowLeft');
       const rightInput =
         this.carCtrl.right || this.heldKeys.has('KeyD') || this.heldKeys.has('ArrowRight');
-      const handbrakeActive =
-        this.carHandbrakeOn || this.carCtrl.handbrake || this.heldKeys.has('Space');
       const boostInput =
         this.carCtrl.boost || this.heldKeys.has('ShiftLeft') || this.heldKeys.has('ShiftRight');
 
-      const steerTarget = ((leftInput ? 1 : 0) - (rightInput ? 1 : 0)) * 0.52;
-      this.carSteerAngle = THREE.MathUtils.damp(this.carSteerAngle, steerTarget, 10, dt);
+      const kbSteer = (leftInput ? 1 : 0) - (rightInput ? 1 : 0);
+      const joySteer = Math.abs(joyX) > 0.08 ? -joyX : 0;
+      const steerTarget = THREE.MathUtils.clamp(kbSteer + joySteer, -1, 1) * 0.54;
+      this.carSteerAngle = THREE.MathUtils.damp(this.carSteerAngle, steerTarget, 11, dt);
+
+      const joyFwdScale = pedalOrKeyGas
+        ? 1
+        : joyGas
+        ? THREE.MathUtils.clamp((joyY - 0.16) / 0.72, 0.38, 1)
+        : joySideCrawl
+        ? 0.42
+        : 0;
+      const joyRevScale = pedalOrKeyBrake
+        ? 1
+        : joyBrake
+        ? THREE.MathUtils.clamp((-joyY - 0.2) / 0.7, 0.4, 1)
+        : 0;
 
       const prevSpd = this.carSpeed;
-      const maxFwd = boostInput && !handbrakeActive ? 32 : 23;
-      const maxRev = -9.5;
+      const maxFwd = (boostInput && !handbrakeActive ? 32 : 23) * Math.max(0.45, joyFwdScale);
+      const maxRev = -9.5 * Math.max(0.5, joyRevScale);
       if (handbrakeActive) {
         this.carSpeed = THREE.MathUtils.damp(this.carSpeed, 0, 9.5, dt);
         brakingVisual = true;
@@ -7023,15 +7059,19 @@ export class RpgWorldEngine {
           this.carSpeed = Math.min(0, this.carSpeed + 34 * dt);
           brakingVisual = true;
         } else {
-          const accel = boostInput ? 26 : 16.5;
-          this.carSpeed = Math.min(maxFwd, this.carSpeed + accel * dt);
+          const accel = (boostInput ? 26 : 16.5) * Math.max(0.45, joyFwdScale);
+          if (this.carSpeed > maxFwd) {
+            this.carSpeed = THREE.MathUtils.damp(this.carSpeed, maxFwd, 4.5, dt);
+          } else {
+            this.carSpeed = Math.min(maxFwd, this.carSpeed + accel * dt);
+          }
         }
       } else if (brakeInput && !gasInput) {
         if (this.carSpeed > 0.6) {
           this.carSpeed = Math.max(0, this.carSpeed - 32 * dt);
           brakingVisual = true;
         } else {
-          this.carSpeed = Math.max(maxRev, this.carSpeed - 12 * dt);
+          this.carSpeed = Math.max(maxRev, this.carSpeed - 12 * Math.max(0.5, joyRevScale) * dt);
           reversingVisual = true;
         }
       } else {
