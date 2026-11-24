@@ -54,7 +54,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
             </div>
             <div>
               <h2 className="text-lg font-extrabold tracking-tight">Papan Peringkat Daring</h2>
-              <p className="text-xs text-slate-400">Top 20 Arsitek Metropolis Voxelia Global</p>
+              <p className="text-xs text-slate-400">Top 20 Penakluk Monster Diglosa Global</p>
             </div>
           </div>
           <button

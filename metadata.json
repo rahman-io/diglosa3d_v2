@@ -1,6 +1,6 @@
 {
-  "name": "Voxelia Skyline Builder 3D",
-  "description": "100% 3D voxel metropolis builder & action-quest game with responsive drone & orbit controls, challenging city surge progression, and live online leaderboard.",
+  "name": "Diglosa",
+  "description": "Taklukan Monster, Kuasai Bahasa! Petualangan RPG 3D Bahasa Inggris A1 hingga IELTS dengan arena pertempuran, dunia bawah laut, dan papan peringkat daring.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

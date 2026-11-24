@@ -24,10 +24,10 @@ export default defineConfig(() => {
         ],
         manifest: {
           id: './',
-          name: 'Diglosa 3D',
-          short_name: 'Diglosa 3D',
+          name: 'Diglosa',
+          short_name: 'Diglosa',
           description:
-            'Petualangan RPG 3D Bahasa Inggris A1 hingga IELTS — dapat dimainkan penuh secara offline dengan pembaruan otomatis.',
+            'Taklukan Monster, Kuasai Bahasa! Petualangan RPG 3D Bahasa Inggris A1 hingga IELTS — dapat dimainkan penuh secara offline dengan pembaruan otomatis.',
           theme_color: '#0f172a',
           background_color: '#0f172a',
           display: 'standalone',
