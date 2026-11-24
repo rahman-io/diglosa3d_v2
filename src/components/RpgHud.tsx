@@ -26,7 +26,6 @@ import {
 import { CameraMode, DivingGearId, LiveMapSnapshot, OceanMaterials, RpgHudSnapshot, SwimStyleId, SwimStylePreference, WeaponId } from '../types/game';
 import { DIVING_GEAR_DEFS } from '../three/oceanWorld';
 import { SEA_BIOTA_CATALOG } from '../three/seaBiotaCatalog';
-import { isFullscreenActive, toggleAppFullscreen } from '../utils/fullscreen';
 import { getWeaponThumbnails } from '../utils/weaponThumbnails';
 import { RadarMinimap, StarterWeaponPixelIcon, SwimSuitIcon } from './RadarMinimap';
 import { WeaponPreviewCanvas } from './WeaponPreviewCanvas';
@@ -171,7 +170,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
     | { kind: 'tool'; id: 'pickaxe' | 'torch' | 'shield_block' | 'tnt' }
   >({ kind: 'weapon', id: hud.activeWeapon });
   const [weaponThumbs] = useState<Partial<Record<WeaponId, string>>>(() => getWeaponThumbnails());
-  const [isFs, setIsFs] = useState(false);
+  const [showInfoHud, setShowInfoHud] = useState(false);
   const [floatingOrigin, setFloatingOrigin] = useState<{ x: number; y: number } | null>(null);
   const knobImgRef = useRef<HTMLImageElement | null>(null);
   const lastStickMoveRef = useRef<{ dx: number; dy: number }>({ dx: 0, dy: 0 });
@@ -219,16 +218,10 @@ export const RpgHud: React.FC<RpgHudProps> = ({
     const checkWidth = () => setIsSmallViewport(window.innerWidth < 640);
     checkWidth();
     window.addEventListener('resize', checkWidth);
-    const onFsChange = () => setIsFs(isFullscreenActive());
-    onFsChange();
-    document.addEventListener('fullscreenchange', onFsChange);
-    document.addEventListener('webkitfullscreenchange', onFsChange);
     return () => {
       mq.removeEventListener?.('change', handler);
       window.removeEventListener('pointerdown', onGlobalPointer);
       window.removeEventListener('resize', checkWidth);
-      document.removeEventListener('fullscreenchange', onFsChange);
-      document.removeEventListener('webkitfullscreenchange', onFsChange);
     };
   }, []);
 
@@ -374,8 +367,9 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
   return (
     <div className="pointer-events-none fixed inset-0 z-10 overflow-hidden">
-      {/* Subtle World-Space Nameplates (kept light so world stays clear) */}
-      {hud.projectedLabels.map((lbl) => (
+      {/* Subtle World-Space Nameplates (hidden by default; shown when Info HUD toggle is active) */}
+      {showInfoHud &&
+        hud.projectedLabels.map((lbl) => (
         <div
           key={lbl.id}
           style={{ transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)` }}
@@ -464,9 +458,10 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             )}
           </button>
 
-          {(hud.worldMode === 'overworld' &&
+          {showInfoHud &&
+            hud.worldMode === 'overworld' &&
             ((!hud.starterWeaponPicked && hud.starterWeaponGuide) ||
-              (!hud.swimSuitPicked && hud.swimSuitGuide))) && (
+              (!hud.swimSuitPicked && hud.swimSuitGuide)) && (
             <div className="flex flex-col items-start gap-1">
               {!hud.starterWeaponPicked && hud.starterWeaponGuide && (
                 <div className="flex items-center gap-1.5 rounded-full border border-cyan-300/40 bg-slate-950/85 px-2.5 py-0.5 text-[10px] font-bold text-cyan-100">
@@ -639,18 +634,18 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
           <button
             type="button"
-            data-fullscreen-toggle="true"
-            onClick={() => void toggleAppFullscreen()}
-            title={isFs ? 'Keluar Layar Penuh' : 'Layar Penuh'}
-            aria-label={isFs ? 'Keluar Layar Penuh' : 'Layar Penuh'}
-            className={`relative flex h-9 w-9 items-center justify-center rounded-full shadow-[0_3px_8px_rgba(34,211,238,0.34)] transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10 ${
-              isFs ? 'ring-2 ring-cyan-300/75' : ''
+            onClick={() => setShowInfoHud((v) => !v)}
+            title={showInfoHud ? 'Sembunyikan Info & Label Layar' : 'Tampilkan Info & Label Layar'}
+            aria-label={showInfoHud ? 'Sembunyikan Info & Label Layar' : 'Tampilkan Info & Label Layar'}
+            aria-pressed={showInfoHud}
+            className={`relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-full shadow-[0_3px_8px_rgba(34,211,238,0.34)] transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10 ${
+              showInfoHud ? 'scale-105 ring-2 ring-cyan-300' : 'opacity-90'
             }`}
           >
             <img
-              src="./assets/ui/btn_fullscreen.png"
-              alt={isFs ? 'Keluar Layar Penuh' : 'Layar Penuh'}
-              className="pointer-events-none h-full w-full select-none object-contain"
+              src="./assets/aistudio/image_d988e3c5.png"
+              alt={showInfoHud ? 'Sembunyikan Info & Label Layar' : 'Tampilkan Info & Label Layar'}
+              className="pointer-events-none h-full w-full scale-[1.12] select-none object-cover"
               draggable={false}
             />
           </button>
@@ -702,7 +697,41 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           </button>
         </div>
 
-        {/* Right-Side Location/Clock Strip + Area Monster Progress Tracker (below top-right utility medallions) */}
+        {/* Right-Side Location/Clock Strip + Area Monster Progress Tracker (shown when Info HUD toggle is active) */}
+        {!showInfoHud && (hud.worldMode === 'dungeon' || hud.worldMode === 'academy' || hud.oceanSurvival) && (
+          <div className="pointer-events-auto mt-0.5 flex items-center justify-end gap-1">
+            {hud.oceanSurvival && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setOceanGearOpen((v) => !v)}
+                  className="rounded-full border border-cyan-300/50 bg-cyan-700/85 px-2.5 py-1 text-[10px] font-black text-white shadow-md hover:bg-cyan-600"
+                >
+                  🤿 Gear
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    hud.worldMode === 'ocean' ? onExitDungeon() : (onDiveOcean ?? onExitDungeon)()
+                  }
+                  className="rounded-full bg-amber-600/90 px-2.5 py-1 text-[10px] font-extrabold text-white shadow-md hover:bg-amber-500"
+                >
+                  🫧 Naik
+                </button>
+              </>
+            )}
+            {(hud.worldMode === 'dungeon' || hud.worldMode === 'academy') && !hud.oceanSurvival && (
+              <button
+                type="button"
+                onClick={onExitDungeon}
+                className="rounded-full bg-cyan-600/90 px-2.5 py-1 text-[10px] font-extrabold text-white shadow-md hover:bg-cyan-500"
+              >
+                Keluar
+              </button>
+            )}
+          </div>
+        )}
+        {showInfoHud && (
         <div className="pointer-events-none mt-0.5 flex w-[212px] flex-col items-end gap-1 sm:w-[238px]">
           {hud.worldMode === 'overworld' && hud.worldTime && (
             <div
@@ -1010,6 +1039,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             );
           })()}
         </div>
+        )}
       </div>
 
       {/* CENTERED TRANSPARENT RPG MENU PANEL (Tas, Kamus, Misi, Peta, Petunjuk, Opsi, Ranking, Jeda) */}
