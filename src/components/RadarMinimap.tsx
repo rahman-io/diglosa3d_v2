@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   LiveMapBounds,
   LiveMapSnapshot,
@@ -7,6 +7,105 @@ import {
   ZoneId,
 } from '../types/game';
 import { IELTS_TEMPORARILY_LOCKED, OVERWORLD_ANCHORS } from '../three/archipelagoWorld';
+
+const ZONE_SPOT_IMAGE_SRC: Partial<Record<RadarBlipKind, string>> = {
+  spot_desa: './assets/aistudio/image_e351f895.png',
+  spot_pasar: './assets/aistudio/image_9e22ed89.png',
+  spot_satwa: './assets/aistudio/image_f9399c64.png',
+  spot_gerbang: './assets/aistudio/image_7946ae08.png',
+  spot_menara: './assets/aistudio/image_505cd4e3.png',
+  spot_gua: './assets/aistudio/image_389ec840.png',
+};
+
+const zoneSpotSpriteCache = new Map<RadarBlipKind, HTMLCanvasElement>();
+const zoneSpotLoading = new Set<RadarBlipKind>();
+const zoneSpriteListeners = new Set<() => void>();
+
+function stripExteriorBlack(img: HTMLImageElement): HTMLCanvasElement {
+  const size = 128;
+  const c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  const ctx = c.getContext('2d');
+  if (!ctx) return c;
+  ctx.drawImage(img, 0, 0, size, size);
+  const imgData = ctx.getImageData(0, 0, size, size);
+  const d = imgData.data;
+  const total = size * size;
+  const visited = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  let head = 0;
+  let tail = 0;
+
+  const isBg = (idx: number) => {
+    const p = idx * 4;
+    return d[p] < 36 && d[p + 1] < 36 && d[p + 2] < 36;
+  };
+
+  const seeds = [0, size - 1, (size - 1) * size, total - 1];
+  for (const s of seeds) {
+    if (!visited[s] && isBg(s)) {
+      visited[s] = 1;
+      queue[tail++] = s;
+    }
+  }
+
+  while (head < tail) {
+    const idx = queue[head++];
+    d[idx * 4 + 3] = 0;
+    const x = idx % size;
+    const y = (idx - x) / size;
+    if (x > 0) {
+      const n = idx - 1;
+      if (!visited[n] && isBg(n)) {
+        visited[n] = 1;
+        queue[tail++] = n;
+      }
+    }
+    if (x < size - 1) {
+      const n = idx + 1;
+      if (!visited[n] && isBg(n)) {
+        visited[n] = 1;
+        queue[tail++] = n;
+      }
+    }
+    if (y > 0) {
+      const n = idx - size;
+      if (!visited[n] && isBg(n)) {
+        visited[n] = 1;
+        queue[tail++] = n;
+      }
+    }
+    if (y < size - 1) {
+      const n = idx + size;
+      if (!visited[n] && isBg(n)) {
+        visited[n] = 1;
+        queue[tail++] = n;
+      }
+    }
+  }
+
+  ctx.putImageData(imgData, 0, 0);
+  return c;
+}
+
+function getZoneSpotSprite(kind: RadarBlipKind): HTMLCanvasElement | null {
+  const cached = zoneSpotSpriteCache.get(kind);
+  if (cached) return cached;
+  const src = ZONE_SPOT_IMAGE_SRC[kind];
+  if (!src || zoneSpotLoading.has(kind)) return null;
+  zoneSpotLoading.add(kind);
+  const img = new Image();
+  img.onload = () => {
+    zoneSpotSpriteCache.set(kind, stripExteriorBlack(img));
+    zoneSpriteListeners.forEach((cb) => cb());
+  };
+  img.onerror = () => {
+    zoneSpotLoading.delete(kind);
+  };
+  img.src = src;
+  return null;
+}
 
 interface RadarMinimapProps {
   radar: RadarState;
@@ -79,11 +178,26 @@ export const SwimSuitIcon: React.FC<{ className?: string }> = ({
   </span>
 );
 
-/** Reusable custom SVG legend icon per spot kind (zero emojis) */
+/** Reusable custom icon per spot kind */
 export const SpotLegendIcon: React.FC<{ kind: RadarBlipKind; className?: string }> = ({
   kind,
   className = 'h-4 w-4',
 }) => {
+  const zoneSrc = ZONE_SPOT_IMAGE_SRC[kind];
+  if (zoneSrc) {
+    return (
+      <span
+        className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full bg-slate-950/90 shadow-sm ${className}`}
+      >
+        <img
+          src={zoneSrc}
+          alt={kind}
+          className="h-full w-full scale-[1.09] object-contain"
+          draggable={false}
+        />
+      </span>
+    );
+  }
   if (kind === 'starter') return <StarterWeaponPixelIcon className={className} />;
   if (kind === 'swimsuit') return <SwimSuitIcon className={className} />;
   if (kind === 'car') {
@@ -99,73 +213,6 @@ export const SpotLegendIcon: React.FC<{ kind: RadarBlipKind; className?: string 
         <rect x="7.5" y="8" width="9" height="3" rx="0.8" fill="#bae6fd" />
         <circle cx="8" cy="14" r="1.2" fill="#fef08a" />
         <circle cx="16" cy="14" r="1.2" fill="#fef08a" />
-      </svg>
-    );
-  }
-  if (kind === 'spot_gua') {
-    return (
-      <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-        <path d="M3 20L6 7l6-3 6 3 3 13H3z" fill="#475569" stroke="#0f172a" strokeWidth="1.6" />
-        <path d="M7.5 20v-6.5a4.5 4.5 0 0 1 9 0V20h-9z" fill="#0f172a" />
-        <path d="M12 10l2.2 3.2L12 17l-2.2-3.8L12 10z" fill="#22d3ee" />
-      </svg>
-    );
-  }
-  if (kind === 'spot_satwa') {
-    return (
-      <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-        <path
-          d="M5 5l4 4h6l4-4 1 8-8 7-8-7 1-8z"
-          fill="#f97316"
-          stroke="#0f172a"
-          strokeWidth="1.6"
-          strokeLinejoin="round"
-        />
-        <path d="M8 14l4 4 4-4-1.8 1.5h-4.4L8 14z" fill="#f8fafc" />
-        <circle cx="9.5" cy="12" r="1.1" fill="#0f172a" />
-        <circle cx="14.5" cy="12" r="1.1" fill="#0f172a" />
-      </svg>
-    );
-  }
-  if (kind === 'spot_desa') {
-    return (
-      <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-        <path d="M3 11l9-7 9 7H3z" fill="#f59e0b" stroke="#0f172a" strokeWidth="1.6" />
-        <rect x="6" y="11" width="12" height="9" fill="#fef3c7" stroke="#0f172a" strokeWidth="1.6" />
-        <rect x="10.5" y="14" width="3" height="6" fill="#78350f" />
-      </svg>
-    );
-  }
-  if (kind === 'spot_pasar') {
-    return (
-      <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-        <path d="M3 7h18l-1.5 4h-15L3 7z" fill="#ef4444" stroke="#0f172a" strokeWidth="1.5" />
-        <rect x="7" y="7" width="3.5" height="4" fill="#ffffff" />
-        <rect x="13.5" y="7" width="3.5" height="4" fill="#ffffff" />
-        <path
-          d="M6 12h12v5a3 3 0 0 1-3 3H9a3 3 0 0 1-3-3v-5z"
-          fill="#334155"
-          stroke="#0f172a"
-          strokeWidth="1.5"
-        />
-      </svg>
-    );
-  }
-  if (kind === 'spot_gerbang') {
-    return (
-      <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-        <rect x="4" y="6" width="5" height="14" fill="#94a3b8" stroke="#0f172a" strokeWidth="1.5" />
-        <rect x="15" y="6" width="5" height="14" fill="#94a3b8" stroke="#0f172a" strokeWidth="1.5" />
-        <rect x="3" y="4" width="18" height="4" fill="#3b82f6" stroke="#0f172a" strokeWidth="1.5" />
-      </svg>
-    );
-  }
-  if (kind === 'spot_menara') {
-    return (
-      <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
-        <circle cx="12" cy="12" r="8.5" fill="#8b5cf6" stroke="#0f172a" strokeWidth="1.6" />
-        <circle cx="12" cy="12" r="6" fill="#fef08a" />
-        <path d="M12 8v4l-2.5 2.5" stroke="#0f172a" strokeWidth="1.8" strokeLinecap="round" />
       </svg>
     );
   }
@@ -484,6 +531,48 @@ function drawIcon(
     ctx.fillStyle = '#facc15';
     ctx.fillRect(-4.4, 1.2, 2.2, 1.3);
     ctx.fillRect(2.2, 1.2, 2.2, 1.3);
+    ctx.restore();
+    return;
+  }
+
+  const zoneSprite = ZONE_SPOT_IMAGE_SRC[kind] ? getZoneSpotSprite(kind) : null;
+  if (zoneSprite) {
+    const drawSize = 23;
+    ctx.beginPath();
+    ctx.arc(0, 0, drawSize * 0.48, 0, Math.PI * 2);
+    ctx.fillStyle = liberated ? 'rgba(34, 197, 94, 0.34)' : 'rgba(15, 23, 42, 0.72)';
+    ctx.fill();
+    ctx.drawImage(zoneSprite, -drawSize * 0.5, -drawSize * 0.5, drawSize, drawSize);
+
+    if (needsHelp && !liberated) {
+      ctx.translate(7.4, -7.4);
+      ctx.beginPath();
+      ctx.arc(0, 0, 3.8, 0, Math.PI * 2);
+      ctx.fillStyle = '#ef4444';
+      ctx.fill();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = '#fef08a';
+      ctx.stroke();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(-0.8, -2.4, 1.6, 2.8);
+      ctx.fillRect(-0.8, 1.1, 1.6, 1.3);
+    } else if (liberated) {
+      ctx.translate(7.2, -7.2);
+      ctx.beginPath();
+      ctx.arc(0, 0, 3.6, 0, Math.PI * 2);
+      ctx.fillStyle = '#16a34a';
+      ctx.fill();
+      ctx.lineWidth = 1.1;
+      ctx.strokeStyle = '#ffffff';
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-1.7, 0);
+      ctx.lineTo(-0.3, 1.4);
+      ctx.lineTo(1.9, -1.3);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 1.3;
+      ctx.stroke();
+    }
     ctx.restore();
     return;
   }
@@ -847,6 +936,18 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
   const lastDrawSigRef = useRef<string>('');
   const lastSnapCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const snapRevRef = useRef<number>(0);
+  const [spriteTick, setSpriteTick] = useState(0);
+
+  useEffect(() => {
+    const onLoad = () => {
+      lastDrawSigRef.current = '';
+      setSpriteTick((t) => t + 1);
+    };
+    zoneSpriteListeners.add(onLoad);
+    return () => {
+      zoneSpriteListeners.delete(onLoad);
+    };
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -1204,7 +1305,7 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
     ctx.stroke();
 
     ctx.restore();
-  }, [radar, size, getLiveMapSnapshot]);
+  }, [radar, size, getLiveMapSnapshot, spriteTick]);
 
   return (
     <button
@@ -1452,11 +1553,12 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
           if (sp.id === 'swimsuit' && curSwimSuitPicked) continue;
           const lib = sp.zoneId ? curLiberated.includes(sp.zoneId) : false;
           const pt = worldToMapPx(sp.x, sp.z, bounds, 0, 0, width, height);
+          const isZoneSpot = sp.kind.startsWith('spot_');
 
           // Ground ring
           ctx.beginPath();
-          ctx.arc(pt.sx, pt.sy, 13, 0, Math.PI * 2);
-          ctx.fillStyle = lib ? 'rgba(34, 197, 94, 0.2)' : 'rgba(15, 23, 42, 0.55)';
+          ctx.arc(pt.sx, pt.sy, isZoneSpot ? 16 : 13, 0, Math.PI * 2);
+          ctx.fillStyle = lib ? 'rgba(34, 197, 94, 0.22)' : 'rgba(15, 23, 42, 0.58)';
           ctx.fill();
           ctx.strokeStyle =
             sp.kind === 'portal'
@@ -1478,7 +1580,7 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
             lib,
             !lib && sp.kind !== 'portal',
             pulse,
-            1.1,
+            isZoneSpot ? 1.42 : 1.1,
           );
 
           ctx.font = '800 10.5px system-ui, -apple-system, sans-serif';
@@ -1486,7 +1588,8 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
           ctx.textBaseline = 'top';
           ctx.lineWidth = 3.2;
           ctx.strokeStyle = '#090d16';
-          ctx.strokeText(sp.shortLabel, pt.sx, pt.sy + 14);
+          const labelY = pt.sy + (isZoneSpot ? 18 : 14);
+          ctx.strokeText(sp.shortLabel, pt.sx, labelY);
           ctx.fillStyle =
             sp.kind === 'portal'
               ? '#e9d5ff'
@@ -1495,10 +1598,10 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
               : lib
               ? '#86efac'
               : '#fef08a';
-          ctx.fillText(sp.shortLabel, pt.sx, pt.sy + 14);
+          ctx.fillText(sp.shortLabel, pt.sx, labelY);
 
           if (sp.zoneId) {
-            hits.push({ x: pt.sx, y: pt.sy, r: 26, zoneId: sp.zoneId });
+            hits.push({ x: pt.sx, y: pt.sy, r: 28, zoneId: sp.zoneId });
           } else if (sp.kind === 'portal') {
             hits.push({ x: pt.sx, y: pt.sy, r: 26, isPortal: true });
           } else if (sp.kind === 'swimsuit') {
@@ -1658,28 +1761,28 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
         {activeMode === 'overworld' ? (
           <>
             <div className="flex flex-wrap items-center gap-3">
-              <span className="inline-flex items-center gap-1">
-                <SpotLegendIcon kind="spot_gua" className="h-4 w-4" />
+              <span className="inline-flex items-center gap-1.5">
+                <SpotLegendIcon kind="spot_gua" className="h-5 w-5" />
                 <span>Gua Portal</span>
               </span>
-              <span className="inline-flex items-center gap-1">
-                <SpotLegendIcon kind="spot_satwa" className="h-4 w-4" />
+              <span className="inline-flex items-center gap-1.5">
+                <SpotLegendIcon kind="spot_satwa" className="h-5 w-5" />
                 <span>Tempat Hewan</span>
               </span>
-              <span className="inline-flex items-center gap-1">
-                <SpotLegendIcon kind="spot_desa" className="h-4 w-4" />
+              <span className="inline-flex items-center gap-1.5">
+                <SpotLegendIcon kind="spot_desa" className="h-5 w-5" />
                 <span>Desa</span>
               </span>
-              <span className="inline-flex items-center gap-1">
-                <SpotLegendIcon kind="spot_pasar" className="h-4 w-4" />
+              <span className="inline-flex items-center gap-1.5">
+                <SpotLegendIcon kind="spot_pasar" className="h-5 w-5" />
                 <span>Pasar</span>
               </span>
-              <span className="inline-flex items-center gap-1">
-                <SpotLegendIcon kind="spot_gerbang" className="h-4 w-4" />
+              <span className="inline-flex items-center gap-1.5">
+                <SpotLegendIcon kind="spot_gerbang" className="h-5 w-5" />
                 <span>Gerbang</span>
               </span>
-              <span className="inline-flex items-center gap-1">
-                <SpotLegendIcon kind="spot_menara" className="h-4 w-4" />
+              <span className="inline-flex items-center gap-1.5">
+                <SpotLegendIcon kind="spot_menara" className="h-5 w-5" />
                 <span>Menara</span>
               </span>
               {!swimSuitPicked && (

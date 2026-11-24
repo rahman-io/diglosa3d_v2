@@ -492,8 +492,8 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                         >
                           <div>
                             <div className="flex items-center justify-between gap-2">
-                              <span className="inline-flex min-w-0 items-center gap-2 text-sm font-black text-amber-100">
-                                <SpotLegendIcon kind={spotKindMap[zId]} className="h-5 w-5 shrink-0" />
+                              <span className="inline-flex min-w-0 items-center gap-2.5 text-sm font-black text-amber-100">
+                                <SpotLegendIcon kind={spotKindMap[zId]} className="h-10 w-10 shrink-0" />
                                 <span className="truncate">{info.name}</span>
                               </span>
                               <span
