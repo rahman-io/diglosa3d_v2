@@ -961,6 +961,14 @@ export type P2pReliableMessage =
       dc: Record<ZoneId, number[]>;
     }
   | {
+      t: 'clock';
+      day: number;
+      tick: number;
+      mode: 'day' | 'night';
+      wtot: number;
+      wcmp?: boolean;
+    }
+  | {
       t: 'stats';
       st: MultiplayerPlayerStats;
     }

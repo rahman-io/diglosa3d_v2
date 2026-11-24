@@ -22,7 +22,9 @@ import {
   DifficultyMode,
   LocalPlayerSyncPacket,
   MultiplayerMemberDoc,
+  MultiplayerPlayerStats,
   MultiplayerRoomDoc,
+  P2pReliableMessage,
   RemotePlayerState,
   RoomChatMessage,
   WebRtcSignalDoc,
@@ -136,6 +138,9 @@ const ROOM_META_DOC_ID = 'squad_meta';
 const roomsCreatedMetaByMe = new Set<string>();
 const roomsWithFallbackChatSent = new Set<string>();
 const myFallbackChatDocIds = new Map<string, string[]>();
+const roomsWithRelayEventsSent = new Set<string>();
+const myRelayEventDocIds = new Map<string, string[]>();
+const loggedLiveStateErrors = new Set<string>();
 
 export interface RoomSquadMeta {
   g?: string;
@@ -867,13 +872,33 @@ async function deleteUserMessagesAndSignals(
 
   const hadOwnMeta = !keepRoomMeta && roomsCreatedMetaByMe.has(roomId);
   const hadFallbackMessages = roomsWithFallbackChatSent.has(roomId);
+  const hadRelayEvents = roomsWithRelayEventsSent.has(roomId);
   roomsCreatedMetaByMe.delete(roomId);
   roomsWithFallbackChatSent.delete(roomId);
+  myFallbackChatDocIds.delete(roomId);
+  roomsWithRelayEventsSent.delete(roomId);
+  myRelayEventDocIds.delete(roomId);
 
   if (hadOwnMeta) {
     await deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'messages', ROOM_META_DOC_ID)).catch(
       () => undefined,
     );
+  }
+
+  if (hadRelayEvents) {
+    try {
+      const evSnap = await getDocs(
+        query(
+          collection(db, ROOMS_COLLECTION, roomId, 'events'),
+          where('roomId', '==', roomId),
+          limit(20),
+        ),
+      );
+      const myEvs = evSnap.docs.filter((d) => (d.data() as { fromUid?: string }).fromUid === uid);
+      await Promise.all(myEvs.map((d) => deleteDoc(d.ref).catch(() => undefined)));
+    } catch {
+      // ignore
+    }
   }
 
   // Only query messages subcollection if this user actually sent fallback chat/meta docs in this room
@@ -1028,26 +1053,13 @@ export async function leaveMultiplayerRoom(
       .filter((m) => m.uid !== user.uid);
 
     const activePeerSet = Array.isArray(activePeerUids) ? new Set(activePeerUids) : null;
-    const activeRemaining = activePeerSet
-      ? remaining.filter((m) => activePeerSet.has(m.uid))
-      : remaining;
-    const ghostRemaining = activePeerSet
-      ? remaining.filter((m) => !activePeerSet.has(m.uid))
-      : [];
 
-    if (activeRemaining.length === 0) {
-      // No genuinely P2P-active teammates left -> close and clean up the entire room
+    if (remaining.length === 0) {
+      // No remaining members in Firestore -> close and clean up the empty room
       await deleteUserMessagesAndSignals(roomId, user.uid, false);
       if (roomData.hostUid === user.uid) {
-        await Promise.all(
-          remaining.flatMap((m) => [
-            deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', m.uid)).catch(() => undefined),
-            deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'states', m.uid)).catch(() => undefined),
-          ]),
-        );
         await deleteDoc(roomRef).catch(() => undefined);
       } else if (roomData.memberCount >= 2) {
-        // Previous host crashed without cleaning up: claim host to delete dead room cleanly
         try {
           const claimed = await runTransaction(db, async (tx) => {
             const snap = await tx.get(roomRef);
@@ -1063,11 +1075,6 @@ export async function leaveMultiplayerRoom(
             return true;
           });
           if (claimed) {
-            await Promise.all(
-              remaining.map((m) =>
-                deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', m.uid)).catch(() => undefined),
-              ),
-            );
             await deleteDoc(roomRef).catch(() => undefined);
           }
         } catch {
@@ -1078,17 +1085,11 @@ export async function leaveMultiplayerRoom(
     }
 
     if (roomData.hostUid === user.uid) {
-      // Migrate Host strictly to a P2P-active teammate, purging any zombie member docs
+      // Migrate Host cleanly to a remaining member (prefer P2P-active peer, otherwise any Cloud Relay member)
       await deleteUserMessagesAndSignals(roomId, user.uid, true);
-      if (ghostRemaining.length > 0) {
-        await Promise.all(
-          ghostRemaining.map((m) =>
-            deleteDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', m.uid)).catch(() => undefined),
-          ),
-        );
-      }
-      const nextHost = activeRemaining[0];
-      const nextCount = Math.max(1, activeRemaining.length);
+      const nextHost =
+        (activePeerSet ? remaining.find((m) => activePeerSet.has(m.uid)) : undefined) ?? remaining[0];
+      const nextCount = Math.max(1, remaining.length);
       await updateDoc(roomRef, {
         hostUid: nextHost.uid,
         hostName: sanitizeDisplayName(nextHost.displayName, 'Host'),
@@ -1097,7 +1098,7 @@ export async function leaveMultiplayerRoom(
       });
     } else {
       await deleteUserMessagesAndSignals(roomId, user.uid, false);
-      const nextCount = Math.max(1, roomData.memberCount - 1);
+      const nextCount = Math.max(1, remaining.length);
       await updateDoc(roomRef, {
         memberCount: nextCount,
         updatedAt: serverTimestamp(),
@@ -1217,24 +1218,35 @@ export async function sendFallbackChatMessage(params: {
   roomId: string;
   senderName: string;
   text: string;
+  msgId?: string;
 }): Promise<void> {
   const user = auth.currentUser;
   if (!user || !user.emailVerified) return;
   const cleanText = params.text.trim().slice(0, 160);
   if (!cleanText) return;
   const path = `${ROOMS_COLLECTION}/${params.roomId}/messages`;
+  const payload = {
+    roomId: params.roomId,
+    senderUid: user.uid,
+    senderName: sanitizeDisplayName(params.senderName, user.displayName || 'Petualang'),
+    text: cleanText,
+    createdAt: serverTimestamp(),
+  };
   try {
-    const docRef = await addDoc(collection(db, path), {
-      roomId: params.roomId,
-      senderUid: user.uid,
-      senderName: sanitizeDisplayName(params.senderName, user.displayName || 'Petualang'),
-      text: cleanText,
-      createdAt: serverTimestamp(),
-    });
+    let writtenId: string;
+    const validMsgId =
+      params.msgId && /^[a-zA-Z0-9_-]{4,64}$/.test(params.msgId) ? params.msgId : null;
+    if (validMsgId) {
+      await setDoc(doc(db, path, validMsgId), payload);
+      writtenId = validMsgId;
+    } else {
+      const docRef = await addDoc(collection(db, path), payload);
+      writtenId = docRef.id;
+    }
     roomsWithFallbackChatSent.add(params.roomId);
     const list = myFallbackChatDocIds.get(params.roomId) ?? [];
-    list.push(docRef.id);
-    if (list.length > 10) {
+    list.push(writtenId);
+    if (list.length > 6) {
       const oldestId = list.shift();
       if (oldestId) {
         void deleteDoc(doc(db, path, oldestId)).catch(() => undefined);
@@ -1319,12 +1331,13 @@ function clampNum(val: number, min: number, max: number, fallback: number): numb
 export async function publishPlayerLiveState(
   roomId: string,
   pkt: LocalPlayerSyncPacket,
+  stats?: MultiplayerPlayerStats,
 ): Promise<void> {
   const user = auth.currentUser;
   if (!user || !user.emailVerified || !roomId) return;
   const worldMode =
     pkt.w === 'dungeon' || pkt.w === 'academy' || pkt.w === 'ocean' ? pkt.w : 'overworld';
-  const payload = {
+  const payload: Record<string, unknown> = {
     uid: user.uid,
     roomId,
     displayName: sanitizeDisplayName(pkt.nm, user.displayName || 'Petualang'),
@@ -1346,10 +1359,23 @@ export async function publishPlayerLiveState(
     updatedAt: serverTimestamp(),
   };
 
+  if (stats) {
+    payload.kl = Math.round(clampNum(stats.kills, 0, 100000, 0));
+    payload.as = Math.round(clampNum(stats.assists, 0, 100000, 0));
+    payload.hl = Math.round(clampNum(stats.helps, 0, 100000, 0));
+    payload.chc = Math.round(clampNum(stats.challenges, 0, 100000, 0));
+    payload.zc = Math.round(clampNum(stats.zonesCleared, 0, 100, 0));
+    payload.sc = Math.round(clampNum(stats.personalScore, 0, 99999999, 0));
+  }
+
   try {
     await setDoc(doc(db, ROOMS_COLLECTION, roomId, 'states', user.uid), payload);
-  } catch {
-    // Best-effort fallback position relay
+  } catch (error) {
+    const errKey = `pub_${roomId}`;
+    if (!loggedLiveStateErrors.has(errKey)) {
+      loggedLiveStateErrors.add(errKey);
+      console.warn('[Diglosa Relay] Failed publishing player live state:', error);
+    }
   }
 }
 
@@ -1357,6 +1383,7 @@ export function subscribePlayerLiveStates(
   roomId: string,
   myUid: string,
   onStates: (states: RemotePlayerState[]) => void,
+  onStats?: (stats: MultiplayerPlayerStats[]) => void,
 ): Unsubscribe {
   const path = `${ROOMS_COLLECTION}/${roomId}/states`;
   const q = query(collection(db, path), where('roomId', '==', roomId), limit(10));
@@ -1365,6 +1392,7 @@ export function subscribePlayerLiveStates(
     (snap) => {
       const now = Date.now();
       const out: RemotePlayerState[] = [];
+      const statsOut: MultiplayerPlayerStats[] = [];
       snap.docs.forEach((docSnap) => {
         const d = docSnap.data() as {
           uid?: string;
@@ -1384,17 +1412,31 @@ export function subscribePlayerLiveStates(
           mhp?: number;
           ic?: boolean;
           zn?: string;
+          kl?: number;
+          as?: number;
+          hl?: number;
+          chc?: number;
+          zc?: number;
+          sc?: number;
           updatedAt?: unknown;
         };
         if (!d.uid || d.uid === myUid) return;
         const updatedAtMs = getTimestampMs(d.updatedAt);
-        // Ignore stale zombie state docs older than 45 seconds
-        if (updatedAtMs > 0 && now - updatedAtMs > 45_000) return;
+        // Allow up to 10 minutes tolerance for device clock skew across continents
+        if (updatedAtMs > 0 && now - updatedAtMs > 10 * 60 * 1000) return;
+
+        const cleanName = (d.displayName || 'Teman').slice(0, 32);
+        const charId = (d.characterId || 'hoot_emerald') as CharacterPresetId;
+        const worldMode = d.worldMode || 'overworld';
+        const hpVal = typeof d.hp === 'number' ? d.hp : 5;
+        const mhpVal = typeof d.mhp === 'number' ? d.mhp : 5;
+        const zoneLabel = typeof d.zn === 'string' && d.zn ? d.zn : 'Kepulauan';
+
         out.push({
           uid: d.uid,
-          displayName: (d.displayName || 'Teman').slice(0, 32),
-          characterId: (d.characterId || 'hoot_emerald') as CharacterPresetId,
-          worldMode: d.worldMode || 'overworld',
+          displayName: cleanName,
+          characterId: charId,
+          worldMode,
           x: typeof d.x === 'number' && Number.isFinite(d.x) ? d.x : -6,
           y: typeof d.y === 'number' && Number.isFinite(d.y) ? d.y : 2.6,
           z: typeof d.z === 'number' && Number.isFinite(d.z) ? d.z : 126,
@@ -1409,14 +1451,132 @@ export function subscribePlayerLiveStates(
           hp: typeof d.hp === 'number' ? d.hp : undefined,
           maxHp: typeof d.mhp === 'number' ? d.mhp : undefined,
           inChallenge: typeof d.ic === 'boolean' ? d.ic : undefined,
-          zoneName: typeof d.zn === 'string' ? d.zn : undefined,
+          zoneName: zoneLabel,
+          updatedAtMs: updatedAtMs || now,
+        });
+
+        statsOut.push({
+          uid: d.uid,
+          displayName: cleanName,
+          characterId: charId,
+          kills: typeof d.kl === 'number' ? d.kl : 0,
+          assists: typeof d.as === 'number' ? d.as : 0,
+          helps: typeof d.hl === 'number' ? d.hl : 0,
+          challenges: typeof d.chc === 'number' ? d.chc : 0,
+          zonesCleared: typeof d.zc === 'number' ? d.zc : 0,
+          personalScore: typeof d.sc === 'number' ? d.sc : 0,
+          hp: hpVal,
+          maxHp: mhpVal,
+          worldMode,
+          zoneName: zoneLabel,
+          inChallenge: Boolean(d.ic),
           updatedAtMs: updatedAtMs || now,
         });
       });
       onStates(out);
+      onStats?.(statsOut);
     },
-    () => {
-      // Ignore state listener teardown errors
+    (error) => {
+      const errKey = `sub_${roomId}`;
+      if (!loggedLiveStateErrors.has(errKey)) {
+        loggedLiveStateErrors.add(errKey);
+        console.warn('[Diglosa Relay] Live state listener error:', error);
+      }
+    },
+  );
+}
+
+const RELAYABLE_EVENT_KINDS = new Set(['m_hit', 'm_kill', 'heal', 'prog', 'clock']);
+
+export async function publishRoomRelayEvent(
+  roomId: string,
+  pkt: P2pReliableMessage,
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified || !roomId) return;
+  if (!RELAYABLE_EVENT_KINDS.has(pkt.t)) return;
+
+  const serialized = JSON.stringify(pkt);
+  if (serialized.length < 2 || serialized.length > 4096) return;
+
+  const path = `${ROOMS_COLLECTION}/${roomId}/events`;
+  try {
+    const docRef = await addDoc(collection(db, path), {
+      roomId,
+      fromUid: user.uid,
+      kind: pkt.t,
+      payload: serialized,
+      createdAt: serverTimestamp(),
+    });
+    roomsWithRelayEventsSent.add(roomId);
+    const list = myRelayEventDocIds.get(roomId) ?? [];
+    list.push(docRef.id);
+    if (list.length > 8) {
+      const oldestId = list.shift();
+      if (oldestId) {
+        void deleteDoc(doc(db, path, oldestId)).catch(() => undefined);
+      }
+    }
+    myRelayEventDocIds.set(roomId, list);
+  } catch (error) {
+    const errKey = `ev_pub_${roomId}`;
+    if (!loggedLiveStateErrors.has(errKey)) {
+      loggedLiveStateErrors.add(errKey);
+      console.warn('[Diglosa Relay] Relay event publish error:', error);
+    }
+  }
+}
+
+export function subscribeRoomRelayEvents(
+  roomId: string,
+  myUid: string,
+  onEvent: (fromUid: string, pkt: P2pReliableMessage) => void,
+): Unsubscribe {
+  const path = `${ROOMS_COLLECTION}/${roomId}/events`;
+  const q = query(collection(db, path), where('roomId', '==', roomId), limit(30));
+  const seen = new Set<string>();
+  let initialized = false;
+  return onSnapshot(
+    q,
+    (snap) => {
+      const batch: Array<{ fromUid: string; pkt: P2pReliableMessage; ts: number }> = [];
+      const now = Date.now();
+      snap.docChanges().forEach((chg) => {
+        if (chg.type !== 'added') return;
+        if (seen.has(chg.doc.id)) return;
+        seen.add(chg.doc.id);
+        const d = chg.doc.data() as {
+          fromUid?: string;
+          kind?: string;
+          payload?: string;
+          createdAt?: unknown;
+        };
+        if (!d.fromUid || d.fromUid === myUid || !d.payload) return;
+        const ts = getTimestampMs(d.createdAt) || now;
+        if (!initialized && d.kind !== 'prog' && d.kind !== 'clock' && now - ts > 20_000) {
+          return;
+        }
+        try {
+          const parsed = JSON.parse(d.payload) as P2pReliableMessage;
+          if (parsed && typeof parsed === 'object' && typeof parsed.t === 'string') {
+            batch.push({ fromUid: d.fromUid, pkt: parsed, ts });
+          }
+        } catch {
+          // ignore malformed event payload
+        }
+      });
+      initialized = true;
+      if (batch.length > 1) {
+        batch.sort((a, b) => a.ts - b.ts);
+      }
+      batch.forEach((ev) => onEvent(ev.fromUid, ev.pkt));
+    },
+    (error) => {
+      const errKey = `ev_sub_${roomId}`;
+      if (!loggedLiveStateErrors.has(errKey)) {
+        loggedLiveStateErrors.add(errKey);
+        console.warn('[Diglosa Relay] Relay event listener error:', error);
+      }
     },
   );
 }

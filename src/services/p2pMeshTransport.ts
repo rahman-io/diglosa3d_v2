@@ -18,6 +18,7 @@ function buildRtcIceConfig(): RTCConfiguration {
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
     { urls: 'stun:stun3.l.google.com:19302' },
+    { urls: 'stun:stun4.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
   ];
   const turnUrl = (import.meta.env.VITE_TURN_URL as string | undefined)?.trim();
@@ -32,7 +33,7 @@ function buildRtcIceConfig(): RTCConfiguration {
   }
   return {
     iceServers,
-    iceCandidatePoolSize: 4,
+    iceCandidatePoolSize: 6,
   };
 }
 
@@ -90,6 +91,7 @@ interface PeerSlot {
   analyserBuf: Uint8Array<ArrayBuffer> | null;
   speaking: boolean;
   pendingIce: RTCIceCandidateInit[];
+  pendingRemoteIce: RTCIceCandidateInit[];
   iceFlushTimer: number | null;
   createdAtMs: number;
 }
@@ -143,6 +145,7 @@ export class P2pMeshTransport {
   private localAnalyser: AnalyserNode | null = null;
   private localAnalyserBuf: Uint8Array<ArrayBuffer> | null = null;
   private vadTimer: number | null = null;
+  private audioUnlockAttached = false;
   private disposed = false;
 
   constructor(roomId: string, myUid: string, callbacks: P2pTransportCallbacks) {
@@ -397,11 +400,15 @@ export class P2pMeshTransport {
     }
   }
 
-  public broadcastChat(senderName: string, rawText: string): { text: string; sentP2pCount: number } {
+  public broadcastChat(
+    senderName: string,
+    rawText: string,
+    explicitId?: string,
+  ): { text: string; sentP2pCount: number; msgId: string } {
     const clean = filterChatProfanity(rawText);
-    if (!clean) return { text: '', sentP2pCount: 0 };
+    const msgId = explicitId || `${this.myUid.slice(0, 6)}_${Date.now().toString(36)}`;
+    if (!clean) return { text: '', sentP2pCount: 0, msgId };
 
-    const msgId = `${this.myUid.slice(0, 6)}_${Date.now().toString(36)}`;
     const wire = JSON.stringify({
       t: 'chat',
       id: msgId,
@@ -422,7 +429,7 @@ export class P2pMeshTransport {
         }
       }
     }
-    return { text: clean, sentP2pCount: sent };
+    return { text: clean, sentP2pCount: sent, msgId };
   }
 
   public applyRemoteChatBubble(senderUid: string, text: string): void {
@@ -509,6 +516,9 @@ export class P2pMeshTransport {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        void ctx.resume().catch(() => undefined);
+      }
       const src = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
@@ -526,6 +536,9 @@ export class P2pMeshTransport {
       const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtx) return;
       const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') {
+        void ctx.resume().catch(() => undefined);
+      }
       const src = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
@@ -536,6 +549,30 @@ export class P2pMeshTransport {
     } catch {
       // ignore
     }
+  }
+
+  private scheduleAudioPlayUnlock(): void {
+    if (this.audioUnlockAttached || typeof window === 'undefined') return;
+    this.audioUnlockAttached = true;
+    const retryPlayback = () => {
+      this.audioUnlockAttached = false;
+      window.removeEventListener('pointerdown', retryPlayback);
+      window.removeEventListener('keydown', retryPlayback);
+      if (this.disposed) return;
+      if (this.localAudioCtx?.state === 'suspended') {
+        void this.localAudioCtx.resume().catch(() => undefined);
+      }
+      for (const peer of this.peers.values()) {
+        if (peer.audioCtx?.state === 'suspended') {
+          void peer.audioCtx.resume().catch(() => undefined);
+        }
+        if (peer.audioEl && peer.audioEl.paused && !this.muteAllPeers) {
+          void peer.audioEl.play().catch(() => undefined);
+        }
+      }
+    };
+    window.addEventListener('pointerdown', retryPlayback, { passive: true });
+    window.addEventListener('keydown', retryPlayback, { passive: true });
   }
 
   private pollVoiceActivity(): void {
@@ -629,7 +666,7 @@ export class P2pMeshTransport {
               // ignore unsupported restartIce
             }
           }
-        } else if (nowMs - discAt >= 7500) {
+        } else if (nowMs - discAt >= 12_000) {
           if (stillInRoom) {
             scheduleRetry();
           } else {
@@ -645,8 +682,8 @@ export class P2pMeshTransport {
         }
       }
 
-      // If cross-country ICE handshake stalled without opening DataChannel after 15s, retry cleanly
-      if (!dcOpen && stillInRoom && nowMs - slot.createdAtMs >= 15_000) {
+      // Allow up to 24s for cross-continent ICE/SDP negotiation before retrying
+      if (!dcOpen && stillInRoom && nowMs - slot.createdAtMs >= 24_000) {
         scheduleRetry();
         continue;
       }
@@ -710,6 +747,7 @@ export class P2pMeshTransport {
       analyserBuf: null,
       speaking: false,
       pendingIce: [],
+      pendingRemoteIce: [],
       iceFlushTimer: null,
       createdAtMs: Date.now(),
     };
@@ -785,13 +823,23 @@ export class P2pMeshTransport {
       if (!slot.audioEl) {
         const audio = document.createElement('audio');
         audio.autoplay = true;
+        audio.setAttribute('playsinline', 'true');
+        audio.style.display = 'none';
         audio.muted = this.muteAllPeers;
         audio.srcObject = stream;
+        if (typeof document !== 'undefined' && document.body) {
+          document.body.appendChild(audio);
+        }
         slot.audioEl = audio;
-        void audio.play().catch(() => undefined);
+        void audio.play().catch(() => {
+          this.scheduleAudioPlayUnlock();
+        });
         this.setupRemoteVad(slot, stream);
       } else {
         slot.audioEl.srcObject = stream;
+        void slot.audioEl.play().catch(() => {
+          this.scheduleAudioPlayUnlock();
+        });
       }
     };
 
@@ -970,6 +1018,12 @@ export class P2pMeshTransport {
         if (slot.ignoreOffer) return;
 
         await pc.setRemoteDescription(description);
+        if (slot.pendingRemoteIce.length > 0) {
+          const queued = slot.pendingRemoteIce.splice(0, slot.pendingRemoteIce.length);
+          for (const cand of queued) {
+            await pc.addIceCandidate(cand).catch(() => undefined);
+          }
+        }
         if (description.type === 'offer') {
           await pc.setLocalDescription();
           if (pc.localDescription && !this.disposed) {
@@ -984,6 +1038,14 @@ export class P2pMeshTransport {
       } else if (sig.kind === 'ice') {
         const parsed = JSON.parse(sig.payload) as RTCIceCandidateInit | RTCIceCandidateInit[];
         const list = Array.isArray(parsed) ? parsed : [parsed];
+        if (!pc.remoteDescription || !pc.remoteDescription.type) {
+          for (const candidate of list) {
+            if (slot.pendingRemoteIce.length < 64) {
+              slot.pendingRemoteIce.push(candidate);
+            }
+          }
+          return;
+        }
         for (const candidate of list) {
           try {
             await pc.addIceCandidate(candidate);
@@ -1035,6 +1097,7 @@ export class P2pMeshTransport {
       slot.iceFlushTimer = null;
     }
     slot.pendingIce.length = 0;
+    slot.pendingRemoteIce.length = 0;
     try {
       slot.dc?.close();
     } catch {
@@ -1053,6 +1116,7 @@ export class P2pMeshTransport {
     if (slot.audioEl) {
       slot.audioEl.pause();
       slot.audioEl.srcObject = null;
+      slot.audioEl.remove();
       slot.audioEl = null;
     }
     if (slot.audioCtx) {

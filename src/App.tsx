@@ -79,6 +79,7 @@ import {
   normalizeRoomCode,
   pruneDisconnectedMember,
   publishPlayerLiveState,
+  publishRoomRelayEvent,
   readLatestRoomMeta,
   rejoinRoomById,
   RoomSquadMeta,
@@ -89,6 +90,7 @@ import {
   subscribePlayerLiveStates,
   subscribeRoom,
   subscribeRoomMembers,
+  subscribeRoomRelayEvents,
   touchRoomHeartbeat,
   updateMyMemberProfile,
   updateRoomGroupName,
@@ -293,8 +295,10 @@ function DiglosaRpgApp() {
   });
   const enteringPlayingRoomRef = useRef<string | null>(null);
   const activeRoomRef = useRef<MultiplayerRoomDoc | null>(null);
+  const roomMembersRef = useRef<MultiplayerMemberDoc[]>([]);
   const playerNameRef = useRef<string>(playerName);
   activeRoomRef.current = activeRoom;
+  roomMembersRef.current = roomMembers;
   playerNameRef.current = playerName;
 
   const [leaderboardOpen, setLeaderboardOpen] = useState(false);
@@ -718,6 +722,18 @@ function DiglosaRpgApp() {
             transport.sendReliableToPeer(targetUid, pkt);
           } else {
             transport.sendReliableToAll(pkt);
+            const curRoomId = activeRoomRef.current?.roomId;
+            if (
+              curRoomId &&
+              transport.hasMissingP2pPeers() &&
+              (pkt.t === 'm_hit' ||
+                pkt.t === 'm_kill' ||
+                pkt.t === 'heal' ||
+                pkt.t === 'prog' ||
+                pkt.t === 'clock')
+            ) {
+              void publishRoomRelayEvent(curRoomId, pkt);
+            }
           }
         },
       });
@@ -1391,7 +1407,12 @@ function DiglosaRpgApp() {
         if (currentRoom.hostUid === activeUid) {
           void pruneDisconnectedMember(currentRoom.roomId, uid);
         } else if (currentRoom.hostUid === uid) {
-          const survivingActive = [activeUid, ...transport.getActivePeerUids()].sort();
+          const survivingActive = Array.from(
+            new Set([
+              activeUid,
+              ...roomMembersRef.current.map((m) => m.uid).filter((id) => id !== uid),
+            ]),
+          ).sort();
           if (survivingActive[0] === activeUid) {
             void claimHostAndRemoveDeadHost(
               currentRoom.roomId,
@@ -1492,8 +1513,29 @@ function DiglosaRpgApp() {
       },
     );
 
-    const unsubLiveStates = subscribePlayerLiveStates(activeRoomId, activeUid, (states) => {
-      transport.ingestFallbackStates(states);
+    const unsubLiveStates = subscribePlayerLiveStates(
+      activeRoomId,
+      activeUid,
+      (states) => {
+        transport.ingestFallbackStates(states);
+      },
+      (remoteStats) => {
+        if (remoteStats.length === 0) return;
+        setTeamStatsMap((prev) => {
+          const next = { ...prev };
+          for (const st of remoteStats) {
+            const cur = next[st.uid];
+            if (!cur || st.updatedAtMs >= cur.updatedAtMs) {
+              next[st.uid] = st;
+            }
+          }
+          return next;
+        });
+      },
+    );
+
+    const unsubRelayEvents = subscribeRoomRelayEvents(activeRoomId, activeUid, (fromUid, pkt) => {
+      engineRef.current?.handleMultiplayerPacket(fromUid, pkt, activeUid);
     });
 
     return () => {
@@ -1501,6 +1543,7 @@ function DiglosaRpgApp() {
       unsubMembers();
       unsubFallbackChat();
       unsubLiveStates();
+      unsubRelayEvents();
       transport.dispose();
       if (transportRef.current === transport) {
         transportRef.current = null;
@@ -1600,7 +1643,9 @@ function DiglosaRpgApp() {
       }
 
       if (needsFallback) {
-        const fbSig = `${pkt.w}|${Math.round(pkt.x * 5)}|${Math.round(pkt.y * 5)}|${Math.round(pkt.z * 5)}|${Math.round(pkt.yaw * 6)}|${pkt.og ? 1 : 0}|${pkt.sw ? 1 : 0}|${pkt.wp}|${pkt.wo ? 1 : 0}|${pkt.ch}`;
+        const statsPkt = engine.getLocalStatsPacket(activeUid ?? undefined);
+        const stObj = statsPkt.t === 'stats' ? statsPkt.st : undefined;
+        const fbSig = `${pkt.w}|${Math.round(pkt.x * 5)}|${Math.round(pkt.y * 5)}|${Math.round(pkt.z * 5)}|${Math.round(pkt.yaw * 6)}|${pkt.og ? 1 : 0}|${pkt.sw ? 1 : 0}|${pkt.wp}|${pkt.wo ? 1 : 0}|${pkt.ch}|${pkt.hp ?? 5}|${stObj?.kills ?? 0}|${stObj?.helps ?? 0}|${stObj?.challenges ?? 0}|${stObj?.zonesCleared ?? 0}|${stObj?.personalScore ?? 0}`;
         const minMoveIntervalMs = 380;
         const idleHeartbeatMs = 4500;
         const elapsed = now - lastFallbackSentAt;
@@ -1611,30 +1656,15 @@ function DiglosaRpgApp() {
         ) {
           lastFallbackSig = fbSig;
           lastFallbackSentAt = now;
-          void publishPlayerLiveState(activeRoomId, pkt);
+          void publishPlayerLiveState(activeRoomId, pkt, stObj);
         }
       }
     }, 85);
 
     return () => window.clearInterval(id);
-  }, [isMultiplayerPlaying, activeRoomId]);
+  }, [isMultiplayerPlaying, activeRoomId, activeUid]);
 
   const isHostInRoom = Boolean(activeRoom && activeUid && activeRoom.hostUid === activeUid);
-
-  // Instant P2P leave broadcast & best-effort room cleanup if player closes tab/browser
-  useEffect(() => {
-    if (!activeRoomId || !activeUid) return;
-    const handleTabExit = () => {
-      const transport = transportRef.current;
-      const activePeers = transport?.getActivePeerUids() ?? [];
-      transport?.broadcastLeave(playerNameRef.current || 'Rekan Tim');
-      void leaveMultiplayerRoom(activeRoomId, activePeers);
-    };
-    window.addEventListener('pagehide', handleTabExit);
-    return () => {
-      window.removeEventListener('pagehide', handleTabExit);
-    };
-  }, [activeRoomId, activeUid]);
 
   // Keep public room updatedAt fresh while Host is active (every 10 minutes; group rooms need 0 heartbeats)
   const isPublicRoom = activeRoom?.mode === 'public';
@@ -1646,12 +1676,13 @@ function DiglosaRpgApp() {
     return () => window.clearInterval(id);
   }, [activeRoomId, activeUid, isHostInRoom, isPublicRoom]);
 
-  // Sync authoritative Host/Client role into 3D engine (supports seamless Host Migration)
+  // Sync authoritative Host/Client role into 3D engine (works over both P2P & Cloud Relay)
+  const hasActiveTeammates = p2pStats.connectedPeers > 0 || roomMembers.length > 1;
   useEffect(() => {
-    engineRef.current?.setMultiplayerRole(isHostInRoom, p2pStats.connectedPeers > 0);
-  }, [isHostInRoom, p2pStats.connectedPeers, isMultiplayerPlaying]);
+    engineRef.current?.setMultiplayerRole(isHostInRoom, hasActiveTeammates);
+  }, [isHostInRoom, hasActiveTeammates, isMultiplayerPlaying]);
 
-  // Host world clock/wave/monster sync (~4 Hz movement + 1.8s authoritative clock snapshot) & 1 Hz Team Stats
+  // Host world clock/wave/monster sync (~4 Hz movement + 1.8s P2P world snapshot + 6.5s Cloud Relay clock) & 1 Hz Team Stats
   useEffect(() => {
     if (!isMultiplayerPlaying || !activeRoomId || !activeUid) return;
 
@@ -1687,6 +1718,22 @@ function DiglosaRpgApp() {
         }, 1800)
       : null;
 
+    const relayClockIntervalId = isHostInRoom
+      ? window.setInterval(() => {
+          const engine = engineRef.current;
+          const transport = transportRef.current;
+          if (
+            !engine ||
+            !transport ||
+            !transport.hasMissingP2pPeers() ||
+            engine.isAwaitingRejoinSync()
+          ) {
+            return;
+          }
+          void publishRoomRelayEvent(activeRoomId, engine.buildClockSyncPacket());
+        }, 6500)
+      : null;
+
     const statsIntervalId = window.setInterval(() => {
       const engine = engineRef.current;
       if (!engine) return;
@@ -1706,9 +1753,22 @@ function DiglosaRpgApp() {
     return () => {
       if (moveIntervalId !== null) window.clearInterval(moveIntervalId);
       if (worldSyncIntervalId !== null) window.clearInterval(worldSyncIntervalId);
+      if (relayClockIntervalId !== null) window.clearInterval(relayClockIntervalId);
       window.clearInterval(statsIntervalId);
     };
   }, [isMultiplayerPlaying, activeRoomId, activeUid, isHostInRoom]);
+
+  // Share initial progress/clock over Cloud Relay when a teammate joins without direct P2P
+  useEffect(() => {
+    if (!isMultiplayerPlaying || !activeRoomId || !isHostInRoom || roomMembers.length <= 1) return;
+    const engine = engineRef.current;
+    const transport = transportRef.current;
+    if (!engine || !transport || !transport.hasMissingP2pPeers() || engine.isAwaitingRejoinSync()) {
+      return;
+    }
+    void publishRoomRelayEvent(activeRoomId, engine.buildProgressSyncPacket());
+    void publishRoomRelayEvent(activeRoomId, engine.buildClockSyncPacket());
+  }, [isMultiplayerPlaying, activeRoomId, isHostInRoom, roomMembers.length]);
 
   const handlePreviewCharacter = useCallback(
     (nextId: CharacterPresetId, nextName: string) => {
@@ -1983,9 +2043,10 @@ function DiglosaRpgApp() {
       const clean = filterChatProfanity(rawText);
       if (!clean) return;
       const senderName = (playerName || user.displayName || 'Petualang').trim().slice(0, 24);
-      const res = transportRef.current?.broadcastChat(senderName, clean);
+      const msgId = `c_${user.uid.slice(0, 6)}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+      const res = transportRef.current?.broadcastChat(senderName, clean, msgId);
       const localMsg: RoomChatMessage = {
-        id: `local_${user.uid.slice(0, 6)}_${Date.now().toString(36)}`,
+        id: msgId,
         roomId: activeRoom.roomId,
         senderUid: user.uid,
         senderName,
@@ -1996,16 +2057,22 @@ function DiglosaRpgApp() {
       appendChatMessage(localMsg);
       engineRef.current?.voiceShowFeedback(`💬 ${senderName}: ${clean}`);
 
-      // Firestore fallback ensures message delivery even before P2P DataChannel opens
-      if (!res || res.sentP2pCount === 0) {
+      const remoteMemberCount = roomMembers.filter((m) => m.uid !== user.uid).length;
+      const missingP2p =
+        !res ||
+        res.sentP2pCount < remoteMemberCount ||
+        Boolean(transportRef.current?.hasMissingP2pPeers());
+      // Always relay via Firestore when any peer in the room lacks an open P2P DataChannel
+      if (missingP2p) {
         void sendFallbackChatMessage({
           roomId: activeRoom.roomId,
           senderName,
           text: clean,
+          msgId,
         }).catch(() => undefined);
       }
     },
-    [activeRoom, user, playerName, appendChatMessage],
+    [activeRoom, user, playerName, roomMembers, appendChatMessage],
   );
 
   const handleToggleMabarMic = useCallback(async () => {
@@ -2018,6 +2085,10 @@ function DiglosaRpgApp() {
       setMicEnabled(actual);
       if (actual && transport.hasMissingP2pPeers()) {
         transport.reconnectAllPeers();
+        setVoiceChatError(
+          'Mic ON — mencoba sambung P2P langsung untuk suara (3D, Chat & Tim aktif via Cloud Relay).',
+        );
+        window.setTimeout(() => setVoiceChatError(null), 4500);
       }
     } catch (err) {
       setMicEnabled(false);

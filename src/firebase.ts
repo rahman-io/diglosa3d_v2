@@ -38,10 +38,7 @@ function createFirestoreInstance(): Firestore {
   }
   try {
     const settings = {
-      experimentalForceLongPolling: true,
-      experimentalLongPollingOptions: {
-        timeoutSeconds: 8,
-      },
+      experimentalAutoDetectLongPolling: true,
       useFetchStreams: true,
     } as FirestoreSettings & { useFetchStreams?: boolean };
     return initializeFirestore(app, settings, databaseId);

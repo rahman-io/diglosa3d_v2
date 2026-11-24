@@ -168,12 +168,22 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
         <button
           type="button"
           onClick={() => void handleCopyCode()}
-          title={`Salin kode room ${room.code} (P2P tersambung: ${connectedPeers})`}
+          title={`Salin kode room ${room.code} (${
+            connectedPeers > 0
+              ? `P2P langsung: ${connectedPeers}`
+              : members.length > 1
+              ? 'Cloud Relay aktif'
+              : 'Menunggu teman'
+          })`}
           className="flex items-center gap-1.5 rounded-full bg-slate-900/90 px-2 py-0.5 text-cyan-100 transition hover:bg-slate-800"
         >
           <span
             className={`h-2 w-2 shrink-0 rounded-full ${
-              connectedPeers > 0 ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]' : 'bg-amber-400'
+              connectedPeers > 0
+                ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
+                : members.length > 1
+                ? 'bg-sky-400 shadow-[0_0_6px_#38bdf8]'
+                : 'bg-amber-400'
             }`}
           />
           <Users className="h-3 w-3 shrink-0 text-cyan-300" />
@@ -411,7 +421,7 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
         <div className="pointer-events-auto flex w-[min(325px,90vw)] flex-col gap-2 rounded-2xl border border-cyan-300/40 bg-slate-950/92 p-2.5 text-white shadow-2xl backdrop-blur-md">
           <div className="flex items-center justify-between border-b border-white/10 pb-1">
             <span className="text-[10px] font-black uppercase tracking-wider text-cyan-200">
-              Obrolan Tim ({connectedPeers > 0 ? `${connectedPeers} P2P Aktif` : 'Siaga'})
+              Obrolan Tim ({connectedPeers > 0 ? `${connectedPeers} P2P Aktif` : members.length > 1 ? 'Cloud Relay Aktif' : 'Siaga'})
             </span>
             <button
               type="button"

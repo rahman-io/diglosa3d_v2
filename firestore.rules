@@ -256,6 +256,12 @@ service cloud.firestore {
           'mhp',
           'ic',
           'zn',
+          'kl',
+          'as',
+          'hl',
+          'chc',
+          'zc',
+          'sc',
           'updatedAt'
         ]) &&
         data.uid is string && data.uid == stateId && data.uid == request.auth.uid && data.uid.size() >= 1 && data.uid.size() <= 128 &&
@@ -276,7 +282,35 @@ service cloud.firestore {
         data.mhp is int && data.mhp >= 1 && data.mhp <= 20 &&
         data.ic is bool &&
         data.zn is string && data.zn.size() >= 0 && data.zn.size() <= 60 &&
+        (!('kl' in data) || (data.kl is int && data.kl >= 0 && data.kl <= 100000)) &&
+        (!('as' in data) || (data.as is int && data.as >= 0 && data.as <= 100000)) &&
+        (!('hl' in data) || (data.hl is int && data.hl >= 0 && data.hl <= 100000)) &&
+        (!('chc' in data) || (data.chc is int && data.chc >= 0 && data.chc <= 100000)) &&
+        (!('zc' in data) || (data.zc is int && data.zc >= 0 && data.zc <= 100)) &&
+        (!('sc' in data) || (data.sc is int && data.sc >= 0 && data.sc <= 99999999)) &&
         data.updatedAt is timestamp;
+    }
+
+    function isValidRoomRelayEvent(data, roomId) {
+      return data.keys().hasAll([
+          'roomId',
+          'fromUid',
+          'kind',
+          'payload',
+          'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'roomId',
+          'fromUid',
+          'kind',
+          'payload',
+          'createdAt'
+        ]) &&
+        data.roomId is string && data.roomId == roomId && data.roomId.size() >= 4 && data.roomId.size() <= 64 &&
+        data.fromUid is string && data.fromUid == request.auth.uid && data.fromUid.size() >= 1 && data.fromUid.size() <= 128 &&
+        data.kind in ['m_hit', 'm_kill', 'heal', 'prog', 'clock'] &&
+        data.payload is string && data.payload.size() >= 2 && data.payload.size() <= 4096 &&
+        data.createdAt is timestamp;
     }
 
     match /users/{userId} {
@@ -520,6 +554,12 @@ service cloud.firestore {
             'mhp',
             'ic',
             'zn',
+            'kl',
+            'as',
+            'hl',
+            'chc',
+            'zc',
+            'sc',
             'updatedAt'
           ]) &&
           exists(/databases/$(database)/documents/rooms/$(roomId));
@@ -528,6 +568,31 @@ service cloud.firestore {
           isVerified() &&
           (
             isOwner(stateId) ||
+            (
+              exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+              get(/databases/$(database)/documents/rooms/$(roomId)).data.hostUid == request.auth.uid
+            )
+          );
+      }
+
+      match /events/{eventId} {
+        allow get: if isValidId(roomId) && isValidId(eventId) && isVerified();
+        allow list: if isVerified() &&
+          resource.data.roomId == roomId &&
+          request.query.limit <= 30;
+        allow create: if isValidId(roomId) &&
+          isValidId(eventId) &&
+          isVerified() &&
+          exists(/databases/$(database)/documents/rooms/$(roomId)) &&
+          isValidRoomRelayEvent(incoming(), roomId) &&
+          incoming().fromUid == request.auth.uid &&
+          incoming().createdAt == request.time;
+        allow update: if false;
+        allow delete: if isValidId(roomId) &&
+          isValidId(eventId) &&
+          isVerified() &&
+          (
+            existing().fromUid == request.auth.uid ||
             (
               exists(/databases/$(database)/documents/rooms/$(roomId)) &&
               get(/databases/$(database)/documents/rooms/$(roomId)).data.hostUid == request.auth.uid

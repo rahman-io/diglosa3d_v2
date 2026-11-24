@@ -3593,6 +3593,17 @@ export class RpgWorldEngine {
     };
   }
 
+  public buildClockSyncPacket(): P2pReliableMessage {
+    return {
+      t: 'clock',
+      day: this.dayCount,
+      tick: Math.round(this.worldTimeTick),
+      mode: this.surfaceWaveMode,
+      wtot: this.nightWaveTotal,
+      wcmp: this.missionWaveCompleted || undefined,
+    };
+  }
+
   public getLocalStatsPacket(uidOverride?: string): P2pReliableMessage {
     const uid = uidOverride || this.localMultiplayerUid || 'local';
     const zoneId =
@@ -4197,6 +4208,21 @@ export class RpgWorldEngine {
 
     if (pkt.t === 'prog') {
       this.applyProgressSync(pkt.lz, pkt.dbz, pkt.dc);
+      return;
+    }
+
+    if (pkt.t === 'clock') {
+      if (this.isWorldAuthority()) return;
+      this.dayCount = pkt.day;
+      this.worldTimeTick = pkt.tick;
+      this.surfaceWaveMode = pkt.mode;
+      this.lastOverworldDayPhase = this.getDayPhaseForTick(pkt.tick);
+      this.nightWaveTotal = pkt.wtot;
+      if (pkt.wcmp) {
+        this.missionWaveCompleted = true;
+      }
+      this.updateOverworldDayNightAtmosphere(0, false);
+      this.pushHud(true);
       return;
     }
 
