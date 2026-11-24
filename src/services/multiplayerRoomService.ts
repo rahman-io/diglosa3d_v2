@@ -1098,7 +1098,7 @@ export async function leaveMultiplayerRoom(
       });
     } else {
       await deleteUserMessagesAndSignals(roomId, user.uid, false);
-      const nextCount = Math.max(1, remaining.length);
+      const nextCount = Math.max(1, roomData.memberCount - 1);
       await updateDoc(roomRef, {
         memberCount: nextCount,
         updatedAt: serverTimestamp(),

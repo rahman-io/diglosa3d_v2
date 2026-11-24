@@ -55,6 +55,11 @@ export const LoginGateScreen: React.FC<LoginGateScreenProps> = ({
         setErrorMsg('Pop-up login diblokir browser. Izinkan pop-up lalu ketuk lagi.');
       } else if (code === 'auth/network-request-failed') {
         setErrorMsg('Butuh koneksi internet untuk login Google pertama kali.');
+      } else if (code === 'auth/unauthorized-domain') {
+        const host = typeof window !== 'undefined' ? window.location.hostname : '';
+        setErrorMsg(
+          `Domain "${host}" belum didaftarkan di Firebase Console → Authentication → Settings → Authorized domains.`,
+        );
       } else {
         setErrorMsg(
           err instanceof Error && err.message
