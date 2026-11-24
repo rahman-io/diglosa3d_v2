@@ -81,6 +81,7 @@ import {
   publishPlayerLiveState,
   publishRoomRelayEvent,
   readLatestRoomMeta,
+  reconcileRoomMemberCount,
   rejoinRoomById,
   RoomSquadMeta,
   sanitizeGroupName,
@@ -91,6 +92,7 @@ import {
   subscribeRoom,
   subscribeRoomMembers,
   subscribeRoomRelayEvents,
+  syncMyHostMemberFlag,
   touchRoomHeartbeat,
   updateMyMemberProfile,
   updateRoomGroupName,
@@ -294,6 +296,7 @@ function DiglosaRpgApp() {
     ts: 0,
   });
   const enteringPlayingRoomRef = useRef<string | null>(null);
+  const prevRoomStatusRef = useRef<{ roomId: string; status: MultiplayerRoomDoc['status'] } | null>(null);
   const activeRoomRef = useRef<MultiplayerRoomDoc | null>(null);
   const roomMembersRef = useRef<MultiplayerMemberDoc[]>([]);
   const playerNameRef = useRef<string>(playerName);
@@ -718,11 +721,15 @@ function DiglosaRpgApp() {
         onMultiplayerPacket: (pkt, targetUid) => {
           const transport = transportRef.current;
           if (!transport) return;
+          const curRoomId = activeRoomRef.current?.roomId;
           if (targetUid) {
-            transport.sendReliableToPeer(targetUid, pkt);
+            const sentP2p = transport.sendReliableToPeer(targetUid, pkt);
+            if (!sentP2p && curRoomId && pkt.t === 'wsync' && engineRef.current) {
+              void publishRoomRelayEvent(curRoomId, engineRef.current.buildProgressSyncPacket());
+              void publishRoomRelayEvent(curRoomId, engineRef.current.buildClockSyncPacket());
+            }
           } else {
             transport.sendReliableToAll(pkt);
-            const curRoomId = activeRoomRef.current?.roomId;
             if (
               curRoomId &&
               transport.hasMissingP2pPeers() &&
@@ -1470,6 +1477,7 @@ function DiglosaRpgApp() {
       setActiveRoom(mergeRoomWithCachedMeta(nextRoom));
     });
 
+    let lastReconciledAtMs = 0;
     const unsubMembers = subscribeRoomMembers(activeRoomId, (members) => {
       setRoomMembers(members);
       transport.syncMembers(members);
@@ -1489,6 +1497,33 @@ function DiglosaRpgApp() {
       const me = members.find((m) => m.uid === activeUid);
       if (me) {
         setMySpawnIndex(me.spawnIndex);
+        const curRoom = activeRoomRef.current;
+        if (curRoom && curRoom.hostUid === activeUid) {
+          if (!me.isHost) {
+            void syncMyHostMemberFlag(activeRoomId);
+          }
+          const nowMs = Date.now();
+          if (
+            members.length >= 1 &&
+            members.length !== curRoom.memberCount &&
+            nowMs - lastReconciledAtMs >= 4500
+          ) {
+            lastReconciledAtMs = nowMs;
+            window.setTimeout(() => {
+              const latestRoom = activeRoomRef.current;
+              const latestCount = roomMembersRef.current.length;
+              if (
+                latestRoom &&
+                latestRoom.roomId === activeRoomId &&
+                latestRoom.hostUid === activeUid &&
+                latestCount >= 1 &&
+                latestCount !== latestRoom.memberCount
+              ) {
+                void reconcileRoomMemberCount(activeRoomId, latestCount);
+              }
+            }, 3500);
+          }
+        }
       }
     });
 
@@ -1553,7 +1588,21 @@ function DiglosaRpgApp() {
       engineRef.current?.handleMultiplayerPacket(fromUid, pkt, activeUid);
     });
 
+    const handlePageHide = () => {
+      transport.broadcastLeave(playerNameRef.current || 'Rekan Tim');
+    };
+    const handleResume = () => {
+      if (document.visibilityState === 'hidden') return;
+      transport.handleNetworkOrVisibilityResume();
+    };
+    window.addEventListener('pagehide', handlePageHide);
+    window.addEventListener('online', handleResume);
+    document.addEventListener('visibilitychange', handleResume);
+
     return () => {
+      window.removeEventListener('pagehide', handlePageHide);
+      window.removeEventListener('online', handleResume);
+      document.removeEventListener('visibilitychange', handleResume);
       unsubRoom();
       unsubMembers();
       unsubFallbackChat();
@@ -1575,8 +1624,16 @@ function DiglosaRpgApp() {
 
   // Auto-enter match when Host sets room status to 'playing' while player waits in lobby
   useEffect(() => {
+    if (!activeRoom) {
+      prevRoomStatusRef.current = null;
+      return;
+    }
+    const prev = prevRoomStatusRef.current;
+    const wasWaitingSameRoom =
+      prev !== null && prev.roomId === activeRoom.roomId && prev.status === 'waiting';
+    prevRoomStatusRef.current = { roomId: activeRoom.roomId, status: activeRoom.status };
+
     if (
-      !activeRoom ||
       activeRoom.status !== 'playing' ||
       !difficultyPromptOpen ||
       isMultiplayerPlaying
@@ -1584,8 +1641,10 @@ function DiglosaRpgApp() {
       return;
     }
 
+    const joinedAlreadyPlaying = !wasWaitingSameRoom && activeRoom.hostUid !== activeUid;
+
     if (activeRoom.waveSeed && activeRoom.waveCount && activeRoom.groupName) {
-      enterMultiplayerMatch(activeRoom, mySpawnIndex);
+      enterMultiplayerMatch(activeRoom, mySpawnIndex, joinedAlreadyPlaying);
       return;
     }
 
@@ -1606,7 +1665,7 @@ function DiglosaRpgApp() {
         };
         if (resolvedRoom.groupName) setGroupName(resolvedRoom.groupName);
         setActiveRoom(resolvedRoom);
-        enterMultiplayerMatch(resolvedRoom, mySpawnIndex);
+        enterMultiplayerMatch(resolvedRoom, mySpawnIndex, joinedAlreadyPlaying);
       })
       .finally(() => {
         if (enteringPlayingRoomRef.current === activeRoom.roomId) {
@@ -1622,6 +1681,7 @@ function DiglosaRpgApp() {
     };
   }, [
     activeRoom,
+    activeUid,
     difficultyPromptOpen,
     isMultiplayerPlaying,
     mySpawnIndex,

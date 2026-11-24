@@ -238,13 +238,48 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
     }
   };
 
+  const formatLobbyError = (err: unknown): string => {
+    const raw = err instanceof Error ? err.message : String(err || '');
+    let detail = raw;
+    if (raw.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(raw) as { error?: unknown };
+        if (typeof parsed?.error === 'string' && parsed.error.trim()) {
+          detail = parsed.error;
+        }
+      } catch {
+        // keep raw text
+      }
+    }
+    const lower = detail.toLowerCase();
+    if (
+      lower.includes('offline') ||
+      lower.includes('unavailable') ||
+      lower.includes('network') ||
+      lower.includes('failed to fetch') ||
+      lower.includes('deadline-exceeded')
+    ) {
+      return 'Koneksi internet atau server Firestore sedang terganggu. Periksa jaringan lalu coba lagi.';
+    }
+    if (lower.includes('permission-denied') || lower.includes('missing or insufficient permissions')) {
+      return 'Akses room ditolak atau sesi Google perlu dimuat ulang. Coba masuk ulang atau minta kode room baru.';
+    }
+    if (lower.includes('not-found')) {
+      return 'Room tidak ditemukan atau sudah ditutup oleh Host.';
+    }
+    if (lower.includes('resource-exhausted') || lower.includes('quota')) {
+      return 'Server sedang sibuk. Tunggu beberapa detik lalu coba lagi.';
+    }
+    return detail.trim() || 'Terjadi kendala saat menghubungkan room.';
+  };
+
   const runAction = async (fn: () => Promise<void>) => {
     setBusy(true);
     setErrorMsg(null);
     try {
       await fn();
     } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Terjadi kendala saat menghubungkan room.');
+      setErrorMsg(formatLobbyError(err));
     } finally {
       setBusy(false);
     }

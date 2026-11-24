@@ -143,7 +143,7 @@ const roomsWithRelayEventsSent = new Set<string>();
 const myRelayEventDocIds = new Map<string, string[]>();
 const loggedLiveStateErrors = new Set<string>();
 
-async function cleanupStaleSignalsForUser(roomId: string, uid: string): Promise<void> {
+async function cleanupStaleUserRoomArtifacts(roomId: string, uid: string): Promise<void> {
   try {
     const sigSnap = await getDocs(
       query(
@@ -158,6 +158,46 @@ async function cleanupStaleSignalsForUser(roomId: string, uid: string): Promise<
     }
   } catch {
     // Best-effort stale signal cleanup
+  }
+
+  // Clean up stale messages & relay events authored by this user from prior refreshes
+  // so subcollections never fill past the limit(30) query window across multiple rejoins
+  try {
+    const msgSnap = await getDocs(
+      query(
+        collection(db, ROOMS_COLLECTION, roomId, 'messages'),
+        where('roomId', '==', roomId),
+        limit(30),
+      ),
+    );
+    const staleMsgs = msgSnap.docs.filter((d) => {
+      if (d.id === ROOM_META_DOC_ID) return false;
+      const data = d.data() as { senderUid?: string; text?: string };
+      if (data.senderUid !== uid) return false;
+      if (typeof data.text === 'string' && data.text.startsWith(ROOM_META_PREFIX)) return false;
+      return true;
+    });
+    if (staleMsgs.length > 0) {
+      await Promise.all(staleMsgs.map((d) => deleteDoc(d.ref).catch(() => undefined)));
+    }
+  } catch {
+    // Best-effort stale message cleanup
+  }
+
+  try {
+    const evSnap = await getDocs(
+      query(
+        collection(db, ROOMS_COLLECTION, roomId, 'events'),
+        where('roomId', '==', roomId),
+        limit(30),
+      ),
+    );
+    const staleEvs = evSnap.docs.filter((d) => (d.data() as { fromUid?: string }).fromUid === uid);
+    if (staleEvs.length > 0) {
+      await Promise.all(staleEvs.map((d) => deleteDoc(d.ref).catch(() => undefined)));
+    }
+  } catch {
+    // Best-effort stale event cleanup
   }
 }
 
@@ -322,8 +362,14 @@ export async function createGroupRoom(params: {
   const groupName = sanitizeGroupName(params.groupName, `${firstWord} SQUAD`);
   const waveSeed = generateRandomWaveSeed();
   const waveCount = rollRandomWaveCount(waveSeed);
-  const code = generateRoomCode(6);
-  const roomId = code;
+  let code = generateRoomCode(6);
+  let roomId = code;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const existingSnap = await getDoc(doc(db, ROOMS_COLLECTION, roomId)).catch(() => null);
+    if (!existingSnap || !existingSnap.exists()) break;
+    code = generateRoomCode(6);
+    roomId = code;
+  }
   const roomPath = `${ROOMS_COLLECTION}/${roomId}`;
   const memberPath = `${ROOMS_COLLECTION}/${roomId}/members/${user.uid}`;
   const spawnIndex = Math.floor(Math.random() * 8);
@@ -478,7 +524,7 @@ export async function joinRoomByCode(params: {
     handleFirestoreError(error, OperationType.WRITE, memberPath);
   }
 
-  await cleanupStaleSignalsForUser(roomId, user.uid);
+  await cleanupStaleUserRoomArtifacts(roomId, user.uid);
   const roomMeta = await readLatestRoomMeta(roomId);
   saveLastActiveRoomSession(user.uid, roomId, joinedRoom.code, joinedRoom.mode);
   return {
@@ -583,7 +629,7 @@ export async function findOrCreatePublicRoom(params: {
           updatedAt: serverTimestamp(),
         });
       }
-      await cleanupStaleSignalsForUser(cand.roomId, user.uid);
+      await cleanupStaleUserRoomArtifacts(cand.roomId, user.uid);
       const roomMeta = await readLatestRoomMeta(cand.roomId);
       saveLastActiveRoomSession(user.uid, cand.roomId, joined.code, 'public');
       return {
@@ -602,8 +648,14 @@ export async function findOrCreatePublicRoom(params: {
   }
 
   // No open public room found -> create a new public room
-  const code = generateRoomCode(6);
-  const roomId = `PUB_${code}`;
+  let code = generateRoomCode(6);
+  let roomId = `PUB_${code}`;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const existingSnap = await getDoc(doc(db, ROOMS_COLLECTION, roomId)).catch(() => null);
+    if (!existingSnap || !existingSnap.exists()) break;
+    code = generateRoomCode(6);
+    roomId = `PUB_${code}`;
+  }
   const roomPath = `${ROOMS_COLLECTION}/${roomId}`;
   const spawnIndex = Math.floor(Math.random() * 8);
   const groupName = sanitizeGroupName(params.groupName, `SKUAD ${code}`);
@@ -866,7 +918,7 @@ export async function rejoinRoomById(params: {
     handleFirestoreError(error, OperationType.WRITE, memberPath);
   }
 
-  await cleanupStaleSignalsForUser(roomId, user.uid);
+  await cleanupStaleUserRoomArtifacts(roomId, user.uid);
   const roomMeta = await readLatestRoomMeta(roomId);
   saveLastActiveRoomSession(user.uid, roomId, joinedRoom.code, joinedRoom.mode);
   return {
@@ -923,7 +975,7 @@ async function deleteUserMessagesAndSignals(
         query(
           collection(db, ROOMS_COLLECTION, roomId, 'events'),
           where('roomId', '==', roomId),
-          limit(20),
+          limit(30),
         ),
       );
       const myEvs = evSnap.docs.filter((d) => (d.data() as { fromUid?: string }).fromUid === uid);
@@ -941,7 +993,7 @@ async function deleteUserMessagesAndSignals(
       query(
         collection(db, ROOMS_COLLECTION, roomId, 'messages'),
         where('roomId', '==', roomId),
-        limit(15),
+        limit(30),
       ),
     );
     const toDelete = msgSnap.docs.filter((d) => {
@@ -1057,6 +1109,55 @@ export async function claimHostAndRemoveDeadHost(
     return true;
   } catch {
     return false;
+  }
+}
+
+export async function syncMyHostMemberFlag(roomId: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified || !roomId) return;
+  try {
+    await updateDoc(doc(db, ROOMS_COLLECTION, roomId, 'members', user.uid), {
+      isHost: true,
+      updatedAt: serverTimestamp(),
+    });
+  } catch {
+    // Best-effort host badge sync
+  }
+}
+
+export async function reconcileRoomMemberCount(
+  roomId: string,
+  expectedMaxKnownCount: number,
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified || !roomId) return;
+  const roomRef = doc(db, ROOMS_COLLECTION, roomId);
+  try {
+    const [roomSnap, memSnap] = await Promise.all([
+      getDoc(roomRef),
+      getDocs(
+        query(
+          collection(db, ROOMS_COLLECTION, roomId, 'members'),
+          where('roomId', '==', roomId),
+          limit(10),
+        ),
+      ),
+    ]);
+    if (!roomSnap.exists()) return;
+    const roomData = roomSnap.data() as MultiplayerRoomDoc;
+    if (roomData.hostUid !== user.uid) return;
+    const count = Math.min(
+      roomData.maxPlayers,
+      Math.max(1, memSnap.docs.length || expectedMaxKnownCount || 1),
+    );
+    if (count !== roomData.memberCount) {
+      await updateDoc(roomRef, {
+        memberCount: count,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch {
+    // Best-effort memberCount reconciliation
   }
 }
 
@@ -1233,8 +1334,8 @@ export async function sendWebRtcSignal(params: {
       payload: params.payload.slice(0, 8190),
       createdAt: serverTimestamp(),
     });
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
+  } catch {
+    // Ignore ephemeral signaling errors when room is torn down or network blips
   }
 }
 
@@ -1307,7 +1408,7 @@ export async function sendFallbackChatMessage(params: {
     roomsWithFallbackChatSent.add(params.roomId);
     const list = myFallbackChatDocIds.get(params.roomId) ?? [];
     list.push(writtenId);
-    while (list.length > 4) {
+    while (list.length > 3) {
       const oldestId = list.shift();
       if (oldestId) {
         void deleteDoc(doc(db, path, oldestId)).catch(() => undefined);
@@ -1572,7 +1673,7 @@ export async function publishRoomRelayEvent(
     roomsWithRelayEventsSent.add(roomId);
     const list = myRelayEventDocIds.get(roomId) ?? [];
     list.push(docRef.id);
-    if (list.length > 8) {
+    while (list.length > 4) {
       const oldestId = list.shift();
       if (oldestId) {
         void deleteDoc(doc(db, path, oldestId)).catch(() => undefined);
@@ -1614,7 +1715,7 @@ export function subscribeRoomRelayEvents(
         };
         if (!d.fromUid || d.fromUid === myUid || !d.payload) return;
         const ts = getTimestampMs(d.createdAt) || now;
-        if (!initialized && d.kind !== 'prog' && d.kind !== 'clock' && now - ts > 20_000) {
+        if (!initialized && d.kind !== 'prog' && d.kind !== 'clock') {
           return;
         }
         try {

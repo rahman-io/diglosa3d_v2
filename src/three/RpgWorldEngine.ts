@@ -3420,13 +3420,21 @@ export class RpgWorldEngine {
   }
 
   public setMultiplayerRole(isHost: boolean, hasPeers: boolean): void {
+    const promotedToHost = this.multiplayerActive && !this.isMultiplayerHost && isHost;
     this.isMultiplayerHost = isHost;
     this.hasConnectedPeers = hasPeers;
+    if (promotedToHost) {
+      this.awaitingRejoinWorldSync = false;
+      this.rejoinSyncDeadlineMs = 0;
+      if (hasPeers) {
+        this.emitMultiplayerPacket(this.buildWorldSyncPacket());
+      }
+    }
   }
 
   public setAwaitingRejoinSync(waiting: boolean): void {
     this.awaitingRejoinWorldSync = waiting;
-    this.rejoinSyncDeadlineMs = waiting ? Date.now() + 3000 : 0;
+    this.rejoinSyncDeadlineMs = waiting ? Date.now() + 15_000 : 0;
   }
 
   public isAwaitingRejoinSync(): boolean {

@@ -89,7 +89,7 @@ interface PeerSlot {
   closing: boolean;
   audioEl: HTMLAudioElement | null;
   remoteStream: MediaStream | null;
-  audioCtx: AudioContext | null;
+  vadSource: MediaStreamAudioSourceNode | null;
   analyser: AnalyserNode | null;
   analyserBuf: Uint8Array<ArrayBuffer> | null;
   speaking: boolean;
@@ -153,7 +153,8 @@ export class P2pMeshTransport {
   private localMicStream: MediaStream | null = null;
   private localMicMuted = true;
   private muteAllPeers = false;
-  private localAudioCtx: AudioContext | null = null;
+  private sharedVadCtx: AudioContext | null = null;
+  private localVadSource: MediaStreamAudioSourceNode | null = null;
   private localAnalyser: AnalyserNode | null = null;
   private localAnalyserBuf: Uint8Array<ArrayBuffer> | null = null;
   private vadTimer: number | null = null;
@@ -572,10 +573,12 @@ export class P2pMeshTransport {
         return false;
       }
       this.localMicStream = stream;
-      if (this.localAudioCtx) {
-        void this.localAudioCtx.close().catch(() => undefined);
-        this.localAudioCtx = null;
-      }
+      stream.getAudioTracks().forEach((tr) => {
+        tr.onended = () => {
+          if (this.disposed) return;
+          this.callbacks.onLocalSpeakingChange?.(false);
+        };
+      });
       this.setupLocalVad(stream);
     }
 
@@ -591,6 +594,50 @@ export class P2pMeshTransport {
     return true;
   }
 
+  public handleNetworkOrVisibilityResume(): void {
+    if (this.disposed) return;
+    if (this.sharedVadCtx?.state === 'suspended') {
+      void this.sharedVadCtx.resume().catch(() => undefined);
+    }
+    for (const peer of this.peers.values()) {
+      if (peer.audioEl && peer.audioEl.paused && !this.muteAllPeers) {
+        void peer.audioEl.play().catch(() => undefined);
+      }
+    }
+    for (const uid of this.memberMeta.keys()) {
+      if (this.departedPeers.has(uid)) continue;
+      const slot = this.peers.get(uid);
+      if (!slot) {
+        this.nextReconnectAtMs.delete(uid);
+        this.createPeer(uid);
+        continue;
+      }
+      const pcState = slot.pc.connectionState;
+      const dcOpen =
+        (slot.dc && slot.dc.readyState === 'open') ||
+        (slot.reliableDc && slot.reliableDc.readyState === 'open');
+      if (pcState === 'failed' || pcState === 'closed') {
+        this.nextReconnectAtMs.delete(uid);
+        this.closePeer(uid);
+        this.createPeer(uid);
+      } else if (pcState === 'disconnected' || !dcOpen) {
+        try {
+          slot.pc.restartIce();
+        } catch {
+          // ignore unsupported restartIce
+        }
+      }
+    }
+    if (!this.localMicMuted) {
+      const hasLive =
+        Boolean(this.localMicStream) &&
+        this.localMicStream!.getAudioTracks().some((tr) => tr.readyState === 'live');
+      if (!hasLive) {
+        void this.setMicEnabled(true).catch(() => undefined);
+      }
+    }
+  }
+
   public setMuteAllPeers(muted: boolean): void {
     this.muteAllPeers = muted;
     for (const peer of this.peers.values()) {
@@ -600,19 +647,41 @@ export class P2pMeshTransport {
     }
   }
 
+  private getOrCreateSharedVadCtx(): AudioContext | null {
+    if (this.sharedVadCtx && this.sharedVadCtx.state !== 'closed') {
+      if (this.sharedVadCtx.state === 'suspended') {
+        void this.sharedVadCtx.resume().catch(() => undefined);
+      }
+      return this.sharedVadCtx;
+    }
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return null;
+    this.sharedVadCtx = new AudioCtx();
+    if (this.sharedVadCtx.state === 'suspended') {
+      void this.sharedVadCtx.resume().catch(() => undefined);
+    }
+    return this.sharedVadCtx;
+  }
+
   private setupLocalVad(stream: MediaStream): void {
     try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      if (ctx.state === 'suspended') {
-        void ctx.resume().catch(() => undefined);
+      if (this.localVadSource) {
+        try {
+          this.localVadSource.disconnect();
+        } catch {
+          // ignore
+        }
+        this.localVadSource = null;
       }
+      const ctx = this.getOrCreateSharedVadCtx();
+      if (!ctx) return;
       const src = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       src.connect(analyser);
-      this.localAudioCtx = ctx;
+      this.localVadSource = src;
       this.localAnalyser = analyser;
       this.localAnalyserBuf = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
     } catch {
@@ -622,17 +691,21 @@ export class P2pMeshTransport {
 
   private setupRemoteVad(slot: PeerSlot, stream: MediaStream): void {
     try {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
-      if (ctx.state === 'suspended') {
-        void ctx.resume().catch(() => undefined);
+      if (slot.vadSource) {
+        try {
+          slot.vadSource.disconnect();
+        } catch {
+          // ignore
+        }
+        slot.vadSource = null;
       }
+      const ctx = this.getOrCreateSharedVadCtx();
+      if (!ctx) return;
       const src = ctx.createMediaStreamSource(stream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 256;
       src.connect(analyser);
-      slot.audioCtx = ctx;
+      slot.vadSource = src;
       slot.analyser = analyser;
       slot.analyserBuf = new Uint8Array(new ArrayBuffer(analyser.frequencyBinCount));
     } catch {
@@ -648,13 +721,10 @@ export class P2pMeshTransport {
       window.removeEventListener('pointerdown', retryPlayback);
       window.removeEventListener('keydown', retryPlayback);
       if (this.disposed) return;
-      if (this.localAudioCtx?.state === 'suspended') {
-        void this.localAudioCtx.resume().catch(() => undefined);
+      if (this.sharedVadCtx?.state === 'suspended') {
+        void this.sharedVadCtx.resume().catch(() => undefined);
       }
       for (const peer of this.peers.values()) {
-        if (peer.audioCtx?.state === 'suspended') {
-          void peer.audioCtx.resume().catch(() => undefined);
-        }
         if (peer.audioEl && peer.audioEl.paused && !this.muteAllPeers) {
           void peer.audioEl.play().catch(() => undefined);
         }
@@ -873,7 +943,7 @@ export class P2pMeshTransport {
       closing: false,
       audioEl: null,
       remoteStream: null,
-      audioCtx: null,
+      vadSource: null,
       analyser: null,
       analyserBuf: null,
       speaking: false,
@@ -979,10 +1049,6 @@ export class P2pMeshTransport {
       ev.track.onunmute = () => {
         tryPlay();
       };
-      if (slot.audioCtx) {
-        void slot.audioCtx.close().catch(() => undefined);
-        slot.audioCtx = null;
-      }
       this.setupRemoteVad(slot, stream);
     };
 
@@ -1186,7 +1252,16 @@ export class P2pMeshTransport {
           slot.remoteOriginSessionId = incomingOriginId;
         }
 
-        await pc.setRemoteDescription(description);
+        try {
+          await pc.setRemoteDescription(description);
+        } catch (err) {
+          if (polite && offerCollision && pc.signalingState === 'have-local-offer') {
+            await pc.setLocalDescription({ type: 'rollback' }).catch(() => undefined);
+            await pc.setRemoteDescription(description);
+          } else {
+            throw err;
+          }
+        }
         if (this.disposed || slot.closing || this.peers.get(sig.fromUid) !== slot) return;
 
         if (slot.pendingRemoteIce.length > 0) {
@@ -1305,9 +1380,13 @@ export class P2pMeshTransport {
       slot.audioEl.remove();
       slot.audioEl = null;
     }
-    if (slot.audioCtx) {
-      void slot.audioCtx.close().catch(() => undefined);
-      slot.audioCtx = null;
+    if (slot.vadSource) {
+      try {
+        slot.vadSource.disconnect();
+      } catch {
+        // ignore
+      }
+      slot.vadSource = null;
     }
   }
 
@@ -1365,9 +1444,17 @@ export class P2pMeshTransport {
       this.localMicStream.getTracks().forEach((t) => t.stop());
       this.localMicStream = null;
     }
-    if (this.localAudioCtx) {
-      void this.localAudioCtx.close().catch(() => undefined);
-      this.localAudioCtx = null;
+    if (this.localVadSource) {
+      try {
+        this.localVadSource.disconnect();
+      } catch {
+        // ignore
+      }
+      this.localVadSource = null;
+    }
+    if (this.sharedVadCtx) {
+      void this.sharedVadCtx.close().catch(() => undefined);
+      this.sharedVadCtx = null;
     }
     this.memberMeta.clear();
     this.memberUpdatedAtMs.clear();
