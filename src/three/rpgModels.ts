@@ -284,6 +284,10 @@ export interface DungeonArenaRig {
   prisonLockMat: SurfaceMaterial;
   captiveMesh: THREE.Group;
   prisonKeyGroup: THREE.Group;
+  ribbonPos: THREE.Vector3;
+  ribbonGroup: THREE.Group;
+  ribbonPivot: THREE.Group;
+  ribbonRingMat: THREE.MeshBasicMaterial;
   cameraOccluders: THREE.Object3D[];
   disposables: Array<{ dispose: () => void }>;
 }
@@ -3878,7 +3882,12 @@ export function createCaptiveMesh(
   return root;
 }
 
-export function animateCaptiveMesh(mesh: THREE.Object3D, elapsed: number, happy = false): void {
+export function animateCaptiveMesh(
+  mesh: THREE.Object3D,
+  elapsed: number,
+  happy = false,
+  moving = false,
+): void {
   const rig = mesh.userData.captiveRig as CaptiveAnimRig | undefined;
   if (!rig) return;
   const breath = Math.sin(elapsed * (happy ? 5.8 : 2.8));
@@ -3894,7 +3903,10 @@ export function animateCaptiveMesh(mesh: THREE.Object3D, elapsed: number, happy 
     rig.rightEye.scale.y = blinkY;
   }
   if (rig.leftArm && rig.rightArm) {
-    if (happy) {
+    if (moving) {
+      rig.leftArm.rotation.x = Math.sin(elapsed * 9) * 0.52;
+      rig.rightArm.rotation.x = -Math.sin(elapsed * 9) * 0.52;
+    } else if (happy) {
       rig.leftArm.rotation.x = -2.1 + Math.sin(elapsed * 10) * 0.35;
       rig.rightArm.rotation.x = -2.1 - Math.sin(elapsed * 10) * 0.35;
     } else {
@@ -5316,6 +5328,79 @@ export function createDungeonEnvironment(
   }
   group.add(prisonKeyGroup);
 
+  // Hidden 3D Red Ribbon ("Pita Merah 3D") revealed inside cave ONLY after captive is rescued
+  const ribbonX = isDesaSapaan
+    ? -14.6
+    : caveStory.prisonCorner === 'nw'
+    ? 14.0
+    : -14.0;
+  const ribbonZ = isDesaSapaan ? -15.6 : -16.2;
+  const ribbonPos = new THREE.Vector3(ribbonX, 0, ribbonZ);
+  const ribbonGroup = new THREE.Group();
+  ribbonGroup.position.copy(ribbonPos);
+  ribbonGroup.visible = false;
+  ribbonGroup.userData.caveRibbon = true;
+
+  const ribbonTileGeo = new THREE.BoxGeometry(1.45, 0.14, 1.45);
+  const ribbonTileMat = palette.getMat(0x334155, 'matte');
+  const ribbonTile = new THREE.Mesh(ribbonTileGeo, ribbonTileMat);
+  ribbonTile.position.y = 0.07;
+  ribbonTile.receiveShadow = true;
+
+  const ribbonRingGeo = new THREE.RingGeometry(1.05, 1.42, 24);
+  const ribbonRingMat = new THREE.MeshBasicMaterial({
+    color: 0xf43f5e,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.88,
+    depthWrite: false,
+  });
+  const ribbonRing = new THREE.Mesh(ribbonRingGeo, ribbonRingMat);
+  ribbonRing.rotation.x = -Math.PI / 2;
+  ribbonRing.position.y = 0.16;
+
+  const ribbonPivot = new THREE.Group();
+  ribbonPivot.position.y = 1.35;
+  const ribbonMat = palette.getMat(0xe11d48, 'gloss');
+  const ribbonGlowMat = palette.getMat(0xfb7185, 'emissive');
+  const goldRibbonBandMat = palette.getMat(0xfbbf24, 'metal');
+
+  const rKnotGeo = new THREE.BoxGeometry(0.28, 0.28, 0.26);
+  const rLoopGeo = new THREE.BoxGeometry(0.56, 0.38, 0.2);
+  const rTailGeo = new THREE.BoxGeometry(0.2, 0.62, 0.14);
+  const rBandGeo = new THREE.BoxGeometry(0.32, 0.16, 0.3);
+
+  const rKnot = new THREE.Mesh(rKnotGeo, ribbonGlowMat);
+  const rLoopL = new THREE.Mesh(rLoopGeo, ribbonMat);
+  rLoopL.position.set(-0.36, 0.08, 0);
+  rLoopL.rotation.z = 0.34;
+  const rLoopR = new THREE.Mesh(rLoopGeo, ribbonMat);
+  rLoopR.position.set(0.36, 0.08, 0);
+  rLoopR.rotation.z = -0.34;
+  const rTailL = new THREE.Mesh(rTailGeo, ribbonMat);
+  rTailL.position.set(-0.2, -0.36, 0.02);
+  rTailL.rotation.z = 0.26;
+  const rTailR = new THREE.Mesh(rTailGeo, ribbonMat);
+  rTailR.position.set(0.2, -0.36, 0.02);
+  rTailR.rotation.z = -0.26;
+  const rGoldBand = new THREE.Mesh(rBandGeo, goldRibbonBandMat);
+
+  ribbonPivot.add(rKnot, rLoopL, rLoopR, rTailL, rTailR, rGoldBand);
+  ribbonGroup.add(ribbonTile, ribbonRing, ribbonPivot);
+  ribbonGroup.traverse((child) => {
+    child.userData.caveRibbon = true;
+  });
+  disposables.push(
+    ribbonTileGeo,
+    ribbonRingGeo,
+    ribbonRingMat,
+    rKnotGeo,
+    rLoopGeo,
+    rTailGeo,
+    rBandGeo,
+  );
+  group.add(ribbonGroup);
+
   return {
     group,
     animatables,
@@ -5346,6 +5431,10 @@ export function createDungeonEnvironment(
     prisonLockMat,
     captiveMesh,
     prisonKeyGroup,
+    ribbonPos,
+    ribbonGroup,
+    ribbonPivot,
+    ribbonRingMat,
     cameraOccluders,
     disposables,
   };

@@ -2,9 +2,11 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { BookOpen, CheckCircle2, Sparkles, Volume2, X } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import {
+  BOSSES,
   formatGuardianAddress,
   getZoneNpcById,
   personalizePlayerText,
+  ZONE_CAVE_STORIES,
   ZONE_DOORS,
 } from '../data/diglosaCatalog';
 import { getWordsForZone, getWordStatus } from '../data/vocabCatalog';
@@ -19,6 +21,10 @@ interface NpcDialogueModalProps {
   quests: RpgQuestState[];
   wordProgress: Record<string, WordProgress>;
   liberatedZones: ZoneId[];
+  captiveRescuedZones?: ZoneId[];
+  ribbons?: ZoneId[];
+  activeZoneId?: ZoneId;
+  activeZoneIslandRemaining?: number;
   areaDoorsCleared: Record<ZoneId, number[]>;
   isNightTime?: boolean;
   nightPermittedZones?: ZoneId[];
@@ -43,6 +49,10 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
   quests,
   wordProgress,
   liberatedZones,
+  captiveRescuedZones = [],
+  ribbons = [],
+  activeZoneId,
+  activeZoneIslandRemaining,
   areaDoorsCleared,
   isNightTime = false,
   nightPermittedZones = [],
@@ -66,6 +76,8 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
   const heroDisplayName = playerName.trim() || 'Hoot';
   const guardianAddress = npc ? formatGuardianAddress(npc, heroDisplayName, characterId) : heroDisplayName;
   const isLiberated = zoneId ? liberatedZones.includes(zoneId) : false;
+  const isCaptiveRescued = zoneId ? captiveRescuedZones.includes(zoneId) : false;
+  const hasRibbon = zoneId ? ribbons.includes(zoneId) : false;
   const hasNightPermission = zoneId
     ? isNightTime || nightPermittedZones.includes(zoneId)
     : false;
@@ -74,21 +86,68 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
 
   const turns = useMemo<DialogueBeat[]>(() => {
     if (!npc || !zoneId) return [];
+    const caveStory = ZONE_CAVE_STORIES[zoneId];
+    const boss = BOSSES[zoneId];
+
     if (isLiberated) {
+      const ribbonReminderId = !hasRibbon
+        ? ' Jika belum mengambil Pita Merah 3D tersembunyi di dalam gua, kamu masih bisa masuk lagi untuk mencarinya.'
+        : '';
+      const ribbonReminderEn = !hasRibbon
+        ? ' If you have not grabbed the hidden 3D Red Ribbon inside the cave yet, you can go back in anytime.'
+        : '';
       return [
         {
           speakerSide: 'npc',
           speakerName: npc.name,
           speakerRole: `${npc.zoneName} · Wilayah Bebas ✓`,
-          textId: personalizePlayerText(npc.thanksId, guardianAddress),
-          textEn: `Thank you, ${guardianAddress}! ${npc.zoneName} is safe and shining bright again!`,
+          textId: `${personalizePlayerText(npc.thanksId, guardianAddress)}${ribbonReminderId}`,
+          textEn: `Thank you, ${guardianAddress}! ${caveStory.captiveName} is safe, ${boss.name} is defeated, and the island fog has lifted!${ribbonReminderEn}`,
         },
         {
           speakerSide: 'hero',
           speakerName: heroDisplayName,
           speakerRole: 'Penjelajah Nusantara Kata',
-          textId: `Senang bisa membantu, ${npc.name}! Aku bisa berlatih lagi di ${npc.zoneName} kapan saja.`,
+          textId: `Senang bisa membantu, ${npc.name}! Aku bisa masuk lagi ke ${npc.zoneName} kapan saja.`,
           textEn: `Happy to help, ${npc.name}! I can revisit ${npc.zoneName} anytime to practice.`,
+        },
+      ];
+    }
+
+    if (isCaptiveRescued) {
+      const remMonsters =
+        activeZoneId === zoneId && typeof activeZoneIslandRemaining === 'number'
+          ? activeZoneIslandRemaining
+          : null;
+      const remLabelId =
+        remMonsters !== null && remMonsters > 0
+          ? `${remMonsters} monster tersisa di luar gua`
+          : 'seluruh monster di luar gua';
+      const remLabelEn =
+        remMonsters !== null && remMonsters > 0
+          ? `the remaining ${remMonsters} monsters outside the cave`
+          : 'every monster outside the cave';
+      const ribbonNoteId = !hasRibbon
+        ? ' Pita Merah 3D tersembunyi juga masih menunggu di dalam gua jika ingin kamu ambil.'
+        : ' Pita Merah 3D dari gua juga sudah berhasil kamu amankan!';
+      const ribbonNoteEn = !hasRibbon
+        ? ' The hidden 3D Red Ribbon is still waiting inside the cave whenever you want to claim it.'
+        : ' You also secured the hidden 3D Red Ribbon from inside the cave!';
+
+      return [
+        {
+          speakerSide: 'npc',
+          speakerName: npc.name,
+          speakerRole: `${npc.zoneName} · Reuni ${caveStory.captiveName}`,
+          textId: `${personalizePlayerText(caveStory.rescueGuardianId, guardianAddress)} ${caveStory.captiveName} sudah selamat bersamaku, dan Bos ${boss.name} di dalam gua sudah kalah!${ribbonNoteId}`,
+          textEn: `${personalizePlayerText(caveStory.rescueGuardianEn, guardianAddress)} ${caveStory.captiveName} is safe with me now, and ${boss.name} inside the cave is defeated!${ribbonNoteEn}`,
+        },
+        {
+          speakerSide: 'npc',
+          speakerName: npc.name,
+          speakerRole: `${npc.zoneName} · Misi Terakhir (Kabut Pulau)`,
+          textId: `Sekarang tinggal misi terakhir di pulau ini, ${guardianAddress}: habisi ${remLabelId} di area ${npc.zoneName} supaya kabut tebal di pulau ini hilang sepenuhnya!`,
+          textEn: `Now for the final mission on this island, ${guardianAddress}: defeat ${remLabelEn} around ${npc.zoneName} so the island fog disappears completely!`,
         },
       ];
     }
@@ -125,6 +184,10 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
     npc,
     zoneId,
     isLiberated,
+    isCaptiveRescued,
+    hasRibbon,
+    activeZoneId,
+    activeZoneIslandRemaining,
     heroDisplayName,
     guardianAddress,
     isNightTime,

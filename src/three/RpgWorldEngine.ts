@@ -173,7 +173,6 @@ import {
   createDungeonEnvironment,
   createFirstPersonViewRig,
   createHeroAvatar,
-  createIslandRibbonPedestal,
   createMonsterMesh,
   createOwlMessengerRig,
   createPortalArch,
@@ -188,7 +187,6 @@ import {
   getWeaponPoseClass,
   getZoneForPosition,
   HeroAvatarRig,
-  IslandRibbonPedestalRig,
   OwlMessengerRig,
   PortalArchRig,
   setFirstPersonHeldVisual,
@@ -488,6 +486,8 @@ interface SavedStatePayload {
   ownedRelics: RelicId[];
   ribbons: ZoneId[];
   liberatedZones: ZoneId[];
+  captiveRescuedZones?: ZoneId[];
+  guardianReunitedZones?: ZoneId[];
   areaTrophies: ZoneId[];
   areaDoorsCleared: Record<ZoneId, number[]>;
   areaDeals: Partial<Record<ZoneId, AreaWaveDeal>>;
@@ -866,6 +866,7 @@ export class RpgWorldEngine {
     driftZ: number;
     phase: number;
     rotY: number;
+    zoneId?: ZoneId | 'hub';
   }> = [];
   private isSoftwareGl: boolean;
   private isMobileDevice: boolean;
@@ -1387,6 +1388,8 @@ export class RpgWorldEngine {
   private ownedRelics = new Set<RelicId>();
   private ribbons = new Set<ZoneId>();
   private liberatedZones = new Set<ZoneId>();
+  private captiveRescuedZones = new Set<ZoneId>();
+  private guardianReunitedZones = new Set<ZoneId>();
   private areaTrophies = new Set<ZoneId>();
   private areaDoorsCleared: Record<ZoneId, number[]> = {
     desa_sapaan: [],
@@ -1427,14 +1430,10 @@ export class RpgWorldEngine {
   private nearHiddenPrison = false;
   private nearPortal = false;
   private nearDungeonExit = false;
-  private islandRibbonRigs = new Map<
-    ZoneId,
-    { rig: IslandRibbonPedestalRig; x: number; y: number; z: number }
-  >();
-  private islandRibbonDisposables: Array<{ dispose: () => void }> = [];
-  private nearIslandRibbonZone: ZoneId | null = null;
-  private nearIslandRibbonLocked = false;
-  private lastLockedRibbonBannerMs = 0;
+  private nearCaveRibbon = false;
+  private dungeonCaptivePos = new THREE.Vector3();
+  private rescueCaptiveStartPos = new THREE.Vector3();
+  private rescueCaptiveEndPos = new THREE.Vector3();
   private bannerMessage: string | null = null;
   private bannerTimer = 0;
   private lastHudPushMs = 0;
@@ -1647,8 +1646,6 @@ export class RpgWorldEngine {
     this.portalRig.root.userData.portal = true;
     this.overworldGroup.add(this.portalRig.root);
     this.overworldClickables.push(this.portalRig.root);
-
-    this.initIslandRibbonPedestals();
 
     this.areaMists = createAreaMists();
     this.areaMists.forEach((m) => this.overworldGroup.add(m));
@@ -2037,6 +2034,8 @@ export class RpgWorldEngine {
         ownedRelics: Array.from(this.ownedRelics),
         ribbons: Array.from(this.ribbons),
         liberatedZones: Array.from(this.liberatedZones),
+        captiveRescuedZones: Array.from(this.captiveRescuedZones),
+        guardianReunitedZones: Array.from(this.guardianReunitedZones),
         areaTrophies: Array.from(this.areaTrophies),
         areaDoorsCleared: this.areaDoorsCleared,
         areaDeals: this.areaDeals,
@@ -2148,6 +2147,8 @@ export class RpgWorldEngine {
       this.ownedRelics = new Set(data.ownedRelics || []);
       this.ribbons = new Set(data.ribbons || []);
       this.liberatedZones = new Set(data.liberatedZones || []);
+      this.captiveRescuedZones = new Set(data.captiveRescuedZones ?? data.liberatedZones ?? []);
+      this.guardianReunitedZones = new Set(data.guardianReunitedZones ?? data.liberatedZones ?? []);
       this.areaTrophies = new Set(data.areaTrophies || []);
       this.areaDoorsCleared = data.areaDoorsCleared || {
         desa_sapaan: [],
@@ -2536,70 +2537,81 @@ export class RpgWorldEngine {
     return (shift === 'night') === isNight;
   }
 
-  private initIslandRibbonPedestals(): void {
-    const coords: Record<ZoneId, { x: number; z: number }> = {
-      desa_sapaan: { x: 23.6, z: 121.0 },
-      pasar_rasa: { x: -119.5, z: 51.5 },
-      hutan_satwa: { x: 134.5, z: 45.8 },
-      gerbang_kota: { x: -114.5, z: -91.0 },
-      menara_waktu: { x: 117.5, z: -85.0 },
-      gua_portal: { x: 14.5, z: -176.0 },
-    };
-    const zones: ZoneId[] = [
-      'desa_sapaan',
-      'pasar_rasa',
-      'hutan_satwa',
-      'gerbang_kota',
-      'menara_waktu',
-      'gua_portal',
-    ];
-    for (const zId of zones) {
-      const { x, z } = coords[zId];
-      const y = getArchipelagoGroundY(x, z);
-      const accentHex = new THREE.Color(ZONE_INFO[zId].badgeColor).getHex();
-      const rig = createIslandRibbonPedestal(
-        zId,
-        accentHex,
-        this.palette,
-        this.islandRibbonDisposables,
-      );
-      rig.root.position.set(x, y, z);
-      rig.root.rotation.y = OVERWORLD_ANCHORS.npcs[NPC_CATALOG.find((n) => n.zoneId === zId)?.id ?? '']?.rotY ?? 0;
-      this.overworldGroup.add(rig.root);
-      this.overworldClickables.push(rig.root);
-      this.islandRibbonRigs.set(zId, { rig, x, y, z });
-    }
+  private isMonsterOnIsland(m: RoamingMonster, zoneId: ZoneId): boolean {
+    const disk = ISLAND_DISKS.find((d) => d.id === zoneId);
+    if (!disk) return m.zoneId === zoneId;
+    const reach = disk.radius + 8;
+    return (
+      Math.hypot(m.homeX - disk.cx, m.homeZ - disk.cz) <= reach ||
+      Math.hypot(m.x - disk.cx, m.z - disk.cz) <= reach
+    );
   }
 
-  private collectOrInspectIslandRibbon(zoneId: ZoneId, fromInteract = false): void {
-    if (this.ribbons.has(zoneId)) return;
-    const entry = this.islandRibbonRigs.get(zoneId);
-    if (!this.liberatedZones.has(zoneId)) {
-      const now = Date.now();
-      if (fromInteract || now - this.lastLockedRibbonBannerMs > 2400) {
-        this.lastLockedRibbonBannerMs = now;
-        soundEngine.playNo();
-        this.showBanner(
-          `🔒 Pita Merah 3D ${ZONE_INFO[zoneId].name} masih tersegel! Selesaikan dulu misi gua di ${ZONE_INFO[zoneId].name} untuk membukanya.`,
-          3.8,
-        );
-      }
+  private getZoneIslandCounts(zoneId: ZoneId): { total: number; alive: number; defeated: number } {
+    const islandMobs = this.monsters.filter((m) => this.isMonsterOnIsland(m, zoneId));
+    const total = islandMobs.length;
+    const alive = islandMobs.filter((m) => m.alive).length;
+    return { total, alive, defeated: Math.max(0, total - alive) };
+  }
+
+  private checkZoneFogClear(zoneId: ZoneId, announce = true): boolean {
+    if (!this.captiveRescuedZones.has(zoneId) || this.liberatedZones.has(zoneId)) return false;
+    const { alive } = this.getZoneIslandCounts(zoneId);
+    if (alive > 0) return false;
+
+    this.liberatedZones.add(zoneId);
+    const q = this.quests.find((item) => item.zoneId === zoneId);
+    if (q) {
+      q.accepted = true;
+      q.progress = q.target;
+      q.claimed = true;
+    }
+    this.checkAreaTrophy(zoneId);
+    this.refreshAreaMists();
+    this.localMabarStats.zonesCleared = this.liberatedZones.size;
+    this.emitProgressSync();
+    if (announce) {
+      soundEngine.playFanfare();
+      this.spawnBurst(this.heroPos.x, this.heroPos.y + 2.0, this.heroPos.z, 0x34d399, 40);
+      this.showBanner(
+        `☀️ Seluruh monster di ${ZONE_INFO[zoneId].name} berhasil dikalahkan! Kabut pulau menghilang dan wilayah bebas sepenuhnya!`,
+        5.8,
+      );
+      this.saveProgress();
+      this.pushHud(true);
+    }
+    return true;
+  }
+
+  private collectCaveRibbon(zoneId: ZoneId): void {
+    if (!this.dungeonRig || this.ribbons.has(zoneId)) return;
+    if (!this.dungeonState?.prisonUnlocked) {
+      soundEngine.playNo();
+      this.showBanner('🔒 Bebaskan tawanan penjara gua dulu untuk memunculkan Pita Merah 3D!', 3.2);
       return;
     }
-
     this.ribbons.add(zoneId);
-    if (entry) {
-      entry.rig.ribbonPivot.visible = false;
-      entry.rig.lockDome.visible = false;
-      this.spawnBurst(entry.x, entry.y + 1.9, entry.z, 0xf43f5e, 34);
+    this.dungeonRig.ribbonGroup.visible = false;
+    this.nearCaveRibbon = false;
+    if (this.dungeonState && this.dungeonState.zoneId === zoneId) {
+      this.dungeonState.caveRibbonCollected = true;
     }
+    this.spawnBurst(
+      this.dungeonRig.ribbonPos.x,
+      1.35,
+      this.dungeonRig.ribbonPos.z,
+      0xf43f5e,
+      34,
+    );
     this.addScore(350);
     this.gainXp(60);
     soundEngine.playFanfare();
     const rb = RIBBONS[zoneId];
+    const capName = this.dungeonState?.captiveName ?? ZONE_CAVE_STORIES[zoneId].captiveName;
+    const guardName = this.dungeonState?.guardianName ?? ZONE_CAVE_STORIES[zoneId].guardianName;
     this.showBanner(
-      `🎀 ${rb.name} diambil (${this.ribbons.size}/6)! — "${rb.quote}"`,
-      5.5,
+      `🎀 ${rb.name} ditemukan (${this.ribbons.size}/6)! ${rb.quote} Ayo bawa ${capName} keluar menemui ${guardName}!`,
+      5.8,
     );
     this.saveProgress();
     this.pushHud(true);
@@ -3900,6 +3912,22 @@ export class RpgWorldEngine {
     this.areaMists.forEach((mist, zId) => {
       mist.visible = !this.liberatedZones.has(zId);
     });
+    if (this.worldMistMesh && this.worldMistSeeds.length > 0) {
+      for (let i = 0; i < this.worldMistSeeds.length; i++) {
+        const s = this.worldMistSeeds[i];
+        const hidden = Boolean(s.zoneId && s.zoneId !== 'hub' && this.liberatedZones.has(s.zoneId));
+        _cloudPos.set(s.baseX, s.baseY, s.baseZ);
+        _cloudQuat.setFromAxisAngle(_v3.set(0, 1, 0), s.rotY);
+        if (hidden) {
+          _cloudScale.set(0, 0, 0);
+        } else {
+          _cloudScale.set(s.sx, s.sy, s.sz);
+        }
+        _cloudMat.compose(_cloudPos, _cloudQuat, _cloudScale);
+        this.worldMistMesh.setMatrixAt(i, _cloudMat);
+      }
+      this.worldMistMesh.instanceMatrix.needsUpdate = true;
+    }
   }
 
   private refreshWeaponVisual(): void {
@@ -4705,6 +4733,8 @@ export class RpgWorldEngine {
   ): void {
     let changed = false;
     for (const z of lz) {
+      this.captiveRescuedZones.add(z);
+      this.guardianReunitedZones.add(z);
       if (!this.liberatedZones.has(z)) {
         this.liberatedZones.add(z);
         const q = this.quests.find((item) => item.zoneId === z);
@@ -4908,6 +4938,7 @@ export class RpgWorldEngine {
       }
       if (this.worldMode === 'overworld') {
         this.checkMissionWaveCompletion();
+        this.checkZoneFogClear(m.zoneId, true);
       }
       this.pushHud(true);
       return;
@@ -4947,6 +4978,7 @@ export class RpgWorldEngine {
     }
     if (this.worldMode === 'overworld') {
       this.checkMissionWaveCompletion();
+      this.checkZoneFogClear(m.zoneId, true);
     }
     this.pushHud(true);
   }
@@ -5577,10 +5609,11 @@ export class RpgWorldEngine {
     this.ownedRelics.clear();
     this.ribbons.clear();
     this.liberatedZones.clear();
+    this.captiveRescuedZones.clear();
+    this.guardianReunitedZones.clear();
     this.nightPermittedZones.clear();
     this.nearbyOverworldZoneDoor = null;
-    this.nearIslandRibbonZone = null;
-    this.nearIslandRibbonLocked = false;
+    this.nearCaveRibbon = false;
     this.areaTrophies.clear();
     this.areaDoorsCleared = {
       desa_sapaan: [],
@@ -7367,53 +7400,31 @@ export class RpgWorldEngine {
       const zId = this.storyDialog.zoneId!;
       const story = ZONE_CAVE_STORIES[zId];
       const boss = BOSSES[zId];
-      const rb = RIBBONS[zId];
       const wDef = WEAPONS[boss.rewardWeapon];
       const nextStep = this.storyDialog.step + 1;
-      const hasInsideGuardian = this.dungeonRig?.hasInsideGuardian !== false;
 
-      if (nextStep === 1 && hasInsideGuardian) {
-        if (this.dungeonRig) {
-          this.dungeonRig.guardianAuraMat.color.setHex(0x22c55e);
-        }
-        const gAddr = formatGuardianAddress(story.guardianId, pName, this.localCharacterId);
-        const guardianEn = personalizePlayerText(story.rescueGuardianEn, gAddr);
+      if (nextStep === 1) {
+        this.grantDungeonCaptiveRescueRewards(zId);
+        const clueEn = personalizePlayerText(story.caveRibbonClueEn, pName);
+        const clueId = personalizePlayerText(story.caveRibbonClueId, pName);
         this.storyDialog = {
           kind: 'dungeon_rescue',
           step: 1,
+          maxStep: 1,
           zoneId: zId,
-          speakerName: `${story.guardianName} (Suara Pulih!)`,
-          speakerRole: `Penjaga ${ZONE_INFO[zId].name} · Reuni Keluarga`,
-          textEn: guardianEn,
-          textId: personalizePlayerText(story.rescueGuardianId, gAddr),
-          accentColor: '#10b981',
-          speakerKind: 'npc',
-          speakerNpcId: story.guardianId,
-          speakerSide: 'npc',
-        };
-        soundEngine.playWin();
-        soundEngine.speakEnglish(guardianEn);
-        this.pushHud(true);
-      } else if (nextStep === 2 || (nextStep === 1 && !hasInsideGuardian)) {
-        this.finalizeDungeonLiberation(zId);
-        this.storyDialog = {
-          kind: 'dungeon_rescue',
-          step: 2,
-          zoneId: zId,
-          speakerName: pName,
-          speakerRole: `${ZONE_INFO[zId].name} Bebas · Segel Pita #${rb.number}/6 Terbuka`,
-          textEn: `Area liberated! Earned ${RELICS[boss.rewardRelic].name} and ${wDef.name}! The 3D Red Ribbon #${rb.number}/6 seal on the island is now unlocked!`,
-          textId: hasInsideGuardian
-            ? `${story.captiveName} kembali bersama ${story.guardianName}! Gua kini terang benderang, dan segel Pita Merah 3D di luar gua ${ZONE_INFO[zId].name} sekarang sudah terbuka untuk diambil!`
-            : `${story.captiveName} berhasil diselamatkan dari penjara gua! Gua kini terang benderang, dan segel Pita Merah 3D di luar gua ${ZONE_INFO[zId].name} sekarang sudah terbuka untuk diambil!`,
+          speakerName: story.captiveName,
+          speakerRole: `Petunjuk ${story.captiveName} · Pita Merah 3D Tersembunyi`,
+          textEn: clueEn,
+          textId: clueId,
           accentColor: '#e11d48',
-          speakerKind: 'hero',
-          speakerSide: 'hero',
-          ribbonName: rb.name,
-          ribbonQuote: rb.quote,
-          rewardSummary: `Segel ${rb.name} Terbuka · ${RELICS[boss.rewardRelic].name} · ${wDef.name} (+Peluru) · +5 💎 · +180 XP`,
+          speakerKind: 'captive',
+          captiveKind: story.captiveKind,
+          captiveColor: story.captiveColor,
+          speakerSide: 'npc',
+          rewardSummary: `Bos ${boss.name} Kalah! · ${RELICS[boss.rewardRelic].name} · ${wDef.name} (+Peluru) · +5 💎 · +180 XP`,
         };
-        soundEngine.playFanfare();
+        soundEngine.playPick();
+        soundEngine.speakEnglish(clueEn);
         this.pushHud(true);
       } else {
         this.finishDungeonRescueCutscene(zId);
@@ -7425,6 +7436,7 @@ export class RpgWorldEngine {
       this.storyDialog = null;
       this.phase = 'playing';
       this.applyCameraVisibilityAndControls();
+      this.snapCameraBehindHero();
       this.pushHud(true);
       return;
     }
@@ -7451,6 +7463,12 @@ export class RpgWorldEngine {
       this.finishDungeonIntroCutscene();
     } else if (this.storyDialog.kind === 'dungeon_rescue') {
       this.finishDungeonRescueCutscene(this.storyDialog.zoneId);
+    } else if (this.storyDialog.kind === 'area_cleared') {
+      this.storyDialog = null;
+      this.phase = 'playing';
+      this.applyCameraVisibilityAndControls();
+      this.snapCameraBehindHero();
+      this.pushHud(true);
     } else if (this.storyDialog.kind === 'cave_guardian') {
       this.storyDialog = null;
       this.caveGuardianTurns = [];
@@ -7570,60 +7588,89 @@ export class RpgWorldEngine {
   private startDungeonRescueCutscene(zoneId: ZoneId): void {
     const story = ZONE_CAVE_STORIES[zoneId];
     const pName = this.getPlayerDisplayName();
-    const hasInsideGuardian = this.dungeonRig?.hasInsideGuardian !== false;
+    if (this.cameraMode === 'first_person') {
+      this.cameraMode = 'third_back';
+    }
     this.phase = 'story';
     this.heldKeys.clear();
     this.applyCameraVisibilityAndControls();
     this.storyTimer = 0;
 
     if (this.dungeonRig) {
-      this.dungeonRig.prisonBars.visible = false;
+      const pPos = this.dungeonRig.prisonPos;
+      this.dungeonRig.prisonBars.visible = true;
+      this.dungeonRig.prisonBars.position.y = 0;
       this.dungeonRig.group.add(this.dungeonRig.captiveMesh);
-      this.dungeonRig.captiveMesh.position.set(hasInsideGuardian ? 3.3 : 1.5, 0, hasInsideGuardian ? 11.8 : 11.6);
-      this.dungeonRig.captiveMesh.rotation.y = -0.35;
-    }
-    if (!hasInsideGuardian) {
-      this.heroPos.set(0, 0, 13.0);
-      this.heroYaw = Math.atan2(1.5, -1.4);
+
+      if (zoneId === 'desa_sapaan') {
+        this.rescueCaptiveStartPos.set(pPos.x, 0.22, pPos.z);
+        this.rescueCaptiveEndPos.set(pPos.x - 2.3, 0, pPos.z);
+        this.heroPos.set(pPos.x - 4.4, 0, pPos.z);
+      } else if (story.prisonCorner === 'nw') {
+        this.rescueCaptiveStartPos.set(pPos.x, 0.22, pPos.z);
+        this.rescueCaptiveEndPos.set(pPos.x + 2.1, 0, pPos.z + 2.1);
+        this.heroPos.set(pPos.x + 4.1, 0, pPos.z + 4.1);
+      } else {
+        this.rescueCaptiveStartPos.set(pPos.x, 0.22, pPos.z);
+        this.rescueCaptiveEndPos.set(pPos.x - 2.1, 0, pPos.z + 2.1);
+        this.heroPos.set(pPos.x - 4.1, 0, pPos.z + 4.1);
+      }
+      this.dungeonCaptivePos.copy(this.rescueCaptiveStartPos);
+      this.dungeonRig.captiveMesh.position.copy(this.rescueCaptiveStartPos);
+      this.dungeonRig.captiveMesh.rotation.y = Math.atan2(
+        this.heroPos.x - this.rescueCaptiveStartPos.x,
+        this.heroPos.z - this.rescueCaptiveStartPos.z,
+      );
+      this.heroYaw = Math.atan2(
+        this.rescueCaptiveEndPos.x - this.heroPos.x,
+        this.rescueCaptiveEndPos.z - this.heroPos.z,
+      );
       this.hero.root.position.copy(this.heroPos);
       this.hero.body.rotation.y = this.heroYaw;
-      this.camera.position.set(-0.6, 3.2, 16.4);
-      this.controls.target.set(0.8, 1.7, 12.0);
-    } else {
-      this.heroPos.set(2.1, 0, 13.5);
-      this.heroYaw = Math.atan2(3.8 - 2.1, 11.8 - 13.5);
-      this.hero.root.position.copy(this.heroPos);
-      this.hero.body.rotation.y = this.heroYaw;
-      this.camera.position.set(0.4, 3.2, 16.8);
-      this.controls.target.set(3.4, 1.7, 12.1);
+      this.camera.position.set(
+        this.heroPos.x + (zoneId === 'desa_sapaan' ? -2.8 : story.prisonCorner === 'nw' ? 3.8 : -3.8),
+        4.2,
+        this.heroPos.z + 4.8,
+      );
+      this.controls.target.set(
+        (this.heroPos.x + pPos.x) * 0.5,
+        1.4,
+        (this.heroPos.z + pPos.z) * 0.5,
+      );
+      this.controls.update();
     }
-    this.controls.update();
 
     const captiveEn = personalizePlayerText(story.rescueCaptiveEn, pName);
     this.storyDialog = {
       kind: 'dungeon_rescue',
       step: 0,
+      maxStep: 1,
       zoneId,
       speakerName: story.captiveName,
       speakerRole: `${story.captiveRole} · Terbebas dari Penjara!`,
       textEn: captiveEn,
       textId: personalizePlayerText(story.rescueCaptiveId, pName),
       accentColor: story.accentColor,
+      speakerKind: 'captive',
+      captiveKind: story.captiveKind,
+      captiveColor: story.captiveColor,
+      speakerSide: 'npc',
     };
     soundEngine.playFanfare();
     soundEngine.speakEnglish(captiveEn);
     this.pushHud(true);
   }
 
-  private finalizeDungeonLiberation(zoneId: ZoneId): void {
+  private grantDungeonCaptiveRescueRewards(zoneId: ZoneId): void {
     const boss = BOSSES[zoneId];
     const wDef = WEAPONS[boss.rewardWeapon];
     this.defeatedBossZones.add(zoneId);
     const prevProg = this.zoneCaveProgress[zoneId];
     const safeTotal = prevProg ? prevProg.total : 9 + DIFF_CONFIG[this.settings.difficulty].maxShooters;
     this.zoneCaveProgress[zoneId] = { defeated: safeTotal, remaining: 0, total: safeTotal };
-    if (!this.liberatedZones.has(zoneId)) {
-      this.liberatedZones.add(zoneId);
+
+    if (!this.captiveRescuedZones.has(zoneId)) {
+      this.captiveRescuedZones.add(zoneId);
       this.ownedRelics.add(boss.rewardRelic);
       this.ownedWeapons.add(boss.rewardWeapon);
       this.weaponAmmo[boss.rewardWeapon] = Math.min(
@@ -7637,17 +7684,7 @@ export class RpgWorldEngine {
       this.diamonds += 5;
       this.gainXp(180);
       this.addScore(1200);
-
-      const q = this.quests.find((item) => item.zoneId === zoneId);
-      if (q) {
-        q.accepted = true;
-        q.progress = q.target;
-        q.claimed = true;
-      }
-      this.checkAreaTrophy(zoneId);
       this.refreshWeaponVisual();
-      this.refreshAreaMists();
-      this.localMabarStats.zonesCleared = this.liberatedZones.size;
       this.emitProgressSync();
     }
 
@@ -7657,20 +7694,14 @@ export class RpgWorldEngine {
       this.dungeonState.prisonKeyCollected = true;
       this.dungeonState.prisonUnlocked = true;
       this.dungeonState.liberated = true;
+      this.dungeonState.caveRibbonCollected = this.ribbons.has(zoneId);
     }
     if (this.dungeonRig) {
-      this.dungeonRig.prisonBars.visible = false;
       this.dungeonRig.prisonKeyGroup.visible = false;
+      this.dungeonRig.ribbonGroup.visible = !this.ribbons.has(zoneId);
       if (this.dungeonRig.hasInsideGuardian) {
         this.dungeonRig.guardianAuraMat.color.setHex(0x22c55e);
       }
-      this.dungeonRig.group.add(this.dungeonRig.captiveMesh);
-      this.dungeonRig.captiveMesh.position.set(
-        this.dungeonRig.hasInsideGuardian ? 3.3 : 1.5,
-        0,
-        this.dungeonRig.hasInsideGuardian ? 11.8 : 11.6,
-      );
-      this.dungeonRig.captiveMesh.rotation.y = -0.35;
     }
     this.applyAtmosphere('dungeon', zoneId, true);
   }
@@ -7678,12 +7709,27 @@ export class RpgWorldEngine {
   private finishDungeonRescueCutscene(zoneId?: ZoneId): void {
     const zId = zoneId || this.storyDialog?.zoneId || this.dungeonState?.zoneId;
     if (zId) {
-      this.finalizeDungeonLiberation(zId);
+      this.grantDungeonCaptiveRescueRewards(zId);
     }
-    const noGuardian = Boolean(this.dungeonRig && !this.dungeonRig.hasInsideGuardian);
     this.storyDialog = null;
     this.phase = 'playing';
-    this.heroPos.set(noGuardian ? 0 : 2.1, 0, noGuardian ? 13.0 : 13.5);
+    if (this.cameraMode === 'first_person') {
+      this.cameraMode = 'third_back';
+    }
+    if (this.dungeonRig) {
+      this.dungeonRig.prisonBars.visible = false;
+      this.dungeonRig.prisonBars.position.y = 3.6;
+      this.dungeonRig.group.add(this.dungeonRig.captiveMesh);
+      this.dungeonCaptivePos.copy(this.rescueCaptiveEndPos);
+      this.dungeonRig.captiveMesh.position.copy(this.dungeonCaptivePos);
+      this.dungeonRig.captiveMesh.rotation.y = Math.atan2(
+        this.heroPos.x - this.dungeonCaptivePos.x,
+        this.heroPos.z - this.dungeonCaptivePos.z,
+      );
+      if (zId) {
+        this.dungeonRig.ribbonGroup.visible = !this.ribbons.has(zId);
+      }
+    }
     this.heroVel.set(0, 0, 0);
     this.heroVelY = 0;
     this.heroOnGround = true;
@@ -7692,12 +7738,14 @@ export class RpgWorldEngine {
     this.snapCameraBehindHero();
     this.saveProgress();
     if (zId) {
-      const rb = RIBBONS[zId];
-      const boss = BOSSES[zId];
-      this.spawnBurst(noGuardian ? 1.5 : 3.8, 2.2, 11.8, 0x34d399, 36);
+      const st = ZONE_CAVE_STORIES[zId];
+      const hasRibbon = this.ribbons.has(zId);
+      this.spawnBurst(this.dungeonCaptivePos.x, 1.8, this.dungeonCaptivePos.z, 0x34d399, 32);
       this.showBanner(
-        `🎉 ${ZONE_INFO[zId].name} Bebas! Segel ${rb.name} kini terbuka di luar gua (${RELICS[boss.rewardRelic].name} & ${WEAPONS[boss.rewardWeapon].name} didapat)!`,
-        5.5,
+        hasRibbon
+          ? `✅ ${st.captiveName} selamat & terus mengikutimu! Bawa keluar gua menemui ${st.guardianName}!`
+          : `🎀 ${st.captiveName} bebas & terus mengikutimu! Cari Pita Merah 3D tersembunyi di sudut gua, lalu bawa ${st.captiveName} keluar menemui ${st.guardianName}!`,
+        6.0,
       );
     }
     this.pushHud(true);
@@ -8792,6 +8840,7 @@ export class RpgWorldEngine {
       rig.weaponChest.group,
       rig.prisonGroup,
       rig.prisonKeyGroup,
+      rig.ribbonGroup,
     );
     if (rig.hasInsideGuardian) {
       this.dungeonClickables.push(rig.guardianMesh);
@@ -8804,8 +8853,8 @@ export class RpgWorldEngine {
     this.scene.add(rig.group);
     this.mapHiddenDungeon = this.collectMapHidden(rig.group);
 
-    const liberated = this.liberatedZones.has(zoneId);
-    const bossBeaten = liberated || this.defeatedBossZones.has(zoneId);
+    const rescued = this.captiveRescuedZones.has(zoneId) || this.liberatedZones.has(zoneId);
+    const bossBeaten = rescued || this.defeatedBossZones.has(zoneId);
     this.applyAtmosphere('dungeon', zoneId, bossBeaten);
 
     const deal = this.getOrCreateAreaDeal(zoneId);
@@ -9046,7 +9095,7 @@ export class RpgWorldEngine {
     const caveStory = ZONE_CAVE_STORIES[zoneId];
     const wordMobs = this.dungeonMonsters.filter((m) => !m.isCaveMob);
     const aliveCount = wordMobs.filter((m) => m.alive).length;
-    const keyCollected = liberated || (bossBeaten && Boolean(detail.prisonKeyCollected));
+    const keyCollected = rescued || (bossBeaten && Boolean(detail.prisonKeyCollected));
     this.dungeonState = {
       zoneId,
       zoneName: ZONE_INFO[zoneId].name,
@@ -9058,30 +9107,32 @@ export class RpgWorldEngine {
       allEnemiesTotal: 0,
       bossSpawned: bossBeaten,
       bossDefeated: bossBeaten,
-      prisonKeySpawned: bossBeaten && !liberated,
+      prisonKeySpawned: bossBeaten && !rescued,
       prisonKeyCollected: keyCollected,
-      prisonUnlocked: liberated,
+      prisonUnlocked: rescued,
       captiveName: caveStory.captiveName,
       guardianName: caveStory.guardianName,
-      liberated,
+      liberated: rescued,
+      caveRibbonCollected: this.ribbons.has(zoneId),
       isMixedChallenge,
     };
 
-    if (liberated) {
+    if (rescued) {
       rig.prisonBars.visible = false;
       rig.prisonKeyGroup.visible = false;
+      rig.ribbonGroup.visible = !this.ribbons.has(zoneId);
       if (rig.hasInsideGuardian) {
         rig.guardianAuraMat.color.setHex(0x22c55e);
       }
       rig.group.add(rig.captiveMesh);
-      rig.captiveMesh.position.set(
-        rig.hasInsideGuardian ? 3.3 : 1.5,
-        0,
-        rig.hasInsideGuardian ? 11.8 : 11.6,
-      );
-      rig.captiveMesh.rotation.y = -0.35;
+      this.dungeonCaptivePos.set(1.8, 0, 12.6);
+      rig.captiveMesh.position.copy(this.dungeonCaptivePos);
+      rig.captiveMesh.rotation.y = Math.PI;
     } else if (bossBeaten) {
       rig.prisonKeyGroup.visible = !keyCollected;
+      rig.ribbonGroup.visible = false;
+    } else {
+      rig.ribbonGroup.visible = false;
     }
 
     // Restore previously triggered chest/mine ambush monsters if still alive (or count if defeated)
@@ -9148,12 +9199,13 @@ export class RpgWorldEngine {
     this.nearbyDungeonGuardian = false;
     this.nearPrisonKey = false;
     this.nearHiddenPrison = false;
+    this.nearCaveRibbon = false;
     this.nearPortal = false;
     this.nearDungeonExit = false;
     this.encounterGraceTimer = 1.6;
     if (this.cameraMode === 'orbit') this.cameraMode = 'third_back';
 
-    if (!liberated && !this.caveIntrosSeen.has(zoneId) && !resumeSavedPos) {
+    if (!rescued && !this.caveIntrosSeen.has(zoneId) && !resumeSavedPos) {
       this.startDungeonIntroCutscene(zoneId);
       return;
     }
@@ -9182,10 +9234,10 @@ export class RpgWorldEngine {
     soundEngine.playDoor();
     if (!resumeSavedPos) {
       this.showBanner(
-        liberated
-          ? rig.hasInsideGuardian
-            ? `Gua ${ZONE_INFO[zoneId].name} Bebas & Terang · ${caveStory.guardianName} & ${caveStory.captiveName} aman!`
-            : `Gua ${ZONE_INFO[zoneId].name} Bebas & Terang · ${caveStory.captiveName} telah diselamatkan!`
+        rescued
+          ? !this.ribbons.has(zoneId)
+            ? `🎀 ${caveStory.captiveName} sudah bebas! Cari Pita Merah 3D yang masih tersembunyi di gua ${ZONE_INFO[zoneId].name}!`
+            : `Gua ${ZONE_INFO[zoneId].name} Bebas & Terang · ${caveStory.captiveName} aman!`
           : bossBeaten
           ? `Bos kalah & gua terang! Ambil Kunci Penjara emas di tengah gua lalu selamatkan ${caveStory.captiveName}!`
           : `Gua ${ZONE_INFO[zoneId].name} menantimu untuk membuka 5 Pintu, mengalahkan Bos, lalu menyelamatkan ${caveStory.captiveName}!`,
@@ -9344,22 +9396,61 @@ export class RpgWorldEngine {
 
   public exitDungeon(): void {
     if (this.worldMode === 'overworld') return;
+    const exitedZoneId = this.worldMode === 'dungeon' ? this.dungeonState?.zoneId : undefined;
     this.clearSubScenes();
     this.worldMode = 'overworld';
     this.overworldGroup.visible = true;
     this.phase = 'playing';
     this.heldKeys.clear();
+    this.nearCaveRibbon = false;
 
-    if (!isWalkableArchipelago(this.savedOverworldHeroPos.x, this.savedOverworldHeroPos.z)) {
-      const sp = OVERWORLD_ANCHORS.desaSpawn;
-      this.savedOverworldHeroPos.set(sp.x, getArchipelagoGroundY(sp.x, sp.z), sp.z);
-    } else {
-      this.savedOverworldHeroPos.y = getArchipelagoGroundY(
-        this.savedOverworldHeroPos.x,
-        this.savedOverworldHeroPos.z,
+    const isNight = this.getCurrentDayPhase() === 'malam';
+    const rescuedOnExit = Boolean(exitedZoneId && this.captiveRescuedZones.has(exitedZoneId));
+
+    if (exitedZoneId && rescuedOnExit) {
+      const activeDef = getActiveZoneNpcDef(exitedZoneId, isNight);
+      const liveNpc = this.npcs.get(activeDef.id);
+      const gx = liveNpc?.x ?? activeDef.x;
+      const gz = liveNpc?.z ?? activeDef.z;
+      const gYaw = liveNpc?.mesh.rotation.y ?? 0;
+      const candidate = new THREE.Vector3(
+        gx + Math.sin(gYaw) * 3.1,
+        0,
+        gz + Math.cos(gYaw) * 3.1,
       );
+      if (!isWalkableArchipelago(candidate.x, candidate.z)) {
+        candidate.set(gx, 0, gz + 3.1);
+      }
+      constrainToWalkableArchipelago(candidate, 0.7);
+      candidate.y = getArchipelagoGroundY(candidate.x, candidate.z);
+      if (this.worldObstaclesRig) {
+        resolveSolidObstacleCollisions(this.worldObstaclesRig, candidate, 0.7, 2.2);
+        const supY = getObstacleSupportHeight(
+          this.worldObstaclesRig,
+          candidate.x,
+          candidate.z,
+          candidate.y,
+        );
+        if (supY !== null && supY > candidate.y) {
+          candidate.y = supY;
+        }
+      }
+      this.heroPos.copy(candidate);
+      this.heroYaw = Math.atan2(gx - this.heroPos.x, gz - this.heroPos.z);
+      this.hero.body.rotation.y = this.heroYaw;
+    } else {
+      if (!isWalkableArchipelago(this.savedOverworldHeroPos.x, this.savedOverworldHeroPos.z)) {
+        const sp = OVERWORLD_ANCHORS.desaSpawn;
+        this.savedOverworldHeroPos.set(sp.x, getArchipelagoGroundY(sp.x, sp.z), sp.z);
+      } else {
+        this.savedOverworldHeroPos.y = getArchipelagoGroundY(
+          this.savedOverworldHeroPos.x,
+          this.savedOverworldHeroPos.z,
+        );
+      }
+      this.heroPos.copy(this.savedOverworldHeroPos);
     }
-    this.heroPos.copy(this.savedOverworldHeroPos);
+
     this.heroVel.set(0, 0, 0);
     this.heroVelY = 0;
     this.heroOnGround = true;
@@ -9375,7 +9466,79 @@ export class RpgWorldEngine {
 
     this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.5, this.heroPos.z, 0x38bdf8, 18);
     soundEngine.playDoor();
-    this.showBanner('Kembali ke Kepulauan Nusantara Kata', 2.4);
+
+    if (exitedZoneId && rescuedOnExit) {
+      const firstReunion = !this.guardianReunitedZones.has(exitedZoneId);
+      this.guardianReunitedZones.add(exitedZoneId);
+      const activeDef = getActiveZoneNpcDef(exitedZoneId, isNight);
+      const story = ZONE_CAVE_STORIES[exitedZoneId];
+      const boss = BOSSES[exitedZoneId];
+      const pName = this.getPlayerDisplayName();
+      const gAddr = formatGuardianAddress(activeDef, pName, this.localCharacterId);
+      const { alive: remOutside } = this.getZoneIslandCounts(exitedZoneId);
+      const fogJustCleared = this.checkZoneFogClear(exitedZoneId, false);
+      const hasRibbon = this.ribbons.has(exitedZoneId);
+
+      if (firstReunion || remOutside > 0 || !hasRibbon || fogJustCleared) {
+        if (this.cameraMode === 'first_person') {
+          this.cameraMode = 'third_back';
+        }
+        this.phase = 'story';
+        this.storyTimer = 0;
+        this.applyCameraVisibilityAndControls();
+
+        const ribbonReminderEn = !hasRibbon
+          ? ` (Remember: the hidden 3D Red Ribbon is still inside the cave if you want to collect it!)`
+          : '';
+        const ribbonReminderId = !hasRibbon
+          ? ` (Catatan: Pita Merah 3D tersembunyi masih ada di dalam gua kalau ingin kamu ambil kembali.)`
+          : '';
+
+        const missionTextEn =
+          remOutside > 0
+            ? `${personalizePlayerText(story.rescueGuardianEn, gAddr)} ${story.captiveName} is safely back and ${boss.name} is defeated! Final Mission: defeat the remaining ${remOutside} monster(s) around ${ZONE_INFO[exitedZoneId].name} to lift the island fog forever!${ribbonReminderEn}`
+            : `${personalizePlayerText(story.rescueGuardianEn, gAddr)} ${story.captiveName} is safe, ${boss.name} is defeated, and every monster in ${ZONE_INFO[exitedZoneId].name} is gone—the island fog has completely lifted!${ribbonReminderEn}`;
+
+        const missionTextId =
+          remOutside > 0
+            ? `${story.captiveName} berhasil kembali dengan selamat dan Bos ${boss.name} di ${ZONE_INFO[exitedZoneId].name} telah dikalahkan! Misi Terakhir: habisi ${remOutside} monster tersisa di luar gua di pulau ${ZONE_INFO[exitedZoneId].name} agar kabut pulau ini hilang sepenuhnya!${ribbonReminderId}`
+            : `${story.captiveName} selamat, Bos ${boss.name} kalah, dan seluruh monster di pulau ${ZONE_INFO[exitedZoneId].name} telah habis—kabut pulau pun menghilang cerah!${ribbonReminderId}`;
+
+        this.storyDialog = {
+          kind: 'area_cleared',
+          step: 0,
+          maxStep: 0,
+          zoneId: exitedZoneId,
+          speakerName: activeDef.name,
+          speakerRole:
+            remOutside > 0
+              ? `Reuni ${story.captiveName} · Misi Terakhir (${remOutside} Monster Pulau)`
+              : `Reuni ${story.captiveName} · ${ZONE_INFO[exitedZoneId].name} Cerah ✓`,
+          textEn: missionTextEn,
+          textId: missionTextId,
+          accentColor: remOutside > 0 ? '#f59e0b' : '#10b981',
+          speakerKind: 'npc',
+          speakerNpcId: activeDef.id,
+          speakerSide: 'npc',
+          rewardSummary:
+            remOutside > 0
+              ? `Bos ${boss.name} Kalah ✓ · ${story.captiveName} Selamat ✓ · Misi Terakhir: Sisa ${remOutside} Monster Pulau`
+              : `Bos ${boss.name} Kalah ✓ · ${story.captiveName} Selamat ✓ · Kabut Pulau Hilang ☀️`,
+        };
+        if (fogJustCleared) {
+          soundEngine.playFanfare();
+          this.spawnBurst(this.heroPos.x, this.heroPos.y + 2.2, this.heroPos.z, 0x34d399, 40);
+        } else {
+          soundEngine.playWin();
+        }
+        soundEngine.speakEnglish(missionTextEn);
+      } else {
+        this.showBanner(`Kembali ke ${ZONE_INFO[exitedZoneId].name}`, 2.4);
+      }
+    } else {
+      this.showBanner('Kembali ke Kepulauan Nusantara Kata', 2.4);
+    }
+
     this.saveProgress();
     this.pushHud(true);
   }
@@ -12554,6 +12717,7 @@ export class RpgWorldEngine {
           }
           if (this.worldMode === 'overworld') {
             this.checkMissionWaveCompletion();
+            this.checkZoneFogClear(m.zoneId, true);
           }
           if (this.multiplayerActive && this.hasConnectedPeers && this.isWorldAuthority()) {
             this.emitMultiplayerPacket({
@@ -13591,6 +13755,7 @@ export class RpgWorldEngine {
         );
         if (this.worldMode === 'overworld') {
           this.checkMissionWaveCompletion();
+          this.checkZoneFogClear(m.zoneId, true);
         }
       } else {
         soundEngine.playWin();
@@ -13720,6 +13885,11 @@ export class RpgWorldEngine {
       return;
     }
 
+    if (this.worldMode === 'dungeon' && this.nearCaveRibbon && this.dungeonState) {
+      this.collectCaveRibbon(this.dungeonState.zoneId);
+      return;
+    }
+
     if (this.worldMode !== 'overworld' && this.nearDungeonExit) {
       this.exitDungeon();
       return;
@@ -13778,11 +13948,6 @@ export class RpgWorldEngine {
 
     if (this.worldMode === 'overworld' && this.nearbyNpcId) {
       this.interactWithOverworldNpc(this.nearbyNpcId);
-      return;
-    }
-
-    if (this.worldMode === 'overworld' && this.nearIslandRibbonZone) {
-      this.collectOrInspectIslandRibbon(this.nearIslandRibbonZone, true);
       return;
     }
 
@@ -14602,6 +14767,7 @@ export class RpgWorldEngine {
         this.completeVillageAmbushRescue();
       }
       this.checkMissionWaveCompletion();
+      this.checkZoneFogClear(m.zoneId, true);
     }
     this.syncDungeonMonsterStats();
     this.saveProgress();
@@ -16300,14 +16466,18 @@ export class RpgWorldEngine {
           this.enterAcademy();
           return;
         }
-        if (obj.userData.islandRibbonZone && this.worldMode === 'overworld') {
-          const zId = obj.userData.islandRibbonZone as ZoneId;
-          const entry = this.islandRibbonRigs.get(zId);
-          if (entry && Math.hypot(entry.x - this.heroPos.x, entry.z - this.heroPos.z) < 6.5) {
-            this.collectOrInspectIslandRibbon(zId, true);
-          } else if (entry) {
-            this.tapMoveTarget = new THREE.Vector3(entry.x, entry.y, entry.z);
-            this.showBanner(`Menuju Pedestal Pita Merah 3D ${ZONE_INFO[zId].name}...`, 2.2);
+        if (
+          obj.userData.caveRibbon &&
+          this.worldMode === 'dungeon' &&
+          this.dungeonRig?.ribbonGroup.visible &&
+          this.dungeonState
+        ) {
+          const rPos = this.dungeonRig.ribbonPos;
+          if (Math.hypot(rPos.x - this.heroPos.x, rPos.z - this.heroPos.z) < 6.0) {
+            this.collectCaveRibbon(this.dungeonState.zoneId);
+          } else {
+            this.tapMoveTarget = rPos.clone();
+            this.showBanner('Menuju Pita Merah 3D tersembunyi...', 2.2);
           }
           return;
         }
@@ -16744,7 +16914,16 @@ export class RpgWorldEngine {
     });
 
     const seeds: typeof this.worldMistSeeds = [];
-    const addSeed = (wx: number, wy: number, wz: number, sx: number, sy: number, sz: number, idx: number) => {
+    const addSeed = (
+      wx: number,
+      wy: number,
+      wz: number,
+      sx: number,
+      sy: number,
+      sz: number,
+      idx: number,
+      zoneId?: ZoneId | 'hub',
+    ) => {
       seeds.push({
         baseX: wx,
         baseY: wy,
@@ -16756,6 +16935,7 @@ export class RpgWorldEngine {
         driftZ: 1.2 + ((idx + 2) % 4) * 0.55,
         phase: idx * 0.73,
         rotY: (idx * 1.17) % (Math.PI * 2),
+        zoneId,
       });
     };
 
@@ -16771,7 +16951,16 @@ export class RpgWorldEngine {
         const gy = Math.max(0.2, getArchipelagoGroundY(wx, wz));
         const scaleW = 14.0 + (seedIdx % 5) * 3.4;
         const scaleH = 4.2 + (seedIdx % 3) * 1.1;
-        addSeed(wx, gy + 0.35 + (seedIdx % 3) * 0.45, wz, scaleW, scaleH, scaleW * 0.92, seedIdx);
+        addSeed(
+          wx,
+          gy + 0.35 + (seedIdx % 3) * 0.45,
+          wz,
+          scaleW,
+          scaleH,
+          scaleW * 0.92,
+          seedIdx,
+          disk.id,
+        );
         seedIdx++;
       }
     }
@@ -18552,18 +18741,34 @@ export class RpgWorldEngine {
     }
 
     if (this.storyDialog?.kind === 'dungeon_rescue' && this.dungeonRig) {
-      const hasInsideGuardian = this.dungeonRig.hasInsideGuardian;
-      const capX = hasInsideGuardian ? 3.3 : 1.5;
-      const capZ = hasInsideGuardian ? 11.8 : 11.6;
-      this.dungeonRig.captiveMesh.position.set(
-        capX,
-        Math.abs(Math.sin(this.elapsed * 6.5)) * 0.34,
-        capZ,
+      const barP = Math.min(1, this.storyTimer / 1.05);
+      this.dungeonRig.prisonBars.position.y = barP * 3.6;
+      this.dungeonRig.prisonBars.visible = barP < 1;
+
+      const walkP = THREE.MathUtils.clamp((this.storyTimer - 0.35) / 1.3, 0, 1);
+      const easeWalk = 1 - Math.pow(1 - walkP, 2);
+      this.dungeonCaptivePos.lerpVectors(
+        this.rescueCaptiveStartPos,
+        this.rescueCaptiveEndPos,
+        easeWalk,
       );
-      if (hasInsideGuardian) {
-        animateZoneNpc(this.dungeonRig.guardianMesh, this.elapsed, 0.5, true, dt);
-      }
-      animateCaptiveMesh(this.dungeonRig.captiveMesh, this.elapsed, true);
+      const isSteppingOut = walkP > 0 && walkP < 1;
+      const stepHop = isSteppingOut
+        ? Math.abs(Math.sin(this.elapsed * 12)) * 0.14
+        : walkP >= 1
+        ? Math.abs(Math.sin(this.elapsed * 5.8)) * 0.16
+        : 0;
+      this.dungeonRig.captiveMesh.position.set(
+        this.dungeonCaptivePos.x,
+        this.dungeonCaptivePos.y + stepHop,
+        this.dungeonCaptivePos.z,
+      );
+      this.dungeonRig.captiveMesh.rotation.y = Math.atan2(
+        this.heroPos.x - this.dungeonCaptivePos.x,
+        this.heroPos.z - this.dungeonCaptivePos.z,
+      );
+      animateCaptiveMesh(this.dungeonRig.captiveMesh, this.elapsed, walkP >= 1, isSteppingOut);
+
       const hBlink = computeBlinkScale(this.elapsed, 0.25);
       this.hero.leftEye.scale.y = hBlink;
       this.hero.rightEye.scale.y = hBlink;
@@ -18573,18 +18778,44 @@ export class RpgWorldEngine {
       this.hero.leftLeg.rotation.x *= 0.8;
       this.hero.rightLeg.rotation.x *= 0.8;
       this.hero.body.position.y = 0;
-      this.heroYaw = Math.atan2(capX - this.heroPos.x, capZ - this.heroPos.z);
+      this.heroYaw = Math.atan2(
+        this.dungeonCaptivePos.x - this.heroPos.x,
+        this.dungeonCaptivePos.z - this.heroPos.z,
+      );
       this.hero.body.rotation.y = this.heroYaw;
+      this.playerCaveLight.position.set(this.heroPos.x, 2.8, this.heroPos.z);
 
       this.updateHarvestDialogueCamera(
         this.heroPos.x,
         this.heroPos.y,
         this.heroPos.z,
-        capX,
+        this.dungeonCaptivePos.x,
         0,
-        capZ,
+        this.dungeonCaptivePos.z,
         dt,
       );
+      return;
+    }
+
+    if (this.storyDialog?.kind === 'area_cleared' && this.worldMode === 'overworld') {
+      const npcId = this.storyDialog.speakerNpcId;
+      const npc = npcId ? this.npcs.get(npcId) : undefined;
+      if (npc) {
+        npc.mesh.rotation.y = Math.atan2(this.heroPos.x - npc.x, this.heroPos.z - npc.z);
+        this.heroYaw = Math.atan2(npc.x - this.heroPos.x, npc.z - this.heroPos.z);
+        this.hero.body.rotation.y = this.heroYaw;
+        this.hero.root.position.copy(this.heroPos);
+        this.animateHeroConversation(false, dt);
+        this.updateHarvestDialogueCamera(
+          this.heroPos.x,
+          this.heroPos.y,
+          this.heroPos.z,
+          npc.x,
+          getArchipelagoGroundY(npc.x, npc.z),
+          npc.z,
+          dt,
+        );
+      }
       return;
     }
 
@@ -18701,7 +18932,8 @@ export class RpgWorldEngine {
         this.storyDialog?.kind === 'village_rescue_talk' ||
         this.storyDialog?.kind === 'village_rescue_escort' ||
         this.storyDialog?.kind === 'dungeon_intro' ||
-        this.storyDialog?.kind === 'dungeon_rescue');
+        this.storyDialog?.kind === 'dungeon_rescue' ||
+        this.storyDialog?.kind === 'area_cleared');
     if (inPrologue || inAmbushCutscene) {
       for (const m of this.overworldAllMonsters) {
         m.mesh.visible = false;
@@ -18777,17 +19009,65 @@ export class RpgWorldEngine {
           );
           animateZoneNpc(this.dungeonRig.guardianMesh, this.elapsed, 0.5, gDist < 4.5, dt);
         }
-        if (!this.dungeonState?.liberated) {
-          animateCaptiveMesh(this.dungeonRig.captiveMesh, this.elapsed, false);
+        if (!this.dungeonState?.prisonUnlocked) {
+          animateCaptiveMesh(this.dungeonRig.captiveMesh, this.elapsed, false, false);
         } else {
           if (this.dungeonRig.hasInsideGuardian) {
             this.dungeonRig.guardianMesh.position.y = Math.abs(Math.sin(this.elapsed * 4.2)) * 0.1;
           }
           if (this.phase !== 'story') {
-            this.dungeonRig.captiveMesh.position.y =
-              Math.abs(Math.sin(this.elapsed * 5.0 + 0.7)) * 0.14;
-            animateCaptiveMesh(this.dungeonRig.captiveMesh, this.elapsed, true);
+            const targetX = this.heroPos.x - Math.sin(this.heroYaw) * 1.85;
+            const targetZ = this.heroPos.z - Math.cos(this.heroYaw) * 1.85;
+            const dx = targetX - this.dungeonCaptivePos.x;
+            const dz = targetZ - this.dungeonCaptivePos.z;
+            const dist = Math.hypot(dx, dz);
+            let isMoving = false;
+            if (dist > 0.35) {
+              const step = Math.min(dist - 0.15, Math.max(4.8, dist * 3.6) * dt);
+              if (step > 0.005) {
+                isMoving = true;
+                this.dungeonCaptivePos.x += (dx / dist) * step;
+                this.dungeonCaptivePos.z += (dz / dist) * step;
+                this.resolveDungeonCircleColliders(
+                  this.dungeonCaptivePos,
+                  0.48,
+                  this.dungeonCaptivePos.y,
+                  1.5,
+                  18.2,
+                  { skipGuardian: true },
+                );
+              }
+            }
+            const supY = this.getDungeonSupportHeight(
+              this.dungeonCaptivePos.x,
+              this.dungeonCaptivePos.z,
+              this.dungeonCaptivePos.y + 0.5,
+            );
+            this.dungeonCaptivePos.y = THREE.MathUtils.lerp(
+              this.dungeonCaptivePos.y,
+              supY,
+              1 - Math.exp(-10 * dt),
+            );
+            const hop = isMoving
+              ? Math.abs(Math.sin(this.elapsed * 11)) * 0.12
+              : Math.abs(Math.sin(this.elapsed * 4.6 + 0.7)) * 0.08;
+            this.dungeonRig.captiveMesh.position.set(
+              this.dungeonCaptivePos.x,
+              this.dungeonCaptivePos.y + hop,
+              this.dungeonCaptivePos.z,
+            );
+            const faceDx = this.heroPos.x - this.dungeonCaptivePos.x;
+            const faceDz = this.heroPos.z - this.dungeonCaptivePos.z;
+            if (faceDx * faceDx + faceDz * faceDz > 0.04) {
+              this.dungeonRig.captiveMesh.rotation.y = Math.atan2(faceDx, faceDz);
+            }
+            animateCaptiveMesh(this.dungeonRig.captiveMesh, this.elapsed, !isMoving, isMoving);
           }
+        }
+        if (this.dungeonRig.ribbonGroup.visible) {
+          this.dungeonRig.ribbonPivot.rotation.y += dt * 1.85;
+          this.dungeonRig.ribbonPivot.position.y = 1.35 + Math.sin(this.elapsed * 2.9) * 0.14;
+          this.dungeonRig.ribbonRingMat.opacity = 0.65 + Math.sin(this.elapsed * 4.2) * 0.25;
         }
         for (const blk of this.dungeonRig.caveBlocks) {
           if (blk.alive && blk.mesh.scale.x < 0.999) {
@@ -19854,12 +20134,17 @@ export class RpgWorldEngine {
       if (this.worldMistMesh && this.worldMistMesh.visible) {
         for (let i = 0; i < this.worldMistSeeds.length; i++) {
           const s = this.worldMistSeeds[i];
+          const cleared = Boolean(s.zoneId && s.zoneId !== 'hub' && this.liberatedZones.has(s.zoneId));
           const mx = s.baseX + Math.sin(this.elapsed * 0.24 + s.phase) * s.driftX;
           const my = s.baseY + Math.cos(this.elapsed * 0.35 + s.phase) * 0.22;
           const mz = s.baseZ + Math.cos(this.elapsed * 0.21 + s.phase) * s.driftZ;
           _cloudPos.set(mx, my, mz);
           _cloudQuat.setFromAxisAngle(_v3.set(0, 1, 0), s.rotY + this.elapsed * 0.06);
-          _cloudScale.set(s.sx, s.sy, s.sz);
+          if (cleared) {
+            _cloudScale.set(0, 0, 0);
+          } else {
+            _cloudScale.set(s.sx, s.sy, s.sz);
+          }
           _cloudMat.compose(_cloudPos, _cloudQuat, _cloudScale);
           this.worldMistMesh.setMatrixAt(i, _cloudMat);
         }
@@ -19898,29 +20183,6 @@ export class RpgWorldEngine {
           c.scale.setScalar(s);
         }
       });
-    }
-
-    for (const [zId, entry] of this.islandRibbonRigs.entries()) {
-      const collected = this.ribbons.has(zId);
-      const unlocked = this.liberatedZones.has(zId);
-      const { rig } = entry;
-      rig.ribbonPivot.visible = !collected;
-      rig.lockDome.visible = !collected && !unlocked;
-      if (!collected) {
-        rig.ribbonPivot.rotation.y += dt * (unlocked ? 1.85 : 0.45);
-        rig.ribbonPivot.position.y = 2.15 + Math.sin(this.elapsed * 2.8 + entry.x * 0.2) * 0.14;
-        if (rig.lockDome.visible) {
-          rig.lockDome.rotation.y -= dt * 0.65;
-          rig.lockCollarMat.emissiveIntensity = 0.75 + Math.sin(this.elapsed * 3.2) * 0.25;
-        }
-        rig.beaconRingMat.opacity = unlocked
-          ? 0.68 + Math.sin(this.elapsed * 4.2) * 0.22
-          : 0.28 + Math.sin(this.elapsed * 2.2) * 0.08;
-        rig.beaconRingMat.color.setHex(unlocked ? 0xf43f5e : 0xf59e0b);
-      } else {
-        rig.beaconRingMat.opacity = 0.18;
-        rig.beaconRingMat.color.setHex(0x10b981);
-      }
     }
 
     const isNightShift = currentDayPhase === 'malam';
@@ -22387,31 +22649,11 @@ export class RpgWorldEngine {
       }
       this.nearbyOverworldZoneDoor = bestZoneDoor;
 
-      let bestRibbonZone: ZoneId | null = null;
-      let bestRibbonDist = 4.2;
-      if (this.carMode === 'none' && this.planeMode === 'none') {
-        for (const [zId, entry] of this.islandRibbonRigs.entries()) {
-          if (this.ribbons.has(zId)) continue;
-          if (Math.abs(this.heroPos.y - entry.y) > 3.5) continue;
-          const d = Math.hypot(this.heroPos.x - entry.x, this.heroPos.z - entry.z);
-          if (d < bestRibbonDist) {
-            bestRibbonDist = d;
-            bestRibbonZone = zId;
-          }
-        }
-      }
-      this.nearIslandRibbonZone = bestRibbonZone;
-      this.nearIslandRibbonLocked = Boolean(
-        bestRibbonZone && !this.liberatedZones.has(bestRibbonZone),
-      );
-      if (bestRibbonZone && bestRibbonDist < 2.1) {
-        this.collectOrInspectIslandRibbon(bestRibbonZone, false);
-      }
-
       this.nearbyDoorIndex = null;
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
       this.nearHiddenPrison = false;
+      this.nearCaveRibbon = false;
       const pp = OVERWORLD_ANCHORS.portal;
       this.nearPortal =
         Math.hypot(this.heroPos.x - pp.x, this.heroPos.z - (pp.z + 2.5)) < 6.4 &&
@@ -22420,8 +22662,6 @@ export class RpgWorldEngine {
     } else if (this.worldMode === 'dungeon' && this.dungeonState) {
       this.nearbyNpcId = null;
       this.nearbyOverworldZoneDoor = null;
-      this.nearIslandRibbonZone = null;
-      this.nearIslandRibbonLocked = false;
       this.nearPortal = false;
       this.nearDungeonExit =
         Math.hypot(this.heroPos.x - this.dungeonExitPos.x, this.heroPos.z - this.dungeonExitPos.z) < 4.4;
@@ -22461,6 +22701,23 @@ export class RpgWorldEngine {
       ) {
         this.interactWithHiddenPrison();
         return;
+      }
+
+      const caveRibbonDist = this.dungeonRig
+        ? Math.hypot(
+            this.heroPos.x - this.dungeonRig.ribbonPos.x,
+            this.heroPos.z - this.dungeonRig.ribbonPos.z,
+          )
+        : 99;
+      const canGetCaveRibbon = Boolean(
+        this.dungeonRig &&
+          this.dungeonState.prisonUnlocked &&
+          this.dungeonRig.ribbonGroup.visible &&
+          !this.ribbons.has(this.dungeonState.zoneId),
+      );
+      this.nearCaveRibbon = canGetCaveRibbon && caveRibbonDist < 4.5;
+      if (this.nearCaveRibbon && caveRibbonDist < 2.15) {
+        this.collectCaveRibbon(this.dungeonState.zoneId);
       }
 
       if (
@@ -22517,8 +22774,7 @@ export class RpgWorldEngine {
     } else if (this.worldMode === 'academy') {
       this.nearbyDoorIndex = null;
       this.nearbyOverworldZoneDoor = null;
-      this.nearIslandRibbonZone = null;
-      this.nearIslandRibbonLocked = false;
+      this.nearCaveRibbon = false;
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
       this.nearHiddenPrison = false;
@@ -22540,8 +22796,7 @@ export class RpgWorldEngine {
     } else if (this.worldMode === 'ocean' && this.oceanRig) {
       this.nearbyNpcId = null;
       this.nearbyOverworldZoneDoor = null;
-      this.nearIslandRibbonZone = null;
-      this.nearIslandRibbonLocked = false;
+      this.nearCaveRibbon = false;
       this.nearbyDoorIndex = null;
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
@@ -22556,8 +22811,7 @@ export class RpgWorldEngine {
         (this.heroPos.y > -1.75 && this.heroPos.z > 24);
     } else {
       this.nearbyOverworldZoneDoor = null;
-      this.nearIslandRibbonZone = null;
-      this.nearIslandRibbonLocked = false;
+      this.nearCaveRibbon = false;
       this.nearCraftingTable = false;
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
@@ -24360,6 +24614,47 @@ export class RpgWorldEngine {
             });
           }
         }
+        if (
+          this.dungeonState.prisonUnlocked &&
+          this.dungeonRig.ribbonGroup.visible &&
+          !this.ribbons.has(this.dungeonState.zoneId)
+        ) {
+          const rPos = this.dungeonRig.ribbonPos;
+          const rDist = Math.hypot(rPos.x - this.heroPos.x, rPos.z - this.heroPos.z);
+          if (rDist < 9.5) {
+            const rp = projectPoint(rPos.x, 2.3, rPos.z);
+            if (rp) {
+              const rb = RIBBONS[this.dungeonState.zoneId];
+              labels.push({
+                id: 'cave_ribbon',
+                x: rp.x,
+                y: rp.y,
+                title: `🎀 ${rb.name} (Ambil!)`,
+                subtext: 'Pita Merah 3D Tersembunyi',
+                kind: 'pickup',
+              });
+            }
+          }
+        }
+        if (this.dungeonState.prisonUnlocked && this.phase === 'playing') {
+          const cp = projectPoint(
+            this.dungeonCaptivePos.x,
+            this.dungeonCaptivePos.y + 2.35,
+            this.dungeonCaptivePos.z,
+          );
+          if (cp) {
+            labels.push({
+              id: 'cave_captive_companion',
+              x: cp.x,
+              y: cp.y,
+              title: this.dungeonState.captiveName,
+              subtext: this.ribbons.has(this.dungeonState.zoneId)
+                ? `Ayo keluar ke ${this.dungeonState.guardianName}!`
+                : 'Mengikutimu · Cari Pita Merah 3D!',
+              kind: 'speech',
+            });
+          }
+        }
       }
       return labels;
     }
@@ -24614,28 +24909,6 @@ export class RpgWorldEngine {
             ? `🔑 ${door.label} (Dijaga ${activeNightDef.name})`
             : `🌙 ${door.label} · ${activeNightDef.name} Siaga`,
           kind: 'door',
-        });
-      }
-    }
-
-    if (this.phase === 'playing') {
-      for (const [zId, entry] of this.islandRibbonRigs.entries()) {
-        if (this.ribbons.has(zId)) continue;
-        const dSq = (entry.x - this.heroPos.x) ** 2 + (entry.z - this.heroPos.z) ** 2;
-        if (dSq > 34 * 34) continue;
-        const rp = projectPoint(entry.x, entry.y + 3.45, entry.z);
-        if (!rp) continue;
-        const unlocked = this.liberatedZones.has(zId);
-        const rb = RIBBONS[zId];
-        labels.push({
-          id: `island_ribbon_${zId}`,
-          x: rp.x,
-          y: rp.y,
-          title: unlocked
-            ? `🎀 Ambil Pita Merah 3D (${rb.number}/6)`
-            : `🔒 Pita Merah 3D (${rb.number}/6)`,
-          subtext: unlocked ? ZONE_INFO[zId].name : 'Selesaikan misi gua untuk membuka segel',
-          kind: 'pickup',
         });
       }
     }
@@ -25519,21 +25792,6 @@ export class RpgWorldEngine {
           label: ZONE_INFO[zId].name,
         });
       }
-      for (const [zId, entry] of this.islandRibbonRigs.entries()) {
-        if (this.ribbons.has(zId)) continue;
-        const unlocked = this.liberatedZones.has(zId);
-        blips.push({
-          id: `ribbon_${zId}`,
-          x: entry.x,
-          z: entry.z,
-          kind: 'collectible',
-          color: unlocked ? '#fb7185' : '#f59e0b',
-          needsHelp: unlocked,
-          label: unlocked
-            ? `Pita Merah 3D ${ZONE_INFO[zId].name}`
-            : `Segel Pita ${ZONE_INFO[zId].name}`,
-        });
-      }
       blips.push({
         id: 'portal',
         x: OVERWORLD_ANCHORS.portal.x,
@@ -25676,6 +25934,24 @@ export class RpgWorldEngine {
             kind: 'chest',
             color: '#facc15',
           });
+        }
+        if (
+          this.dungeonState.prisonUnlocked &&
+          this.dungeonRig.ribbonGroup.visible &&
+          !this.ribbons.has(this.dungeonState.zoneId)
+        ) {
+          const rPos = this.dungeonRig.ribbonPos;
+          if (Math.hypot(rPos.x - this.heroPos.x, rPos.z - this.heroPos.z) < 11) {
+            blips.push({
+              id: 'cave_ribbon',
+              x: rPos.x,
+              z: rPos.z,
+              kind: 'collectible',
+              color: '#fb7185',
+              needsHelp: true,
+              label: 'Pita Merah 3D',
+            });
+          }
         }
         const cleared = new Set(this.dungeonState.doorsCleared);
         for (const d of this.dungeonRig.doors) {
@@ -26180,8 +26456,9 @@ export class RpgWorldEngine {
             getActiveZoneNpcDef('desa_sapaan', this.getCurrentDayPhase() === 'malam').id,
       ),
       nearbyOverworldZoneDoor: this.nearbyOverworldZoneDoor,
-      nearIslandRibbonZone: this.nearIslandRibbonZone,
-      nearIslandRibbonLocked: this.nearIslandRibbonLocked,
+      nearCaveRibbon: this.nearCaveRibbon,
+      nearIslandRibbonZone: null,
+      nearIslandRibbonLocked: false,
       nightPermittedZones: Array.from(this.nightPermittedZones),
       nearbyMonsterId: this.nearbyMonsterId,
       nearbyDoorIndex: this.nearbyDoorIndex,
@@ -26195,6 +26472,7 @@ export class RpgWorldEngine {
       dungeonState: this.dungeonState ? { ...this.dungeonState } : null,
       areaMonsterStats: this.buildAreaMonsterStats(zoneId),
       liberatedZones: Array.from(this.liberatedZones),
+      captiveRescuedZones: Array.from(this.captiveRescuedZones),
       areaDoorsCleared: {
         desa_sapaan: [...(this.areaDoorsCleared.desa_sapaan || [])],
         pasar_rasa: [...(this.areaDoorsCleared.pasar_rasa || [])],
@@ -26339,16 +26617,18 @@ export class RpgWorldEngine {
     }
 
     const baseCaveTotal = 9 + DIFF_CONFIG[this.settings.difficulty].maxShooters;
-    const zoneLiberated =
-      this.liberatedZones.has(zoneId) || this.defeatedBossZones.has(zoneId);
+    const zoneCaptiveRescued =
+      this.captiveRescuedZones.has(zoneId) ||
+      this.liberatedZones.has(zoneId) ||
+      this.defeatedBossZones.has(zoneId);
     const savedCave = this.zoneCaveProgress[zoneId];
-    const caveTotal = zoneLiberated
+    const caveTotal = zoneCaptiveRescued
       ? savedCave?.total ?? baseCaveTotal
       : savedCave?.total ?? baseCaveTotal;
-    const caveRemaining = zoneLiberated
+    const caveRemaining = zoneCaptiveRescued
       ? 0
       : savedCave?.remaining ?? baseCaveTotal;
-    const caveDefeated = zoneLiberated
+    const caveDefeated = zoneCaptiveRescued
       ? caveTotal
       : Math.max(0, caveTotal - caveRemaining);
 
@@ -26379,6 +26659,7 @@ export class RpgWorldEngine {
       zoneSurfaceRemaining,
     );
     const zoneSurfaceDefeated = Math.max(0, zoneSurfaceTotal - zoneSurfaceRemaining);
+    const zoneIsland = this.getZoneIslandCounts(zoneId);
     const surfaceCombatRemaining =
       this.monsters.filter((m) => m.alive && m.combatOnly).length +
       this.seaMonsters.filter((m) => m.alive && m.combatOnly).length +
@@ -26407,7 +26688,10 @@ export class RpgWorldEngine {
         caveDefeated,
         caveRemaining,
         caveTotal,
-        caveLiberated: zoneLiberated,
+        caveLiberated: zoneCaptiveRescued,
+        captiveRescued: zoneCaptiveRescued,
+        zoneIslandRemaining: zoneIsland.alive,
+        zoneIslandTotal: zoneIsland.total,
       };
     }
 
@@ -26425,7 +26709,10 @@ export class RpgWorldEngine {
       caveDefeated,
       caveRemaining,
       caveTotal,
-      caveLiberated: zoneLiberated,
+      caveLiberated: zoneCaptiveRescued,
+      captiveRescued: zoneCaptiveRescued,
+      zoneIslandRemaining: zoneIsland.alive,
+      zoneIslandTotal: zoneIsland.total,
     };
   }
 
@@ -26946,7 +27233,6 @@ export class RpgWorldEngine {
     this.archipelagoUnderwaterRig?.disposables.forEach((d) => d.dispose());
     this.villageRig?.disposables.forEach((d) => d.dispose());
     this.worldObstaclesRig?.disposables.forEach((d) => d.dispose());
-    this.islandRibbonDisposables.forEach((d) => d.dispose());
     this.oceanRig?.disposables.forEach((d) => d.dispose());
     this.carRig?.disposables.forEach((d) => d.dispose());
     this.worldPlanes.forEach((p) => p.rig.disposables.forEach((d) => d.dispose()));

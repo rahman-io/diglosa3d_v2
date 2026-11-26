@@ -1163,6 +1163,10 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                   ? ' · Ambil Kunci'
                   : hud.dungeonState.prisonKeyCollected && !hud.dungeonState.prisonUnlocked
                   ? ` · Bebaskan ${hud.dungeonState.captiveName}`
+                  : hud.dungeonState.prisonUnlocked && !hud.dungeonState.caveRibbonCollected
+                  ? ' · Cari Pita 3D'
+                  : hud.dungeonState.prisonUnlocked
+                  ? ' · Bawa Keluar ✓'
                   : ''}
               </span>
               <button
@@ -1247,7 +1251,9 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                       <span className="text-emerald-300">
                         ✓ Bos Kalah ·{' '}
                         {hud.dungeonState?.prisonUnlocked
-                          ? 'Gua Terbebas!'
+                          ? hud.dungeonState.caveRibbonCollected
+                            ? `Pita 3D & ${hud.dungeonState.captiveName} Aman · Keluar!`
+                            : `Cari Pita Merah 3D lalu Keluar!`
                           : `Selamatkan ${hud.dungeonState?.captiveName}`}
                       </span>
                     ) : stats.bossActive ? (
@@ -1417,11 +1423,31 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                     {' · '}
                     <span className="text-purple-300">📘{stats.surfaceQuizRemaining ?? 0}</span>
                     {' · '}
-                    <span className={stats.caveLiberated ? 'text-emerald-300' : 'text-amber-200'}>
-                      {stats.caveLiberated ? 'Gua ✓' : `Gua ${stats.caveRemaining ?? 0}`}
+                    <span
+                      className={
+                        stats.caveLiberated || stats.captiveRescued
+                          ? 'text-emerald-300'
+                          : 'text-amber-200'
+                      }
+                    >
+                      {stats.caveLiberated || stats.captiveRescued
+                        ? 'Tawanan ✓'
+                        : `Gua ${stats.caveRemaining ?? 0}`}
                     </span>
                   </span>
                 </div>
+                {stats.captiveRescued &&
+                  !hud.liberatedZones.includes(hud.activeZoneId) &&
+                  (stats.zoneIslandRemaining ?? 0) > 0 && (
+                    <div className="mt-0.5 truncate font-mono-nums text-[8.5px] font-extrabold text-amber-300 sm:text-[9px]">
+                      🌫️ Misi Akhir: Habisi sisa {stats.zoneIslandRemaining} monster pulau agar kabut hilang!
+                    </div>
+                  )}
+                {hud.liberatedZones.includes(hud.activeZoneId) && (
+                  <div className="mt-0.5 truncate font-mono-nums text-[8.5px] font-extrabold text-emerald-300 sm:text-[9px]">
+                    ☀️ Kabut Pulau Hilang · Wilayah Cerah
+                  </div>
+                )}
               </div>
             );
           })()}
@@ -2428,34 +2454,22 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           </div>
         )}
 
-        {hud.worldMode === 'overworld' && hud.nearIslandRibbonZone && !nearbyOverworldNpc && (
-          <button
-            type="button"
-            onClick={onPrimaryAction}
-            title={
-              hud.nearIslandRibbonLocked
-                ? 'Segel Pita Merah 3D masih terkunci — selesaikan misi gua pulau ini dahulu'
-                : 'Ambil Pita Merah 3D'
-            }
-            aria-label={hud.nearIslandRibbonLocked ? 'Segel Pita Merah 3D' : 'Ambil Pita Merah 3D'}
-            className={`relative flex h-[54px] w-[54px] items-center justify-center rounded-full border-2 transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px] ${
-              hud.nearIslandRibbonLocked
-                ? 'border-amber-300/80 bg-amber-950/90 shadow-[0_5px_14px_rgba(245,158,11,0.48)]'
-                : 'border-rose-300/90 bg-gradient-to-br from-rose-500 to-red-600 shadow-[0_5px_16px_rgba(244,63,94,0.62)] animate-pulse'
-            }`}
-          >
-            <span className="pointer-events-none select-none text-2xl leading-none">🎀</span>
-            <span
-              className={`pointer-events-none absolute -bottom-0.5 rounded-full border px-1.5 text-[9px] font-black leading-tight shadow ${
-                hud.nearIslandRibbonLocked
-                  ? 'border-amber-300/80 bg-slate-950/95 text-amber-200'
-                  : 'border-rose-200/90 bg-slate-950/95 text-rose-100'
-              }`}
+        {hud.worldMode === 'dungeon' &&
+          hud.nearCaveRibbon &&
+          !hud.dungeonState?.caveRibbonCollected && (
+            <button
+              type="button"
+              onClick={onPrimaryAction}
+              title="Ambil Pita Merah 3D"
+              aria-label="Ambil Pita Merah 3D"
+              className="relative flex h-[54px] w-[54px] animate-pulse items-center justify-center rounded-full border-2 border-rose-300/90 bg-gradient-to-br from-rose-500 to-red-600 shadow-[0_5px_16px_rgba(244,63,94,0.62)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
             >
-              {hud.nearIslandRibbonLocked ? '🔒 Segel' : 'Ambil Pita'}
-            </span>
-          </button>
-        )}
+              <span className="pointer-events-none select-none text-2xl leading-none">🎀</span>
+              <span className="pointer-events-none absolute -bottom-0.5 rounded-full border border-rose-200/90 bg-slate-950/95 px-1.5 text-[9px] font-black leading-tight text-rose-100 shadow">
+                Ambil Pita
+              </span>
+            </button>
+          )}
 
         {nearbyOverworldDoorNpc && !nearbyOverworldNpc && !hud.nearPortal && (
           <button

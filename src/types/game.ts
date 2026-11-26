@@ -381,6 +381,7 @@ export interface DungeonZoneState {
   captiveName: string;
   guardianName: string;
   liberated: boolean;
+  caveRibbonCollected?: boolean;
   isMixedChallenge: boolean;
 }
 
@@ -407,6 +408,9 @@ export interface AreaMonsterStats {
   bossPending?: boolean;
   bossActive?: boolean;
   bossDefeated?: boolean;
+  captiveRescued?: boolean;
+  zoneIslandRemaining?: number;
+  zoneIslandTotal?: number;
 }
 
 export interface ProjectedLabel {
@@ -597,6 +601,7 @@ export interface RpgHudSnapshot {
   nearbyDungeonGuardian: boolean;
   nearPrisonKey: boolean;
   nearHiddenPrison: boolean;
+  nearCaveRibbon?: boolean;
   nearIslandRibbonZone?: ZoneId | null;
   nearIslandRibbonLocked?: boolean;
   nearPortal: boolean;
@@ -605,6 +610,7 @@ export interface RpgHudSnapshot {
   dungeonState: DungeonZoneState | null;
   areaMonsterStats: AreaMonsterStats;
   liberatedZones: ZoneId[];
+  captiveRescuedZones?: ZoneId[];
   areaDoorsCleared: Record<ZoneId, number[]>;
   ieltsScores: Record<'listening' | 'reading' | 'writing' | 'speaking' | 'full', number>;
   quests: RpgQuestState[];

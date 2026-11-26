@@ -190,6 +190,7 @@ const INITIAL_HUD: RpgHudSnapshot = {
   nearbyDungeonGuardian: false,
   nearPrisonKey: false,
   nearHiddenPrison: false,
+  nearCaveRibbon: false,
   nearPortal: false,
   nearDungeonExit: false,
   portalUnlocked: true,
@@ -204,8 +205,10 @@ const INITIAL_HUD: RpgHudSnapshot = {
     caveRemaining: 10,
     caveTotal: 10,
     caveLiberated: false,
+    captiveRescued: false,
   },
   liberatedZones: [],
+  captiveRescuedZones: [],
   areaDoorsCleared: {
     desa_sapaan: [],
     pasar_rasa: [],
@@ -2842,6 +2845,10 @@ function DiglosaRpgApp() {
         quests={hud.quests}
         wordProgress={hud.wordProgress}
         liberatedZones={hud.liberatedZones}
+        captiveRescuedZones={hud.captiveRescuedZones ?? []}
+        ribbons={hud.ribbons}
+        activeZoneId={hud.activeZoneId}
+        activeZoneIslandRemaining={hud.areaMonsterStats.zoneIslandRemaining}
         areaDoorsCleared={hud.areaDoorsCleared}
         isNightTime={hud.worldTime.phase === 'malam'}
         nightPermittedZones={hud.nightPermittedZones}
