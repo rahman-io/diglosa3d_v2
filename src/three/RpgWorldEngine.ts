@@ -4044,8 +4044,8 @@ export class RpgWorldEngine {
     }
 
     if (this.worldMode === 'dungeon' && this.dungeonRig) {
-      // Keep camera cleanly below cavern ceiling (14.5 in Desa Sapaan, 9.8 elsewhere)
-      const maxCamY = this.dungeonState?.zoneId === 'desa_sapaan' ? 13.0 : 8.95;
+      // Keep camera cleanly below cavern ceiling (20.0 in Desa Sapaan, 9.8 elsewhere)
+      const maxCamY = this.dungeonState?.zoneId === 'desa_sapaan' ? 18.2 : 8.95;
       if (dirY > 0.01 && originY + dirY * safeDist > maxCamY) {
         safeDist = Math.min(safeDist, Math.max(1.2, (maxCamY - originY) / dirY));
       }
@@ -8437,7 +8437,7 @@ export class RpgWorldEngine {
         (this.scene.background as THREE.Color).setHex(0x1e1836);
         if (this.scene.fog instanceof THREE.FogExp2) {
           this.scene.fog.color.setHex(0x1e1836);
-          this.scene.fog.density = 0.0082;
+          this.scene.fog.density = 0.0068;
         }
         this.hemiLight.color.setHex(0xe0e7ff);
         this.hemiLight.groundColor.setHex(0x4d7c0f);
@@ -8759,23 +8759,38 @@ export class RpgWorldEngine {
       quizWaves[idx % 3].push(...wIds);
     });
 
-    const quizCoords: Array<[number, number]> = [
-      [-9, -1],
-      [0, -11],
-      [9, -1],
-    ];
-    const monsterTypes: MonsterType[] = [
-      BOSSES[zoneId].monsterType,
-      'skeleton_warrior',
-      BOSSES[zoneId].monsterType,
-      'crystal_golem',
-    ];
+    const isDesaCave = zoneId === 'desa_sapaan';
+    const quizCoords: Array<[number, number]> = isDesaCave
+      ? [
+          [-5.2, 1.5],
+          [-8.8, -11.0],
+          [1.5, -9.8],
+        ]
+      : [
+          [-9, -1],
+          [0, -11],
+          [9, -1],
+        ];
+    const monsterTypes: MonsterType[] = isDesaCave
+      ? ['forest_slime', 'forest_slime', 'skeleton_warrior']
+      : [
+          BOSSES[zoneId].monsterType,
+          'skeleton_warrior',
+          BOSSES[zoneId].monsterType,
+          'crystal_golem',
+        ];
 
     quizWaves.forEach((wordIds, idx) => {
       const [mx, mz] = quizCoords[idx];
       const id = `dw_${zoneId}_${idx}`;
       const mType = monsterTypes[idx % monsterTypes.length];
-      const mesh = createMonsterMesh(mType, this.palette, 1.0);
+      const desaScale =
+        isDesaCave && mType === 'forest_slime'
+          ? 0.62
+          : isDesaCave && mType === 'skeleton_warrior'
+          ? 0.72
+          : 1.0;
+      const mesh = createMonsterMesh(mType, this.palette, desaScale);
       mesh.position.set(mx, 0, mz);
       mesh.userData.monsterId = id;
       rig.group.add(mesh);
@@ -8807,15 +8822,31 @@ export class RpgWorldEngine {
       }
     });
 
-    const brawlerCoords: Array<[number, number]> = [
-      [-7, -9],
-      [7, -9],
-    ];
+    const brawlerCoords: Array<[number, number]> = isDesaCave
+      ? [
+          [-11.6, -11.8],
+          [2.0, -4.5],
+        ]
+      : [
+          [-7, -9],
+          [7, -9],
+        ];
     const brawlerHp = this.settings.difficulty === 'pendekar' ? 5 : 4;
     brawlerCoords.forEach(([bx, bz], idx) => {
       const id = `db_${zoneId}_${idx}`;
-      const mType: MonsterType = idx === 0 ? BOSSES[zoneId].monsterType : 'minotaur_brute';
-      const mesh = createMonsterMesh(mType, this.palette, 1.05);
+      const mType: MonsterType = isDesaCave
+        ? idx === 0
+          ? 'forest_slime'
+          : 'cave_spider'
+        : idx === 0
+        ? BOSSES[zoneId].monsterType
+        : 'minotaur_brute';
+      const bScale = isDesaCave
+        ? mType === 'forest_slime'
+          ? 0.64
+          : 1.05
+        : 1.05;
+      const mesh = createMonsterMesh(mType, this.palette, bScale);
       mesh.position.set(bx, 0, bz);
       mesh.userData.monsterId = id;
 
@@ -8870,15 +8901,20 @@ export class RpgWorldEngine {
       }
     });
 
-    // Spawn Cave-Exclusive Mobs: 2 Cave Spiders (volatile ambushers) & 2 Lava Imps (flying ceiling swoopers)
-    const creeperSpots: Array<[number, number]> = [
-      [-11, 2],
-      [11, -3],
-    ];
+    // Spawn Cave-Exclusive Mobs: 2 Cave Spiders (volatile ambushers) & 2 Flying Shadow/Lava Swoopers
+    const creeperSpots: Array<[number, number]> = isDesaCave
+      ? [
+          [-13.0, -11.0],
+          [9.8, -10.5],
+        ]
+      : [
+          [-11, 2],
+          [11, -3],
+        ];
     creeperSpots.forEach(([cx, cz], idx) => {
       const cid = `creeper_${zoneId}_${idx}`;
       const isAlive = !bossBeaten && !defeatedSet.has(cid);
-      const cMesh = createMonsterMesh('cave_spider', this.palette, 1.0);
+      const cMesh = createMonsterMesh('cave_spider', this.palette, isDesaCave ? 1.05 : 1.0);
       cMesh.position.set(cx, 0, cz);
       cMesh.visible = isAlive;
       rig.group.add(cMesh);
@@ -8907,26 +8943,32 @@ export class RpgWorldEngine {
       });
     });
 
-    const batSpots: Array<[number, number]> = [
-      [-6, -5],
-      [6, 3],
-    ];
+    const batSpots: Array<[number, number]> = isDesaCave
+      ? [
+          [-8.5, -12.5],
+          [3.2, -3.5],
+        ]
+      : [
+          [-6, -5],
+          [6, 3],
+        ];
+    const flyerType: MonsterType = isDesaCave ? 'shadow_harpy' : 'lava_imp';
     batSpots.forEach(([bx, bz], idx) => {
       const bid = `bat_${zoneId}_${idx}`;
       const isAlive = !bossBeaten && !defeatedSet.has(bid);
-      const bMesh = createMonsterMesh('lava_imp', this.palette, 1.0);
-      bMesh.position.set(bx, 3.4, bz);
+      const bMesh = createMonsterMesh(flyerType, this.palette, isDesaCave ? 0.72 : 1.0);
+      bMesh.position.set(bx, isDesaCave ? 2.4 : 3.4, bz);
       bMesh.visible = isAlive;
       rig.group.add(bMesh);
       this.dungeonMonsters.push({
         id: bid,
-        type: 'lava_imp',
-        name: 'Lava Imp',
+        type: flyerType,
+        name: isDesaCave ? 'Shadow Monster' : 'Lava Imp',
         zoneId,
         homeX: bx,
         homeZ: bz,
         x: bx,
-        y: 3.4,
+        y: isDesaCave ? 2.4 : 3.4,
         z: bz,
         maxHp: 2,
         mobHp: 2,
@@ -19170,7 +19212,15 @@ export class RpgWorldEngine {
 
         let nextMx = m.x;
         let nextMz = m.z;
-        const baseScale = m.isBoss ? 1.65 : spec.baseScale;
+        const baseScale = m.isBoss
+          ? 1.65
+          : this.worldMode === 'dungeon' && m.zoneId === 'desa_sapaan'
+          ? m.type === 'forest_slime'
+            ? 0.64
+            : m.type === 'cave_spider'
+            ? 1.05
+            : spec.baseScale
+          : spec.baseScale;
         m.mesh.scale.setScalar(baseScale);
         m.mesh.rotation.x = 0;
 
