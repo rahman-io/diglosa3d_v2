@@ -26,6 +26,7 @@ export interface IstanaCourtyardNpc {
 export interface IstanaFloatingRig {
   istanaGroup: THREE.Group;
   istanaDome: THREE.Mesh;
+  gateGroup: THREE.Group;
   domeUniforms: { uTime: { value: number } };
   bridgeUniforms: { uTime: { value: number } };
   skyBridgeGroup: THREE.Group;
@@ -1135,6 +1136,7 @@ export function buildIstanaFloatingIsland(
   return {
     istanaGroup,
     istanaDome,
+    gateGroup,
     domeUniforms,
     bridgeUniforms,
     skyBridgeGroup,

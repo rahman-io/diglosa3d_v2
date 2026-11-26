@@ -668,6 +668,7 @@ interface PrologueKingRig {
 
 interface PrologueCutsceneRig {
   group: THREE.Group;
+  istanaStage: THREE.Group;
   king: PrologueKingRig;
   royalCrowd: Array<{
     mesh: THREE.Group;
@@ -702,6 +703,45 @@ interface PrologueCutsceneRig {
     speed: number;
     offset: number;
   }>;
+  skyPortal: {
+    group: THREE.Group;
+    core: THREE.Mesh;
+    ringOuter: THREE.Mesh;
+    ringInner: THREE.Mesh;
+    beam: THREE.Mesh;
+    beamMat: THREE.MeshBasicMaterial;
+    bolts: THREE.Mesh[];
+  };
+  crownAltar: THREE.Group;
+  sacredCrown: THREE.Group;
+  crownShockwave: {
+    mesh: THREE.Mesh;
+    mat: THREE.MeshBasicMaterial;
+  };
+  palaceLanterns: Array<{
+    orb: THREE.Mesh;
+    mat: THREE.MeshStandardMaterial;
+    halo: THREE.Mesh;
+    haloMat: THREE.MeshBasicMaterial;
+    phase: number;
+  }>;
+  wordOrbs: Array<{
+    mesh: THREE.Mesh;
+    mat: THREE.MeshBasicMaterial;
+    homePos: THREE.Vector3;
+    snatchStart: number;
+    snatchEnd: number;
+    keeper: boolean;
+    phase: number;
+  }>;
+  darkMists: Array<{
+    mesh: THREE.Mesh;
+    mat: THREE.MeshBasicMaterial;
+    startPos: THREE.Vector3;
+    endPos: THREE.Vector3;
+    phase: number;
+    baseScale: number;
+  }>;
   crownShards: Array<{
     mesh: THREE.Mesh;
     startPos: THREE.Vector3;
@@ -710,8 +750,14 @@ interface PrologueCutsceneRig {
   raiders: Array<{
     mesh: THREE.Group;
     type: MonsterType;
-    startPos: THREE.Vector3;
-    targetPos: THREE.Vector3;
+    spawnPos: THREE.Vector3;
+    raidPos: THREE.Vector3;
+    strikePos?: THREE.Vector3;
+    orbitAngle?: number;
+    orbitRadius?: number;
+    hoverY: number;
+    isFlier: boolean;
+    spawnDelay: number;
     phase: number;
   }>;
   bosses: Array<{
@@ -725,6 +771,10 @@ interface PrologueCutsceneRig {
     pos: THREE.Vector3;
     dropTime: number;
   }>;
+  disposables: Array<{ dispose: () => void }>;
+  raidPortalSoundFired: boolean;
+  raidShatterFired: boolean;
+  raidStealSoundFired: boolean;
 }
 
 export class RpgWorldEngine {
@@ -5688,53 +5738,413 @@ export class RpgWorldEngine {
       }
     });
 
-    // 5. Six glowing golden Crown Shards (shatter in Scene 2)
-    const shardTargets: ZoneId[] = [
-      'desa_sapaan',
-      'pasar_rasa',
-      'hutan_satwa',
-      'gerbang_kota',
-      'menara_waktu',
-      'gua_portal',
-    ];
-    const shardGeo = new THREE.OctahedronGeometry(0.7, 0);
-    const shardMat = this.palette.getMat(0xfacc15, 'emissive');
-    const portalPt = OVERWORLD_ANCHORS.portal;
-    const crownShards = shardTargets.map((zId, idx) => {
-      const mesh = new THREE.Mesh(shardGeo, shardMat);
-      const startPos = new THREE.Vector3(portalPt.x, portalPt.y + 3.2, portalPt.z + 6);
-      const za = OVERWORLD_ANCHORS.zones[zId];
-      const ang = (idx / 6) * Math.PI * 2;
-      const endPos = new THREE.Vector3(
-        THREE.MathUtils.lerp(startPos.x, za.x, 0.35) + Math.cos(ang) * 14,
-        startPos.y + 12 + (idx % 2) * 4,
-        THREE.MathUtils.lerp(startPos.z, za.z, 0.35) + Math.sin(ang) * 14,
+    const disposables: Array<{ dispose: () => void }> = [];
+
+    // 5. Adegan 2 Stage mounted inside Istana Utara (Northern Floating Palace)
+    const istanaStage = new THREE.Group();
+    istanaStage.visible = false;
+    this.archipelagoRig.istanaRig.istanaGroup.add(istanaStage);
+
+    // 5a. Dark Sky Storm Portal hovering above Istana Utara courtyard
+    const skyPortalGroup = new THREE.Group();
+    skyPortalGroup.position.set(0, 27.5, 31.0);
+    skyPortalGroup.rotation.x = 0.42;
+    const vortexMat = new THREE.MeshBasicMaterial({
+      color: 0x1e0836,
+      transparent: true,
+      opacity: 0.94,
+      side: THREE.DoubleSide,
+    });
+    const ringOuterMat = new THREE.MeshBasicMaterial({
+      color: 0x9333ea,
+      transparent: true,
+      opacity: 0.9,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const ringInnerMat = new THREE.MeshBasicMaterial({
+      color: 0xf43f5e,
+      transparent: true,
+      opacity: 0.88,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const beamPortalMat = new THREE.MeshBasicMaterial({
+      color: 0x6b21a8,
+      transparent: true,
+      opacity: 0.28,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const coreGeo = new THREE.CircleGeometry(6.2, 32);
+    const ringOuterGeo = new THREE.TorusGeometry(6.8, 0.45, 10, 36);
+    const ringInnerGeo = new THREE.TorusGeometry(4.7, 0.3, 10, 28);
+    const beamPortalGeo = new THREE.CylinderGeometry(3.4, 9.5, 24.5, 18, 1, true);
+    const portalCore = new THREE.Mesh(coreGeo, vortexMat);
+    const ringOuter = new THREE.Mesh(ringOuterGeo, ringOuterMat);
+    const ringInner = new THREE.Mesh(ringInnerGeo, ringInnerMat);
+    ringInner.position.z = 0.25;
+    const portalBeam = new THREE.Mesh(beamPortalGeo, beamPortalMat);
+    portalBeam.rotation.x = Math.PI * 0.5;
+    portalBeam.position.z = 11.8;
+    skyPortalGroup.add(portalCore, ringOuter, ringInner, portalBeam);
+
+    const boltGeo = new THREE.BoxGeometry(0.32, 3.6, 0.32);
+    const portalBolts: THREE.Mesh[] = [];
+    for (let bi = 0; bi < 8; bi++) {
+      const ang = (bi / 8) * Math.PI * 2;
+      const bolt = new THREE.Mesh(boltGeo, bi % 2 === 0 ? ringOuterMat : ringInnerMat);
+      bolt.position.set(Math.cos(ang) * 7.1, Math.sin(ang) * 7.1, 0.15);
+      bolt.rotation.z = ang + Math.PI * 0.5;
+      skyPortalGroup.add(bolt);
+      portalBolts.push(bolt);
+    }
+    istanaStage.add(skyPortalGroup);
+    disposables.push(
+      vortexMat,
+      ringOuterMat,
+      ringInnerMat,
+      beamPortalMat,
+      coreGeo,
+      ringOuterGeo,
+      ringInnerGeo,
+      beamPortalGeo,
+      boltGeo,
+    );
+
+    // 5b. Sacred Royal Crown resting on an ornate Marble & Gold Altar at (0, 3.5, 25.2)
+    const crownAltar = new THREE.Group();
+    crownAltar.position.set(0, 3.5, 25.2);
+    const altarBaseMat = this.palette.getMat(0xf8fafc, 'gloss');
+    const altarGoldMat = this.palette.getMat(0xfacc15, 'metal');
+    const altarVelvetMat = this.palette.getMat(0xbe123c, 'matte');
+    const pedestalStep = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.45, 2.6), altarBaseMat);
+    pedestalStep.position.y = 0.225;
+    const pedestalShaft = new THREE.Mesh(new THREE.BoxGeometry(1.35, 1.35, 1.35), altarBaseMat);
+    pedestalShaft.position.y = 1.12;
+    const pedestalCap = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.3, 1.9), altarGoldMat);
+    pedestalCap.position.y = 1.88;
+    const cushion = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.28, 1.15), altarVelvetMat);
+    cushion.position.y = 2.15;
+    crownAltar.add(pedestalStep, pedestalShaft, pedestalCap, cushion);
+    istanaStage.add(crownAltar);
+
+    const sacredCrown = new THREE.Group();
+    sacredCrown.position.set(0, 2.55, 0);
+    const goldGlow = this.palette.getMat(0xfef08a, 'emissive');
+    const rubyGlow = this.palette.getMat(0xf43f5e, 'emissive');
+    const emeraldGlow = this.palette.getMat(0x10b981, 'emissive');
+    const cBand = new THREE.Mesh(new THREE.BoxGeometry(1.12, 0.26, 1.12), altarGoldMat);
+    const cHaloGeo = new THREE.TorusGeometry(0.92, 0.06, 8, 24);
+    const cHaloMat = new THREE.MeshBasicMaterial({
+      color: 0xfde047,
+      transparent: true,
+      opacity: 0.72,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    const cHalo = new THREE.Mesh(cHaloGeo, cHaloMat);
+    cHalo.rotation.x = Math.PI * 0.5;
+    sacredCrown.add(cBand, cHalo);
+    [
+      [-0.42, 0.42],
+      [0.42, 0.42],
+      [-0.42, -0.42],
+      [0.42, -0.42],
+      [0, 0.45],
+      [0, -0.45],
+    ].forEach(([px, pz], idx) => {
+      const spire = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.42, 0.18), goldGlow);
+      spire.position.set(px, 0.3, pz);
+      const gem = new THREE.Mesh(
+        new THREE.OctahedronGeometry(0.11, 0),
+        idx % 2 === 0 ? rubyGlow : emeraldGlow,
       );
+      gem.position.set(px, 0.56, pz);
+      sacredCrown.add(spire, gem);
+    });
+    crownAltar.add(sacredCrown);
+
+    const shockGeo = new THREE.RingGeometry(0.4, 1.4, 28);
+    const shockMat = new THREE.MeshBasicMaterial({
+      color: 0xc084fc,
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const shockMesh = new THREE.Mesh(shockGeo, shockMat);
+    shockMesh.rotation.x = -Math.PI * 0.5;
+    shockMesh.position.set(0, 5.75, 25.2);
+    shockMesh.visible = false;
+    istanaStage.add(shockMesh);
+    disposables.push(cHaloGeo, cHaloMat, shockGeo, shockMat);
+
+    // 5c. 8 Royal Palace Lanterns lining the portico & marble stairs (dim down during the storm)
+    const lanternPositions: Array<[number, number, number]> = [
+      [-8.6, 3.5, 25.4],
+      [8.6, 3.5, 25.4],
+      [-8.8, 3.5, 31.0],
+      [8.8, 3.5, 31.0],
+      [-5.2, 0.0, 35.5],
+      [5.2, 0.0, 35.5],
+      [-5.2, 0.0, 42.5],
+      [5.2, 0.0, 42.5],
+    ];
+    const postMat = this.palette.getMat(0x334155, 'metal');
+    const lPostGeo = new THREE.BoxGeometry(0.32, 2.2, 0.32);
+    const lCapGeo = new THREE.BoxGeometry(0.75, 0.22, 0.75);
+    const lOrbGeo = new THREE.BoxGeometry(0.5, 0.62, 0.5);
+    const lHaloGeo = new THREE.SphereGeometry(0.95, 10, 8);
+    const palaceLanterns = lanternPositions.map(([lx, ly, lz], li) => {
+      const lGroup = new THREE.Group();
+      lGroup.position.set(lx, ly, lz);
+      const post = new THREE.Mesh(lPostGeo, postMat);
+      post.position.y = 1.1;
+      const capTop = new THREE.Mesh(lCapGeo, altarGoldMat);
+      capTop.position.y = 2.86;
+      const orbMat = new THREE.MeshStandardMaterial({
+        color: 0xfef08a,
+        emissive: 0xf59e0b,
+        emissiveIntensity: 1.8,
+        roughness: 0.25,
+      });
+      const orb = new THREE.Mesh(lOrbGeo, orbMat);
+      orb.position.y = 2.42;
+      const haloMat = new THREE.MeshBasicMaterial({
+        color: 0xfde047,
+        transparent: true,
+        opacity: 0.32,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+      });
+      const halo = new THREE.Mesh(lHaloGeo, haloMat);
+      halo.position.y = 2.42;
+      lGroup.add(post, capTop, orb, halo);
+      istanaStage.add(lGroup);
+      disposables.push(orbMat, haloMat);
+      return { orb, mat: orbMat, halo, haloMat, phase: li * 0.85 };
+    });
+    disposables.push(lPostGeo, lCapGeo, lOrbGeo, lHaloGeo);
+
+    // 5d. Six gleaming golden Crown Shards bursting out across the sky when Crown shatters
+    const shardDirections: Array<[number, number, number]> = [
+      [-34, 24, 14],
+      [34, 24, 14],
+      [-42, 20, 38],
+      [42, 20, 38],
+      [-22, 28, -10],
+      [22, 28, -10],
+    ];
+    const shardGeo = new THREE.OctahedronGeometry(0.72, 0);
+    const shardMat = this.palette.getMat(0xfacc15, 'emissive');
+    const crownShards = shardDirections.map(([ex, ey, ez]) => {
+      const mesh = new THREE.Mesh(shardGeo, shardMat);
+      const startPos = new THREE.Vector3(0, 5.9, 25.2);
+      const endPos = new THREE.Vector3(ex, ey, ez);
       mesh.position.copy(startPos);
       mesh.visible = false;
-      group.add(mesh);
+      istanaStage.add(mesh);
       return { mesh, startPos, endPos };
     });
+    disposables.push(shardGeo);
 
-    // 6. Shadow Raiders invading the northern terrace in Scene 2
-    const raiderConfigs: Array<{ type: MonsterType; sx: number; sy: number; sz: number; tx: number; tz: number; phase: number }> = [
-      { type: 'skeleton_warrior', sx: portalPt.x - 16, sy: portalPt.y, sz: portalPt.z + 24, tx: portalPt.x - 4.2, tz: portalPt.z + 8.5, phase: 0.2 },
-      { type: 'lava_imp', sx: portalPt.x + 15, sy: portalPt.y + 4, sz: portalPt.z + 22, tx: portalPt.x + 4.0, tz: portalPt.z + 8.0, phase: 1.4 },
-      { type: 'stone_gargoyle', sx: portalPt.x - 11, sy: portalPt.y + 8, sz: portalPt.z + 10, tx: portalPt.x - 3.6, tz: portalPt.z + 4.4, phase: 2.3 },
-      { type: 'shadow_harpy', sx: portalPt.x + 12, sy: portalPt.y + 9, sz: portalPt.z + 11, tx: portalPt.x + 3.5, tz: portalPt.z + 4.5, phase: 3.1 },
-      { type: 'thorn_goblin', sx: portalPt.x, sy: portalPt.y, sz: portalPt.z + 26, tx: portalPt.x + 0.4, tz: portalPt.z + 10.2, phase: 4.5 },
+    // 5e. 8 Armed Shadow Raiders descending from the Sky Portal to besiege Istana Utara
+    const attachShadowWeapon = (monsterMesh: THREE.Group, kind: number) => {
+      const mRig = monsterMesh.userData.monsterRig as { rightArm?: THREE.Group; weaponGroup?: THREE.Object3D } | undefined;
+      if (mRig?.weaponGroup) return;
+      const wGroup = new THREE.Group();
+      const darkBladeMat = this.palette.getMat(0x3b0764, 'metal');
+      const voidEdgeMat = this.palette.getMat(0xc084fc, 'emissive');
+      const hilt = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.55, 0.14), postMat);
+      hilt.position.y = -0.35;
+      const guard = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.14, 0.18), altarGoldMat);
+      guard.position.y = -0.1;
+      wGroup.add(hilt, guard);
+      if (kind % 2 === 0) {
+        // Broad Shadow Greatsword
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.55, 0.09), darkBladeMat);
+        blade.position.y = 0.72;
+        const glowEdge = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.48, 0.12), voidEdgeMat);
+        glowEdge.position.y = 0.72;
+        wGroup.add(blade, glowEdge);
+      } else {
+        // Curved Shadow Battleaxe
+        const shaft = new THREE.Mesh(new THREE.BoxGeometry(0.14, 1.45, 0.14), darkBladeMat);
+        shaft.position.y = 0.58;
+        const axeHead = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.55, 0.14), voidEdgeMat);
+        axeHead.position.set(0.25, 1.02, 0);
+        wGroup.add(shaft, axeHead);
+      }
+      wGroup.position.set(0.06, -0.75, 0.25);
+      wGroup.rotation.x = Math.PI * 0.42;
+      if (mRig?.rightArm) {
+        mRig.rightArm.add(wGroup);
+      } else {
+        wGroup.position.set(0.75, 1.15, 0.35);
+        monsterMesh.add(wGroup);
+      }
+    };
+
+    const raiderConfigs: Array<{
+      type: MonsterType;
+      rx: number;
+      ry: number;
+      rz: number;
+      sx?: number;
+      sy?: number;
+      sz?: number;
+      isFlier: boolean;
+      orbitAngle?: number;
+      orbitRadius?: number;
+      delay: number;
+      phase: number;
+    }> = [
+      // Lead Captain who drops onto staircase and strikes the Crown Altar!
+      { type: 'skeleton_warrior', rx: 0.0, ry: 3.5, rz: 28.6, sx: 0.0, sy: 3.5, sz: 26.8, isFlier: false, delay: 0.7, phase: 0.2 },
+      // Ground surround formation on portico & marble steps
+      { type: 'thorn_goblin', rx: -6.4, ry: 3.5, rz: 27.6, isFlier: false, delay: 1.0, phase: 1.1 },
+      { type: 'skeleton_warrior', rx: 6.4, ry: 3.5, rz: 27.6, isFlier: false, delay: 1.25, phase: 2.0 },
+      { type: 'lava_imp', rx: -4.4, ry: 0.0, rz: 33.4, isFlier: false, delay: 1.5, phase: 2.8 },
+      { type: 'thorn_goblin', rx: 4.4, ry: 0.0, rz: 33.4, isFlier: false, delay: 1.75, phase: 3.6 },
+      // Aerial raiders circling the palace spires & courtyard sky
+      { type: 'stone_gargoyle', rx: -11.5, ry: 14.5, rz: 25.0, isFlier: true, orbitAngle: 0.4, orbitRadius: 15.5, delay: 1.1, phase: 1.7 },
+      { type: 'shadow_harpy', rx: 11.5, ry: 16.0, rz: 26.0, isFlier: true, orbitAngle: 2.5, orbitRadius: 16.5, delay: 1.4, phase: 3.2 },
+      { type: 'giant_phantom', rx: 0.0, ry: 18.5, rz: 18.0, isFlier: true, orbitAngle: 4.5, orbitRadius: 14.0, delay: 1.9, phase: 4.4 },
     ];
-    const raiders = raiderConfigs.map((rc) => {
-      const mesh = createMonsterMesh(rc.type, this.palette, 1.15);
-      const startPos = new THREE.Vector3(rc.sx, getArchipelagoGroundY(rc.sx, rc.sz) + (rc.sy - portalPt.y), rc.sz);
-      const targetPos = new THREE.Vector3(rc.tx, getArchipelagoGroundY(rc.tx, rc.tz) + (rc.sy > portalPt.y ? 2.4 : 0), rc.tz);
-      mesh.position.copy(startPos);
+    const raiders = raiderConfigs.map((rc, idx) => {
+      const mesh = createMonsterMesh(rc.type, this.palette, rc.type === 'giant_phantom' ? 1.25 : 1.12);
+      attachShadowWeapon(mesh, idx);
+      const spawnPos = new THREE.Vector3(
+        (idx % 2 === 0 ? -1 : 1) * (idx * 0.65),
+        27.0,
+        30.5,
+      );
+      const raidPos = new THREE.Vector3(rc.rx, rc.ry, rc.rz);
+      const strikePos = rc.sx !== undefined ? new THREE.Vector3(rc.sx, rc.sy ?? rc.ry, rc.sz ?? rc.rz) : undefined;
+      mesh.position.copy(spawnPos);
       mesh.visible = false;
-      group.add(mesh);
-      return { mesh, type: rc.type, startPos, targetPos, phase: rc.phase };
+      istanaStage.add(mesh);
+      return {
+        mesh,
+        type: rc.type,
+        spawnPos,
+        raidPos,
+        strikePos,
+        orbitAngle: rc.orbitAngle,
+        orbitRadius: rc.orbitRadius,
+        hoverY: rc.ry,
+        isFlier: rc.isFlier,
+        spawnDelay: rc.delay,
+        phase: rc.phase,
+      };
     });
 
-    // 7. Giant Boss Monsters looming over the 6 misty islands in Scene 3
+    // 5f. 10 Luminous English Word Tablets floating over Istana courtyard, snatched into the storm vortex
+    const makeWordPlaque = (word: string, keeper: boolean) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256;
+      canvas.height = 96;
+      const ctx = canvas.getContext('2d')!;
+      ctx.fillStyle = keeper ? '#064e3b' : '#1e293b';
+      ctx.strokeStyle = keeper ? '#fde047' : '#38bdf8';
+      ctx.lineWidth = 8;
+      ctx.beginPath();
+      ctx.roundRect(6, 6, 244, 84, 20);
+      ctx.fill();
+      ctx.stroke();
+      ctx.font = '900 40px "Plus Jakarta Sans", system-ui, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = keeper ? '#fef08a' : '#e0f2fe';
+      ctx.fillText(word, 128, 50);
+      const tex = new THREE.CanvasTexture(canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      const geo = new THREE.PlaneGeometry(2.5, 0.94);
+      const mat = new THREE.MeshBasicMaterial({
+        map: tex,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      disposables.push(tex, geo, mat);
+      return { mesh: new THREE.Mesh(geo, mat), mat };
+    };
+
+    const wordSpecs: Array<{ word: string; x: number; y: number; z: number; s: number; e: number; keeper?: boolean }> = [
+      { word: 'HELLO', x: -7.5, y: 7.4, z: 32.0, s: 4.8, e: 6.7 },
+      { word: 'MORNING', x: 7.2, y: 7.8, z: 32.5, s: 5.0, e: 7.0 },
+      { word: 'FRIEND', x: -4.2, y: 8.6, z: 27.5, s: 5.2, e: 7.2 },
+      { word: 'SMILE', x: 4.4, y: 8.5, z: 28.0, s: 5.4, e: 7.4 },
+      { word: 'PEACE', x: -9.8, y: 6.2, z: 37.5, s: 5.6, e: 7.6 },
+      { word: 'DREAM', x: 9.6, y: 6.4, z: 37.5, s: 5.8, e: 7.8 },
+      { word: 'MUSIC', x: -2.8, y: 9.6, z: 36.0, s: 6.0, e: 8.0 },
+      { word: 'STORY', x: 3.1, y: 9.8, z: 36.0, s: 6.2, e: 8.2 },
+      { word: 'LIGHT', x: 0.0, y: 10.6, z: 30.5, s: 6.4, e: 8.4 },
+      { word: 'HOPE', x: -2.4, y: 7.2, z: 24.4, s: 5.0, e: 8.5, keeper: true },
+    ];
+    const wordOrbs = wordSpecs.map((ws, wi) => {
+      const { mesh, mat } = makeWordPlaque(ws.word, Boolean(ws.keeper));
+      const homePos = new THREE.Vector3(ws.x, ws.y, ws.z);
+      mesh.position.copy(homePos);
+      istanaStage.add(mesh);
+      return {
+        mesh,
+        mat,
+        homePos,
+        snatchStart: ws.s,
+        snatchEnd: ws.e,
+        keeper: Boolean(ws.keeper),
+        phase: wi * 0.72,
+      };
+    });
+
+    // 5g. 18 Descending Dark Storm Mist Clouds shrouding Istana Utara & dimming sky
+    const mistGeo = new THREE.SphereGeometry(1, 10, 8);
+    const darkMists: PrologueCutsceneRig['darkMists'] = [];
+    for (let mi = 0; mi < 18; mi++) {
+      const ang = (mi / 18) * Math.PI * 2 + (mi % 3) * 0.25;
+      const rad = 7.5 + (mi % 4) * 7.2;
+      const startPos = new THREE.Vector3(
+        Math.cos(ang) * rad,
+        24.5 + (mi % 3) * 4.2,
+        26.0 + Math.sin(ang) * (rad * 0.72),
+      );
+      const endPos = new THREE.Vector3(
+        Math.cos(ang) * (rad * 0.85),
+        4.2 + (mi % 4) * 3.1,
+        28.0 + Math.sin(ang) * (rad * 0.62),
+      );
+      const mistMat = new THREE.MeshBasicMaterial({
+        color: mi % 2 === 0 ? 0x0f172a : 0x1e1b4b,
+        transparent: true,
+        opacity: 0.0,
+        depthWrite: false,
+      });
+      const mistMesh = new THREE.Mesh(mistGeo, mistMat);
+      const baseScale = 5.4 + (mi % 4) * 2.1;
+      mistMesh.position.copy(startPos);
+      mistMesh.scale.set(baseScale * 1.4, baseScale * 0.55, baseScale * 1.2);
+      istanaStage.add(mistMesh);
+      disposables.push(mistMat);
+      darkMists.push({
+        mesh: mistMesh,
+        mat: mistMat,
+        startPos,
+        endPos,
+        phase: mi * 0.65,
+        baseScale,
+      });
+    }
+    disposables.push(mistGeo);
+
+    // 6. Giant Boss Monsters looming over the 6 misty islands in Scene 3
+    const portalPt = OVERWORLD_ANCHORS.portal;
     const bossSpecs: Array<{ zId: ZoneId; type: MonsterType; phase: number }> = [
       { zId: 'desa_sapaan', type: 'forest_slime', phase: 0.4 },
       { zId: 'pasar_rasa', type: 'magma_elemental', phase: 1.2 },
@@ -5754,7 +6164,7 @@ export class RpgWorldEngine {
       return { mesh, type: bs.type, pos, phase: bs.phase };
     });
 
-    // 8. Red Ribbons dropped by Lila along the escape trail to the Purple Gate in Scene 4
+    // 7. Red Ribbons dropped by Lila along the escape trail to the Purple Gate in Scene 4
     const ribbonCoords: Array<{ x: number; z: number; t: number }> = [
       { x: portalPt.x + 1.8, z: portalPt.z + 24, t: 0.6 },
       { x: portalPt.x + 0.9, z: portalPt.z + 18, t: 1.3 },
@@ -5783,25 +6193,55 @@ export class RpgWorldEngine {
 
     return {
       group,
+      istanaStage,
       king,
       royalCrowd,
       lilaMesh,
       villagers,
       bridgeBeams,
       bridgeLightOrbs,
+      skyPortal: {
+        group: skyPortalGroup,
+        core: portalCore,
+        ringOuter,
+        ringInner,
+        beam: portalBeam,
+        beamMat: beamPortalMat,
+        bolts: portalBolts,
+      },
+      crownAltar,
+      sacredCrown,
+      crownShockwave: { mesh: shockMesh, mat: shockMat },
+      palaceLanterns,
+      wordOrbs,
+      darkMists,
       crownShards,
       raiders,
       bosses,
       ribbonDrops,
+      disposables,
+      raidPortalSoundFired: false,
+      raidShatterFired: false,
+      raidStealSoundFired: false,
     };
   }
 
   private cleanupPrologueStage(): void {
     soundEngine.setPrologueScene1Music(false);
+    const istanaRig = this.archipelagoRig.istanaRig;
     if (this.prologueRig) {
       this.scene.remove(this.prologueRig.group);
+      istanaRig.istanaGroup.remove(this.prologueRig.istanaStage);
+      for (const disp of this.prologueRig.disposables) {
+        disp.dispose();
+      }
       this.prologueRig = null;
     }
+    istanaRig.istanaDome.visible = true;
+    istanaRig.gateGroup.visible = true;
+    istanaRig.courtyardNpcs.forEach((c) => {
+      c.rig.root.visible = true;
+    });
     if (this.savedPrologueWorldTimeTick !== null) {
       this.worldTimeTick = this.savedPrologueWorldTimeTick;
       this.savedPrologueWorldTimeTick = null;
@@ -5838,9 +6278,9 @@ export class RpgWorldEngine {
     const spec = PROLOGUE_SCENES[idx];
     this.storyTimer = 0;
     this.worldTimeTick = spec.worldTimeTick;
-    this.updateOverworldDayNightAtmosphere(0, false);
     soundEngine.setPrologueScene1Music(idx === 0);
 
+    const istanaRig = this.archipelagoRig.istanaRig;
     if (this.prologueRig) {
       const rig = this.prologueRig;
       const showPeaceful = idx === 0;
@@ -5848,6 +6288,16 @@ export class RpgWorldEngine {
       const showSilence = idx === 2;
       const showEscape = idx === 3;
       const showOwlFlight = idx === 4;
+
+      rig.istanaStage.visible = showRaid;
+      istanaRig.istanaDome.visible = !showRaid;
+      istanaRig.gateGroup.visible = !showRaid;
+      istanaRig.courtyardNpcs.forEach((c) => {
+        c.rig.root.visible = !showRaid;
+      });
+      rig.raidPortalSoundFired = false;
+      rig.raidShatterFired = false;
+      rig.raidStealSoundFired = false;
 
       rig.bridgeBeams.forEach((bm) => {
         bm.visible = showPeaceful;
@@ -5862,12 +6312,31 @@ export class RpgWorldEngine {
         v.mesh.visible = showPeaceful;
       });
       rig.crownShards.forEach((sh) => {
-        sh.mesh.visible = showRaid;
+        sh.mesh.visible = false;
         sh.mesh.position.copy(sh.startPos);
       });
       rig.raiders.forEach((rd) => {
-        rd.mesh.visible = showRaid;
-        rd.mesh.position.copy(rd.startPos);
+        rd.mesh.visible = false;
+        rd.mesh.position.copy(rd.spawnPos);
+      });
+      rig.sacredCrown.visible = showRaid;
+      rig.crownShockwave.mesh.visible = false;
+      rig.skyPortal.group.scale.setScalar(0.05);
+      rig.wordOrbs.forEach((w) => {
+        w.mesh.visible = showRaid;
+        w.mesh.position.copy(w.homePos);
+        w.mesh.scale.setScalar(1);
+        w.mat.opacity = 0.95;
+        w.mat.color.setHex(0xffffff);
+      });
+      rig.palaceLanterns.forEach((l) => {
+        l.mat.emissiveIntensity = 1.9;
+        l.haloMat.opacity = 0.34;
+        l.halo.scale.setScalar(1);
+      });
+      rig.darkMists.forEach((dm) => {
+        dm.mesh.position.copy(dm.startPos);
+        dm.mat.opacity = 0.0;
       });
       rig.bosses.forEach((bs) => {
         bs.mesh.visible = showSilence;
@@ -5877,7 +6346,7 @@ export class RpgWorldEngine {
       });
 
       rig.king.root.visible = showPeaceful || showRaid || showEscape;
-      rig.king.crown.visible = showPeaceful || showRaid;
+      rig.king.crown.visible = showPeaceful;
       rig.king.root.scale.setScalar(1.18);
       rig.lilaMesh.visible = showPeaceful || showEscape;
       rig.lilaMesh.scale.setScalar(0.86);
@@ -5894,14 +6363,21 @@ export class RpgWorldEngine {
         this.camera.position.set(-98, 76, 134);
         this.controls.target.set(0, 8, -10);
       } else if (showRaid) {
-        const pt = OVERWORLD_ANCHORS.portal;
-        rig.king.root.position.set(pt.x, getArchipelagoGroundY(pt.x, pt.z + 6), pt.z + 6);
-        rig.king.root.rotation.y = 0.1;
+        const istanaG = istanaRig.istanaGroup;
+        istanaG.updateMatrixWorld(true);
+        _v1.set(-2.5, 3.5, 23.8);
+        istanaG.localToWorld(_v1);
+        rig.king.root.position.copy(_v1);
+        rig.king.root.rotation.y = istanaG.rotation.y + 0.12;
         this.hero.root.visible = false;
         this.owlRig.root.visible = false;
-        this.camera.position.set(pt.x - 12, pt.y + 9, pt.z + 24);
-        this.controls.target.set(pt.x, pt.y + 2.5, pt.z + 5);
-        soundEngine.playHit();
+
+        _v1.set(11.5, 7.5, 49.0);
+        istanaG.localToWorld(_v1);
+        _v2.set(0, 14.0, 24.0);
+        istanaG.localToWorld(_v2);
+        this.camera.position.copy(_v1);
+        this.controls.target.copy(_v2);
       } else if (showSilence) {
         this.hero.root.visible = false;
         this.owlRig.root.visible = false;
@@ -5944,6 +6420,7 @@ export class RpgWorldEngine {
       textId: spec.textId,
       accentColor: spec.accentColor,
     };
+    this.updateOverworldDayNightAtmosphere(0, false);
     this.pushHud(true);
   }
 
@@ -6583,6 +7060,12 @@ export class RpgWorldEngine {
     const twilightGlow = Math.exp(-Math.pow((sunY + 0.02) / 0.22, 2));
     const isDawn = t >= 22200 || t < 1800;
 
+    const inPrologueScene2 =
+      this.phase === 'story' &&
+      this.storyDialog?.kind === 'prologue' &&
+      this.storyDialog.step === 1;
+    const stormMistT = inPrologueScene2 ? THREE.MathUtils.clamp((this.storyTimer - 4.8) / 4.8, 0, 1) : 0;
+
     if (daylight >= 0.5) {
       _skyColorScratch
         .copy(isDawn ? _skyDawnCol : _skyDuskCol)
@@ -6593,11 +7076,16 @@ export class RpgWorldEngine {
         .lerp(isDawn ? _skyDawnCol : _skyDuskCol, daylight * 2);
     }
     _skyColorScratch.lerp(isDawn ? _skyDawnCol : _skyDuskCol, twilightGlow * 0.28);
+    if (inPrologueScene2) {
+      _skyColorScratch.lerp(_hemiGndNightCol, 0.35 + stormMistT * 0.45);
+    }
 
     (this.scene.background as THREE.Color).copy(_skyColorScratch);
     if (this.scene.fog instanceof THREE.FogExp2) {
       this.scene.fog.color.copy(_skyColorScratch);
-      this.scene.fog.density = THREE.MathUtils.lerp(0.0068, 0.0034, daylight);
+      this.scene.fog.density = inPrologueScene2
+        ? THREE.MathUtils.lerp(0.0072, 0.022, stormMistT)
+        : THREE.MathUtils.lerp(0.0068, 0.0034, daylight);
     }
 
     _hemiSkyScratch
@@ -6608,17 +7096,27 @@ export class RpgWorldEngine {
     this.hemiLight.color.copy(_hemiSkyScratch);
     this.hemiLight.groundColor.copy(_hemiGndScratch);
     this.hemiLight.intensity =
-      THREE.MathUtils.lerp(0.34, 0.98, daylight) + (this.preferLiteShader ? 0.2 : 0);
+      (THREE.MathUtils.lerp(0.34, 0.98, daylight) + (this.preferLiteShader ? 0.2 : 0)) *
+      (inPrologueScene2 ? 1 - stormMistT * 0.42 : 1);
 
     _sunColorScratch
       .copy(_sunNightCol)
       .lerp(isDawn ? _sunDawnCol : _sunDayCol, THREE.MathUtils.clamp(daylight * 1.15, 0, 1));
     this.sunLight.color.copy(_sunColorScratch);
     this.sunLight.intensity =
-      THREE.MathUtils.lerp(0.46, 1.95, daylight) + twilightGlow * 0.22;
+      (THREE.MathUtils.lerp(0.46, 1.95, daylight) + twilightGlow * 0.22) *
+      (inPrologueScene2 ? 1 - stormMistT * 0.48 : 1);
 
-    const focusX = this.phase === 'title' ? 4 : Math.round(this.heroPos.x * 0.5) * 2;
-    const focusZ = this.phase === 'title' ? -4 : Math.round(this.heroPos.z * 0.5) * 2;
+    const focusX = inPrologueScene2
+      ? OVERWORLD_ANCHORS.istanaFloating.x
+      : this.phase === 'title'
+      ? 4
+      : Math.round(this.heroPos.x * 0.5) * 2;
+    const focusZ = inPrologueScene2
+      ? OVERWORLD_ANCHORS.istanaFloating.z
+      : this.phase === 'title'
+      ? -4
+      : Math.round(this.heroPos.z * 0.5) * 2;
     this.sunLight.target.position.set(focusX, 0, focusZ);
     this.sunLight.target.updateMatrixWorld();
 
@@ -6653,10 +7151,12 @@ export class RpgWorldEngine {
     if (this.villageRig?.moonGroup) {
       const my = -sunY * 126 + 10;
       this.villageRig.moonGroup.position.set(-sunX * 145, my, -85);
-      this.villageRig.moonGroup.visible = my > -14;
+      this.villageRig.moonGroup.visible = !inPrologueScene2 && my > -14;
     }
     if (this.villageRig?.starMat) {
-      this.villageRig.starMat.opacity = THREE.MathUtils.clamp((0.35 - daylight) * 2.4, 0, 0.92);
+      this.villageRig.starMat.opacity = inPrologueScene2
+        ? 0.25 * (1 - stormMistT)
+        : THREE.MathUtils.clamp((0.35 - daylight) * 2.4, 0, 0.92);
     }
 
     // Continuous underwater optical atmosphere blending whenever camera dips below water surface (y < 0.08)
@@ -15000,47 +15500,236 @@ export class RpgWorldEngine {
     }
 
     if (step === 1) {
-      // Adegan 2: Serangan Monster Bayangan & Pecahnya Mahkota menjadi 6 Keping
-      const pt = OVERWORLD_ANCHORS.portal;
-      const raidP = Math.min(1, t / 1.7);
-      const shattered = t >= 1.65;
-      rig.king.crown.visible = !shattered;
+      // Adegan 2: Malam Kelam Tanpa Bulan di Istana Utara —
+      // Portal langit terbuka, monster bayangan bersenjata menyerbu turun mengepung istana,
+      // memecahkan Mahkota Kerajaan menjadi 6 kepingan berkilau, merampas kata Bahasa Inggris,
+      // lentera istana meredup & kabut kelam turun menyelimuti langit.
+      const istanaG = this.archipelagoRig.istanaRig.istanaGroup;
+      istanaG.updateMatrixWorld(true);
+
+      // Keep Raja Aksara grounded on the Istana portico
+      _v3.set(-2.5, 3.5, 23.8);
+      istanaG.localToWorld(_v3);
+      rig.king.root.position.copy(_v3);
+      rig.king.root.rotation.y = istanaG.rotation.y + 0.12;
       animateKing(false, true, false);
 
+      // 1. Sky Storm Portal opens violently (t: 0.15s -> 1.8s)
+      const portalOpen = THREE.MathUtils.clamp((t - 0.15) / 1.5, 0, 1);
+      const easePortal = 1 - Math.pow(1 - portalOpen, 3);
+      const portalFade = t > 8.8 ? Math.max(0.25, 1 - (t - 8.8) / 2.5) : 1;
+      rig.skyPortal.group.scale.setScalar(Math.max(0.05, easePortal * (1 + Math.sin(this.elapsed * 4.5) * 0.04)));
+      rig.skyPortal.ringOuter.rotation.z += dt * 2.8;
+      rig.skyPortal.ringInner.rotation.z -= dt * 4.2;
+      rig.skyPortal.beamMat.opacity = (0.28 + Math.sin(this.elapsed * 7.0) * 0.08) * portalOpen * portalFade;
+      rig.skyPortal.bolts.forEach((b, bi) => {
+        b.scale.y = 0.7 + Math.abs(Math.sin(this.elapsed * 12 + bi * 1.4)) * 0.65;
+      });
+      if (!rig.raidPortalSoundFired && t >= 0.3) {
+        rig.raidPortalSoundFired = true;
+        soundEngine.playMonster();
+      }
+
+      // 2. Armed Shadow Monster Horde dives from Sky Portal & besieges Istana Utara
+      const camLocal = istanaG.worldToLocal(_v3.copy(this.camera.position));
       rig.raiders.forEach((rd) => {
-        const moveP = Math.min(1, raidP * 1.15);
-        rd.mesh.position.lerpVectors(rd.startPos, rd.targetPos, moveP);
-        rd.mesh.rotation.y = Math.atan2(
-          rig.king.root.position.x - rd.mesh.position.x,
-          rig.king.root.position.z - rd.mesh.position.z,
-        );
-        animateMonsterRig(rd.mesh, {
-          mode: moveP < 0.98 ? 'patrol' : 'attack',
-          speed: moveP < 0.98 ? 6.0 : 0,
-          elapsed: this.elapsed,
-          phase: rd.phase,
-          dt,
-        });
+        if (t < rd.spawnDelay) {
+          rd.mesh.visible = false;
+          return;
+        }
+        rd.mesh.visible = true;
+        const flyTime = rd.isFlier ? 2.1 : 1.7;
+        const p = THREE.MathUtils.clamp((t - rd.spawnDelay) / flyTime, 0, 1);
+        const ease = 1 - Math.pow(1 - p, 2);
+
+        if (rd.isFlier) {
+          if (p < 1) {
+            rd.mesh.position.lerpVectors(rd.spawnPos, rd.raidPos, ease);
+            rd.mesh.position.y += Math.sin(p * Math.PI) * 3.0;
+          } else {
+            const ang = (rd.orbitAngle ?? 0) + (t - rd.spawnDelay - flyTime) * 0.75;
+            const rad = rd.orbitRadius ?? 15.0;
+            rd.mesh.position.set(
+              Math.cos(ang) * rad,
+              rd.hoverY + Math.sin(this.elapsed * 2.6 + rd.phase) * 1.35,
+              14.0 + Math.sin(ang) * (rad * 0.85),
+            );
+            rd.mesh.rotation.y = Math.atan2(-Math.sin(ang), Math.cos(ang));
+          }
+          animateMonsterRig(rd.mesh, {
+            mode: 'patrol',
+            speed: 5.5,
+            elapsed: this.elapsed,
+            phase: rd.phase,
+            dt,
+          });
+        } else {
+          // Ground armed raiders plunge from portal to marble steps/portico, then lead captain strikes crown
+          if (p < 1) {
+            rd.mesh.position.lerpVectors(rd.spawnPos, rd.raidPos, ease);
+            rd.mesh.position.y += Math.sin(p * Math.PI) * 2.8;
+            rd.mesh.rotation.y = Math.atan2(0 - rd.mesh.position.x, 25.0 - rd.mesh.position.z);
+          } else if (rd.strikePos && t >= 3.55) {
+            const strikeP = THREE.MathUtils.clamp((t - 3.55) / 0.75, 0, 1);
+            rd.mesh.position.lerpVectors(rd.raidPos, rd.strikePos, strikeP);
+            rd.mesh.rotation.y = Math.atan2(0 - rd.mesh.position.x, 25.2 - rd.mesh.position.z);
+          } else {
+            rd.mesh.position.copy(rd.raidPos);
+            rd.mesh.rotation.y = Math.atan2(
+              -2.5 - rd.raidPos.x,
+              24.5 - rd.raidPos.z,
+            );
+          }
+          const isStriker = Boolean(rd.strikePos && t >= 4.0 && t <= 4.75);
+          animateMonsterRig(rd.mesh, {
+            mode: isStriker ? 'attack' : p < 0.98 ? 'patrol' : t >= 4.35 ? 'attack' : 'windup',
+            speed: p < 0.98 ? 6.5 : 0,
+            elapsed: this.elapsed,
+            phase: rd.phase,
+            attackProgress: isStriker ? (t - 4.0) / 0.75 : (Math.sin(this.elapsed * 4 + rd.phase) + 1) * 0.5,
+            dt,
+          });
+        }
       });
 
-      const burstT = THREE.MathUtils.clamp((t - 1.65) / 2.6, 0, 1);
+      // 3. Intact Sacred Crown shatters into 6 gleaming shards at t = 4.35s!
+      const shattered = t >= 4.35;
+      rig.sacredCrown.visible = !shattered;
+      if (!shattered) {
+        rig.sacredCrown.position.y = 2.55 + Math.sin(this.elapsed * 3.2) * 0.14;
+        rig.sacredCrown.rotation.y += dt * 1.4;
+      } else if (!rig.raidShatterFired) {
+        rig.raidShatterFired = true;
+        soundEngine.playBoom();
+      }
+
+      const shockT = THREE.MathUtils.clamp((t - 4.35) / 0.85, 0, 1);
+      if (shattered && shockT < 1) {
+        rig.crownShockwave.mesh.visible = true;
+        rig.crownShockwave.mesh.scale.setScalar(1 + shockT * 9.5);
+        rig.crownShockwave.mat.opacity = (1 - shockT) * 0.88;
+      } else {
+        rig.crownShockwave.mesh.visible = false;
+      }
+
+      const burstT = THREE.MathUtils.clamp((t - 4.35) / 2.8, 0, 1);
       const easeB = 1 - Math.pow(1 - burstT, 3);
       rig.crownShards.forEach((sh, i) => {
         sh.mesh.visible = shattered;
         if (shattered) {
           sh.mesh.position.lerpVectors(sh.startPos, sh.endPos, easeB);
-          sh.mesh.position.y += Math.sin(burstT * Math.PI) * 9.5 + Math.sin(this.elapsed * 3.5 + i) * 0.3;
-          sh.mesh.rotation.y += dt * 3.2;
+          sh.mesh.position.y += Math.sin(burstT * Math.PI) * 8.5 + Math.sin(this.elapsed * 3.8 + i) * 0.35;
+          sh.mesh.rotation.y += dt * 4.2;
+          sh.mesh.rotation.x += dt * 2.1;
         }
       });
 
-      const orbitA = Math.sin(t * 0.35) * 0.55;
-      _v1.set(
-        pt.x - 10 + Math.sin(orbitA) * 9,
-        pt.y + 9 + Math.min(7, t * 1.4),
-        pt.z + 24 + Math.cos(orbitA) * 4,
-      );
-      _v2.set(pt.x, pt.y + 3.0 + Math.min(3, burstT * 3), pt.z + 6);
+      // 4. Stolen English Word Tablets dragged upward into the dark Sky Portal!
+      if (!rig.raidStealSoundFired && t >= 4.9) {
+        rig.raidStealSoundFired = true;
+        soundEngine.playHit();
+      }
+      rig.wordOrbs.forEach((w) => {
+        if (w.keeper) {
+          // One lone glimmering word left behind near Raja Aksara's feet
+          const dropP = THREE.MathUtils.clamp((t - w.snatchStart) / 2.6, 0, 1);
+          w.mesh.position.set(
+            w.homePos.x,
+            THREE.MathUtils.lerp(w.homePos.y, 4.35, dropP) + Math.sin(this.elapsed * 2.5 + w.phase) * 0.14,
+            w.homePos.z,
+          );
+          w.mesh.scale.setScalar(THREE.MathUtils.lerp(1.0, 0.72, dropP));
+          w.mat.opacity = THREE.MathUtils.lerp(0.95, 0.65, dropP);
+        } else {
+          const sp = THREE.MathUtils.clamp((t - w.snatchStart) / (w.snatchEnd - w.snatchStart), 0, 1);
+          if (sp <= 0) {
+            w.mesh.visible = true;
+            w.mesh.position.set(
+              w.homePos.x + Math.sin(this.elapsed * 1.4 + w.phase) * 0.25,
+              w.homePos.y + Math.sin(this.elapsed * 2.8 + w.phase) * 0.24,
+              w.homePos.z,
+            );
+            w.mesh.scale.setScalar(1);
+            w.mat.color.setHex(0xffffff);
+            w.mat.opacity = 0.96;
+          } else if (sp < 1) {
+            const easeS = sp * sp;
+            _v3.set(Math.sin(sp * Math.PI * 3 + w.phase) * 1.8, 27.2, 31.0);
+            w.mesh.position.lerpVectors(w.homePos, _v3, easeS);
+            w.mesh.scale.setScalar(1 - sp * 0.72);
+            w.mat.color.setHex(0xc084fc);
+            w.mat.opacity = (1 - sp) * 0.95;
+          } else {
+            w.mesh.visible = false;
+          }
+        }
+        w.mesh.rotation.y = Math.atan2(camLocal.x - w.mesh.position.x, camLocal.z - w.mesh.position.z);
+      });
+
+      // 5. Palace Lanterns flicker & dim under descending Dark Mist
+      const dimT = THREE.MathUtils.clamp((t - 4.4) / 4.2, 0, 1);
+      rig.palaceLanterns.forEach((l) => {
+        const flicker = dimT > 0.05 && dimT < 0.9 ? 0.7 + Math.sin(this.elapsed * 22 + l.phase) * 0.3 : 1;
+        const glow = Math.max(0.08, (1 - dimT * 0.9) * flicker);
+        l.mat.emissiveIntensity = 1.9 * glow;
+        l.haloMat.opacity = 0.34 * glow;
+        l.halo.scale.setScalar(0.55 + glow * 0.55);
+      });
+
+      const mistT = THREE.MathUtils.clamp((t - 4.8) / 4.8, 0, 1);
+      const easeM = 1 - Math.pow(1 - mistT, 2);
+      rig.darkMists.forEach((dm) => {
+        dm.mesh.position.lerpVectors(dm.startPos, dm.endPos, easeM);
+        dm.mesh.position.x += Math.sin(this.elapsed * 0.7 + dm.phase) * 1.6;
+        dm.mesh.position.z += Math.cos(this.elapsed * 0.6 + dm.phase) * 1.2;
+        dm.mat.opacity = THREE.MathUtils.lerp(0.05, 0.56, easeM);
+      });
+
+      // 6. 4-Beat Dramatic Siege Camera Work across Istana Utara
+      if (t < 2.8) {
+        // Shot 1: Low-angle courtyard establishing shot up toward the Sky Portal & Golden Dome
+        const p = t / 2.8;
+        const ease = p * p * (3 - 2 * p);
+        _v1.set(
+          THREE.MathUtils.lerp(11.5, -8.5, ease),
+          THREE.MathUtils.lerp(7.5, 11.5, ease),
+          THREE.MathUtils.lerp(49.0, 42.5, ease),
+        );
+        _v2.set(0, THREE.MathUtils.lerp(15.0, 11.0, ease), 25.0);
+      } else if (t < 5.3) {
+        // Shot 2: Push in dramatically on Raja Aksara, Sacred Crown Altar & shattering strike
+        const p = (t - 2.8) / 2.5;
+        const ease = p * p * (3 - 2 * p);
+        _v1.set(
+          THREE.MathUtils.lerp(-8.5, -5.8, ease),
+          THREE.MathUtils.lerp(11.5, 8.2, ease),
+          THREE.MathUtils.lerp(42.5, 34.8, ease),
+        );
+        _v2.set(0, THREE.MathUtils.lerp(8.5, 7.2, ease), 25.5);
+      } else if (t < 8.4) {
+        // Shot 3: Sweeping arc tracking stolen English word tablets lifted into the vortex
+        const p = (t - 5.3) / 3.1;
+        const ease = p * p * (3 - 2 * p);
+        _v1.set(
+          THREE.MathUtils.lerp(-5.8, 12.0, ease),
+          THREE.MathUtils.lerp(8.2, 13.5, ease),
+          THREE.MathUtils.lerp(34.8, 43.0, ease),
+        );
+        _v2.set(0, THREE.MathUtils.lerp(7.2, 13.5, ease), 28.5);
+      } else {
+        // Shot 4: Ominous pullback as dark storm mist swallows the dimmed Northern Palace
+        const p = Math.min(1, (t - 8.4) / 3.0);
+        const ease = 1 - Math.pow(1 - p, 2);
+        _v1.set(
+          THREE.MathUtils.lerp(12.0, 18.5, ease),
+          THREE.MathUtils.lerp(13.5, 19.5, ease),
+          THREE.MathUtils.lerp(43.0, 54.0, ease),
+        );
+        _v2.set(0, THREE.MathUtils.lerp(13.5, 11.0, ease), 24.0);
+      }
+
+      istanaG.localToWorld(_v1);
+      istanaG.localToWorld(_v2);
       this.camera.position.lerp(_v1, camLerp);
       this.controls.target.lerp(_v2, camLerp);
       return;
