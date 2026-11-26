@@ -788,6 +788,40 @@ interface PrologueCutsceneRig {
     phase: number;
   }>;
   owlFlightCurve: THREE.CatmullRomCurve3;
+  areaRaids: Array<{
+    zoneId: ZoneId;
+    label: string;
+    windowStart: number;
+    windowEnd: number;
+    center: THREE.Vector3;
+    camStart: THREE.Vector3;
+    camEnd: THREE.Vector3;
+    lookStart: THREE.Vector3;
+    lookEnd: THREE.Vector3;
+    kind: 'abduct' | 'kill';
+    shoutAlarm: string;
+    shoutEvent: string;
+    soundFired: boolean;
+    actionFired: boolean;
+    villagers: Array<{
+      actor: VillagerActor;
+      role: 'victim' | 'flee';
+      startOffset: [number, number];
+      orbitRadius: number;
+      orbitSpeed: number;
+      phase: number;
+      alive: boolean;
+    }>;
+    monsters: Array<{
+      mesh: THREE.Group;
+      type: MonsterType;
+      role: 'abductor' | 'killer' | 'chaser';
+      startOffset: [number, number, number];
+      targetIdx: number;
+      phase: number;
+    }>;
+  }>;
+  lastRaidShotIdx: number;
   disposables: Array<{ dispose: () => void }>;
   raidPortalSoundFired: boolean;
   raidShatterFired: boolean;
@@ -6353,6 +6387,241 @@ export class RpgWorldEngine {
     }
     disposables.push(flightMistGeo);
 
+    // 9. Scene 2 Extended 6-Island Siege Cuts (t = 10.2s .. 25.2s+): fleeing villagers, abductions & killings
+    const areaRaidSpecs: Array<{
+      zoneId: ZoneId;
+      label: string;
+      windowStart: number;
+      windowEnd: number;
+      kind: 'abduct' | 'kill';
+      camOffsetStart: [number, number, number];
+      camOffsetEnd: [number, number, number];
+      shoutAlarm: string;
+      shoutEvent: string;
+      villagers: Array<{
+        archetype: Parameters<typeof createVillagerMesh>[1];
+        role: 'victim' | 'flee';
+        offset: [number, number];
+        orbitRadius: number;
+        orbitSpeed: number;
+        phase: number;
+      }>;
+      monsters: Array<{
+        type: MonsterType;
+        role: 'abductor' | 'killer' | 'chaser';
+        offset: [number, number, number];
+        targetIdx: number;
+        phase: number;
+      }>;
+    }> = [
+      {
+        zoneId: 'gua_portal',
+        label: 'Gua Portal',
+        windowStart: 10.2,
+        windowEnd: 12.7,
+        kind: 'abduct',
+        camOffsetStart: [11.0, 6.8, 13.5],
+        camOffsetEnd: [-6.5, 8.2, 12.5],
+        shoutAlarm: '😱 Tolooong!! Gua Portal diserbu!',
+        shoutEvent: '😭 Tidaaak! Warga diculik ke langit!!',
+        villagers: [
+          { archetype: 'crystal_scholar', role: 'victim', offset: [-0.8, 1.4], orbitRadius: 2.2, orbitSpeed: 4.5, phase: 0.3 },
+          { archetype: 'mine_engineer', role: 'flee', offset: [3.2, -1.5], orbitRadius: 3.6, orbitSpeed: 5.2, phase: 1.8 },
+          { archetype: 'village_kid', role: 'flee', offset: [-3.8, -0.8], orbitRadius: 3.4, orbitSpeed: 5.6, phase: 3.4 },
+        ],
+        monsters: [
+          { type: 'stone_gargoyle', role: 'abductor', offset: [5.5, 11.5, -8.5], targetIdx: 0, phase: 0.2 },
+          { type: 'skeleton_warrior', role: 'chaser', offset: [6.0, 0, -4.5], targetIdx: 1, phase: 1.5 },
+          { type: 'thorn_goblin', role: 'chaser', offset: [-6.2, 0, -3.5], targetIdx: 2, phase: 2.9 },
+        ],
+      },
+      {
+        zoneId: 'menara_waktu',
+        label: 'Menara Waktu',
+        windowStart: 12.7,
+        windowEnd: 15.2,
+        kind: 'kill',
+        camOffsetStart: [-11.5, 6.6, 13.0],
+        camOffsetEnd: [7.5, 5.4, 11.5],
+        shoutAlarm: '😱 Lariii!! Menara Waktu dikepung!',
+        shoutEvent: '💀 Tidaaak!! Mereka membunuh warga!',
+        villagers: [
+          { archetype: 'clockmaker', role: 'victim', offset: [0.6, 1.2], orbitRadius: 2.0, orbitSpeed: 4.4, phase: 0.7 },
+          { archetype: 'school_teacher', role: 'flee', offset: [-3.4, 2.2], orbitRadius: 3.8, orbitSpeed: 5.5, phase: 2.2 },
+          { archetype: 'schoolgirl', role: 'flee', offset: [3.6, -1.4], orbitRadius: 3.5, orbitSpeed: 5.8, phase: 4.1 },
+        ],
+        monsters: [
+          { type: 'skeleton_warrior', role: 'killer', offset: [-4.2, 0, -3.0], targetIdx: 0, phase: 0.5 },
+          { type: 'dire_wolf', role: 'chaser', offset: [-6.4, 0, -0.5], targetIdx: 1, phase: 1.9 },
+          { type: 'lava_imp', role: 'chaser', offset: [6.0, 0, -4.0], targetIdx: 2, phase: 3.1 },
+        ],
+      },
+      {
+        zoneId: 'gerbang_kota',
+        label: 'Gerbang Kota',
+        windowStart: 15.2,
+        windowEnd: 17.7,
+        kind: 'abduct',
+        camOffsetStart: [12.0, 7.0, 13.5],
+        camOffsetEnd: [-6.8, 8.6, 12.0],
+        shoutAlarm: '🆘 Tolong!! Monster masuk ke kota!',
+        shoutEvent: '😱 Jangan bawa akuuu!! Tolooong!!',
+        villagers: [
+          { archetype: 'bus_driver', role: 'victim', offset: [0.8, 1.6], orbitRadius: 2.2, orbitSpeed: 4.6, phase: 0.9 },
+          { archetype: 'city_policeman', role: 'flee', offset: [-3.2, -1.6], orbitRadius: 3.7, orbitSpeed: 5.4, phase: 2.6 },
+          { archetype: 'pastry_chef', role: 'flee', offset: [3.8, 0.8], orbitRadius: 3.5, orbitSpeed: 5.7, phase: 4.5 },
+        ],
+        monsters: [
+          { type: 'shadow_harpy', role: 'abductor', offset: [-5.5, 11.8, -8.5], targetIdx: 0, phase: 0.4 },
+          { type: 'thorn_goblin', role: 'chaser', offset: [-6.0, 0, -4.2], targetIdx: 1, phase: 1.6 },
+          { type: 'skeleton_warrior', role: 'chaser', offset: [6.2, 0, -2.5], targetIdx: 2, phase: 3.3 },
+        ],
+      },
+      {
+        zoneId: 'hutan_satwa',
+        label: 'Hutan Satwa',
+        windowStart: 17.7,
+        windowEnd: 20.2,
+        kind: 'kill',
+        camOffsetStart: [-11.5, 6.4, 13.0],
+        camOffsetEnd: [7.8, 5.2, 11.8],
+        shoutAlarm: '😭 Selamatkan kami dari monster hutan!',
+        shoutEvent: '💀 Tidaaak!! Cepat lari cari perlindungan!',
+        villagers: [
+          { archetype: 'zoo_keeper', role: 'victim', offset: [-0.6, 1.5], orbitRadius: 2.0, orbitSpeed: 4.3, phase: 0.4 },
+          { archetype: 'ranger_guide', role: 'flee', offset: [3.2, 2.0], orbitRadius: 3.8, orbitSpeed: 5.3, phase: 2.0 },
+          { archetype: 'florist_girl', role: 'flee', offset: [-3.8, -1.2], orbitRadius: 3.6, orbitSpeed: 5.6, phase: 3.9 },
+        ],
+        monsters: [
+          { type: 'dire_wolf', role: 'killer', offset: [4.4, 0, -2.8], targetIdx: 0, phase: 0.8 },
+          { type: 'thorn_goblin', role: 'chaser', offset: [6.2, 0, 0.2], targetIdx: 1, phase: 2.1 },
+          { type: 'skeleton_warrior', role: 'chaser', offset: [-6.4, 0, -3.5], targetIdx: 2, phase: 3.6 },
+        ],
+      },
+      {
+        zoneId: 'pasar_rasa',
+        label: 'Pasar Rasa',
+        windowStart: 20.2,
+        windowEnd: 22.7,
+        kind: 'abduct',
+        camOffsetStart: [11.5, 6.8, 13.5],
+        camOffsetEnd: [-7.0, 8.4, 12.2],
+        shoutAlarm: '😱 Tolooong!! Pasar Rasa kacau balau!',
+        shoutEvent: '😭 Tolong aku!! Monster terbang menculikku!',
+        villagers: [
+          { archetype: 'street_vendor', role: 'victim', offset: [0.4, 1.4], orbitRadius: 2.1, orbitSpeed: 4.5, phase: 0.6 },
+          { archetype: 'spice_merchant', role: 'flee', offset: [-3.4, 1.6], orbitRadius: 3.7, orbitSpeed: 5.3, phase: 2.4 },
+          { archetype: 'farmer_boy', role: 'flee', offset: [3.6, -1.2], orbitRadius: 3.5, orbitSpeed: 5.8, phase: 4.2 },
+        ],
+        monsters: [
+          { type: 'stone_gargoyle', role: 'abductor', offset: [5.0, 11.6, -8.5], targetIdx: 0, phase: 0.3 },
+          { type: 'lava_imp', role: 'chaser', offset: [-6.0, 0, -2.4], targetIdx: 1, phase: 1.7 },
+          { type: 'thorn_goblin', role: 'chaser', offset: [6.0, 0, -3.8], targetIdx: 2, phase: 3.2 },
+        ],
+      },
+      {
+        zoneId: 'desa_sapaan',
+        label: 'Desa Sapaan',
+        windowStart: 22.7,
+        windowEnd: 25.2,
+        kind: 'kill',
+        camOffsetStart: [12.0, 7.0, 13.5],
+        camOffsetEnd: [-7.5, 6.0, 14.0],
+        shoutAlarm: '😭 Cepat sembunyi di dalam rumah!!',
+        shoutEvent: '💀 Tidaaak!! Tolong Desa Sapaan!!',
+        villagers: [
+          { archetype: 'village_elder', role: 'victim', offset: [0.2, 1.8], orbitRadius: 2.1, orbitSpeed: 4.2, phase: 0.5 },
+          { archetype: 'grandma_herbalist', role: 'flee', offset: [-3.5, 1.4], orbitRadius: 3.8, orbitSpeed: 5.2, phase: 2.1 },
+          { archetype: 'village_kid', role: 'flee', offset: [3.8, -0.8], orbitRadius: 3.6, orbitSpeed: 5.9, phase: 4.0 },
+        ],
+        monsters: [
+          { type: 'skeleton_warrior', role: 'killer', offset: [-4.4, 0, -2.8], targetIdx: 0, phase: 0.7 },
+          { type: 'thorn_goblin', role: 'chaser', offset: [-6.2, 0, -1.0], targetIdx: 1, phase: 2.3 },
+          { type: 'dire_wolf', role: 'chaser', offset: [6.4, 0, -3.2], targetIdx: 2, phase: 3.7 },
+        ],
+      },
+    ];
+
+    const areaRaids: PrologueCutsceneRig['areaRaids'] = areaRaidSpecs.map((spec, sIdx) => {
+      const za = OVERWORLD_ANCHORS.zones[spec.zoneId];
+      const centerY = getArchipelagoGroundY(za.x, za.z);
+      const center = new THREE.Vector3(za.x, centerY, za.z);
+
+      const camStartX = za.x + spec.camOffsetStart[0];
+      const camStartZ = za.z + spec.camOffsetStart[2];
+      const camStartY = Math.max(
+        centerY + spec.camOffsetStart[1],
+        getArchipelagoGroundY(camStartX, camStartZ) + 4.8,
+      );
+      const camEndX = za.x + spec.camOffsetEnd[0];
+      const camEndZ = za.z + spec.camOffsetEnd[2];
+      const camEndY = Math.max(
+        centerY + spec.camOffsetEnd[1],
+        getArchipelagoGroundY(camEndX, camEndZ) + 4.8,
+      );
+
+      const villagersList = spec.villagers.map((vs) => {
+        const actor = createVillagerMesh(this.palette, vs.archetype);
+        const vx = za.x + vs.offset[0];
+        const vz = za.z + vs.offset[1];
+        const vy = getArchipelagoGroundY(vx, vz);
+        actor.x = vx;
+        actor.z = vz;
+        actor.root.position.set(vx, vy, vz);
+        actor.root.visible = false;
+        group.add(actor.root);
+        return {
+          actor,
+          role: vs.role,
+          startOffset: vs.offset,
+          orbitRadius: vs.orbitRadius,
+          orbitSpeed: vs.orbitSpeed,
+          phase: vs.phase,
+          alive: true,
+        };
+      });
+
+      const monstersList = spec.monsters.map((ms, mIdx) => {
+        const mesh = createMonsterMesh(ms.type, this.palette, ms.role === 'abductor' ? 1.14 : 1.06);
+        if (ms.role !== 'abductor') {
+          attachShadowWeapon(mesh, sIdx * 3 + mIdx);
+        }
+        const mx = za.x + ms.offset[0];
+        const mz = za.z + ms.offset[2];
+        const my = getArchipelagoGroundY(mx, mz) + ms.offset[1];
+        mesh.position.set(mx, my, mz);
+        mesh.visible = false;
+        group.add(mesh);
+        return {
+          mesh,
+          type: ms.type,
+          role: ms.role,
+          startOffset: ms.offset,
+          targetIdx: ms.targetIdx,
+          phase: ms.phase,
+        };
+      });
+
+      return {
+        zoneId: spec.zoneId,
+        label: spec.label,
+        windowStart: spec.windowStart,
+        windowEnd: spec.windowEnd,
+        center,
+        camStart: new THREE.Vector3(camStartX, camStartY, camStartZ),
+        camEnd: new THREE.Vector3(camEndX, camEndY, camEndZ),
+        lookStart: new THREE.Vector3(za.x, centerY + 1.5, za.z + 0.5),
+        lookEnd: new THREE.Vector3(za.x, centerY + 1.8, za.z + 0.2),
+        kind: spec.kind,
+        shoutAlarm: spec.shoutAlarm,
+        shoutEvent: spec.shoutEvent,
+        soundFired: false,
+        actionFired: false,
+        villagers: villagersList,
+        monsters: monstersList,
+      };
+    });
+
     return {
       group,
       istanaStage,
@@ -6383,6 +6652,8 @@ export class RpgWorldEngine {
       ribbonDrops,
       flightMists,
       owlFlightCurve,
+      areaRaids,
+      lastRaidShotIdx: -1,
       disposables,
       raidPortalSoundFired: false,
       raidShatterFired: false,
@@ -6479,6 +6750,39 @@ export class RpgWorldEngine {
       rig.raidPortalSoundFired = false;
       rig.raidShatterFired = false;
       rig.raidStealSoundFired = false;
+      rig.lastRaidShotIdx = -1;
+
+      rig.areaRaids.forEach((ar) => {
+        ar.soundFired = false;
+        ar.actionFired = false;
+        ar.villagers.forEach((v) => {
+          v.alive = true;
+          const vx = ar.center.x + v.startOffset[0];
+          const vz = ar.center.z + v.startOffset[1];
+          const vy = getArchipelagoGroundY(vx, vz);
+          v.actor.x = vx;
+          v.actor.z = vz;
+          v.actor.root.position.set(vx, vy, vz);
+          v.actor.root.rotation.set(0, 0, 0);
+          v.actor.root.scale.setScalar(1);
+          v.actor.bodyPivot.position.y = 0;
+          v.actor.bodyPivot.rotation.set(0, 0, 0);
+          v.actor.leftArm.rotation.set(0, 0, 0);
+          v.actor.rightArm.rotation.set(0, 0, 0);
+          v.actor.leftLeg.rotation.set(0, 0, 0);
+          v.actor.rightLeg.rotation.set(0, 0, 0);
+          v.actor.root.visible = false;
+        });
+        ar.monsters.forEach((m) => {
+          const mx = ar.center.x + m.startOffset[0];
+          const mz = ar.center.z + m.startOffset[2];
+          const my = getArchipelagoGroundY(mx, mz) + m.startOffset[1];
+          m.mesh.position.set(mx, my, mz);
+          m.mesh.rotation.set(0, 0, 0);
+          m.mesh.scale.setScalar(m.role === 'abductor' ? 1.14 : 1.06);
+          m.mesh.visible = false;
+        });
+      });
 
       rig.bridgeBeams.forEach((bm) => {
         bm.visible = showPeaceful;
@@ -7807,7 +8111,7 @@ export class RpgWorldEngine {
     if (this.scene.fog instanceof THREE.FogExp2) {
       this.scene.fog.color.copy(_skyColorScratch);
       this.scene.fog.density = inPrologueScene2
-        ? THREE.MathUtils.lerp(0.014, 0.036, stormMistT)
+        ? THREE.MathUtils.lerp(0.014, this.storyTimer >= 10.2 ? 0.028 : 0.036, stormMistT)
         : inProloguePeaceful
         ? THREE.MathUtils.lerp(0.0068, 0.003, daylight)
         : THREE.MathUtils.lerp(0.042, 0.029, daylight) + twilightGlow * 0.005;
@@ -7841,12 +8145,20 @@ export class RpgWorldEngine {
       (THREE.MathUtils.lerp(0.46, 1.95, daylight) + twilightGlow * 0.22) *
       (inPrologueScene2 ? 1 - stormMistT * 0.48 : moodLightFactor);
 
-    const focusX = inPrologueScene2
+    const activeScene2Raid =
+      inPrologueScene2 && this.storyTimer >= 10.2 && this.prologueRig
+        ? this.prologueRig.areaRaids[Math.max(0, this.prologueRig.lastRaidShotIdx)]
+        : undefined;
+    const focusX = activeScene2Raid
+      ? activeScene2Raid.center.x
+      : inPrologueScene2
       ? OVERWORLD_ANCHORS.istanaFloating.x
       : this.phase === 'title'
       ? 4
       : Math.round(this.heroPos.x * 0.5) * 2;
-    const focusZ = inPrologueScene2
+    const focusZ = activeScene2Raid
+      ? activeScene2Raid.center.z
+      : inPrologueScene2
       ? OVERWORLD_ANCHORS.istanaFloating.z
       : this.phase === 'title'
       ? -4
@@ -16681,53 +16993,348 @@ export class RpgWorldEngine {
         dm.mat.opacity = THREE.MathUtils.lerp(0.05, 0.56, easeM);
       });
 
-      // 6. 4-Beat Dramatic Siege Camera Work across Istana Utara
-      if (t < 2.8) {
-        // Shot 1: Low-angle courtyard establishing shot up toward the Sky Portal & Golden Dome
-        const p = t / 2.8;
-        const ease = p * p * (3 - 2 * p);
-        _v1.set(
-          THREE.MathUtils.lerp(11.5, -8.5, ease),
-          THREE.MathUtils.lerp(7.5, 11.5, ease),
-          THREE.MathUtils.lerp(49.0, 42.5, ease),
-        );
-        _v2.set(0, THREE.MathUtils.lerp(15.0, 11.0, ease), 25.0);
-      } else if (t < 5.3) {
-        // Shot 2: Push in dramatically on Raja Aksara, Sacred Crown Altar & shattering strike
-        const p = (t - 2.8) / 2.5;
-        const ease = p * p * (3 - 2 * p);
-        _v1.set(
-          THREE.MathUtils.lerp(-8.5, -5.8, ease),
-          THREE.MathUtils.lerp(11.5, 8.2, ease),
-          THREE.MathUtils.lerp(42.5, 34.8, ease),
-        );
-        _v2.set(0, THREE.MathUtils.lerp(8.5, 7.2, ease), 25.5);
-      } else if (t < 8.4) {
-        // Shot 3: Sweeping arc tracking stolen English word tablets lifted into the vortex
-        const p = (t - 5.3) / 3.1;
-        const ease = p * p * (3 - 2 * p);
-        _v1.set(
-          THREE.MathUtils.lerp(-5.8, 12.0, ease),
-          THREE.MathUtils.lerp(8.2, 13.5, ease),
-          THREE.MathUtils.lerp(34.8, 43.0, ease),
-        );
-        _v2.set(0, THREE.MathUtils.lerp(7.2, 13.5, ease), 28.5);
-      } else {
-        // Shot 4: Ominous pullback as dark storm mist swallows the dimmed Northern Palace
-        const p = Math.min(1, (t - 8.4) / 3.0);
-        const ease = 1 - Math.pow(1 - p, 2);
-        _v1.set(
-          THREE.MathUtils.lerp(12.0, 18.5, ease),
-          THREE.MathUtils.lerp(13.5, 19.5, ease),
-          THREE.MathUtils.lerp(43.0, 54.0, ease),
-        );
-        _v2.set(0, THREE.MathUtils.lerp(13.5, 11.0, ease), 24.0);
+      // 6. Dramatic Siege Camera Work: Istana Utara (0..10.2s) -> 6-Island Siege Montage (10.2..25.2s+)
+      if (t < 10.2) {
+        rig.lastRaidShotIdx = -1;
+        rig.areaRaids.forEach((ar) => {
+          ar.villagers.forEach((v) => {
+            v.actor.root.visible = false;
+          });
+          ar.monsters.forEach((m) => {
+            m.mesh.visible = false;
+          });
+        });
+
+        if (t < 2.8) {
+          // Shot 1: Low-angle courtyard establishing shot up toward the Sky Portal & Golden Dome
+          const p = t / 2.8;
+          const ease = p * p * (3 - 2 * p);
+          _v1.set(
+            THREE.MathUtils.lerp(11.5, -8.5, ease),
+            THREE.MathUtils.lerp(7.5, 11.5, ease),
+            THREE.MathUtils.lerp(49.0, 42.5, ease),
+          );
+          _v2.set(0, THREE.MathUtils.lerp(15.0, 11.0, ease), 25.0);
+        } else if (t < 5.3) {
+          // Shot 2: Push in dramatically on Raja Aksara, Sacred Crown Altar & shattering strike
+          const p = (t - 2.8) / 2.5;
+          const ease = p * p * (3 - 2 * p);
+          _v1.set(
+            THREE.MathUtils.lerp(-8.5, -5.8, ease),
+            THREE.MathUtils.lerp(11.5, 8.2, ease),
+            THREE.MathUtils.lerp(42.5, 34.8, ease),
+          );
+          _v2.set(0, THREE.MathUtils.lerp(8.5, 7.2, ease), 25.5);
+        } else if (t < 8.4) {
+          // Shot 3: Sweeping arc tracking stolen English word tablets lifted into the vortex
+          const p = (t - 5.3) / 3.1;
+          const ease = p * p * (3 - 2 * p);
+          _v1.set(
+            THREE.MathUtils.lerp(-5.8, 12.0, ease),
+            THREE.MathUtils.lerp(8.2, 13.5, ease),
+            THREE.MathUtils.lerp(34.8, 43.0, ease),
+          );
+          _v2.set(0, THREE.MathUtils.lerp(7.2, 13.5, ease), 28.5);
+        } else {
+          // Shot 4: Ominous pullback as dark storm mist swallows the dimmed Northern Palace
+          const p = Math.min(1, (t - 8.4) / 1.8);
+          const ease = 1 - Math.pow(1 - p, 2);
+          _v1.set(
+            THREE.MathUtils.lerp(12.0, 18.5, ease),
+            THREE.MathUtils.lerp(13.5, 19.5, ease),
+            THREE.MathUtils.lerp(43.0, 54.0, ease),
+          );
+          _v2.set(0, THREE.MathUtils.lerp(13.5, 11.0, ease), 24.0);
+        }
+
+        istanaG.localToWorld(_v1);
+        istanaG.localToWorld(_v2);
+        this.camera.position.lerp(_v1, camLerp);
+        this.controls.target.lerp(_v2, camLerp);
+        return;
       }
 
-      istanaG.localToWorld(_v1);
-      istanaG.localToWorld(_v2);
-      this.camera.position.lerp(_v1, camLerp);
-      this.controls.target.lerp(_v2, camLerp);
+      // 7. 6-Island Siege Montage: Gua Portal -> Menara Waktu -> Gerbang Kota -> Hutan Satwa -> Pasar Rasa -> Desa Sapaan
+      let shotIdx = rig.areaRaids.findIndex((ar) => t >= ar.windowStart && t < ar.windowEnd);
+      if (shotIdx < 0) shotIdx = rig.areaRaids.length - 1;
+      const snapCut = shotIdx !== rig.lastRaidShotIdx;
+      rig.lastRaidShotIdx = shotIdx;
+
+      rig.areaRaids.forEach((ar, rIdx) => {
+        const isCurrent = rIdx === shotIdx;
+        if (!isCurrent) {
+          ar.villagers.forEach((v) => {
+            v.actor.root.visible = false;
+          });
+          ar.monsters.forEach((m) => {
+            m.mesh.visible = false;
+          });
+          return;
+        }
+
+        const localT = t - ar.windowStart;
+        if (!ar.soundFired && localT >= 0.12) {
+          ar.soundFired = true;
+          soundEngine.playMonster();
+        }
+
+        const abductorMonster = ar.monsters.find((m) => m.role === 'abductor');
+
+        // Animate villagers first so chasers/abductor/killer can track them accurately
+        ar.villagers.forEach((v, vIdx) => {
+          const baseX = ar.center.x + v.startOffset[0];
+          const baseZ = ar.center.z + v.startOffset[1];
+
+          if (v.role === 'victim' && ar.kind === 'abduct') {
+            if (localT < 0.85) {
+              v.actor.root.visible = true;
+              const ang = v.phase + localT * v.orbitSpeed;
+              const vx = baseX + Math.cos(ang) * (v.orbitRadius * 0.65);
+              const vz = baseZ + Math.sin(ang) * (v.orbitRadius * 0.65);
+              const vy = getArchipelagoGroundY(vx, vz);
+              const dx = vx - v.actor.x;
+              const dz = vz - v.actor.z;
+              v.actor.x = vx;
+              v.actor.z = vz;
+              if (dx * dx + dz * dz > 0.0001) {
+                v.actor.yaw = Math.atan2(dx, dz);
+              }
+              v.actor.root.position.set(vx, vy, vz);
+              v.actor.root.rotation.set(0, v.actor.yaw, 0);
+              v.actor.root.scale.setScalar(1);
+              v.actor.walkPhase += dt * 15;
+              this.animateVillagerPanic(v.actor, v.actor.walkPhase, v.phase, v.orbitSpeed, false);
+            } else {
+              const liftT = localT - 0.85;
+              if (!ar.actionFired) {
+                ar.actionFired = true;
+                soundEngine.playHurt();
+              }
+              if (liftT >= 1.5) {
+                v.actor.root.visible = false;
+              } else {
+                v.actor.root.visible = true;
+                const fadeOut = liftT > 1.1 ? Math.max(0.05, 1 - (liftT - 1.1) / 0.4) : 1;
+                const mPos = abductorMonster ? abductorMonster.mesh.position : ar.center;
+                v.actor.x = mPos.x;
+                v.actor.z = mPos.z;
+                v.actor.root.position.set(mPos.x, mPos.y - 1.7, mPos.z);
+                v.actor.root.rotation.set(0, (abductorMonster?.mesh.rotation.y ?? 0) + Math.PI, 0);
+                v.actor.root.scale.setScalar(fadeOut);
+                v.actor.walkPhase += dt * 20;
+                this.animateVillagerPanic(v.actor, v.actor.walkPhase, v.phase, 6.0, true);
+              }
+            }
+            return;
+          }
+
+          if (v.role === 'victim' && ar.kind === 'kill') {
+            v.actor.root.visible = true;
+            if (localT < 1.05) {
+              const runP = localT / 1.05;
+              const vx = baseX + Math.sin(runP * Math.PI * 1.4 + v.phase) * 1.65;
+              const vz = baseZ + runP * 2.1;
+              const vy = getArchipelagoGroundY(vx, vz);
+              const dx = vx - v.actor.x;
+              const dz = vz - v.actor.z;
+              v.actor.x = vx;
+              v.actor.z = vz;
+              if (dx * dx + dz * dz > 0.0001) {
+                v.actor.yaw = Math.atan2(dx, dz);
+              }
+              v.actor.root.position.set(vx, vy, vz);
+              v.actor.root.rotation.set(0, v.actor.yaw, 0);
+              v.actor.bodyPivot.rotation.set(0, 0, 0);
+              v.actor.walkPhase += dt * 15;
+              this.animateVillagerPanic(v.actor, v.actor.walkPhase, v.phase, v.orbitSpeed, false);
+            } else {
+              const vy = getArchipelagoGroundY(v.actor.x, v.actor.z);
+              if (v.alive) {
+                v.alive = false;
+                ar.actionFired = true;
+                this.spawnBurst(v.actor.x, vy + 1.05, v.actor.z, 0xef4444, 24);
+                soundEngine.playHurt();
+                soundEngine.playHit();
+              }
+              const fallP = Math.min(1, (localT - 1.05) / 0.25);
+              v.actor.root.position.set(v.actor.x, vy, v.actor.z);
+              v.actor.root.rotation.set(0, v.actor.yaw, 0);
+              v.actor.bodyPivot.position.y = THREE.MathUtils.lerp(0, 0.22, fallP);
+              v.actor.bodyPivot.rotation.x = THREE.MathUtils.lerp(0.2, -Math.PI * 0.48, fallP);
+              v.actor.leftArm.rotation.x = -1.6;
+              v.actor.rightArm.rotation.x = -1.2;
+              v.actor.leftLeg.rotation.x = 0.12;
+              v.actor.rightLeg.rotation.x = -0.1;
+            }
+            return;
+          }
+
+          // Fleeing villagers sprinting frantically around the attacked plaza
+          v.actor.root.visible = true;
+          const dirSign = vIdx % 2 === 0 ? 1 : -1;
+          const ang = v.phase + localT * v.orbitSpeed * 0.55 * dirSign;
+          const rad = v.orbitRadius + Math.sin(localT * 3.1 + v.phase) * 0.9;
+          const vx = ar.center.x + Math.cos(ang) * rad;
+          const vz = ar.center.z + Math.sin(ang) * rad;
+          const vy = getArchipelagoGroundY(vx, vz);
+          const dx = vx - v.actor.x;
+          const dz = vz - v.actor.z;
+          v.actor.x = vx;
+          v.actor.z = vz;
+          if (dx * dx + dz * dz > 0.0001) {
+            v.actor.yaw = Math.atan2(dx, dz);
+          }
+          v.actor.root.position.set(vx, vy, vz);
+          v.actor.root.rotation.set(0, v.actor.yaw, 0);
+          v.actor.bodyPivot.rotation.set(0, 0, 0);
+          v.actor.walkPhase += dt * 16;
+          this.animateVillagerPanic(v.actor, v.actor.walkPhase, v.phase, v.orbitSpeed, false);
+        });
+
+        // Animate monsters attacking, abducting, and chasing
+        const victim = ar.villagers[0];
+        ar.monsters.forEach((m) => {
+          if (m.role === 'abductor') {
+            const liftT = localT - 0.85;
+            if (liftT >= 1.5) {
+              m.mesh.visible = false;
+              return;
+            }
+            m.mesh.visible = true;
+            if (localT < 0.85) {
+              const p = localT / 0.85;
+              const ease = p * p * (3 - 2 * p);
+              const startX = ar.center.x + m.startOffset[0];
+              const startZ = ar.center.z + m.startOffset[2];
+              const startY = ar.center.y + m.startOffset[1];
+              const vx = victim ? victim.actor.x : ar.center.x;
+              const vz = victim ? victim.actor.z : ar.center.z;
+              const vy = getArchipelagoGroundY(vx, vz) + 2.25;
+              const mx = THREE.MathUtils.lerp(startX, vx, ease);
+              const my = THREE.MathUtils.lerp(startY, vy, ease);
+              const mz = THREE.MathUtils.lerp(startZ, vz, ease);
+              m.mesh.position.set(mx, my, mz);
+              m.mesh.rotation.y = Math.atan2(vx - startX, vz - startZ);
+              m.mesh.scale.setScalar(1.14);
+            } else {
+              const vx = victim ? victim.actor.x : ar.center.x;
+              const vz = victim ? victim.actor.z : ar.center.z;
+              const baseLiftY = getArchipelagoGroundY(vx, vz) + 2.25;
+              const climb = liftT;
+              const mx = vx + Math.sin(climb * 2.2) * 0.9 - climb * 1.8;
+              const my = baseLiftY + climb * 8.2;
+              const mz = vz - climb * 4.2;
+              const fadeScale = liftT > 1.1 ? Math.max(0.08, 1.14 * (1 - (liftT - 1.1) / 0.4)) : 1.14;
+              m.mesh.position.set(mx, my, mz);
+              m.mesh.rotation.y = Math.atan2(-1.8, -4.2);
+              m.mesh.scale.setScalar(fadeScale);
+            }
+            animateMonsterRig(m.mesh, {
+              mode: localT >= 0.7 && localT < 1.1 ? 'attack' : 'patrol',
+              speed: 7.5,
+              elapsed: this.elapsed,
+              phase: m.phase,
+              attackProgress: THREE.MathUtils.clamp((localT - 0.7) / 0.4, 0, 1),
+              dt,
+            });
+            return;
+          }
+
+          m.mesh.visible = true;
+          if (m.role === 'killer' && victim) {
+            const hoverY = MONSTER_SPECS[m.type].hoverY;
+            const startX = ar.center.x + m.startOffset[0];
+            const startZ = ar.center.z + m.startOffset[2];
+            if (localT < 1.05) {
+              const approachP = THREE.MathUtils.clamp(localT / 0.85, 0, 1);
+              const tx = victim.actor.x;
+              const tz = victim.actor.z;
+              const dist = Math.hypot(tx - startX, tz - startZ) || 1;
+              const stopX = tx - ((tx - startX) / dist) * 1.55;
+              const stopZ = tz - ((tz - startZ) / dist) * 1.55;
+              const mx = THREE.MathUtils.lerp(startX, stopX, approachP);
+              const mz = THREE.MathUtils.lerp(startZ, stopZ, approachP);
+              const my = getArchipelagoGroundY(mx, mz) + hoverY;
+              m.mesh.position.set(mx, my, mz);
+              m.mesh.rotation.y = Math.atan2(tx - mx, tz - mz);
+              const isSwinging = localT >= 0.72;
+              animateMonsterRig(m.mesh, {
+                mode: isSwinging ? 'attack' : 'patrol',
+                speed: isSwinging ? 2.0 : 7.0,
+                elapsed: this.elapsed,
+                phase: m.phase,
+                attackProgress: isSwinging ? THREE.MathUtils.clamp((localT - 0.72) / 0.35, 0, 1) : 0,
+                dt,
+              });
+            } else {
+              // After killing victim, turn menacingly toward remaining fleeing villagers
+              const survivor = ar.villagers[1] ?? victim;
+              const sx = survivor.actor.x;
+              const sz = survivor.actor.z;
+              const mx = m.mesh.position.x;
+              const mz = m.mesh.position.z;
+              const dx = sx - mx;
+              const dz = sz - mz;
+              const dist = Math.hypot(dx, dz) || 1;
+              const step = Math.min(dist - 1.8, 3.2 * dt);
+              const nx = step > 0 ? mx + (dx / dist) * step : mx;
+              const nz = step > 0 ? mz + (dz / dist) * step : mz;
+              m.mesh.position.set(nx, getArchipelagoGroundY(nx, nz) + hoverY, nz);
+              m.mesh.rotation.y = Math.atan2(dx, dz);
+              animateMonsterRig(m.mesh, {
+                mode: Math.sin(this.elapsed * 5 + m.phase) > 0.15 ? 'attack' : 'patrol',
+                speed: 4.5,
+                elapsed: this.elapsed,
+                phase: m.phase,
+                attackProgress: (Math.sin(this.elapsed * 6 + m.phase) + 1) * 0.5,
+                dt,
+              });
+            }
+            return;
+          }
+
+          // Chaser monsters actively pursue fleeing villagers
+          const targetVil = ar.villagers[m.targetIdx] ?? ar.villagers[1] ?? victim;
+          const hoverY = MONSTER_SPECS[m.type].hoverY;
+          const tx = targetVil ? targetVil.actor.x : ar.center.x;
+          const tz = targetVil ? targetVil.actor.z : ar.center.z;
+          const curX = m.mesh.position.x;
+          const curZ = m.mesh.position.z;
+          const dx = tx - curX;
+          const dz = tz - curZ;
+          const dist = Math.hypot(dx, dz) || 1;
+          const chaseSpeed = 5.6;
+          const nx = dist > 1.85 ? curX + (dx / dist) * Math.min(dist - 1.75, chaseSpeed * dt) : curX;
+          const nz = dist > 1.85 ? curZ + (dz / dist) * Math.min(dist - 1.75, chaseSpeed * dt) : curZ;
+          m.mesh.position.set(nx, getArchipelagoGroundY(nx, nz) + hoverY, nz);
+          m.mesh.rotation.y = Math.atan2(dx, dz);
+          animateMonsterRig(m.mesh, {
+            mode: dist < 2.8 ? 'attack' : 'patrol',
+            speed: chaseSpeed,
+            elapsed: this.elapsed,
+            phase: m.phase,
+            attackProgress: (Math.sin(this.elapsed * 7 + m.phase) + 1) * 0.5,
+            dt,
+          });
+        });
+
+        // Camera framing for the active island shot
+        const shotDur = Math.max(0.5, ar.windowEnd - ar.windowStart);
+        const shotP = THREE.MathUtils.clamp(localT / shotDur, 0, 1);
+        const ease = shotP * shotP * (3 - 2 * shotP);
+        _v1.lerpVectors(ar.camStart, ar.camEnd, ease);
+        _v2.lerpVectors(ar.lookStart, ar.lookEnd, ease);
+        if (ar.kind === 'abduct' && localT >= 0.85) {
+          _v2.y += THREE.MathUtils.clamp((localT - 0.85) * 4.2, 0, 5.2);
+        }
+        if (snapCut) {
+          this.camera.position.copy(_v1);
+          this.controls.target.copy(_v2);
+        } else {
+          this.camera.position.lerp(_v1, camLerp);
+          this.controls.target.lerp(_v2, camLerp);
+        }
+      });
       return;
     }
 
@@ -18611,7 +19218,9 @@ export class RpgWorldEngine {
 
     this.areaMists.forEach((mist, zId) => {
       if (this.storyDialog?.kind === 'prologue') {
-        mist.visible = this.storyDialog.step >= 2;
+        mist.visible =
+          this.storyDialog.step >= 2 ||
+          (this.storyDialog.step === 1 && this.storyTimer >= 10.2);
       } else if (this.liberatedZones.has(zId)) {
         mist.visible = false;
       } else if (!canVisCull) {
@@ -22905,6 +23514,67 @@ export class RpgWorldEngine {
               title: 'Bagus sekali, Lila! Ayo menyapa warga!',
               kind: 'speech',
             });
+          }
+        }
+      }
+      return labels;
+    }
+
+    if (
+      this.phase === 'story' &&
+      this.storyDialog?.kind === 'prologue' &&
+      this.storyDialog.step === 1 &&
+      this.prologueRig
+    ) {
+      const t = this.storyTimer;
+      const rig = this.prologueRig;
+      if (t >= 10.2) {
+        const activeIdx = rig.lastRaidShotIdx >= 0 ? rig.lastRaidShotIdx : 0;
+        const ar = rig.areaRaids[activeIdx];
+        if (ar) {
+          const zonePt = projectPoint(ar.center.x, ar.center.y + 5.2, ar.center.z);
+          if (zonePt) {
+            labels.push({
+              id: `prologue_raid_zone_${ar.zoneId}`,
+              x: zonePt.x,
+              y: zonePt.y,
+              title: `⚠️ ${ar.label} Diserang Monster!`,
+              kind: 'npc_alert',
+            });
+          }
+          const victim = ar.villagers[0];
+          const runner = ar.villagers[1];
+          const localT = t - ar.windowStart;
+          if (victim && victim.actor.root.visible) {
+            const vPos = victim.actor.root.position;
+            const vp = projectPoint(vPos.x, vPos.y + 2.65, vPos.z);
+            if (vp) {
+              labels.push({
+                id: `prologue_raid_victim_${ar.zoneId}`,
+                x: vp.x,
+                y: vp.y,
+                title:
+                  ar.kind === 'abduct' && localT >= 0.85
+                    ? ar.shoutEvent
+                    : ar.kind === 'kill' && !victim.alive
+                    ? '💀 ...!'
+                    : '😱 Tolooong!! Lari!!',
+                kind: 'speech',
+              });
+            }
+          }
+          if (runner && runner.actor.root.visible) {
+            const rPos = runner.actor.root.position;
+            const rp = projectPoint(rPos.x, rPos.y + 2.65, rPos.z);
+            if (rp) {
+              labels.push({
+                id: `prologue_raid_runner_${ar.zoneId}`,
+                x: rp.x,
+                y: rp.y,
+                title: ar.kind === 'kill' && ar.actionFired ? ar.shoutEvent : ar.shoutAlarm,
+                kind: 'speech',
+              });
+            }
           }
         }
       }
