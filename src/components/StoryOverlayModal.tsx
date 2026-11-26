@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Award, Bookmark, BookOpen, ChevronRight, Heart, Languages, RotateCcw, SkipForward, Volume2 } from 'lucide-react';
+import { Award, Bookmark, BookOpen, ChevronRight, Heart, Languages, RotateCcw, SkipForward, Volume2, VolumeX } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { ZONE_CAVE_STORIES } from '../data/diglosaCatalog';
-import { CharacterPresetId, StoryDialogState } from '../types/game';
+import { CharacterPresetId, ProjectedLabel, StoryDialogState } from '../types/game';
 import { DialogueSpeakerKind } from './DialoguePortraitCanvas';
 import { HarvestDialogueBox } from './HarvestDialogueBox';
 import { RpgPillButton } from './RpgUiKit';
@@ -11,6 +11,9 @@ interface StoryOverlayModalProps {
   story: StoryDialogState | null;
   characterId?: CharacterPresetId;
   playerName?: string;
+  projectedLabels?: ProjectedLabel[];
+  muted?: boolean;
+  onToggleMute?: () => void;
   onAdvance: () => void;
   onSkip: () => void;
   onDefeatChoice: (returnToZone: boolean) => void;
@@ -18,9 +21,12 @@ interface StoryOverlayModalProps {
 
 const StorybookPrologueBox: React.FC<{
   story: StoryDialogState;
+  projectedLabels?: ProjectedLabel[];
+  muted?: boolean;
+  onToggleMute?: () => void;
   onAdvance: () => void;
   onSkip: () => void;
-}> = ({ story, onAdvance, onSkip }) => {
+}> = ({ story, projectedLabels = [], muted = false, onToggleMute, onAdvance, onSkip }) => {
   const [showEn, setShowEn] = useState(false);
   const fullText = showEn && story.textEn ? story.textEn : story.textId;
   const [revealedCount, setRevealedCount] = useState(0);
@@ -97,9 +103,27 @@ const StorybookPrologueBox: React.FC<{
   }, [isTyping, fullText.length, onAdvance]);
 
   return (
-    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex flex-col items-center px-3 pb-3 sm:px-6 sm:pb-5">
-      {/* Subtle top-right scene indicator + skip shortcut for quick access */}
-      <div className="pointer-events-auto relative w-full max-w-4xl">
+    <>
+      {projectedLabels.length > 0 && (
+        <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden">
+          {projectedLabels.map((lbl) => (
+            <div
+              key={lbl.id}
+              style={{ transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)` }}
+              className={`absolute left-0 top-0 whitespace-nowrap shadow-lg transition-opacity duration-300 ${
+                lbl.kind === 'speech'
+                  ? 'rounded-2xl border-2 border-amber-300/90 bg-white/95 px-3 py-1 text-xs font-extrabold text-[#78350f]'
+                  : 'rounded-xl border border-amber-200/80 bg-slate-950/85 px-2.5 py-1 text-[11px] font-bold text-amber-100'
+              }`}
+            >
+              {lbl.title}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex flex-col items-center px-3 pb-3 sm:px-6 sm:pb-5">
+        <div className="pointer-events-auto relative w-full max-w-4xl">
         <div
           role="button"
           tabIndex={0}
@@ -157,6 +181,20 @@ const StorybookPrologueBox: React.FC<{
                   </button>
                 </>
               )}
+              {onToggleMute && (
+                <button
+                  type="button"
+                  onClick={onToggleMute}
+                  title={muted ? 'Nyalakan Musik & Suara' : 'Bisukan Musik & Suara'}
+                  className={`flex h-7 w-7 items-center justify-center rounded-lg border transition ${
+                    muted
+                      ? 'border-rose-400/60 bg-rose-950/85 text-rose-200 hover:bg-rose-900/90'
+                      : 'border-amber-300/40 bg-slate-800/80 text-amber-100 hover:bg-slate-700/90'
+                  }`}
+                >
+                  {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onSkip}
@@ -212,8 +250,9 @@ const StorybookPrologueBox: React.FC<{
             </button>
           </div>
         </div>
+        </div>
       </div>
-    </div>
+    </>
   );
 };
 
@@ -221,6 +260,9 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
   story,
   characterId = 'hoot_emerald',
   playerName = 'Hoot',
+  projectedLabels,
+  muted,
+  onToggleMute,
   onAdvance,
   onSkip,
   onDefeatChoice,
@@ -231,6 +273,9 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     return (
       <StorybookPrologueBox
         story={story}
+        projectedLabels={projectedLabels}
+        muted={muted}
+        onToggleMute={onToggleMute}
         onAdvance={onAdvance}
         onSkip={onSkip}
       />

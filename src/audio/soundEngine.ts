@@ -47,6 +47,7 @@ const WEAPON_SHOOT_CLIP: Record<WeaponId, 'shoot_1' | 'shoot_2'> = {
 };
 
 const INTRO_AUDIO_PATH = './assets/aistudio/game_intro_1db79a4e.mp3';
+const PROLOGUE_SCENE1_AUDIO_PATH = './assets/aistudio/scene_1_65ae3f36.mp3';
 const WALK_AUDIO_PATH = './assets/aistudio/walk_adce5e54.mp3';
 const SWIM_AUDIO_PATH = './assets/aistudio/swimming_1e6d979c.mp3';
 const AMBIENT_AUDIO_PATHS: Record<Exclude<AmbientMode, 'none'>, string> = {
@@ -68,6 +69,9 @@ class SoundEngine {
   private isSwimmingSound = false;
   private introAudio: HTMLAudioElement | null = null;
   private introActive = false;
+  private prologueScene1Audio: HTMLAudioElement | null = null;
+  private prologueScene1Active = false;
+  private prologueScene1FadeTimer: number | null = null;
   private ambientAudios: Partial<Record<Exclude<AmbientMode, 'none'>, HTMLAudioElement>> = {};
   private ambientMode: AmbientMode = 'none';
   private carEngineOsc: OscillatorNode | null = null;
@@ -91,6 +95,12 @@ class SoundEngine {
       intro.loop = true;
       intro.volume = 0.34;
       this.introAudio = intro;
+
+      const scene1 = new Audio(PROLOGUE_SCENE1_AUDIO_PATH);
+      scene1.preload = 'auto';
+      scene1.loop = true;
+      scene1.volume = 0.42;
+      this.prologueScene1Audio = scene1;
 
       const walk = new Audio(WALK_AUDIO_PATH);
       walk.preload = 'auto';
@@ -124,12 +134,14 @@ class SoundEngine {
           this.playButtonClick();
         }
         this.syncIntroPlayback();
+        this.syncPrologueScene1Playback();
         this.syncAmbientPlayback();
         this.syncWalkPlayback();
         this.syncSwimPlayback();
       };
       const onKeyDownGlobal = () => {
         this.syncIntroPlayback();
+        this.syncPrologueScene1Playback();
         this.syncAmbientPlayback();
         this.syncWalkPlayback();
         this.syncSwimPlayback();
@@ -186,7 +198,8 @@ class SoundEngine {
     (['day', 'night', 'deep_sea'] as const).forEach((mode) => {
       const el = this.ambientAudios[mode];
       if (!el) return;
-      const shouldPlay = !this.muted && !this.introActive && this.ambientMode === mode;
+      const shouldPlay =
+        !this.muted && !this.introActive && !this.prologueScene1Active && this.ambientMode === mode;
       if (shouldPlay) {
         if (el.paused) {
           el.play().catch(() => {});
@@ -195,6 +208,78 @@ class SoundEngine {
         el.pause();
       }
     });
+  }
+
+  private clearPrologueScene1Fade(): void {
+    if (this.prologueScene1FadeTimer !== null && typeof window !== 'undefined') {
+      window.clearInterval(this.prologueScene1FadeTimer);
+      this.prologueScene1FadeTimer = null;
+    }
+  }
+
+  private syncPrologueScene1Playback(): void {
+    const el = this.prologueScene1Audio;
+    if (!el) return;
+    if (this.muted || !this.prologueScene1Active) {
+      if (!el.paused && !this.prologueScene1Active) return;
+      if (this.muted && !el.paused) {
+        el.pause();
+      }
+      return;
+    }
+    if (el.paused) {
+      el.play().catch(() => {});
+    }
+  }
+
+  public setPrologueScene1Music(active: boolean): void {
+    if (this.prologueScene1Active === active) return;
+    this.prologueScene1Active = active;
+    this.clearPrologueScene1Fade();
+    const el = this.prologueScene1Audio;
+    if (el) {
+      if (active) {
+        el.currentTime = 0;
+        el.volume = 0.04;
+        if (!this.muted) {
+          el.play().catch(() => {});
+        }
+        if (typeof window !== 'undefined') {
+          this.prologueScene1FadeTimer = window.setInterval(() => {
+            if (!this.prologueScene1Active) {
+              this.clearPrologueScene1Fade();
+              return;
+            }
+            const nextVol = Math.min(0.42, el.volume + 0.04);
+            el.volume = nextVol;
+            if (nextVol >= 0.42) {
+              this.clearPrologueScene1Fade();
+            }
+          }, 80);
+        } else {
+          el.volume = 0.42;
+        }
+      } else if (typeof window !== 'undefined' && !el.paused) {
+        this.prologueScene1FadeTimer = window.setInterval(() => {
+          if (this.prologueScene1Active) {
+            this.clearPrologueScene1Fade();
+            return;
+          }
+          const nextVol = Math.max(0, el.volume - 0.06);
+          el.volume = nextVol;
+          if (nextVol <= 0.01) {
+            el.pause();
+            el.currentTime = 0;
+            el.volume = 0.42;
+            this.clearPrologueScene1Fade();
+          }
+        }, 55);
+      } else {
+        el.pause();
+        el.currentTime = 0;
+      }
+    }
+    this.syncAmbientPlayback();
   }
 
   public setIntroMusic(active: boolean): void {
@@ -288,6 +373,7 @@ class SoundEngine {
       this.activeClips.clear();
     }
     this.syncIntroPlayback();
+    this.syncPrologueScene1Playback();
     this.syncWalkPlayback();
     this.syncSwimPlayback();
     this.syncAmbientPlayback();

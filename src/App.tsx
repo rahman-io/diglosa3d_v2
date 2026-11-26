@@ -2648,14 +2648,14 @@ function DiglosaRpgApp() {
         />
       )}
 
-      {(hud.phase === 'playing' ||
-        hud.phase === 'story' ||
+      {((hud.phase === 'playing' ||
+        (hud.phase === 'story' && hud.storyDialog?.kind !== 'prologue') ||
         hud.phase === 'battle' ||
         hud.phase === 'learning' ||
         hud.phase === 'dialogue' ||
         hud.phase === 'academy' ||
         hud.phase === 'paused' ||
-        hud.phase === 'gameover') && (
+        hud.phase === 'gameover')) && (
         <RpgHud
           hud={hud}
           muted={muted}
@@ -2751,6 +2751,9 @@ function DiglosaRpgApp() {
         story={hud.phase === 'story' && !vsIntroData ? hud.storyDialog : null}
         characterId={characterId}
         playerName={playerName}
+        projectedLabels={hud.projectedLabels}
+        muted={muted}
+        onToggleMute={handleToggleMute}
         onAdvance={() => engineRef.current?.advanceStory()}
         onSkip={() => engineRef.current?.skipStory()}
         onDefeatChoice={(returnToZone) => engineRef.current?.resolveDefeatExitChoice(returnToZone)}

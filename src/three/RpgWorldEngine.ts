@@ -669,6 +669,13 @@ interface PrologueKingRig {
 interface PrologueCutsceneRig {
   group: THREE.Group;
   king: PrologueKingRig;
+  royalCrowd: Array<{
+    mesh: THREE.Group;
+    baseX: number;
+    baseZ: number;
+    yaw: number;
+    phase: number;
+  }>;
   lilaMesh: THREE.Group;
   villagers: Array<{
     mesh: THREE.Group;
@@ -676,8 +683,25 @@ interface PrologueCutsceneRig {
     z: number;
     yaw: number;
     phase: number;
+    role: 'chat' | 'stroll' | 'dance';
+    walkA?: THREE.Vector3;
+    walkB?: THREE.Vector3;
+    center?: THREE.Vector3;
+    orbitR?: number;
   }>;
   bridgeBeams: THREE.Mesh[];
+  bridgeLightOrbs: Array<{
+    mesh: THREE.Mesh;
+    ax: number;
+    ay: number;
+    az: number;
+    bx: number;
+    by: number;
+    bz: number;
+    arch: number;
+    speed: number;
+    offset: number;
+  }>;
   crownShards: Array<{
     mesh: THREE.Mesh;
     startPos: THREE.Vector3;
@@ -5467,12 +5491,26 @@ export class RpgWorldEngine {
     const group = new THREE.Group();
     this.scene.add(group);
 
-    // 1. Raja Aksara on the central Hub terrace overlooking bridges
+    // 1. Raja Aksara & joyful royal attendants on the central Hub terrace overlooking bridges
     const king = this.buildPrologueKingMesh();
     const hubX = -6.0;
     const hubZ = -2.0;
     king.root.position.set(hubX, getArchipelagoGroundY(hubX, hubZ), hubZ);
     group.add(king.root);
+
+    const royalConfigs: Array<{ id: string; x: number; z: number; phase: number }> = [
+      { id: 'school_teacher', x: -3.2, z: 0.9, phase: 0.3 },
+      { id: 'crystal_scholar', x: -8.6, z: 1.1, phase: 1.5 },
+      { id: 'village_elder', x: -5.2, z: 2.5, phase: 2.7 },
+    ];
+    const royalCrowd = royalConfigs.map((rc) => {
+      const mesh = createZoneNpc(rc.id, this.palette);
+      const yaw = Math.atan2(hubX - rc.x, hubZ - rc.z);
+      mesh.position.set(rc.x, getArchipelagoGroundY(rc.x, rc.z), rc.z);
+      mesh.rotation.y = yaw;
+      group.add(mesh);
+      return { mesh, baseX: rc.x, baseZ: rc.z, yaw, phase: rc.phase };
+    });
 
     // 2. Lila with pink dress and vivid red hair ribbon
     const lilaMesh = createCaptiveMesh('girl', 0xf472b6, this.palette);
@@ -5491,53 +5529,163 @@ export class RpgWorldEngine {
       bowTail.rotation.z = -0.25;
       lilaCapRig.headGroup.add(bowCenter, bowTail);
     }
-    lilaMesh.position.set(-10.8, getArchipelagoGroundY(-10.8, 121.0), 121.0);
+    lilaMesh.position.set(-10.2, getArchipelagoGroundY(-10.2, 121.0), 121.0);
     group.add(lilaMesh);
 
-    // 3. Cheerful chatting villagers in open Desa Sapaan square
-    const villagerConfigs: Array<{ id: string; x: number; z: number; yaw: number; phase: number }> = [
-      { id: 'npc_petani_prolog', x: -10.8, z: 116.8, yaw: 1.25, phase: 0.4 },
-      { id: 'npc_bunga_prolog', x: -9.0, z: 117.3, yaw: -1.85, phase: 1.9 },
-      { id: 'npc_bocah_prolog', x: 1.8, z: 116.2, yaw: 1.35, phase: 2.7 },
-      { id: 'npc_siswi_prolog', x: 3.6, z: 116.8, yaw: -1.8, phase: 4.1 },
+    // 3. Living Desa Sapaan townsfolk: chatting neighbors, strolling friends, singing & dancing trio
+    const villagerSpecs: Array<{
+      id: string;
+      x: number;
+      z: number;
+      yaw: number;
+      phase: number;
+      role: 'chat' | 'stroll' | 'dance';
+      walkA?: [number, number];
+      walkB?: [number, number];
+      center?: [number, number];
+      orbitR?: number;
+    }> = [
+      // Chatting pair near sunlit garden left of square
+      { id: 'village_elder', x: -12.6, z: 116.8, yaw: 1.25, phase: 0.4, role: 'chat' },
+      { id: 'grandma_herbalist', x: -10.8, z: 117.3, yaw: -1.85, phase: 1.9, role: 'chat' },
+      // Chatting merchant & baker on sunny east terrace
+      { id: 'spice_merchant', x: -1.6, z: 115.6, yaw: 1.35, phase: 0.9, role: 'chat' },
+      { id: 'pastry_chef', x: 0.2, z: 116.1, yaw: -1.78, phase: 2.3, role: 'chat' },
+      // Strolling friends walking side-by-side along the open lawn
+      {
+        id: 'florist_girl',
+        x: 3.4,
+        z: 116.0,
+        yaw: 0.4,
+        phase: 0.6,
+        role: 'stroll',
+        walkA: [3.2, 114.8],
+        walkB: [7.6, 120.2],
+      },
+      {
+        id: 'farmer_boy',
+        x: 4.5,
+        z: 115.2,
+        yaw: 0.4,
+        phase: 1.2,
+        role: 'stroll',
+        walkA: [4.4, 114.0],
+        walkB: [8.8, 119.4],
+      },
+      // Joyful dancing & singing children circle in Desa Sapaan square
+      {
+        id: 'village_kid',
+        x: 1.8,
+        z: 121.5,
+        yaw: 0,
+        phase: 0.0,
+        role: 'dance',
+        center: [2.0, 122.0],
+        orbitR: 1.45,
+      },
+      {
+        id: 'schoolgirl',
+        x: 3.2,
+        z: 122.2,
+        yaw: 2.1,
+        phase: 2.09,
+        role: 'dance',
+        center: [2.0, 122.0],
+        orbitR: 1.45,
+      },
+      {
+        id: 'village_kid',
+        x: 1.2,
+        z: 123.3,
+        yaw: 4.2,
+        phase: 4.18,
+        role: 'dance',
+        center: [2.0, 122.0],
+        orbitR: 1.45,
+      },
     ];
-    const villagerArchetypeMap: Record<string, string> = {
-      npc_petani_prolog: 'npc_tetua',
-      npc_bunga_prolog: 'npc_koki',
-      npc_bocah_prolog: 'npc_rubah',
-      npc_siswi_prolog: 'npc_penjaga',
-    };
-    const villagers = villagerConfigs.map((cfg) => {
-      const mesh = createZoneNpc(villagerArchetypeMap[cfg.id] || 'npc_tetua', this.palette);
+    const villagers = villagerSpecs.map((cfg) => {
+      const mesh = createZoneNpc(cfg.id, this.palette);
       mesh.position.set(cfg.x, getArchipelagoGroundY(cfg.x, cfg.z), cfg.z);
       mesh.rotation.y = cfg.yaw;
       group.add(mesh);
-      return { mesh, x: cfg.x, z: cfg.z, yaw: cfg.yaw, phase: cfg.phase };
+      return {
+        mesh,
+        x: cfg.x,
+        z: cfg.z,
+        yaw: cfg.yaw,
+        phase: cfg.phase,
+        role: cfg.role,
+        walkA: cfg.walkA
+          ? new THREE.Vector3(cfg.walkA[0], getArchipelagoGroundY(cfg.walkA[0], cfg.walkA[1]), cfg.walkA[1])
+          : undefined,
+        walkB: cfg.walkB
+          ? new THREE.Vector3(cfg.walkB[0], getArchipelagoGroundY(cfg.walkB[0], cfg.walkB[1]), cfg.walkB[1])
+          : undefined,
+        center: cfg.center
+          ? new THREE.Vector3(cfg.center[0], getArchipelagoGroundY(cfg.center[0], cfg.center[1]), cfg.center[1])
+          : undefined,
+        orbitR: cfg.orbitR,
+      };
     });
 
-    // 4. Shimmering "Jembatan Cahaya" pillars across the 6 island connections
-    const bridgeCenters: Array<[number, number, number]> = [
-      [-22, 4.2, 47.8],
-      [-65, 3.8, 17.5],
-      [55.5, 4.4, 26.2],
-      [-74.5, 9.2, -32.5],
-      [81, 8.8, -43],
-      [11, 10.5, -104],
+    // 4. Shimmering "Jembatan Cahaya" pillars & gliding golden light orbs across all 6 island bridges
+    const bridgeSpans: Array<{
+      ax: number;
+      ay: number;
+      az: number;
+      bx: number;
+      by: number;
+      bz: number;
+      arch: number;
+    }> = [
+      { ax: -26.0, ay: 5.0, az: 33.0, bx: -18.0, by: 2.6, bz: 62.5, arch: 1.1 }, // Desa Sapaan
+      { ax: -58.0, ay: 5.0, az: 4.0, bx: -72.0, by: 2.0, bz: 31.0, arch: 1.0 }, // Pasar Rasa
+      { ax: 46.0, ay: 5.0, az: 16.0, bx: 65.0, by: 3.4, bz: 36.5, arch: 1.15 }, // Hutan Satwa
+      { ax: -57.0, ay: 6.5, az: -31.0, bx: -92.0, by: 12.0, bz: -34.0, arch: 0.85 }, // Gerbang Kota
+      { ax: 50.0, ay: 6.5, az: -49.0, bx: 94.0, by: 10.0, bz: -66.0, arch: 0.85 }, // Menara Waktu
+      { ax: -18.0, ay: 5.0, az: -73.0, bx: -12.0, by: 4.0, bz: -118.0, arch: 0.9 }, // Gua Portal
     ];
     const beamMat = new THREE.MeshBasicMaterial({
-      color: 0xfde047,
+      color: 0xfef08a,
       transparent: true,
-      opacity: 0.34,
+      opacity: 0.36,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    const beamGeo = new THREE.CylinderGeometry(0.45, 1.35, 16, 10, 1, true);
-    const bridgeBeams = bridgeCenters.map(([bx, by, bz]) => {
+    const beamGeo = new THREE.CylinderGeometry(0.42, 1.45, 17, 12, 1, true);
+    const orbGeo = new THREE.OctahedronGeometry(0.42, 1);
+    const orbMat = this.palette.getMat(0xfef08a, 'emissive');
+    const bridgeBeams: THREE.Mesh[] = [];
+    const bridgeLightOrbs: PrologueCutsceneRig['bridgeLightOrbs'] = [];
+
+    bridgeSpans.forEach((sp, bi) => {
       const bm = new THREE.Mesh(beamGeo, beamMat.clone());
-      bm.position.set(bx, by + 7.5, bz);
+      bm.position.set(
+        (sp.ax + sp.bx) * 0.5,
+        (sp.ay + sp.by) * 0.5 + sp.arch + 8.0,
+        (sp.az + sp.bz) * 0.5,
+      );
       group.add(bm);
-      return bm;
+      bridgeBeams.push(bm);
+
+      for (let oi = 0; oi < 3; oi++) {
+        const orb = new THREE.Mesh(orbGeo, orbMat);
+        group.add(orb);
+        bridgeLightOrbs.push({
+          mesh: orb,
+          ax: sp.ax,
+          ay: sp.ay,
+          az: sp.az,
+          bx: sp.bx,
+          by: sp.by,
+          bz: sp.bz,
+          arch: sp.arch,
+          speed: 0.24 + oi * 0.04,
+          offset: (bi * 0.19 + oi * 0.33) % 1,
+        });
+      }
     });
 
     // 5. Six glowing golden Crown Shards (shatter in Scene 2)
@@ -5636,9 +5784,11 @@ export class RpgWorldEngine {
     return {
       group,
       king,
+      royalCrowd,
       lilaMesh,
       villagers,
       bridgeBeams,
+      bridgeLightOrbs,
       crownShards,
       raiders,
       bosses,
@@ -5647,6 +5797,7 @@ export class RpgWorldEngine {
   }
 
   private cleanupPrologueStage(): void {
+    soundEngine.setPrologueScene1Music(false);
     if (this.prologueRig) {
       this.scene.remove(this.prologueRig.group);
       this.prologueRig = null;
@@ -5663,6 +5814,9 @@ export class RpgWorldEngine {
     }
     for (const p of this.villageRig.pillagers) {
       p.root.visible = this.getCurrentDayPhase() === 'malam';
+    }
+    if (this.villageRig.outpostBanner) {
+      this.villageRig.outpostBanner.visible = true;
     }
     this.starterPickupMesh.visible = this.worldMode === 'overworld' && !this.starterWeaponPicked;
     this.swimSuitPickupMesh.visible = this.worldMode === 'overworld' && !this.swimSuitPicked;
@@ -5685,6 +5839,7 @@ export class RpgWorldEngine {
     this.storyTimer = 0;
     this.worldTimeTick = spec.worldTimeTick;
     this.updateOverworldDayNightAtmosphere(0, false);
+    soundEngine.setPrologueScene1Music(idx === 0);
 
     if (this.prologueRig) {
       const rig = this.prologueRig;
@@ -5696,6 +5851,12 @@ export class RpgWorldEngine {
 
       rig.bridgeBeams.forEach((bm) => {
         bm.visible = showPeaceful;
+      });
+      rig.bridgeLightOrbs.forEach((o) => {
+        o.mesh.visible = showPeaceful;
+      });
+      rig.royalCrowd.forEach((rc) => {
+        rc.mesh.visible = showPeaceful;
       });
       rig.villagers.forEach((v) => {
         v.mesh.visible = showPeaceful;
@@ -5727,10 +5888,10 @@ export class RpgWorldEngine {
         rig.king.root.position.set(hubX, getArchipelagoGroundY(hubX, hubZ), hubZ);
         rig.king.root.rotation.y = 0.25;
         this.hero.root.visible = true;
-        this.heroPos.set(-12.2, getArchipelagoGroundY(-12.2, 121.0), 121.0);
+        this.heroPos.set(-11.8, getArchipelagoGroundY(-11.8, 121.0), 121.0);
         this.hero.root.position.copy(this.heroPos);
         this.owlRig.root.visible = false;
-        this.camera.position.set(-95, 76, 130);
+        this.camera.position.set(-98, 76, 134);
         this.controls.target.set(0, 8, -10);
       } else if (showRaid) {
         const pt = OVERWORLD_ANCHORS.portal;
@@ -5797,7 +5958,6 @@ export class RpgWorldEngine {
     this.starterPickupMesh.visible = false;
     this.swimSuitPickupMesh.visible = false;
     this.applyPrologueSceneStep(0);
-    soundEngine.playWin();
   }
 
   private getOpeningStageAnchors(): {
@@ -14678,30 +14838,75 @@ export class RpgWorldEngine {
     };
 
     if (step === 0) {
-      // Adegan 1: Kerajaan Kata yang Damai — Jembatan Cahaya, Raja Aksara, Warga Rukun, Hoot & Lila
+      // Adegan 1 (4-Shot Film):
+      // 1) Aerial sweep of 6 lush green islands & glowing golden bridges
+      // 2) Hub terrace with wise Raja Aksara greeting happy royal citizens
+      // 3) Desa Sapaan square with chatting, strolling & dancing/singing villagers
+      // 4) Hoot & little sister Lila (pink dress + red ribbon) walking joyfully & waving
       rig.bridgeBeams.forEach((bm, i) => {
         const mat = bm.material as THREE.MeshBasicMaterial;
-        mat.opacity = 0.24 + Math.sin(this.elapsed * 2.6 + i * 0.9) * 0.12;
+        mat.opacity = 0.25 + Math.sin(this.elapsed * 2.6 + i * 0.9) * 0.12;
         bm.rotation.y += dt * 0.7;
       });
-      animateKing(true, false, false);
-
-      // Cheerful chatting & waving villagers in Desa Sapaan
-      rig.villagers.forEach((v, i) => {
-        animateZoneNpc(v.mesh, this.elapsed, v.phase, true, dt, 'stand');
-        v.mesh.rotation.y = v.yaw + Math.sin(this.elapsed * 1.9 + i * 1.1) * 0.18;
+      rig.bridgeLightOrbs.forEach((o) => {
+        const u = (this.elapsed * o.speed + o.offset) % 1;
+        const arc = Math.sin(u * Math.PI) * o.arch;
+        const ox = THREE.MathUtils.lerp(o.ax, o.bx, u);
+        const oz = THREE.MathUtils.lerp(o.az, o.bz, u);
+        const oy = THREE.MathUtils.lerp(o.ay, o.by, u) + arc + 0.95 + Math.sin(this.elapsed * 5 + o.offset * 6) * 0.18;
+        o.mesh.position.set(ox, oy, oz);
+        o.mesh.rotation.y += dt * 3.0;
+        const s = 0.8 + Math.sin(u * Math.PI) * 0.45;
+        o.mesh.scale.setScalar(s);
       });
 
-      // Hoot & Lila walking joyfully together across Desa Sapaan square, then chatting & waving
-      const walkStart = 4.6;
-      const walkEnd = 9.8;
+      animateKing(true, false, false);
+      rig.royalCrowd.forEach((rc, i) => {
+        animateZoneNpc(rc.mesh, this.elapsed, rc.phase, true, dt, 'stand');
+        rc.mesh.position.y = getArchipelagoGroundY(rc.baseX, rc.baseZ) + Math.abs(Math.sin(this.elapsed * 3.6 + i * 0.9)) * 0.08;
+        rc.mesh.rotation.y = rc.yaw + Math.sin(this.elapsed * 1.8 + i) * 0.14;
+      });
+
+      rig.villagers.forEach((v, i) => {
+        if (v.role === 'stroll' && v.walkA && v.walkB) {
+          const ping = (Math.sin(this.elapsed * 0.48 + v.phase) + 1) * 0.5;
+          const dir = Math.cos(this.elapsed * 0.48 + v.phase) >= 0 ? 1 : -1;
+          const px = THREE.MathUtils.lerp(v.walkA.x, v.walkB.x, ping);
+          const pz = THREE.MathUtils.lerp(v.walkA.z, v.walkB.z, ping);
+          v.x = px;
+          v.z = pz;
+          v.mesh.position.set(px, getArchipelagoGroundY(px, pz), pz);
+          v.mesh.rotation.y = Math.atan2(
+            (v.walkB.x - v.walkA.x) * dir,
+            (v.walkB.z - v.walkA.z) * dir,
+          );
+          animateZoneNpc(v.mesh, this.elapsed * 0.95, v.phase, false, dt, 'walk');
+        } else if (v.role === 'dance' && v.center && v.orbitR) {
+          const ang = this.elapsed * 1.15 + v.phase;
+          const dx = v.center.x + Math.cos(ang) * v.orbitR;
+          const dz = v.center.z + Math.sin(ang) * v.orbitR;
+          const hop = Math.abs(Math.sin(this.elapsed * 6.4 + v.phase)) * 0.18;
+          v.x = dx;
+          v.z = dz;
+          v.mesh.position.set(dx, getArchipelagoGroundY(dx, dz) + hop, dz);
+          v.mesh.rotation.y = Math.atan2(-Math.sin(ang), Math.cos(ang));
+          animateZoneNpc(v.mesh, this.elapsed * 1.1, v.phase, true, dt, 'walk');
+        } else {
+          animateZoneNpc(v.mesh, this.elapsed, v.phase, true, dt, 'stand');
+          v.mesh.rotation.y = v.yaw + Math.sin(this.elapsed * 2.1 + i * 1.1) * 0.22;
+        }
+      });
+
+      // Hoot & Lila walking joyfully side-by-side across Desa Sapaan square, then chatting & waving
+      const walkStart = 11.4;
+      const walkEnd = 15.2;
       const wp = THREE.MathUtils.clamp((t - walkStart) / (walkEnd - walkStart), 0, 1);
       const easeW = wp < 1 ? 1 - Math.pow(1 - wp, 2) : 1;
-      const hX = THREE.MathUtils.lerp(-11.2, -5.8, easeW);
-      const hZ = THREE.MathUtils.lerp(120.2, 124.2, easeW);
-      const lX = hX + 1.45;
-      const lZ = hZ + 0.35;
-      const walkYaw = Math.atan2(-5.8 - -11.2, 124.2 - 120.2);
+      const hX = THREE.MathUtils.lerp(-11.8, -5.8, easeW);
+      const hZ = THREE.MathUtils.lerp(120.8, 124.4, easeW);
+      const lX = hX + 1.48;
+      const lZ = hZ + 0.36;
+      const walkYaw = Math.atan2(-5.8 - -11.8, 124.4 - 120.8);
 
       this.heroPos.set(hX, getArchipelagoGroundY(hX, hZ), hZ);
       this.hero.root.position.copy(this.heroPos);
@@ -14727,7 +14932,6 @@ export class RpgWorldEngine {
         rig.lilaMesh.position.y = getArchipelagoGroundY(lX, lZ) + Math.abs(Math.sin(stride + 0.6)) * 0.14;
         animateCaptiveMesh(rig.lilaMesh, this.elapsed * 1.15, true);
       } else {
-        // Facing gently toward each other / camera smiling & waving
         const chatFace = wp >= 1 ? Math.atan2(lX - hX, lZ - hZ) * 0.55 + 0.35 : walkYaw;
         this.heroYaw = chatFace;
         this.hero.body.rotation.y = THREE.MathUtils.damp(this.hero.body.rotation.y, chatFace, 8, dt);
@@ -14740,42 +14944,54 @@ export class RpgWorldEngine {
         this.hero.headGroup.rotation.y = Math.sin(this.elapsed * 2.2) * 0.16;
 
         rig.lilaMesh.rotation.y = wp >= 1 ? Math.atan2(hX - lX, hZ - lZ) * 0.55 - 0.3 : walkYaw;
-        rig.lilaMesh.position.y = getArchipelagoGroundY(lX, lZ) + Math.abs(Math.sin(this.elapsed * 4.5)) * 0.09;
+        rig.lilaMesh.position.y = getArchipelagoGroundY(lX, lZ) + Math.abs(Math.sin(this.elapsed * 4.5)) * 0.1;
         animateCaptiveMesh(rig.lilaMesh, this.elapsed, true);
       }
 
-      // 3-part sweeping camera choreography across Adegan 1
-      if (t < 3.6) {
-        const p = t / 3.6;
-        const ang = THREE.MathUtils.lerp(2.25, 0.95, p);
-        _v1.set(Math.cos(ang) * 105, THREE.MathUtils.lerp(74, 52, p), Math.sin(ang) * 105);
+      // 4-shot cinematic camera sequence across Adegan 1
+      if (t < 4.2) {
+        // Shot 1: Sweeping aerial flight over the 6 peaceful green islands & bridges of light
+        const p = t / 4.2;
+        const ang = THREE.MathUtils.lerp(2.25, 0.85, p);
+        _v1.set(Math.cos(ang) * 108, THREE.MathUtils.lerp(74, 48, p), Math.sin(ang) * 108);
         _v2.set(0, 8, -10);
-      } else if (t < 6.8) {
-        const p = (t - 3.6) / 3.2;
+      } else if (t < 8.2) {
+        // Shot 2: Swoop smoothly to Central Hub terrace framing crowned Raja Aksara & royal citizens
+        const p = (t - 4.2) / 4.0;
         const ease = p * p * (3 - 2 * p);
         _v1.set(
-          THREE.MathUtils.lerp(18, -14, ease),
-          THREE.MathUtils.lerp(22, 13.5, ease),
-          THREE.MathUtils.lerp(22, 18, ease),
+          THREE.MathUtils.lerp(-1.2, -10.8, ease),
+          THREE.MathUtils.lerp(14.5, 9.6, ease),
+          THREE.MathUtils.lerp(13.5, 9.2, ease),
+        );
+        _v2.set(-6.0, 7.6, -0.5);
+      } else if (t < 12.6) {
+        // Shot 3: Glide over the golden bridge into Desa Sapaan square full of joyful citizens
+        const p = (t - 8.2) / 4.4;
+        const ease = p * p * (3 - 2 * p);
+        _v1.set(
+          THREE.MathUtils.lerp(-14.5, 8.5, ease),
+          THREE.MathUtils.lerp(14.0, 8.2, ease),
+          THREE.MathUtils.lerp(106.0, 128.5, ease),
         );
         _v2.set(
-          THREE.MathUtils.lerp(-6, -4, ease),
-          THREE.MathUtils.lerp(8.5, 4.5, ease),
-          THREE.MathUtils.lerp(-2, 42, ease),
+          THREE.MathUtils.lerp(-5.0, -0.8, ease),
+          3.8,
+          THREE.MathUtils.lerp(117.0, 120.0, ease),
         );
       } else {
-        // Settle warmly onto Desa Sapaan square showing Hoot & Lila + chatting villagers
-        const p = Math.min(1, (t - 6.8) / 3.2);
+        // Shot 4: Warm medium close-up tracking Hoot & Lila (pink dress + red ribbon) together
+        const p = Math.min(1, (t - 12.6) / 3.4);
         const ease = 1 - Math.pow(1 - p, 2);
         _v1.set(
-          THREE.MathUtils.lerp(-14, hX + 4.4, ease),
-          THREE.MathUtils.lerp(13.5, this.heroPos.y + 3.4, ease),
-          THREE.MathUtils.lerp(110, hZ + 6.4, ease),
+          THREE.MathUtils.lerp(hX + 6.4, hX + 3.8, ease),
+          THREE.MathUtils.lerp(this.heroPos.y + 4.4, this.heroPos.y + 2.75, ease),
+          THREE.MathUtils.lerp(hZ + 8.5, hZ + 5.6, ease),
         );
         _v2.set(
-          THREE.MathUtils.lerp(-4, (hX + lX) * 0.5, ease),
-          THREE.MathUtils.lerp(4.5, this.heroPos.y + 1.25, ease),
-          THREE.MathUtils.lerp(116, (hZ + lZ) * 0.5, ease),
+          (hX + lX) * 0.5,
+          this.heroPos.y + 1.25,
+          (hZ + lZ) * 0.5,
         );
       }
       this.camera.position.lerp(_v1, camLerp);
@@ -15386,6 +15602,10 @@ export class RpgWorldEngine {
       this.worldMode === 'overworld' && this.multiplayerActive && !this.isWorldAuthority();
     const guestBlend = 1 - Math.exp(-10 * dt);
     for (const m of this.getActiveMonsters()) {
+      if (inPrologue) {
+        m.mesh.visible = false;
+        continue;
+      }
       const spec = MONSTER_SPECS[m.type];
       if (!m.alive) {
         if (this.phase === 'playing' && m.respawnTimer > 0 && !isOverworldGuest) {
@@ -16355,6 +16575,16 @@ export class RpgWorldEngine {
       canVisCull,
       this.activeVehicleHazards,
     );
+    if (inPrologue) {
+      for (const p of this.villageRig.pillagers) {
+        p.root.visible = false;
+      }
+      if (this.villageRig.outpostBanner) {
+        this.villageRig.outpostBanner.visible = false;
+      }
+    } else if (this.villageRig.outpostBanner) {
+      this.villageRig.outpostBanner.visible = true;
+    }
 
     // Gentle blocky Minecraft-style voxel clouds drift across the sky
     const throttleUpload = this.isLowEndMobile || this.settings.fxLevel !== 'full';
@@ -16426,17 +16656,17 @@ export class RpgWorldEngine {
           npc.mesh.position.set(rx, ry, rz);
           npc.mesh.visible = true;
           npc.aura.group.position.set(rx, ry, rz);
-          npc.aura.group.visible = isOnDuty;
+          npc.aura.group.visible = !inPrologue && isOnDuty;
           this.spawnBurst(rx, ry + 1.2, rz, 0x38bdf8, 12);
         }
         npcIdx++;
         continue;
       }
       npc.mesh.visible = true;
-      npc.aura.group.visible = isOnDuty;
+      npc.aura.group.visible = !inPrologue && isOnDuty;
 
       const q = this.quests.find((item) => item.npcId === npc.dayNpcId);
-      const showAlert = isOnDuty && !q?.claimed;
+      const showAlert = !inPrologue && isOnDuty && !q?.claimed;
       const distHero = Math.hypot(this.heroPos.x - npc.x, this.heroPos.z - npc.z);
 
       // Threat scan: Overworld NPCs sprint away fast when a moving or honking car approaches
@@ -19526,7 +19756,13 @@ export class RpgWorldEngine {
       this.worldMode === 'overworld' && this.multiplayerActive && !this.isWorldAuthority();
     const guestBlend = 1 - Math.exp(-10 * dt);
 
+    const hideShootersInPrologue =
+      this.phase === 'story' && this.storyDialog?.kind === 'prologue';
     for (const s of this.shooters) {
+      if (hideShootersInPrologue) {
+        s.mesh.visible = false;
+        continue;
+      }
       if (!s.alive) {
         if (
           !isOverworldGuest &&
@@ -20364,7 +20600,6 @@ export class RpgWorldEngine {
   }
 
   private computeLabels(): ProjectedLabel[] {
-    if (this.phase !== 'playing' && this.phase !== 'title') return [];
     const w = this.container.clientWidth || window.innerWidth;
     const h = this.container.clientHeight || window.innerHeight;
     const labels: ProjectedLabel[] = [];
@@ -20377,6 +20612,122 @@ export class RpgWorldEngine {
       if (sx < 40 || sx > w - 40 || sy < 50 || sy > h - 60) return null;
       return { x: Math.round(sx), y: Math.round(sy) };
     };
+
+    if (
+      this.phase === 'story' &&
+      this.storyDialog?.kind === 'prologue' &&
+      this.storyDialog.step === 0 &&
+      this.prologueRig
+    ) {
+      const t = this.storyTimer;
+      const rig = this.prologueRig;
+      if (t >= 4.3 && t <= 8.3) {
+        const kp = projectPoint(
+          rig.king.root.position.x,
+          rig.king.root.position.y + 3.4,
+          rig.king.root.position.z,
+        );
+        if (kp) {
+          labels.push({
+            id: 'prologue_king_hi',
+            x: kp.x,
+            y: kp.y,
+            title: '👑 Selamat pagi, rakyat Kerajaan Kata!',
+            kind: 'speech',
+          });
+        }
+        const firstAtt = rig.royalCrowd[0];
+        if (firstAtt && t >= 5.1) {
+          const ap = projectPoint(
+            firstAtt.mesh.position.x,
+            firstAtt.mesh.position.y + 2.7,
+            firstAtt.mesh.position.z,
+          );
+          if (ap) {
+            labels.push({
+              id: 'prologue_att_hi',
+              x: ap.x,
+              y: ap.y,
+              title: 'Salam sejahtera, Baginda Raja!',
+              kind: 'speech',
+            });
+          }
+        }
+      } else if (t > 8.3 && t <= 12.8) {
+        const pairA = rig.villagers[0];
+        const pairB = rig.villagers[3];
+        const dancer = rig.villagers[6];
+        if (pairA) {
+          const p1 = projectPoint(pairA.x, getArchipelagoGroundY(pairA.x, pairA.z) + 2.6, pairA.z);
+          if (p1) {
+            labels.push({
+              id: 'prologue_vil_greet',
+              x: p1.x,
+              y: p1.y,
+              title: 'Good morning, neighbor!',
+              kind: 'speech',
+            });
+          }
+        }
+        if (pairB && t >= 9.0) {
+          const p2 = projectPoint(pairB.x, getArchipelagoGroundY(pairB.x, pairB.z) + 2.6, pairB.z);
+          if (p2) {
+            labels.push({
+              id: 'prologue_vil_reply',
+              x: p2.x,
+              y: p2.y,
+              title: 'Hello, friend! How are you?',
+              kind: 'speech',
+            });
+          }
+        }
+        if (dancer && t >= 9.4) {
+          const p3 = projectPoint(dancer.x, getArchipelagoGroundY(dancer.x, dancer.z) + 2.5, dancer.z);
+          if (p3) {
+            labels.push({
+              id: 'prologue_vil_song',
+              x: p3.x,
+              y: p3.y,
+              title: '♪ La la la ~ ♪',
+              kind: 'speech',
+            });
+          }
+        }
+      } else if (t > 12.8) {
+        const lp = projectPoint(
+          rig.lilaMesh.position.x,
+          rig.lilaMesh.position.y + 2.45,
+          rig.lilaMesh.position.z,
+        );
+        if (lp) {
+          labels.push({
+            id: 'prologue_lila_hi',
+            x: lp.x,
+            y: lp.y,
+            title:
+              t < 15.6
+                ? '🎀 Kak Hoot! Pita merahku bagus, kan?'
+                : '🌸 Kerajaan Kata damai sekali, Kak!',
+            kind: 'speech',
+          });
+        }
+        if (t >= 14.0) {
+          const hp = projectPoint(this.heroPos.x, this.heroPos.y + 2.85, this.heroPos.z);
+          if (hp) {
+            labels.push({
+              id: 'prologue_hoot_hi',
+              x: hp.x,
+              y: hp.y,
+              title: 'Bagus sekali, Lila! Ayo menyapa warga!',
+              kind: 'speech',
+            });
+          }
+        }
+      }
+      return labels;
+    }
+
+    if (this.phase !== 'playing' && this.phase !== 'title') return [];
 
     if (
       this.phase === 'playing' &&
