@@ -637,20 +637,20 @@ const PROLOGUE_SCENES: PrologueSceneSpec[] = [
   {
     sceneTitle: 'Pengungsian di Balik Pintu Ungu dan Jejak Pita Merah Lila',
     accentColor: '#e11d48',
-    worldTimeTick: 22400,
+    worldTimeTick: 18600,
     textId:
-      'Beruntunglah pada saat-saat genting itu, Raja Aksara berhasil membawa Lila menyingkir jauh hingga berlindung di balik Pintu Ungu yang kokoh di pulau paling utara. Meskipun hatinya diliputi rindu kepada sang kakak, Lila yang cerdik tidak pernah menyerah, karena sepanjang perjalanan melintasi kepulauan ia sengaja menjatuhkan enam pita merah kesayangannya sebagai penunjuk jalan bagi Hoot. Sebelum gerbang istana tertutup rapat, ia pun sempat menuliskan sepucuk surat bersampul merah, lalu menyerahkannya kepada seekor burung hantu setia agar segera diterbangkan mencari kakaknya.',
+      'Beruntunglah pada saat-saat genting di malam itu, Raja Aksara berhasil membawa Lila menyingkir jauh hingga berlindung di balik Pintu Ungu yang kokoh di pulau paling utara. Meskipun hatinya diliputi rindu kepada sang kakak, Lila yang cerdik tidak pernah menyerah, karena sepanjang perjalanan melintasi kepulauan ia sengaja menjatuhkan enam pita merah kesayangannya sebagai penunjuk jalan bagi Hoot. Sebelum gerbang istana tertutup rapat, ia pun sempat menuliskan sepucuk surat bersampul merah, lalu menyerahkannya kepada seekor burung hantu setia agar segera diterbangkan mencari kakaknya.',
     textEn:
-      'Fortunately in that perilous hour, Raja Aksara managed to lead Lila safely away to shelter behind the sturdy Purple Gate on the northernmost island. Though her heart ached for her brother, clever little Lila never gave up, for along her journey across the archipelago she quietly dropped six of her beloved red ribbons to guide Hoot. Before the palace gate swung shut, she wrote a red-sealed letter and entrusted it to a faithful messenger owl to carry to her brother.',
+      'Fortunately in that perilous night hour, Raja Aksara managed to lead Lila safely away to shelter behind the sturdy Purple Gate on the northernmost island. Though her heart ached for her brother, clever little Lila never gave up, for along her journey across the archipelago she quietly dropped six of her beloved red ribbons to guide Hoot. Before the palace gate swung shut, she wrote a red-sealed letter and entrusted it to a faithful messenger owl to carry to her brother.',
   },
   {
-    sceneTitle: 'Terbang Menurun Menuju Desa Sapaan',
+    sceneTitle: 'Terbang Menembus Kabut Malam Menuju Desa Sapaan',
     accentColor: '#10b981',
-    worldTimeTick: 2200,
+    worldTimeTick: 19600,
     textId:
-      'Kini burung hantu utusan istana itu membelah awan dan meluncur menembus kabut pagi, menyusuri lautan hingga akhirnya tiba di langit Desa Sapaan yang tenang. Di tengah alun-alun desa yang berumput hijau, tampaklah Hoot berdiri seorang diri dengan wajah penuh tanda tanya, menatap langit sambil menunggu kabar tentang nasib adiknya serta negerinya. Perlahan sang burung hantu menukik turun sambil mencengkeram surat bersampul merah itu erat-erat, karena kisah petualangan besar untuk menyelamatkan Kerajaan Kata baru saja akan dimulai.',
+      'Kini burung hantu utusan istana itu membelah awan dan meluncur menembus kabut malam yang dingin, mengitari satu demi satu pulau yang sunyi untuk mencari jejak hingga tiba di pulau terakhir bernama Desa Sapaan. Di tengah alun-alun desa yang temaram cahaya lentera, tampaklah Hoot berdiri seorang diri dengan wajah penuh tanda tanya, menatap langit malam sambil menunggu kabar tentang nasib adiknya serta negerinya. Perlahan sang burung hantu menukik turun sambil mencengkeram surat bersampul merah itu erat-erat, karena kisah petualangan besar untuk menyelamatkan Kerajaan Kata baru saja akan dimulai.',
     textEn:
-      'Now the royal messenger owl parts the clouds and glides through the morning mist, soaring across the sea until it reaches the quiet skies above Desa Sapaan. In the center of the green village square, Hoot stands alone with an anxious gaze, looking up toward the clouds as he awaits word of his sister and his homeland. Gently the owl swoops down clutching the red-sealed letter tight, for the grand adventure to save Kerajaan Kata is just about to begin.',
+      'Now the royal messenger owl parts the clouds and glides through the cold night mist, circling one quiet island after another in search of him until it reaches the final island of Desa Sapaan. In the center of the village square bathed in soft lantern light, Hoot stands alone with a puzzled gaze, looking up into the night sky as he awaits word of his sister and his homeland. Gently the owl swoops down clutching the red-sealed letter tight, for the grand adventure to save Kerajaan Kata is just about to begin.',
   },
 ];
 
@@ -761,6 +761,7 @@ interface PrologueCutsceneRig {
     phase: number;
   }>;
   bosses: Array<{
+    zId: ZoneId;
     mesh: THREE.Group;
     type: MonsterType;
     pos: THREE.Vector3;
@@ -771,6 +772,13 @@ interface PrologueCutsceneRig {
     pos: THREE.Vector3;
     dropTime: number;
   }>;
+  flightMists: Array<{
+    mesh: THREE.Mesh;
+    mat: THREE.MeshBasicMaterial;
+    basePos: THREE.Vector3;
+    phase: number;
+  }>;
+  owlFlightCurve: THREE.CatmullRomCurve3;
   disposables: Array<{ dispose: () => void }>;
   raidPortalSoundFired: boolean;
   raidShatterFired: boolean;
@@ -5336,7 +5344,11 @@ export class RpgWorldEngine {
     this.restoredNightMonsters = [];
     this.restoredNightShooters = [];
     this.restoredCollectibles = null;
-    this.worldTimeTick = this.multiplayerActive ? 23200 : this.pickRandomWorldTimeTick();
+    this.worldTimeTick = this.multiplayerActive
+      ? 23200
+      : options?.skipStory
+      ? this.pickRandomWorldTimeTick()
+      : 19600;
     this.dayCount = 1;
     this.lastOverworldDayPhase = this.getDayPhaseForTick(this.worldTimeTick);
     this.nightWaveDaySpawned = 0;
@@ -6161,7 +6173,7 @@ export class RpgWorldEngine {
       mesh.position.copy(pos);
       mesh.visible = false;
       group.add(mesh);
-      return { mesh, type: bs.type, pos, phase: bs.phase };
+      return { zId: bs.zId, mesh, type: bs.type, pos, phase: bs.phase };
     });
 
     // 7. Red Ribbons dropped by Lila along the escape trail to the Purple Gate in Scene 4
@@ -6191,6 +6203,54 @@ export class RpgWorldEngine {
       return { mesh: rGroup, pos, dropTime: rc.t };
     });
 
+    // 8. Scene 5 Night Mist Cloud Corridor & Island-Hopping Owl Search Path ending at Desa Sapaan
+    const stageAnchors = this.getOpeningStageAnchors();
+    const owlFlightCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(portalPt.x + 10, portalPt.y + 20, portalPt.z + 36),
+      new THREE.Vector3(-118, 32, -88), // Gerbang Kota
+      new THREE.Vector3(-104, 24, 48),  // Pasar Rasa
+      new THREE.Vector3(-4, 24, -14),   // Central Hub & Jembatan
+      new THREE.Vector3(118, 29, -72),  // Menara Waktu
+      new THREE.Vector3(106, 23, 48),   // Hutan Satwa
+      new THREE.Vector3(38, 17, 94),    // Crossing southern bay into last island
+      new THREE.Vector3(stageAnchors.owlX - 5.2, stageAnchors.owlY + 5.6, stageAnchors.owlZ - 5.0),
+    ]);
+
+    const flightMistGeo = new THREE.SphereGeometry(1, 10, 8);
+    const flightMists: PrologueCutsceneRig['flightMists'] = [];
+    const mistWaypoints = 22;
+    for (let fi = 0; fi < mistWaypoints; fi++) {
+      const fu = 0.05 + (fi / (mistWaypoints - 1)) * 0.82;
+      const ptOnPath = owlFlightCurve.getPointAt(fu);
+      const sideJitter = (fi % 2 === 0 ? 1 : -1) * (2.5 + (fi % 3) * 3.8);
+      const heightJitter = ((fi % 3) - 1) * 2.2;
+      const basePos = new THREE.Vector3(
+        ptOnPath.x + sideJitter,
+        ptOnPath.y + heightJitter,
+        ptOnPath.z + ((fi % 4) - 1.5) * 3.0,
+      );
+      const fMat = new THREE.MeshBasicMaterial({
+        color: fi % 2 === 0 ? 0x334155 : 0x475569,
+        transparent: true,
+        opacity: 0.34,
+        depthWrite: false,
+      });
+      const fMesh = new THREE.Mesh(flightMistGeo, fMat);
+      const sx = 8.5 + (fi % 4) * 3.2;
+      fMesh.position.copy(basePos);
+      fMesh.scale.set(sx * 1.45, sx * 0.42, sx * 1.25);
+      fMesh.visible = false;
+      group.add(fMesh);
+      disposables.push(fMat);
+      flightMists.push({
+        mesh: fMesh,
+        mat: fMat,
+        basePos,
+        phase: fi * 0.78,
+      });
+    }
+    disposables.push(flightMistGeo);
+
     return {
       group,
       istanaStage,
@@ -6219,6 +6279,8 @@ export class RpgWorldEngine {
       raiders,
       bosses,
       ribbonDrops,
+      flightMists,
+      owlFlightCurve,
       disposables,
       raidPortalSoundFired: false,
       raidShatterFired: false,
@@ -6227,7 +6289,7 @@ export class RpgWorldEngine {
   }
 
   private cleanupPrologueStage(): void {
-    soundEngine.setPrologueScene1Music(false);
+    soundEngine.setPrologueSceneMusic(null);
     const istanaRig = this.archipelagoRig.istanaRig;
     if (this.prologueRig) {
       this.scene.remove(this.prologueRig.group);
@@ -6278,7 +6340,7 @@ export class RpgWorldEngine {
     const spec = PROLOGUE_SCENES[idx];
     this.storyTimer = 0;
     this.worldTimeTick = spec.worldTimeTick;
-    soundEngine.setPrologueScene1Music(idx === 0);
+    soundEngine.setPrologueSceneMusic(idx);
 
     const istanaRig = this.archipelagoRig.istanaRig;
     if (this.prologueRig) {
@@ -6339,7 +6401,10 @@ export class RpgWorldEngine {
         dm.mat.opacity = 0.0;
       });
       rig.bosses.forEach((bs) => {
-        bs.mesh.visible = showSilence;
+        bs.mesh.visible = showSilence || (showOwlFlight && bs.zId !== 'desa_sapaan');
+      });
+      rig.flightMists.forEach((fm) => {
+        fm.mesh.visible = showOwlFlight;
       });
       rig.ribbonDrops.forEach((rb) => {
         rb.mesh.visible = false;
@@ -6402,9 +6467,16 @@ export class RpgWorldEngine {
         this.hero.body.rotation.y = this.heroYaw;
         this.owlRig.root.visible = true;
         this.owlRig.envelope.visible = true;
-        this.owlRig.root.position.set(8, 36, -65);
-        this.camera.position.set(16, 40, -52);
-        this.controls.target.set(6, 34, -66);
+        rig.owlFlightCurve.getPointAt(0, _v1);
+        rig.owlFlightCurve.getTangentAt(0, _forward);
+        this.owlRig.root.position.copy(_v1);
+        this.owlRig.root.rotation.set(0.14, Math.atan2(_forward.x, _forward.z), 0);
+        this.camera.position.set(
+          _v1.x - _forward.x * 13 + _forward.z * 5,
+          _v1.y + 5.5,
+          _v1.z - _forward.z * 13 - _forward.x * 5,
+        );
+        this.controls.target.set(_v1.x + _forward.x * 18, _v1.y - 4.0, _v1.z + _forward.z * 18);
       }
       this.controls.update();
     }
@@ -6511,8 +6583,8 @@ export class RpgWorldEngine {
       speakerRole: 'Utusan Istana · Desa Sapaan',
       speakerKind: 'owl',
       speakerSide: 'npc',
-      textEn: 'Hoot! I finally found you! Armed shadow monsters raided the Palace last night, shattered the Royal Crown into six shards, and stole English words across the islands!',
-      textId: 'Hoot! Akhirnya aku menemukanmu! Tadi malam monster bayangan bersenjata menyerbu Istana Kerajaan Kata, memecah Mahkota Kerajaan menjadi enam keping, dan merampas kata-kata Bahasa Inggris di seluruh kepulauan!',
+      textEn: 'Hoot! I finally found you! Tonight, armed shadow monsters raided the Northern Palace, shattered the Royal Crown into six shards, and stole English words across the islands!',
+      textId: 'Hoot! Akhirnya aku menemukanmu! Malam ini gerombolan monster bayangan bersenjata menyerbu Istana Utara Kerajaan Kata, memecah Mahkota Kerajaan menjadi enam keping, dan merampas kata-kata Bahasa Inggris di seluruh kepulauan!',
       accentColor: '#f59e0b',
     };
     soundEngine.playDoor();
@@ -15812,54 +15884,101 @@ export class RpgWorldEngine {
       return;
     }
 
-    // Adegan 5: Burung Hantu Terbang Menurun Menuju Desa Sapaan tempat Hoot Menunggu
-    const stage = this.getOpeningStageAnchors();
-    const glideP = Math.min(1, t / 5.2);
-    const easeG = 1 - Math.pow(1 - glideP, 2);
-    const owlStartX = 18;
-    const owlStartY = 40;
-    const owlStartZ = -70;
-    const owlGoalX = stage.owlX - 6.5;
-    const owlGoalY = stage.owlY + 6.5;
-    const owlGoalZ = stage.owlZ - 5.5;
+    // Adegan 5: Burung Hantu Terbang Mengitari Pulau-pulau Menembus Kabut Malam Hingga Menemukan Hoot di Desa Sapaan
+    rig.bosses.forEach((bs) => {
+      if (!bs.mesh.visible) return;
+      bs.mesh.position.set(bs.pos.x, bs.pos.y + Math.sin(this.elapsed * 1.8 + bs.phase) * 0.22, bs.pos.z);
+      bs.mesh.rotation.y = Math.sin(this.elapsed * 0.7 + bs.phase) * 0.65;
+      animateMonsterRig(bs.mesh, {
+        mode: 'patrol',
+        speed: 0,
+        elapsed: this.elapsed,
+        phase: bs.phase,
+        dt,
+      });
+    });
 
-    const ox = THREE.MathUtils.lerp(owlStartX, owlGoalX, easeG);
-    const oy = THREE.MathUtils.lerp(owlStartY, owlGoalY, easeG) + Math.sin(this.elapsed * 3.6) * 0.32;
-    const oz = THREE.MathUtils.lerp(owlStartZ, owlGoalZ, easeG);
+    rig.flightMists.forEach((fm) => {
+      fm.mesh.position.set(
+        fm.basePos.x + Math.sin(this.elapsed * 0.45 + fm.phase) * 2.4,
+        fm.basePos.y + Math.cos(this.elapsed * 0.55 + fm.phase) * 0.65,
+        fm.basePos.z + Math.cos(this.elapsed * 0.4 + fm.phase) * 2.0,
+      );
+    });
+
+    const stage = this.getOpeningStageAnchors();
+    const flightDuration = 13.5;
+    const rawP = Math.min(1, t / flightDuration);
+    const curveU = rawP < 0.85 ? rawP : 0.85 + 0.15 * Math.sin(((rawP - 0.85) / 0.15) * (Math.PI * 0.5));
+    rig.owlFlightCurve.getPointAt(curveU, _v3);
+    rig.owlFlightCurve.getTangentAt(curveU, _forward);
+
+    const ox = _v3.x;
+    const oy = _v3.y + Math.sin(this.elapsed * 3.4) * 0.28;
+    const oz = _v3.z;
     this.owlRig.root.position.set(ox, oy, oz);
+
+    const flightYaw = Math.atan2(_forward.x, _forward.z);
+    const faceHeroYaw = Math.atan2(stage.heroX - ox, stage.heroZ - oz);
+    const yawBlend = THREE.MathUtils.clamp((rawP - 0.84) / 0.16, 0, 1);
+    let yawDiff = faceHeroYaw - flightYaw;
+    while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+    while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+    const blendedYaw = flightYaw + yawDiff * yawBlend;
+
     this.owlRig.root.rotation.set(
-      0.16,
-      Math.atan2(stage.heroX - ox, stage.heroZ - oz),
-      Math.sin(this.elapsed * 2.8) * 0.08,
+      0.16 * (1 - yawBlend * 0.35),
+      blendedYaw,
+      Math.sin(this.elapsed * 2.4) * 0.14 * (1 - yawBlend * 0.6),
     );
     const flap = Math.sin(this.elapsed * 16) * 0.65;
     this.owlRig.leftWing.rotation.z = 0.14 + flap;
     this.owlRig.rightWing.rotation.z = -0.14 - flap;
 
-    // Hoot stands in Desa Sapaan looking up toward the descending Owl
+    // Hoot stands alone in the lantern-lit square of Desa Sapaan, looking up once the Owl nears
     this.heroPos.set(stage.heroX, stage.heroY, stage.heroZ);
     this.hero.root.position.copy(this.heroPos);
-    this.heroYaw = Math.atan2(ox - stage.heroX, oz - stage.heroZ);
+    const spotOwlT = THREE.MathUtils.clamp((rawP - 0.72) / 0.2, 0, 1);
+    const targetHeroYaw = Math.atan2(ox - stage.heroX, oz - stage.heroZ);
+    this.heroYaw = targetHeroYaw;
     this.hero.body.rotation.y = this.heroYaw;
-    this.hero.headGroup.rotation.x = -0.34 + Math.sin(this.elapsed * 2.1) * 0.05;
-    this.hero.leftArm.rotation.x = -0.18;
+    this.hero.headGroup.rotation.x = THREE.MathUtils.lerp(-0.12, -0.36, spotOwlT) + Math.sin(this.elapsed * 2.1) * 0.05;
+    this.hero.headGroup.rotation.y = (1 - spotOwlT) * Math.sin(this.elapsed * 1.3) * 0.35;
+    this.hero.leftArm.rotation.x = -0.16;
     this.hero.rightArm.rotation.x = -0.22;
 
-    if (glideP < 0.72) {
-      _v1.set(ox + 9.5, oy + 4.2, oz - 10.5);
+    if (rawP < 0.84) {
+      // Dynamic chase camera trailing & banking past the Owl through misty night islands
+      _right.set(-_forward.z, 0, _forward.x).normalize();
+      const sideBias = Math.sin(rawP * Math.PI * 3.0) * 4.5;
+      _v1.set(
+        ox - _forward.x * 12.5 + _right.x * (5.2 + sideBias),
+        oy + 4.8,
+        oz - _forward.z * 12.5 + _right.z * (5.2 + sideBias),
+      );
       _v2.set(
-        THREE.MathUtils.lerp(ox, stage.heroX, glideP * 0.6),
-        THREE.MathUtils.lerp(oy - 1.5, stage.heroY + 2.5, glideP * 0.6),
-        THREE.MathUtils.lerp(oz, stage.heroZ, glideP * 0.6),
+        ox + _forward.x * 18.0,
+        Math.max(6.0, oy - 5.2),
+        oz + _forward.z * 18.0,
       );
     } else {
-      const fP = (glideP - 0.72) / 0.28;
+      // Sweeping finale into Desa Sapaan framing Hoot looking up at the arriving Owl
+      const finP = (rawP - 0.84) / 0.16;
+      const easeFin = 1 - Math.pow(1 - finP, 2);
+      _right.set(-_forward.z, 0, _forward.x).normalize();
+      const startCamX = ox - _forward.x * 12.5 + _right.x * 5.2;
+      const startCamY = oy + 4.8;
+      const startCamZ = oz - _forward.z * 12.5 + _right.z * 5.2;
       _v1.set(
-        THREE.MathUtils.lerp(ox + 9.5, stage.heroX + 6.5, fP),
-        THREE.MathUtils.lerp(oy + 4.2, stage.heroY + 4.8, fP),
-        THREE.MathUtils.lerp(oz - 10.5, stage.heroZ + 7.0, fP),
+        THREE.MathUtils.lerp(startCamX, stage.heroX + 7.2, easeFin),
+        THREE.MathUtils.lerp(startCamY, stage.heroY + 5.2, easeFin),
+        THREE.MathUtils.lerp(startCamZ, stage.heroZ + 7.8, easeFin),
       );
-      _v2.set(stage.heroX, stage.heroY + 2.2, stage.heroZ);
+      _v2.set(
+        THREE.MathUtils.lerp(ox, stage.heroX, easeFin),
+        THREE.MathUtils.lerp(oy - 1.5, stage.heroY + 2.4, easeFin),
+        THREE.MathUtils.lerp(oz, stage.heroZ, easeFin),
+      );
     }
     this.camera.position.lerp(_v1, camLerp);
     this.controls.target.lerp(_v2, camLerp);
@@ -21411,6 +21530,52 @@ export class RpgWorldEngine {
               kind: 'speech',
             });
           }
+        }
+      }
+      return labels;
+    }
+
+    if (
+      this.phase === 'story' &&
+      this.storyDialog?.kind === 'prologue' &&
+      this.storyDialog.step === 4 &&
+      this.prologueRig
+    ) {
+      const t = this.storyTimer;
+      const op = projectPoint(
+        this.owlRig.root.position.x,
+        this.owlRig.root.position.y + 1.55,
+        this.owlRig.root.position.z,
+      );
+      if (op) {
+        const msg =
+          t < 2.8
+            ? '🔍 Mencari Hoot melewati Gerbang Kota...'
+            : t < 5.6
+            ? '🌫️ Menembus kabut malam di atas Pasar Rasa...'
+            : t < 9.2
+            ? '🕯️ Menara Waktu & Hutan Satwa masih sunyi...'
+            : t < 11.8
+            ? '✨ Pulau terakhir! Itu Hoot di Desa Sapaan!'
+            : '✉️ Membawa surat bersampul merah dari Lila!';
+        labels.push({
+          id: 'prologue_owl_search',
+          x: op.x,
+          y: op.y,
+          title: msg,
+          kind: 'thought',
+        });
+      }
+      if (t >= 10.8) {
+        const hp = projectPoint(this.heroPos.x, this.heroPos.y + 2.85, this.heroPos.z);
+        if (hp) {
+          labels.push({
+            id: 'prologue_hoot_wait',
+            x: hp.x,
+            y: hp.y,
+            title: '🦉 Burung Hantu utusan Istana?!',
+            kind: 'speech',
+          });
         }
       }
       return labels;

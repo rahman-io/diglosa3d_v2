@@ -47,7 +47,13 @@ const WEAPON_SHOOT_CLIP: Record<WeaponId, 'shoot_1' | 'shoot_2'> = {
 };
 
 const INTRO_AUDIO_PATH = './assets/aistudio/game_intro_1db79a4e.mp3';
-const PROLOGUE_SCENE1_AUDIO_PATH = './assets/aistudio/scene_1_65ae3f36.mp3';
+const PROLOGUE_SCENE_AUDIO_PATHS: Record<number, { path: string; volume: number }> = {
+  0: { path: './assets/aistudio/scene_1_65ae3f36.mp3', volume: 0.42 },
+  1: { path: './assets/aistudio/scene_2_7f364184.mp3', volume: 0.42 },
+  2: { path: './assets/aistudio/scene_3_e9f4fb5b.mp3', volume: 0.42 },
+  3: { path: './assets/aistudio/scene_4_f344cecb.mp3', volume: 0.44 },
+  4: { path: './assets/aistudio/scene_5_690c6905.mp3', volume: 0.42 },
+};
 const WALK_AUDIO_PATH = './assets/aistudio/walk_adce5e54.mp3';
 const SWIM_AUDIO_PATH = './assets/aistudio/swimming_1e6d979c.mp3';
 const AMBIENT_AUDIO_PATHS: Record<Exclude<AmbientMode, 'none'>, string> = {
@@ -69,9 +75,9 @@ class SoundEngine {
   private isSwimmingSound = false;
   private introAudio: HTMLAudioElement | null = null;
   private introActive = false;
-  private prologueScene1Audio: HTMLAudioElement | null = null;
-  private prologueScene1Active = false;
-  private prologueScene1FadeTimer: number | null = null;
+  private prologueAudios: Partial<Record<number, HTMLAudioElement>> = {};
+  private activePrologueScene: number | null = null;
+  private prologueFadeTimers: Partial<Record<number, number>> = {};
   private ambientAudios: Partial<Record<Exclude<AmbientMode, 'none'>, HTMLAudioElement>> = {};
   private ambientMode: AmbientMode = 'none';
   private carEngineOsc: OscillatorNode | null = null;
@@ -96,11 +102,15 @@ class SoundEngine {
       intro.volume = 0.34;
       this.introAudio = intro;
 
-      const scene1 = new Audio(PROLOGUE_SCENE1_AUDIO_PATH);
-      scene1.preload = 'auto';
-      scene1.loop = true;
-      scene1.volume = 0.42;
-      this.prologueScene1Audio = scene1;
+      (Object.keys(PROLOGUE_SCENE_AUDIO_PATHS) as Array<string>).forEach((k) => {
+        const idx = Number(k);
+        const spec = PROLOGUE_SCENE_AUDIO_PATHS[idx];
+        const track = new Audio(spec.path);
+        track.preload = 'auto';
+        track.loop = true;
+        track.volume = spec.volume;
+        this.prologueAudios[idx] = track;
+      });
 
       const walk = new Audio(WALK_AUDIO_PATH);
       walk.preload = 'auto';
@@ -134,14 +144,14 @@ class SoundEngine {
           this.playButtonClick();
         }
         this.syncIntroPlayback();
-        this.syncPrologueScene1Playback();
+        this.syncProloguePlayback();
         this.syncAmbientPlayback();
         this.syncWalkPlayback();
         this.syncSwimPlayback();
       };
       const onKeyDownGlobal = () => {
         this.syncIntroPlayback();
-        this.syncPrologueScene1Playback();
+        this.syncProloguePlayback();
         this.syncAmbientPlayback();
         this.syncWalkPlayback();
         this.syncSwimPlayback();
@@ -199,7 +209,10 @@ class SoundEngine {
       const el = this.ambientAudios[mode];
       if (!el) return;
       const shouldPlay =
-        !this.muted && !this.introActive && !this.prologueScene1Active && this.ambientMode === mode;
+        !this.muted &&
+        !this.introActive &&
+        this.activePrologueScene === null &&
+        this.ambientMode === mode;
       if (shouldPlay) {
         if (el.paused) {
           el.play().catch(() => {});
@@ -210,76 +223,99 @@ class SoundEngine {
     });
   }
 
-  private clearPrologueScene1Fade(): void {
-    if (this.prologueScene1FadeTimer !== null && typeof window !== 'undefined') {
-      window.clearInterval(this.prologueScene1FadeTimer);
-      this.prologueScene1FadeTimer = null;
+  private clearPrologueSceneFade(sceneIndex: number): void {
+    const timer = this.prologueFadeTimers[sceneIndex];
+    if (timer !== undefined && typeof window !== 'undefined') {
+      window.clearInterval(timer);
+      delete this.prologueFadeTimers[sceneIndex];
     }
   }
 
-  private syncPrologueScene1Playback(): void {
-    const el = this.prologueScene1Audio;
-    if (!el) return;
-    if (this.muted || !this.prologueScene1Active) {
-      if (!el.paused && !this.prologueScene1Active) return;
-      if (this.muted && !el.paused) {
-        el.pause();
+  private syncProloguePlayback(): void {
+    (Object.keys(PROLOGUE_SCENE_AUDIO_PATHS) as Array<string>).forEach((k) => {
+      const idx = Number(k);
+      const el = this.prologueAudios[idx];
+      if (!el) return;
+      const isTarget = this.activePrologueScene === idx;
+      if (this.muted || !isTarget) {
+        if (this.muted && !el.paused) {
+          el.pause();
+        }
+        return;
       }
-      return;
-    }
-    if (el.paused) {
-      el.play().catch(() => {});
-    }
+      if (el.paused) {
+        el.play().catch(() => {});
+      }
+    });
   }
 
-  public setPrologueScene1Music(active: boolean): void {
-    if (this.prologueScene1Active === active) return;
-    this.prologueScene1Active = active;
-    this.clearPrologueScene1Fade();
-    const el = this.prologueScene1Audio;
-    if (el) {
-      if (active) {
+  public setPrologueSceneMusic(sceneIndex: number | null): void {
+    if (this.activePrologueScene === sceneIndex) return;
+    const prevScene = this.activePrologueScene;
+    this.activePrologueScene = sceneIndex;
+
+    if (prevScene !== null) {
+      this.clearPrologueSceneFade(prevScene);
+      const prevEl = this.prologueAudios[prevScene];
+      const prevSpec = PROLOGUE_SCENE_AUDIO_PATHS[prevScene];
+      if (prevEl) {
+        if (typeof window !== 'undefined' && !prevEl.paused) {
+          this.prologueFadeTimers[prevScene] = window.setInterval(() => {
+            if (this.activePrologueScene === prevScene) {
+              this.clearPrologueSceneFade(prevScene);
+              return;
+            }
+            const nextVol = Math.max(0, prevEl.volume - 0.06);
+            prevEl.volume = nextVol;
+            if (nextVol <= 0.01) {
+              prevEl.pause();
+              prevEl.currentTime = 0;
+              prevEl.volume = prevSpec?.volume ?? 0.42;
+              this.clearPrologueSceneFade(prevScene);
+            }
+          }, 50);
+        } else {
+          prevEl.pause();
+          prevEl.currentTime = 0;
+          prevEl.volume = prevSpec?.volume ?? 0.42;
+        }
+      }
+    }
+
+    if (sceneIndex !== null) {
+      this.clearPrologueSceneFade(sceneIndex);
+      const el = this.prologueAudios[sceneIndex];
+      const spec = PROLOGUE_SCENE_AUDIO_PATHS[sceneIndex];
+      const targetVol = spec?.volume ?? 0.42;
+      if (el) {
         el.currentTime = 0;
         el.volume = 0.04;
         if (!this.muted) {
           el.play().catch(() => {});
         }
         if (typeof window !== 'undefined') {
-          this.prologueScene1FadeTimer = window.setInterval(() => {
-            if (!this.prologueScene1Active) {
-              this.clearPrologueScene1Fade();
+          this.prologueFadeTimers[sceneIndex] = window.setInterval(() => {
+            if (this.activePrologueScene !== sceneIndex) {
+              this.clearPrologueSceneFade(sceneIndex);
               return;
             }
-            const nextVol = Math.min(0.42, el.volume + 0.04);
+            const nextVol = Math.min(targetVol, el.volume + 0.045);
             el.volume = nextVol;
-            if (nextVol >= 0.42) {
-              this.clearPrologueScene1Fade();
+            if (nextVol >= targetVol) {
+              this.clearPrologueSceneFade(sceneIndex);
             }
-          }, 80);
+          }, 70);
         } else {
-          el.volume = 0.42;
+          el.volume = targetVol;
         }
-      } else if (typeof window !== 'undefined' && !el.paused) {
-        this.prologueScene1FadeTimer = window.setInterval(() => {
-          if (this.prologueScene1Active) {
-            this.clearPrologueScene1Fade();
-            return;
-          }
-          const nextVol = Math.max(0, el.volume - 0.06);
-          el.volume = nextVol;
-          if (nextVol <= 0.01) {
-            el.pause();
-            el.currentTime = 0;
-            el.volume = 0.42;
-            this.clearPrologueScene1Fade();
-          }
-        }, 55);
-      } else {
-        el.pause();
-        el.currentTime = 0;
       }
     }
+
     this.syncAmbientPlayback();
+  }
+
+  public setPrologueScene1Music(active: boolean): void {
+    this.setPrologueSceneMusic(active ? 0 : null);
   }
 
   public setIntroMusic(active: boolean): void {
@@ -373,7 +409,7 @@ class SoundEngine {
       this.activeClips.clear();
     }
     this.syncIntroPlayback();
-    this.syncPrologueScene1Playback();
+    this.syncProloguePlayback();
     this.syncWalkPlayback();
     this.syncSwimPlayback();
     this.syncAmbientPlayback();
