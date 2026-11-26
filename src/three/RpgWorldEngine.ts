@@ -1006,6 +1006,14 @@ export class RpgWorldEngine {
   private defeatedBossZones = new Set<ZoneId>();
   private storyDialog: StoryDialogState | null = null;
   private storyTimer = 0;
+  private dialogueTargetNpcId: string | null = null;
+  private caveGuardianTurns: Array<{
+    speakerSide: 'npc' | 'hero';
+    speakerName: string;
+    speakerRole: string;
+    textId: string;
+    textEn: string;
+  }> = [];
   private owlState: 'hidden' | 'fly' | 'land' | 'leave' = 'hidden';
   private cutsceneStartPos = new THREE.Vector3();
   private cutsceneTargetPos = new THREE.Vector3();
@@ -2242,8 +2250,35 @@ export class RpgWorldEngine {
     if (this.getCurrentDayPhase() === 'malam') {
       this.nightPermittedZones.add(npc.zoneId);
     }
+    this.dialogueTargetNpcId = npcId;
+    const npcGroundY = getArchipelagoGroundY(npc.x, npc.z);
+    let dx = this.heroPos.x - npc.x;
+    let dz = this.heroPos.z - npc.z;
+    let dist = Math.hypot(dx, dz);
+    if (dist < 0.05) {
+      dx = Math.sin(npc.standRotY);
+      dz = Math.cos(npc.standRotY);
+      dist = 1;
+    }
+    const desiredDist = 2.35;
+    if (dist < 1.8 || dist > 3.1) {
+      const nx = npc.x + (dx / dist) * desiredDist;
+      const nz = npc.z + (dz / dist) * desiredDist;
+      const ny = getArchipelagoGroundY(nx, nz);
+      if (sampleArchipelagoTerrain(nx, nz).isLandOrBridge && Math.abs(ny - npcGroundY) < 1.6) {
+        this.heroPos.set(nx, ny, nz);
+        this.hero.root.position.copy(this.heroPos);
+      }
+    }
+    this.heroYaw = Math.atan2(npc.x - this.heroPos.x, npc.z - this.heroPos.z);
+    this.hero.body.rotation.y = this.heroYaw;
+    npc.yaw = Math.atan2(this.heroPos.x - npc.x, this.heroPos.z - npc.z);
+    npc.poseMode = 'stand';
+    npc.mesh.rotation.y = npc.yaw;
+
     this.phase = 'dialogue';
     this.heldKeys.clear();
+    this.applyCameraVisibilityAndControls();
     this.callbacks.onOpenNpcDialogue(npcId);
     this.pushHud(true);
   }
@@ -5288,6 +5323,9 @@ export class RpgWorldEngine {
           textEn: s.textEn,
           textId: s.textId,
           accentColor: story.accentColor,
+          speakerKind: 'npc',
+          speakerNpcId: story.guardianId,
+          speakerSide: 'npc',
         };
         if (zId !== 'gua_portal' || nextStep !== 1) {
           soundEngine.speakEnglish(s.textEn);
@@ -5295,6 +5333,38 @@ export class RpgWorldEngine {
         this.pushHud(true);
       } else {
         this.finishDungeonIntroCutscene();
+      }
+      return;
+    }
+
+    if (this.storyDialog.kind === 'cave_guardian') {
+      const nextStep = this.storyDialog.step + 1;
+      if (nextStep < this.caveGuardianTurns.length) {
+        const zId = this.storyDialog.zoneId!;
+        const story = ZONE_CAVE_STORIES[zId];
+        const turn = this.caveGuardianTurns[nextStep];
+        this.storyDialog = {
+          kind: 'cave_guardian',
+          step: nextStep,
+          maxStep: this.caveGuardianTurns.length - 1,
+          zoneId: zId,
+          speakerName: turn.speakerName,
+          speakerRole: turn.speakerRole,
+          textEn: turn.textEn,
+          textId: turn.textId,
+          accentColor: story.accentColor,
+          speakerKind: turn.speakerSide === 'hero' ? 'hero' : 'npc',
+          speakerNpcId: story.guardianId,
+          speakerSide: turn.speakerSide,
+        };
+        this.pushHud(true);
+      } else {
+        this.storyDialog = null;
+        this.caveGuardianTurns = [];
+        this.phase = 'playing';
+        this.applyCameraVisibilityAndControls();
+        this.snapCameraBehindHero();
+        this.pushHud(true);
       }
       return;
     }
@@ -5320,6 +5390,9 @@ export class RpgWorldEngine {
           textEn: story.rescueGuardianEn,
           textId: story.rescueGuardianId,
           accentColor: '#10b981',
+          speakerKind: 'npc',
+          speakerNpcId: story.guardianId,
+          speakerSide: 'npc',
         };
         soundEngine.playWin();
         soundEngine.speakEnglish(story.rescueGuardianEn);
@@ -5330,11 +5403,13 @@ export class RpgWorldEngine {
           kind: 'dungeon_rescue',
           step: 2,
           zoneId: zId,
-          speakerName: 'Hadiah Kebebasan & Pita Merah Lila',
+          speakerName: 'Hoot',
           speakerRole: `${ZONE_INFO[zId].name} Bebas · Pecahan Mahkota ${rb.number}/6`,
           textEn: `Area liberated! Earned Crown Shard #${rb.number}/6, ${RELICS[boss.rewardRelic].name}, and ${wDef.name}!`,
           textId: `${story.captiveName} kembali bersama ${story.guardianName}! Gua kini terang benderang dan bebas dari bayangan monster.`,
           accentColor: '#e11d48',
+          speakerKind: 'hero',
+          speakerSide: 'hero',
           ribbonName: rb.name,
           ribbonQuote: rb.quote,
           rewardSummary: `Pecahan Mahkota #${rb.number}/6 · ${RELICS[boss.rewardRelic].name} · ${wDef.name} (+Peluru) · +5 💎 · +180 XP`,
@@ -5350,6 +5425,7 @@ export class RpgWorldEngine {
     if (this.storyDialog.kind === 'area_cleared') {
       this.storyDialog = null;
       this.phase = 'playing';
+      this.applyCameraVisibilityAndControls();
       this.pushHud(true);
       return;
     }
@@ -5363,6 +5439,13 @@ export class RpgWorldEngine {
       this.finishDungeonIntroCutscene();
     } else if (this.storyDialog.kind === 'dungeon_rescue') {
       this.finishDungeonRescueCutscene(this.storyDialog.zoneId);
+    } else if (this.storyDialog.kind === 'cave_guardian') {
+      this.storyDialog = null;
+      this.caveGuardianTurns = [];
+      this.phase = 'playing';
+      this.applyCameraVisibilityAndControls();
+      this.snapCameraBehindHero();
+      this.pushHud(true);
     }
   }
 
@@ -6678,7 +6761,11 @@ export class RpgWorldEngine {
   }
 
   public setPhase(next: GamePhase): void {
+    const wasDialogue = this.phase === 'dialogue';
     this.phase = next;
+    if (next !== 'dialogue') {
+      this.dialogueTargetNpcId = null;
+    }
     this.forceRenderNextFrame = true;
     this.lastFrameRenderMs = 0;
     this.heldKeys.clear();
@@ -6706,6 +6793,9 @@ export class RpgWorldEngine {
       }
     }
     this.applyCameraVisibilityAndControls();
+    if (next === 'playing' && wasDialogue) {
+      this.snapCameraBehindHero();
+    }
     if ((next === 'paused' || next === 'title') && this.hasSave) {
       this.saveProgress();
     }
@@ -11151,31 +11241,125 @@ export class RpgWorldEngine {
   }
 
   private talkToCaveGuardian(): void {
-    if (!this.dungeonState) return;
+    if (!this.dungeonState || !this.dungeonRig) return;
     const zId = this.dungeonState.zoneId;
     const story = ZONE_CAVE_STORIES[zId];
+    const zoneLabel = ZONE_INFO[zId].name;
     soundEngine.playPick();
+
+    const gPos = this.dungeonRig.guardianPos;
+    let dx = this.heroPos.x - gPos.x;
+    let dz = this.heroPos.z - gPos.z;
+    let dist = Math.hypot(dx, dz);
+    if (dist < 0.05) {
+      dx = -0.8;
+      dz = 0.6;
+      dist = 1;
+    }
+    const talkDist = 2.25;
+    if (dist < 1.6 || dist > 2.9) {
+      this.heroPos.set(gPos.x + (dx / dist) * talkDist, 0, gPos.z + (dz / dist) * talkDist);
+      this.hero.root.position.copy(this.heroPos);
+    }
+    this.heroYaw = Math.atan2(gPos.x - this.heroPos.x, gPos.z - this.heroPos.z);
+    this.hero.body.rotation.y = this.heroYaw;
+    this.dungeonRig.guardianMesh.rotation.y = Math.atan2(
+      this.heroPos.x - gPos.x,
+      this.heroPos.z - gPos.z,
+    );
+
     if (this.dungeonState.liberated) {
-      this.showBanner(`${story.guardianName}: "${story.rescueGuardianId}"`, 4.8);
-      soundEngine.speakEnglish(story.rescueGuardianEn);
+      this.caveGuardianTurns = [
+        {
+          speakerSide: 'npc',
+          speakerName: story.guardianName,
+          speakerRole: `Penjaga Gua ${zoneLabel} · Bebas ✓`,
+          textId: story.rescueGuardianId,
+          textEn: story.rescueGuardianEn,
+        },
+        {
+          speakerSide: 'hero',
+          speakerName: 'Hoot',
+          speakerRole: 'Penjelajah Nusantara Kata',
+          textId: `Aku senang melihat kalian berkumpul lagi, ${story.guardianName}! Aku lanjutkan petualangan dulu ya.`,
+          textEn: `I am glad to see you together again, ${story.guardianName}! I will keep exploring!`,
+        },
+      ];
     } else if (this.dungeonState.prisonKeyCollected) {
       const corner =
         story.prisonCorner === 'nw' ? 'Kiri Atas (Barat Laut)' : 'Kanan Atas (Timur Laut)';
-      this.showBanner(
-        `${story.guardianName}: Kamu sudah pegang Kuncinya! Cepat buka sel rahasia di sudut ${corner} untuk selamatkan ${story.captiveName}!`,
-        4.6,
-      );
+      this.caveGuardianTurns = [
+        {
+          speakerSide: 'npc',
+          speakerName: story.guardianName,
+          speakerRole: `Penjaga Gua ${zoneLabel}`,
+          textId: `Kamu sudah memegang Kunci Penjara Emasnya! Cepat buka sel rahasia di sudut ${corner} untuk menyelamatkan ${story.captiveName}!`,
+          textEn: `You already have the Golden Prison Key! Hurry to the secret cell in the ${corner} corner and rescue ${story.captiveName}!`,
+        },
+        {
+          speakerSide: 'hero',
+          speakerName: 'Hoot',
+          speakerRole: 'Penjelajah Nusantara Kata',
+          textId: `Siap, ${story.guardianName}! Aku segera ke sudut ${corner} sekarang juga!`,
+          textEn: `Got it, ${story.guardianName}! I am heading straight there right now!`,
+        },
+      ];
     } else if (this.dungeonState.bossDefeated) {
-      this.showBanner(
-        `${story.guardianName}: Gua sudah terang! Ambil Kunci Penjara Emas di tengah arena lalu bebaskan ${story.captiveName}!`,
-        4.6,
-      );
+      this.caveGuardianTurns = [
+        {
+          speakerSide: 'npc',
+          speakerName: story.guardianName,
+          speakerRole: `Penjaga Gua ${zoneLabel}`,
+          textId: `Gua sudah terang! Ambil Kunci Penjara Emas yang jatuh di tengah arena, lalu bebaskan ${story.captiveName}!`,
+          textEn: `The cave is bright again! Pick up the Golden Prison Key in the center arena and free ${story.captiveName}!`,
+        },
+        {
+          speakerSide: 'hero',
+          speakerName: 'Hoot',
+          speakerRole: 'Penjelajah Nusantara Kata',
+          textId: `Baik! Aku ambil kuncinya di tengah arena dan segera membebaskan ${story.captiveName}!`,
+          textEn: `Right away! I will grab the key in the center and rescue ${story.captiveName}!`,
+        },
+      ];
     } else {
-      this.showBanner(
-        `${story.guardianName}: Buka 5 Pintu Misi & kalahkan Bos agar ${story.captiveName} bisa diselamatkan!`,
-        4.2,
-      );
+      const doorsDone = this.dungeonState.doorsCleared.length;
+      this.caveGuardianTurns = [
+        {
+          speakerSide: 'npc',
+          speakerName: story.guardianName,
+          speakerRole: `Penjaga Gua ${zoneLabel} (${doorsDone}/5 Pintu)`,
+          textId: `Tolong selamatkan ${story.captiveName}! Buka 5 Pintu Misi dan kalahkan Bos agar Kunci Penjaranya jatuh!`,
+          textEn: `Please save ${story.captiveName}! Open all 5 Mission Doors and defeat the Boss to drop the Prison Key!`,
+        },
+        {
+          speakerSide: 'hero',
+          speakerName: 'Hoot',
+          speakerRole: 'Penjelajah Nusantara Kata',
+          textId: `Tenang saja, ${story.guardianName}! Aku akan membuka semua pintu dan menaklukkan Bos gua ini.`,
+          textEn: `Stay strong, ${story.guardianName}! I will unlock every door and defeat the cave boss.`,
+        },
+      ];
     }
+
+    const first = this.caveGuardianTurns[0];
+    this.phase = 'story';
+    this.heldKeys.clear();
+    this.applyCameraVisibilityAndControls();
+    this.storyDialog = {
+      kind: 'cave_guardian',
+      step: 0,
+      maxStep: this.caveGuardianTurns.length - 1,
+      zoneId: zId,
+      speakerName: first.speakerName,
+      speakerRole: first.speakerRole,
+      textEn: first.textEn,
+      textId: first.textId,
+      accentColor: story.accentColor,
+      speakerKind: 'npc',
+      speakerNpcId: story.guardianId,
+      speakerSide: 'npc',
+    };
+    this.pushHud(true);
   }
 
   public openWordSealChallenge(block?: CaveBlockDef): void {
@@ -13563,6 +13747,9 @@ export class RpgWorldEngine {
     } else if (this.phase === 'story') {
       this.updateStoryAnimations(dt);
       this.controls.update();
+    } else if (this.phase === 'dialogue') {
+      this.updateDialogueCamera(dt);
+      this.controls.update();
     } else if (this.phase === 'playing') {
       this.updatePlaying(dt);
       if (this.cameraMode === 'orbit') {
@@ -13644,8 +13831,98 @@ export class RpgWorldEngine {
     this.scheduleNextTick();
   };
 
+  private updateHarvestDialogueCamera(
+    heroX: number,
+    heroY: number,
+    heroZ: number,
+    partnerX: number,
+    partnerY: number,
+    partnerZ: number,
+    dt: number,
+  ): void {
+    const dx = heroX - partnerX;
+    const dz = heroZ - partnerZ;
+    const dist = Math.hypot(dx, dz) || 1;
+    const toHeroX = dx / dist;
+    const toHeroZ = dz / dist;
+    const perpX = -toHeroZ;
+    const perpZ = toHeroX;
+
+    const midX = (heroX + partnerX) * 0.5;
+    const midY = (heroY + partnerY) * 0.5;
+    const midZ = (heroZ + partnerZ) * 0.5;
+
+    // Shift look-at slightly toward hero/lower Y so both 3D figures sit cleanly in the upper-middle above the bottom dialogue box
+    const tx = midX + toHeroX * 0.92;
+    const ty = midY + 0.16;
+    const tz = midZ + toHeroZ * 0.92;
+
+    const offX = toHeroX * 4.55 + perpX * 0.55;
+    const offY = 4.95;
+    const offZ = toHeroZ * 4.55 + perpZ * 0.55;
+    const desiredDist = Math.hypot(offX, offY, offZ);
+    const dirX = offX / desiredDist;
+    const dirY = offY / desiredDist;
+    const dirZ = offZ / desiredDist;
+    const safeDist = this.computeSpringArmDist(tx, ty, tz, dirX, dirY, dirZ, desiredDist);
+
+    _v1.set(tx + dirX * safeDist, ty + dirY * safeDist, tz + dirZ * safeDist);
+    _v2.set(tx, ty, tz);
+    const k = 1 - Math.exp(-5.4 * dt);
+    this.camera.position.lerp(_v1, k);
+    this.controls.target.lerp(_v2, k);
+  }
+
+  private updateDialogueCamera(dt: number): void {
+    const npc = this.dialogueTargetNpcId ? this.npcs.get(this.dialogueTargetNpcId) : null;
+    if (!npc) return;
+
+    const npcGroundY = getArchipelagoGroundY(npc.x, npc.z);
+    npc.poseMode = 'stand';
+    npc.yaw = Math.atan2(this.heroPos.x - npc.x, this.heroPos.z - npc.z);
+    npc.mesh.rotation.y = npc.yaw;
+
+    this.heroYaw = Math.atan2(npc.x - this.heroPos.x, npc.z - this.heroPos.z);
+    this.hero.body.rotation.y = this.heroYaw;
+    this.hero.root.position.copy(this.heroPos);
+
+    this.updateHarvestDialogueCamera(
+      this.heroPos.x,
+      this.heroPos.y,
+      this.heroPos.z,
+      npc.x,
+      npcGroundY,
+      npc.z,
+      dt,
+    );
+  }
+
   private updateStoryAnimations(dt: number): void {
     this.storyTimer += dt;
+
+    if (this.storyDialog?.kind === 'cave_guardian' && this.dungeonRig) {
+      const gPos = this.dungeonRig.guardianPos;
+      this.dungeonRig.guardianMesh.rotation.y = Math.atan2(
+        this.heroPos.x - gPos.x,
+        this.heroPos.z - gPos.z,
+      );
+      this.heroYaw = Math.atan2(gPos.x - this.heroPos.x, gPos.z - this.heroPos.z);
+      this.hero.body.rotation.y = this.heroYaw;
+      this.hero.root.position.copy(this.heroPos);
+      this.playerCaveLight.position.set(this.heroPos.x, 2.8, this.heroPos.z);
+      animateZoneNpc(this.dungeonRig.guardianMesh, this.elapsed, 0.5, true, dt);
+
+      this.updateHarvestDialogueCamera(
+        this.heroPos.x,
+        this.heroPos.y,
+        this.heroPos.z,
+        gPos.x,
+        0,
+        gPos.z,
+        dt,
+      );
+      return;
+    }
 
     if (this.storyDialog?.kind === 'dungeon_intro' && this.dungeonRig) {
       const walkDuration = 1.7;
@@ -13689,10 +13966,15 @@ export class RpgWorldEngine {
       animateZoneNpc(this.dungeonRig.guardianMesh, this.elapsed, 0.5, true, dt);
       animateCaptiveMesh(this.dungeonRig.captiveMesh, this.elapsed, false);
 
-      _v1.set(0.2, 3.1, 16.2);
-      this.camera.position.lerp(_v1, 1 - Math.exp(-3.2 * dt));
-      _v2.set(3.4, 1.75, 12.1);
-      this.controls.target.lerp(_v2, 1 - Math.exp(-3.6 * dt));
+      this.updateHarvestDialogueCamera(
+        this.heroPos.x,
+        this.heroPos.y,
+        this.heroPos.z,
+        this.dungeonRig.guardianPos.x,
+        0,
+        this.dungeonRig.guardianPos.z,
+        dt,
+      );
       return;
     }
 
@@ -13716,10 +13998,15 @@ export class RpgWorldEngine {
       this.heroYaw = Math.atan2(3.8 - this.heroPos.x, 11.8 - this.heroPos.z);
       this.hero.body.rotation.y = this.heroYaw;
 
-      _v1.set(0.5, 3.1, 16.4);
-      this.camera.position.lerp(_v1, 1 - Math.exp(-4.0 * dt));
-      _v2.set(3.5, 1.75, 12.0);
-      this.controls.target.lerp(_v2, 1 - Math.exp(-4.0 * dt));
+      this.updateHarvestDialogueCamera(
+        this.heroPos.x,
+        this.heroPos.y,
+        this.heroPos.z,
+        3.6,
+        0,
+        11.8,
+        dt,
+      );
       return;
     }
 

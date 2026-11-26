@@ -2745,6 +2745,8 @@ function DiglosaRpgApp() {
 
       <StoryOverlayModal
         story={hud.phase === 'story' && !vsIntroData ? hud.storyDialog : null}
+        characterId={characterId}
+        playerName={playerName}
         onAdvance={() => engineRef.current?.advanceStory()}
         onSkip={() => engineRef.current?.skipStory()}
         onDefeatChoice={(returnToZone) => engineRef.current?.resolveDefeatExitChoice(returnToZone)}
@@ -2821,6 +2823,8 @@ function DiglosaRpgApp() {
 
       <NpcDialogueModal
         npcId={dialogueNpcId}
+        characterId={characterId}
+        playerName={playerName}
         quests={hud.quests}
         wordProgress={hud.wordProgress}
         liberatedZones={hud.liberatedZones}

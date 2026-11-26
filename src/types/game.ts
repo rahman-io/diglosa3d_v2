@@ -418,14 +418,26 @@ export interface ProjectedLabel {
 }
 
 export interface StoryDialogState {
-  kind: 'opening' | 'area_cleared' | 'defeat_exit' | 'dungeon_intro' | 'dungeon_rescue';
+  kind:
+    | 'opening'
+    | 'area_cleared'
+    | 'defeat_exit'
+    | 'dungeon_intro'
+    | 'dungeon_rescue'
+    | 'cave_guardian';
   step: number;
+  maxStep?: number;
   zoneId?: ZoneId;
   speakerName: string;
   speakerRole: string;
   textEn: string;
   textId: string;
   accentColor: string;
+  speakerKind?: 'hero' | 'npc' | 'captive' | 'owl';
+  speakerNpcId?: string;
+  captiveKind?: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
+  captiveColor?: number;
+  speakerSide?: 'npc' | 'hero';
   ribbonName?: string;
   ribbonQuote?: string;
   sageQuote?: string;

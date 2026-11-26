@@ -668,6 +668,16 @@ class SoundEngine {
     this.planeEngineGain.gain.setTargetAtTime(targetGain, now, 0.09);
   }
 
+  public playDialogueBlip(pitchOffset = 0): void {
+    if (this.muted) return;
+    const nowMs = Date.now();
+    const prev = this.lastClipAt.button_click || 0;
+    if (nowMs - prev < 52) return;
+    this.lastClipAt.button_click = nowMs;
+    const freq = Math.max(320, Math.min(760, 520 + pitchOffset));
+    this.beep(freq, 0.028, 'triangle', 0.026, freq + 35);
+  }
+
   public speakEnglish(text: string, rate = 0.88, pitch = 1.0): void {
     if (this.muted || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
