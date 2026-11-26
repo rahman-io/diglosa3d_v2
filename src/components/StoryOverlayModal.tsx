@@ -40,15 +40,12 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
 
   if (!story.speakerKind) {
     if (story.kind === 'opening') {
-      if (story.step === 0 || story.step === 3) {
-        speakerKind = 'owl';
-      } else if (story.step === 1) {
-        speakerKind = 'captive';
-        captiveKind = 'girl';
-        captiveColor = 0xe11d48;
+      if (story.step === 3) {
+        speakerKind = 'hero';
+        speakerSide = 'hero';
       } else {
-        speakerKind = 'npc';
-        npcId = 'ielts_dean';
+        speakerKind = 'owl';
+        speakerSide = 'npc';
       }
     } else if (story.kind === 'dungeon_intro') {
       if (story.step === 0) {

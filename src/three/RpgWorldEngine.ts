@@ -5239,21 +5239,80 @@ export class RpgWorldEngine {
     this.saveProgress();
   }
 
+  private getOpeningStageAnchors(): {
+    heroX: number;
+    heroY: number;
+    heroZ: number;
+    owlX: number;
+    owlY: number;
+    owlZ: number;
+  } {
+    const sp = OVERWORLD_ANCHORS.desaSpawn;
+    const heroY = getArchipelagoGroundY(sp.x, sp.z);
+    const fx = Math.sin(sp.yaw);
+    const fz = Math.cos(sp.yaw);
+    const owlX = sp.x + fx * 3.15;
+    const owlZ = sp.z + fz * 3.15;
+    const owlGroundY = getArchipelagoGroundY(owlX, owlZ);
+    const owlY = Math.max(heroY, owlGroundY) + 2.25;
+    return {
+      heroX: sp.x,
+      heroY,
+      heroZ: sp.z,
+      owlX,
+      owlY,
+      owlZ,
+    };
+  }
+
   private startOpeningStory(): void {
     this.phase = 'story';
     this.applyCameraVisibilityAndControls();
     this.storyTimer = 0;
     this.owlState = 'fly';
+
+    const stage = this.getOpeningStageAnchors();
+    this.heroPos.set(stage.heroX, stage.heroY, stage.heroZ);
+    this.heroYaw = Math.atan2(stage.owlX - stage.heroX, stage.owlZ - stage.heroZ);
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.body.rotation.y = this.heroYaw;
+
     this.owlRig.root.visible = true;
     this.owlRig.envelope.visible = true;
-    this.owlRig.root.position.set(-28, 18, 120);
+    this.owlRig.root.position.set(stage.owlX - 6.5, stage.owlY + 6.5, stage.owlZ - 5.5);
+    this.owlRig.root.rotation.set(
+      0,
+      Math.atan2(stage.heroX - stage.owlX, stage.heroZ - stage.owlZ),
+      0,
+    );
+
+    // Snap side-angle camera immediately so player & hovering owl are visible in profile/3-quarter view
+    const dx = stage.owlX - stage.heroX;
+    const dz = stage.owlZ - stage.heroZ;
+    const dist = Math.hypot(dx, dz) || 1;
+    const toOwlX = dx / dist;
+    const toOwlZ = dz / dist;
+    const sideX = -toOwlZ;
+    const sideZ = toOwlX;
+    const midX = (stage.heroX + stage.owlX) * 0.5;
+    const midZ = (stage.heroZ + stage.owlZ) * 0.5;
+    this.controls.target.set(midX, stage.heroY + 1.05, midZ);
+    this.camera.position.set(
+      midX + sideX * 5.6 - toOwlX * 0.6,
+      stage.heroY + 2.95,
+      midZ + sideZ * 5.6 - toOwlZ * 0.6,
+    );
+    this.controls.update();
+
     this.storyDialog = {
       kind: 'opening',
       step: 0,
-      speakerName: 'Prolog · Serangan Malam Hari',
-      speakerRole: 'Istana Kerajaan Kata · Kepulauan Nusantara Kata',
-      textEn: 'Armed shadow monsters raided the Palace in the dead of night, shattered the Royal Crown into 6 shards, and stole English words across the kingdom.',
-      textId: 'Pada suatu malam gelap, monster bayangan bersenjata menyerbu Istana Kerajaan Kata, memecah Mahkota Kerajaan menjadi enam keping, dan mencuri kata Bahasa Inggris. Seekor burung hantu pos melintas menjatuhkan surat bersampul merah di Desa Sapaan...',
+      speakerName: 'Burung Hantu Pembawa Pesan',
+      speakerRole: 'Utusan Istana · Desa Sapaan',
+      speakerKind: 'owl',
+      speakerSide: 'npc',
+      textEn: 'Hoot! I finally found you! Armed shadow monsters raided the Palace last night, shattered the Royal Crown into six shards, and stole English words across the islands!',
+      textId: 'Hoot! Akhirnya aku menemukanmu! Tadi malam monster bayangan bersenjata menyerbu Istana Kerajaan Kata, memecah Mahkota Kerajaan menjadi enam keping, dan merampas kata-kata Bahasa Inggris di seluruh kepulauan!',
       accentColor: '#f59e0b',
     };
     soundEngine.playDoor();
@@ -5266,51 +5325,62 @@ export class RpgWorldEngine {
     if (this.storyDialog.kind === 'opening') {
       const nextStep = this.storyDialog.step + 1;
       if (nextStep === 1) {
-        // Surat bersampul merah dari Lila (adik kandung Hoot)
+        // Burung Hantu menyampaikan isi surat bersampul merah dari Lila (orang ke-3)
+        this.owlState = 'land';
         this.owlRig.envelope.visible = false;
         this.storyDialog = {
           kind: 'opening',
           step: 1,
-          speakerName: 'Lila (Surat Bersampul Merah)',
-          speakerRole: 'Adik Kandung Hoot · Di Balik Pintu Ungu',
-          textEn: 'Dear brother Hoot, monsters attacked the palace and shattered the crown! I hid behind the Purple Gate with Raja Aksara—I am scared and waiting for you.',
-          textId: 'Kak Hoot, monster menyerang istana malam itu dan memecah mahkota! Aku dan Raja Aksara berlindung di balik Pintu Ungu di pulau paling utara. Aku takut, Kak—aku menunggumu.',
+          speakerName: 'Burung Hantu (Kabar Adikmu Lila)',
+          speakerRole: 'Menyampaikan Surat Bersampul Merah',
+          speakerKind: 'owl',
+          speakerSide: 'npc',
+          textEn: 'I carry a red-sealed letter from your sister Lila. She wanted you to know that when the monsters attacked, she and Raja Aksara took shelter behind the Purple Gate on the northernmost island, and she is waiting for you there.',
+          textId: 'Aku membawa surat bersampul merah dari adikmu, Lila. Ia berpesan agar kamu tenang—saat serangan terjadi, ia dan Raja Aksara berhasil berlindung di balik Pintu Ungu di pulau paling utara, dan kini ia menunggumu di sana.',
           accentColor: '#e11d48',
         };
-        soundEngine.speakEnglish('Dear brother Hoot, please save our kingdom and meet me at the palace!');
+        soundEngine.speakEnglish('Your sister Lila is safe behind the Purple Gate and waiting for you!');
       } else if (nextStep === 2) {
-        // Hoot inspects Portal Ungu on north Gua Portal island & Raja Aksara speaks
-        const pp = OVERWORLD_ANCHORS.portal;
-        const pGroundY = getArchipelagoGroundY(pp.x, pp.z);
-        this.heroPos.set(pp.x - 1.5, pGroundY, pp.z + 9.0);
-        this.heroYaw = Math.PI;
-        this.hero.root.position.copy(this.heroPos);
-        this.controls.target.set(pp.x, pGroundY + 2.6, pp.z + 3.5);
-        this.camera.position.set(pp.x, pGroundY + 20, pp.z + 24);
+        // Burung Hantu menyampaikan amanat Raja Aksara (orang ke-3)
         this.owlState = 'land';
-        this.owlRig.root.position.set(pp.x - 3.5, pGroundY + 4.5, pp.z + 9.5);
         this.storyDialog = {
           kind: 'opening',
           step: 2,
-          speakerName: 'Raja Aksara',
-          speakerRole: 'Raja Kerajaan Kata · Pulau Gua Portal',
-          textEn: 'Only a few words remain inside the palace. Six crown shards are scattered across 6 islands, each guarded by a mighty boss monster!',
-          textId: 'Hanya tersisa sedikit kata di istana, sementara enam pecahan mahkota tersebar di enam pulau kepulauan kita yang dijaga monster bos besar. Bebaskan keenam pulau dimulai dari Desa Sapaan!',
+          speakerName: 'Burung Hantu (Titah Raja Aksara)',
+          speakerRole: 'Menyampaikan Amanat Kerajaan',
+          speakerKind: 'owl',
+          speakerSide: 'npc',
+          textEn: 'Raja Aksara also asked me to tell you this: very few words remain in the palace, while six crown shards are scattered across six islands guarded by mighty bosses. Baginda asks you to free every island starting from Desa Sapaan!',
+          textId: 'Raja Aksara juga memintaku menyampaikan hal ini: hanya tersisa sedikit kata di istana, sementara enam pecahan mahkota tersebar di enam pulau dan dijaga monster bos besar. Baginda memintamu membebaskan keenam pulau dimulai dari Desa Sapaan!',
           accentColor: '#8b5cf6',
         };
-        soundEngine.speakEnglish('Six crown shards are scattered across six islands. Free them all!');
+        soundEngine.speakEnglish('Raja Aksara asks you to recover all six crown shards across six islands!');
       } else if (nextStep === 3) {
-        // Owl hint + Senjata Pemula + 6 Pita Merah Lila
-        const pp = OVERWORLD_ANCHORS.portal;
-        const pGroundY = getArchipelagoGroundY(pp.x, pp.z);
-        this.owlRig.root.position.set(pp.x - 1.5, pGroundY + 1.8, pp.z + 10.5);
+        // Player merespons Burung Hantu secara langsung
+        this.owlState = 'land';
         this.storyDialog = {
           kind: 'opening',
           step: 3,
-          speakerName: 'Burung Hantu Pembimbing',
-          speakerRole: 'Pesan Terakhir Sebelum Berangkat',
-          textEn: 'You have no weapon yet! Wake up at Desa Sapaan, pick up your Starter Weapon in the meadow grass, and march across the bridges through all 6 islands!',
-          textId: 'Kamu belum memiliki senjata! Mulailah dari Desa Sapaan, ambil Senjata Pemula yang terjatuh di sebelah kiri alun-alun desa, lalu jelajahi jembatan menuju 6 pulau dan temukan 6 helai pita merah dari Lila.',
+          speakerName: 'Hoot',
+          speakerRole: 'Penjelajah Nusantara Kata',
+          speakerKind: 'hero',
+          speakerSide: 'hero',
+          textEn: 'Got it! Thank you for bringing news from Lila and Raja Aksara. I will recover all six crown shards and rescue them!',
+          textId: 'Baiklah! Terima kasih sudah mengantarkan kabar dari Lila dan Raja Aksara. Aku siap berangkat membebaskan seluruh pulau dan menyelamatkan mereka!',
+          accentColor: '#10b981',
+        };
+      } else if (nextStep === 4) {
+        // Burung Hantu memberi petunjuk awal sebelum terbang pergi
+        this.owlState = 'land';
+        this.storyDialog = {
+          kind: 'opening',
+          step: 4,
+          speakerName: 'Burung Hantu Pembawa Pesan',
+          speakerRole: 'Petunjuk Awal · Desa Sapaan',
+          speakerKind: 'owl',
+          speakerSide: 'npc',
+          textEn: 'You have no weapon yet! Pick up the Starter Weapon in the grass on the left side of this village square, talk to the village guardian, and collect Lila’s 6 red ribbons across the islands. Good luck!',
+          textId: 'Bagus, tapi kamu belum memegang senjata! Ambil Senjata Pemula yang terjatuh di sebelah kiri alun-alun desa ini, temui penjaga desa, lalu kumpulkan 6 pita merah milik Lila di tiap pulau. Aku terbang duluan, Hoot!',
           accentColor: '#10b981',
         };
       } else {
@@ -5651,6 +5721,7 @@ export class RpgWorldEngine {
     this.introDone = true;
     this.storyDialog = null;
     this.owlState = 'leave';
+    this.owlRig.root.rotation.set(0, Math.PI * 0.45, 0);
     this.storyTimer = 0;
     this.phase = 'playing';
     const sp = OVERWORLD_ANCHORS.desaSpawn;
@@ -14097,26 +14168,163 @@ export class RpgWorldEngine {
       return;
     }
 
+    if (this.storyDialog?.kind === 'opening') {
+      const stage = this.getOpeningStageAnchors();
+      this.heroPos.set(stage.heroX, stage.heroY, stage.heroZ);
+      this.heroYaw = Math.atan2(stage.owlX - stage.heroX, stage.owlZ - stage.heroZ);
+      this.hero.root.position.copy(this.heroPos);
+      this.hero.body.rotation.y = this.heroYaw;
+
+      const heroSpeaking = this.storyDialog.speakerSide === 'hero';
+      const owlSpeaking = !heroSpeaking;
+
+      // Expressive 3D conversation animation for Hero (hands, torso, legs, head)
+      const hBlink = computeBlinkScale(this.elapsed, 0.25);
+      this.hero.leftEye.scale.y = hBlink;
+      this.hero.rightEye.scale.y = hBlink;
+      const breathSy = 1 + Math.sin(this.elapsed * 2.8) * 0.032;
+      const breathSxz = 1 / Math.sqrt(breathSy);
+      this.hero.body.scale.set(breathSxz, breathSy, breathSxz);
+
+      const targetBodyY = heroSpeaking
+        ? Math.abs(Math.sin(this.elapsed * 3.6)) * 0.045
+        : Math.abs(Math.sin(this.elapsed * 2.2)) * 0.02;
+      const talkBeat = Math.sin(this.elapsed * 7.2);
+      const talkAlt = Math.cos(this.elapsed * 5.4);
+      const listenSway = Math.sin(this.elapsed * 2.2);
+      const nod = Math.max(0, Math.sin(this.elapsed * 3.1)) * 0.09;
+
+      const tUpperX = heroSpeaking
+        ? 0.08 + Math.sin(this.elapsed * 4.4) * 0.06
+        : 0.04 + nod * 0.45;
+      const tUpperY = heroSpeaking ? talkAlt * 0.14 : listenSway * 0.07;
+      const tHeadX = heroSpeaking ? -0.14 + talkBeat * 0.09 : -0.18 + nod;
+      const tHeadY = heroSpeaking
+        ? Math.sin(this.elapsed * 2.7) * 0.12
+        : Math.sin(this.elapsed * 1.4) * 0.08;
+      const tHeadZ = heroSpeaking ? Math.cos(this.elapsed * 3.1) * 0.06 : listenSway * 0.04;
+      const tRightArmX = heroSpeaking
+        ? -0.82 + talkBeat * 0.34
+        : -0.24 + Math.sin(this.elapsed * 2.5) * 0.1;
+      const tRightArmZ = heroSpeaking
+        ? -0.32 - Math.abs(talkAlt) * 0.24
+        : -0.18 - Math.abs(listenSway) * 0.08;
+      const tLeftArmX = heroSpeaking
+        ? -0.45 - talkAlt * 0.28
+        : -0.2 + Math.cos(this.elapsed * 2.1) * 0.09;
+      const tLeftArmZ = heroSpeaking
+        ? 0.24 + Math.abs(talkBeat) * 0.18
+        : 0.16 + Math.abs(listenSway) * 0.06;
+      const tLeftLegX = heroSpeaking
+        ? 0.08 + Math.sin(this.elapsed * 2.8) * 0.05
+        : 0.05 + listenSway * 0.035;
+      const tRightLegX = heroSpeaking
+        ? -0.08 - Math.sin(this.elapsed * 2.8) * 0.05
+        : -0.05 - listenSway * 0.035;
+
+      this.hero.body.position.y = THREE.MathUtils.damp(this.hero.body.position.y, targetBodyY, 12, dt);
+      this.hero.upperBody.rotation.x = THREE.MathUtils.damp(this.hero.upperBody.rotation.x, tUpperX, 11, dt);
+      this.hero.upperBody.rotation.y = THREE.MathUtils.damp(this.hero.upperBody.rotation.y, tUpperY, 11, dt);
+      this.hero.headGroup.rotation.x = THREE.MathUtils.damp(this.hero.headGroup.rotation.x, tHeadX, 12, dt);
+      this.hero.headGroup.rotation.y = THREE.MathUtils.damp(this.hero.headGroup.rotation.y, tHeadY, 12, dt);
+      this.hero.headGroup.rotation.z = THREE.MathUtils.damp(this.hero.headGroup.rotation.z, tHeadZ, 12, dt);
+      this.hero.rightArm.rotation.x = THREE.MathUtils.damp(this.hero.rightArm.rotation.x, tRightArmX, 12, dt);
+      this.hero.rightArm.rotation.z = THREE.MathUtils.damp(this.hero.rightArm.rotation.z, tRightArmZ, 12, dt);
+      this.hero.leftArm.rotation.x = THREE.MathUtils.damp(this.hero.leftArm.rotation.x, tLeftArmX, 12, dt);
+      this.hero.leftArm.rotation.z = THREE.MathUtils.damp(this.hero.leftArm.rotation.z, tLeftArmZ, 12, dt);
+      this.hero.leftLeg.rotation.x = THREE.MathUtils.damp(this.hero.leftLeg.rotation.x, tLeftLegX, 10, dt);
+      this.hero.rightLeg.rotation.x = THREE.MathUtils.damp(this.hero.rightLeg.rotation.x, tRightLegX, 10, dt);
+
+      // Expressive hovering & flapping animation for Owl in front of Player
+      const flapSpeed = this.owlState === 'fly' ? 16 : owlSpeaking ? 13.5 : 10.5;
+      const flapAmp = this.owlState === 'fly' ? 0.65 : owlSpeaking ? 0.56 : 0.44;
+      const flap = Math.sin(this.elapsed * flapSpeed) * flapAmp;
+      this.owlRig.leftWing.rotation.z = 0.12 + flap;
+      this.owlRig.rightWing.rotation.z = -0.12 - flap;
+      const owlBlink = computeBlinkScale(this.elapsed, 0.9);
+      this.owlRig.leftEye.scale.y = owlBlink;
+      this.owlRig.rightEye.scale.y = owlBlink;
+
+      const hoverBob = Math.sin(this.elapsed * 3.4) * 0.22;
+      if (this.owlState === 'fly') {
+        const p = Math.min(1, this.storyTimer / 1.65);
+        const ease = 1 - Math.pow(1 - p, 3);
+        const startX = stage.owlX - 6.5;
+        const startY = stage.owlY + 6.5;
+        const startZ = stage.owlZ - 5.5;
+        this.owlRig.root.position.set(
+          THREE.MathUtils.lerp(startX, stage.owlX, ease),
+          THREE.MathUtils.lerp(startY, stage.owlY, ease) + hoverBob,
+          THREE.MathUtils.lerp(startZ, stage.owlZ, ease),
+        );
+        if (p >= 1) {
+          this.owlState = 'land';
+        }
+      } else {
+        this.owlRig.root.position.set(
+          stage.owlX + Math.sin(this.elapsed * 1.9) * 0.14,
+          stage.owlY + hoverBob,
+          stage.owlZ + Math.cos(this.elapsed * 1.7) * 0.12,
+        );
+      }
+
+      const faceHeroYaw = Math.atan2(
+        stage.heroX - this.owlRig.root.position.x,
+        stage.heroZ - this.owlRig.root.position.z,
+      );
+      this.owlRig.root.rotation.y =
+        faceHeroYaw + (owlSpeaking ? Math.sin(this.elapsed * 3.8) * 0.14 : Math.sin(this.elapsed * 1.6) * 0.06);
+      this.owlRig.root.rotation.x = owlSpeaking
+        ? 0.1 + Math.sin(this.elapsed * 7.5) * 0.12
+        : 0.06 + Math.sin(this.elapsed * 2.5) * 0.04;
+      this.owlRig.root.rotation.z = Math.sin(this.elapsed * 2.6) * 0.09;
+
+      // Side-angle 3D dialogue camera framing BOTH Hero & Owl clearly (never from behind either!)
+      const dx = stage.owlX - stage.heroX;
+      const dz = stage.owlZ - stage.heroZ;
+      const dist = Math.hypot(dx, dz) || 1;
+      const toOwlX = dx / dist;
+      const toOwlZ = dz / dist;
+      const sideX = -toOwlZ;
+      const sideZ = toOwlX;
+      const midX = (stage.heroX + stage.owlX) * 0.5;
+      const midZ = (stage.heroZ + stage.owlZ) * 0.5;
+
+      const lookX = midX;
+      const lookY = stage.heroY + 1.05;
+      const lookZ = midZ;
+      const offX = sideX * 5.6 - toOwlX * 0.6;
+      const offY = 1.9;
+      const offZ = sideZ * 5.6 - toOwlZ * 0.6;
+      const desiredDist = Math.hypot(offX, offY, offZ);
+      const safeDist = this.computeSpringArmDist(
+        lookX,
+        lookY,
+        lookZ,
+        offX / desiredDist,
+        offY / desiredDist,
+        offZ / desiredDist,
+        desiredDist,
+      );
+
+      _v1.set(
+        lookX + (offX / desiredDist) * safeDist,
+        lookY + (offY / desiredDist) * safeDist,
+        lookZ + (offZ / desiredDist) * safeDist,
+      );
+      _v2.set(lookX, lookY, lookZ);
+      const camLerp = 1 - Math.exp(-5.0 * dt);
+      this.camera.position.lerp(_v1, camLerp);
+      this.controls.target.lerp(_v2, camLerp);
+      return;
+    }
+
     const flap = Math.sin(this.elapsed * 16) * 0.65;
     this.owlRig.leftWing.rotation.z = flap;
     this.owlRig.rightWing.rotation.z = -flap;
     const owlBlink = computeBlinkScale(this.elapsed, 0.9);
     this.owlRig.leftEye.scale.y = owlBlink;
     this.owlRig.rightEye.scale.y = owlBlink;
-
-    if (this.owlState === 'fly') {
-      const p = Math.min(1, this.storyTimer / 2.6);
-      this.owlRig.root.position.set(
-        THREE.MathUtils.lerp(-24, 2, p),
-        10 - Math.sin(p * Math.PI) * 3.5,
-        THREE.MathUtils.lerp(18, 12, p),
-      );
-      this.owlRig.root.rotation.y = Math.PI * 0.45;
-    } else if (this.owlState === 'land') {
-      this.owlRig.root.position.y = 2.0 + Math.sin(this.elapsed * 3) * 0.2;
-      this.owlRig.leftWing.rotation.z = 0.15;
-      this.owlRig.rightWing.rotation.z = -0.15;
-    }
   }
 
   private updateWorldAnimations(dt: number): void {
@@ -14143,15 +14351,17 @@ export class RpgWorldEngine {
     }
 
     // Keep Hero breathing, blinking & alive even on title/story/dialogue/pause screens!
-    const inCaveCutscene =
+    const inStoryCutscene =
       this.phase === 'story' &&
-      (this.storyDialog?.kind === 'dungeon_intro' || this.storyDialog?.kind === 'dungeon_rescue');
+      (this.storyDialog?.kind === 'opening' ||
+        this.storyDialog?.kind === 'dungeon_intro' ||
+        this.storyDialog?.kind === 'dungeon_rescue');
     if (this.phase !== 'playing') {
       this.heroIdleTime = 0;
       this.heroThoughtText = null;
       this.heroThoughtTimer = 0;
     }
-    if (this.phase !== 'playing' && !inCaveCutscene) {
+    if (this.phase !== 'playing' && !inStoryCutscene) {
       const hasEquippedWeapon =
         this.activeHotbarSlot <= 7 && this.ownedWeapons.has(this.activeWeapon);
       applyHeroWeaponPose(this.hero, this.activeWeapon, hasEquippedWeapon, {
