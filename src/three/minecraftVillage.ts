@@ -604,7 +604,7 @@ function createLanternPost(palette: MaterialPalette, x: number, z: number): THRE
   return g;
 }
 
-function createVillagerMesh(
+export function createVillagerMesh(
   palette: MaterialPalette,
   archetype: NpcArchetypeId,
   variant?: NpcAppearanceVariant,
@@ -1676,9 +1676,9 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     const v = createVillagerMesh(palette, cp.archetype, cp.variant);
     v.waypoints = cp.waypoints;
     v.homeDoor = cp.homeDoor;
-    v.isInsideHouse = false;
-    _spawnScratch.x = cp.waypoints[0][0];
-    _spawnScratch.z = cp.waypoints[0][1];
+    v.isInsideHouse = true;
+    _spawnScratch.x = cp.homeDoor[0];
+    _spawnScratch.z = cp.homeDoor[1];
     pushOutFromBoxes(_spawnScratch, 0.56, obstacles);
     v.x = _spawnScratch.x;
     v.z = _spawnScratch.z;
@@ -1691,6 +1691,7 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     v.drivingVehicleId = null;
     v.vehicleCooldown = 0;
     v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z), v.z);
+    v.root.visible = false;
     const id = `villager_${cp.archetype}_${idx}`;
     v.root.userData.villageId = id;
     group.add(v.root);
@@ -1700,8 +1701,8 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
       : `${spec.socialMessageId} [${spec.professionId} · HP ${spec.stats.hp} / ATK ${spec.stats.atk} / NRG ${spec.stats.nrg}]`;
     const inter: VillageInteractable = {
       id,
-      x: v.x,
-      z: v.z,
+      x: 9999,
+      z: 9999,
       radius: 2.8,
       message: msg,
       mesh: v.root,
@@ -2600,7 +2601,7 @@ export function updateMinecraftVillage(
     mesh.instanceMatrix.needsUpdate = true;
   }
 
-  const shouldGoHome = dayPhase === 'sore' || dayPhase === 'malam';
+  const shouldGoHome = true;
 
   // 1. Villagers & Citizens: 60fps nearby animation + 8x distance-throttled movement on outer islands
   for (let i = 0; i < rig.villagers.length; i++) {

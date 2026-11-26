@@ -2649,7 +2649,10 @@ function DiglosaRpgApp() {
       )}
 
       {((hud.phase === 'playing' ||
-        (hud.phase === 'story' && hud.storyDialog?.kind !== 'prologue') ||
+        (hud.phase === 'story' &&
+          hud.storyDialog?.kind !== 'prologue' &&
+          hud.storyDialog?.kind !== 'owl_depart' &&
+          hud.storyDialog?.kind !== 'village_ambush') ||
         hud.phase === 'battle' ||
         hud.phase === 'learning' ||
         hud.phase === 'dialogue' ||

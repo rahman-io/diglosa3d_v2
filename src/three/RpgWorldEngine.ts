@@ -117,6 +117,7 @@ import { SEA_BIOTA_BY_ID } from './seaBiotaCatalog';
 import { createMaterialPalette, MaterialPalette } from './materials';
 import {
   createMinecraftVillageWorld,
+  createVillagerMesh,
   MinecraftVillageRig,
   resolveOBBvsOBB,
   resolveObstacleBoxes,
@@ -124,6 +125,7 @@ import {
   updateMinecraftVillage,
   VehicleHazard,
   VillageObstacle,
+  VillagerActor,
 } from './minecraftVillage';
 import {
   appendVehicleVillageColliders,
@@ -250,6 +252,7 @@ interface RoamingMonster {
   rewardScore: number;
   isBoss?: boolean;
   isAmbush?: boolean;
+  isVillageAmbushTarget?: boolean;
   isCaveMob?: boolean;
   isNightMonster?: boolean;
   isSeaMonster?: boolean;
@@ -555,6 +558,7 @@ const _skyDayCol = new THREE.Color(0x9cd6fc);
 const _skyDawnCol = new THREE.Color(0xfdba74);
 const _skyDuskCol = new THREE.Color(0xf97316);
 const _skyNightCol = new THREE.Color(0x091128);
+const _skyTenseMistCol = new THREE.Color(0x475569);
 const _sunDayCol = new THREE.Color(0xfff4d6);
 const _sunDawnCol = new THREE.Color(0xfdba74);
 const _sunNightCol = new THREE.Color(0x93c5fd);
@@ -1202,9 +1206,51 @@ export class RpgWorldEngine {
     textId: string;
     textEn: string;
   }> = [];
-  private owlState: 'hidden' | 'fly' | 'land' | 'leave' = 'hidden';
+  private owlState: 'hidden' | 'fly' | 'land' | 'leave' | 'leave_to_ambush' = 'hidden';
   private savedPrologueWorldTimeTick: number | null = null;
   private prologueRig: PrologueCutsceneRig | null = null;
+  private villageAmbushState: {
+    active: boolean;
+    inCutscene: boolean;
+    resolved: boolean;
+    timer: number;
+    abductedStartPos: THREE.Vector3;
+    abductor: {
+      mesh: THREE.Group;
+      x: number;
+      y: number;
+      z: number;
+      yaw: number;
+      active: boolean;
+    } | null;
+    npcs: Array<{
+      id: string;
+      actor: VillagerActor;
+      x: number;
+      y: number;
+      z: number;
+      yaw: number;
+      role: 'abducted' | 'survivor';
+      alive: boolean;
+      sheltering: boolean;
+      homeDoor: [number, number];
+      loopCenter: [number, number];
+      orbitPhase: number;
+      speed: number;
+      shoutCutscene: string;
+      shoutLive: string;
+    }>;
+    cutsceneMonsters: Array<{
+      mesh: THREE.Group;
+      type: MonsterType;
+      x: number;
+      y: number;
+      z: number;
+      yaw: number;
+      targetNpcIdx: number;
+      patrolPhase: number;
+    }>;
+  } | null = null;
   private cutsceneStartPos = new THREE.Vector3();
   private cutsceneTargetPos = new THREE.Vector3();
 
@@ -2937,7 +2983,14 @@ export class RpgWorldEngine {
       this.pushCircle2d(pos, os.x, os.z, selfRad + 0.85, 0.55);
     }
     for (const [nid, npc] of this.npcs.entries()) {
-      if (nid === selfNpcId || npc.koTimer > 0 || !this.isInDesaSapaanArea(npc.x, npc.z)) continue;
+      if (
+        nid === selfNpcId ||
+        npc.koTimer > 0 ||
+        !this.isNpcOnDuty(npc.shift) ||
+        !this.isInDesaSapaanArea(npc.x, npc.z)
+      ) {
+        continue;
+      }
       this.pushCircle2d(pos, npc.x, npc.z, selfRad + 0.62, 0.85);
     }
     for (let i = 0; i < this.villageRig.villagers.length; i++) {
@@ -3971,6 +4024,7 @@ export class RpgWorldEngine {
       return;
     }
     this.clearSubScenes();
+    this.clearVillageAmbushRig();
     this.resetCarToParked();
     this.resetPlanesToParked(false);
     this.worldMode = 'overworld';
@@ -5228,6 +5282,7 @@ export class RpgWorldEngine {
     },
   ): void {
     this.clearSubScenes();
+    this.clearVillageAmbushRig();
     this.clearOverworldNightMonsters();
     this.worldMode = 'overworld';
     this.overworldGroup.visible = true;
@@ -6288,8 +6343,25 @@ export class RpgWorldEngine {
     };
   }
 
-  private cleanupPrologueStage(): void {
-    soundEngine.setPrologueSceneMusic(null);
+  private clearVillageAmbushRig(): void {
+    const amb = this.villageAmbushState;
+    if (!amb) return;
+    if (amb.abductor) {
+      this.overworldGroup.remove(amb.abductor.mesh);
+    }
+    for (const n of amb.npcs) {
+      this.overworldGroup.remove(n.actor.root);
+    }
+    for (const cm of amb.cutsceneMonsters) {
+      this.overworldGroup.remove(cm.mesh);
+    }
+    this.villageAmbushState = null;
+  }
+
+  private cleanupPrologueStage(keepPrologueMusic = false): void {
+    if (!keepPrologueMusic) {
+      soundEngine.setPrologueSceneMusic(null);
+    }
     const istanaRig = this.archipelagoRig.istanaRig;
     if (this.prologueRig) {
       this.scene.remove(this.prologueRig.group);
@@ -6536,7 +6608,7 @@ export class RpgWorldEngine {
   }
 
   private startOpeningStory(): void {
-    this.cleanupPrologueStage();
+    this.cleanupPrologueStage(true);
     this.phase = 'story';
     this.applyCameraVisibilityAndControls();
     this.storyTimer = 0;
@@ -6673,6 +6745,11 @@ export class RpgWorldEngine {
       return;
     }
 
+    if (this.storyDialog.kind === 'village_ambush') {
+      this.finishVillageAmbushCutscene();
+      return;
+    }
+
     if (this.storyDialog.kind === 'dungeon_intro') {
       const zId = this.storyDialog.zoneId!;
       const story = ZONE_CAVE_STORIES[zId];
@@ -6803,6 +6880,10 @@ export class RpgWorldEngine {
       this.finishOpeningStory(true);
     } else if (this.storyDialog.kind === 'opening') {
       this.finishOpeningStory(true);
+    } else if (this.storyDialog.kind === 'owl_depart') {
+      this.startVillageAmbushCutscene();
+    } else if (this.storyDialog.kind === 'village_ambush') {
+      this.finishVillageAmbushCutscene();
     } else if (this.storyDialog.kind === 'dungeon_intro') {
       this.finishDungeonIntroCutscene();
     } else if (this.storyDialog.kind === 'dungeon_rescue') {
@@ -7004,30 +7085,334 @@ export class RpgWorldEngine {
   }
 
   private finishOpeningStory(skipped: boolean): void {
-    this.cleanupPrologueStage();
+    if (skipped) {
+      this.cleanupPrologueStage();
+      this.clearVillageAmbushRig();
+      this.hero.root.visible = true;
+      this.introDone = true;
+      this.storyDialog = null;
+      this.owlState = 'leave';
+      this.owlRig.root.rotation.set(0, Math.PI * 0.45, 0);
+      this.storyTimer = 0;
+      this.phase = 'playing';
+      const sp = OVERWORLD_ANCHORS.desaSpawn;
+      this.heroPos.set(sp.x, getArchipelagoGroundY(sp.x, sp.z), sp.z);
+      this.savedOverworldHeroPos.copy(this.heroPos);
+      this.heroYaw = sp.yaw;
+      this.hero.root.position.copy(this.heroPos);
+      this.hero.body.rotation.y = this.heroYaw;
+      this.applyCameraVisibilityAndControls();
+      this.snapCameraBehindHero();
+      this.saveProgress();
+      this.showBanner(
+        '🎯 Misi Awal (Desa Sapaan): Ikuti cahaya biru di kiri desa untuk ambil Senjata Pemula!',
+        5.0,
+      );
+      soundEngine.playBuild();
+      this.pushHud(true);
+      return;
+    }
+
+    // Burung Hantu terbang kembali setelah percakapan penyampaian surat, sambil BGM scene_5.mp3 tetap mengalun
+    this.cleanupPrologueStage(true);
     this.hero.root.visible = true;
     this.introDone = true;
-    this.storyDialog = null;
-    this.owlState = 'leave';
-    this.owlRig.root.rotation.set(0, Math.PI * 0.45, 0);
+    this.owlState = 'leave_to_ambush';
+    this.owlRig.root.visible = true;
+    this.owlRig.envelope.visible = false;
+    this.owlRig.root.rotation.set(-0.18, Math.PI * 0.25, 0);
     this.storyTimer = 0;
+    this.phase = 'story';
+    this.storyDialog = {
+      kind: 'owl_depart',
+      step: 0,
+      speakerName: 'Burung Hantu Pembawa Pesan',
+      speakerRole: 'Terbang Kembali',
+      textEn: '',
+      textId: '',
+      accentColor: '#f59e0b',
+    };
+    this.pushHud(true);
+  }
+
+  private startVillageAmbushCutscene(): void {
+    this.clearVillageAmbushRig();
+    this.owlRig.root.visible = false;
+    this.owlState = 'hidden';
+    this.phase = 'story';
+    this.heldKeys.clear();
+    this.applyCameraVisibilityAndControls();
+    this.storyTimer = 0;
+
+    // Putar scene_2.mp3 tepat saat serangan monster di depan mata pemain dimulai
+    soundEngine.setPrologueSceneMusic(1);
+    soundEngine.playMonster();
+
+    const sp = OVERWORLD_ANCHORS.desaSpawn;
+    this.heroPos.set(sp.x, getArchipelagoGroundY(sp.x, sp.z), sp.z);
+    this.savedOverworldHeroPos.copy(this.heroPos);
+    this.heroYaw = sp.yaw;
+    this.hero.root.visible = true;
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.body.rotation.y = this.heroYaw;
+
+    this.starterPickupMesh.visible = this.worldMode === 'overworld' && !this.starterWeaponPicked;
+
+    const npcConfigs: Array<{
+      id: string;
+      archetype: 'village_kid' | 'florist_girl' | 'farmer_boy';
+      role: 'abducted' | 'survivor';
+      x: number;
+      z: number;
+      loopCenter: [number, number];
+      homeDoor: [number, number];
+      orbitPhase: number;
+      speed: number;
+      shoutCutscene: string;
+      shoutLive: string;
+    }> = [
+      {
+        id: 'ambush_npc_abducted',
+        archetype: 'village_kid',
+        role: 'abducted',
+        x: -1.2,
+        z: 117.2,
+        loopCenter: [-1.2, 117.2],
+        homeDoor: [-14.0, 118.0],
+        orbitPhase: 0.2,
+        speed: 4.5,
+        shoutCutscene: '😱 Tolooong!! Monster terbang menyambar!',
+        shoutLive: '😱 Tolooong!!',
+      },
+      {
+        id: 'ambush_npc_survivor_1',
+        archetype: 'florist_girl',
+        role: 'survivor',
+        x: -3.6,
+        z: 114.2,
+        loopCenter: [-3.2, 115.4],
+        homeDoor: [-14.0, 118.0],
+        orbitPhase: 1.4,
+        speed: 4.9,
+        shoutCutscene: '😭 Tolong!! Monster mengejar kami!',
+        shoutLive: '🆘 Tolong! Cepat habisi monster itu!',
+      },
+      {
+        id: 'ambush_npc_survivor_2',
+        archetype: 'farmer_boy',
+        role: 'survivor',
+        x: 3.1,
+        z: 115.6,
+        loopCenter: [2.8, 114.8],
+        homeDoor: [11.5, 109.0],
+        orbitPhase: 3.6,
+        speed: 5.0,
+        shoutCutscene: '😱 Selamatkan kami!! Tolooong!!',
+        shoutLive: '⚠️ Ambil senjata di kiri & selamatkan kami!',
+      },
+    ];
+
+    const npcs = npcConfigs.map((cfg) => {
+      const actor = createVillagerMesh(this.palette, cfg.archetype);
+      const gy = getArchipelagoGroundY(cfg.x, cfg.z);
+      actor.x = cfg.x;
+      actor.z = cfg.z;
+      actor.root.position.set(cfg.x, gy, cfg.z);
+      this.overworldGroup.add(actor.root);
+      return {
+        id: cfg.id,
+        actor,
+        x: cfg.x,
+        y: gy,
+        z: cfg.z,
+        yaw: 0,
+        role: cfg.role,
+        alive: true,
+        sheltering: false,
+        homeDoor: cfg.homeDoor,
+        loopCenter: cfg.loopCenter,
+        orbitPhase: cfg.orbitPhase,
+        speed: cfg.speed,
+        shoutCutscene: cfg.shoutCutscene,
+        shoutLive: cfg.shoutLive,
+      };
+    });
+
+    // Monster terbang penculik 1 NPC ke langit
+    const abductorMesh = createMonsterMesh('stone_gargoyle', this.palette);
+    abductorMesh.scale.setScalar(1.12);
+    abductorMesh.position.set(-2.5, 13.5, 101.0);
+    this.overworldGroup.add(abductorMesh);
+
+    // 2 Monster darat yang terus menyerang 2 NPC lainnya di depan pemain
+    const attackerConfigs: Array<{ type: MonsterType; x: number; z: number; targetNpcIdx: number; phase: number }> = [
+      { type: 'thorn_goblin', x: -6.2, z: 109.0, targetNpcIdx: 1, phase: 0.4 },
+      { type: 'dire_wolf', x: 5.8, z: 109.5, targetNpcIdx: 2, phase: 2.1 },
+    ];
+    const cutsceneMonsters = attackerConfigs.map((ac) => {
+      const mesh = createMonsterMesh(ac.type, this.palette);
+      const gy = getArchipelagoGroundY(ac.x, ac.z);
+      mesh.position.set(ac.x, gy + MONSTER_SPECS[ac.type].hoverY, ac.z);
+      this.overworldGroup.add(mesh);
+      return {
+        mesh,
+        type: ac.type,
+        x: ac.x,
+        y: gy + MONSTER_SPECS[ac.type].hoverY,
+        z: ac.z,
+        yaw: 0,
+        targetNpcIdx: ac.targetNpcIdx,
+        patrolPhase: ac.phase,
+      };
+    });
+
+    this.villageAmbushState = {
+      active: true,
+      inCutscene: true,
+      resolved: false,
+      timer: 0,
+      abductedStartPos: new THREE.Vector3(npcConfigs[0].x, getArchipelagoGroundY(npcConfigs[0].x, npcConfigs[0].z), npcConfigs[0].z),
+      abductor: {
+        mesh: abductorMesh,
+        x: -2.5,
+        y: 13.5,
+        z: 101.0,
+        yaw: 0,
+        active: true,
+      },
+      npcs,
+      cutsceneMonsters,
+    };
+
+    const camStartX = this.heroPos.x - 2.6;
+    const camStartY = this.heroPos.y + 4.2;
+    const camStartZ = this.heroPos.z + 5.2;
+    this.camera.position.set(camStartX, camStartY, camStartZ);
+    this.controls.target.set(-0.8, this.heroPos.y + 2.2, 114.8);
+    this.controls.update();
+
+    this.storyDialog = {
+      kind: 'village_ambush',
+      step: 0,
+      sceneTitle: 'Desa Sapaan Diserang!',
+      speakerName: '⚠️ Desa Sapaan Diserang!',
+      speakerRole: 'Warga Dikejar Monster',
+      textEn: 'A flying monster abducted one villager into the sky! Press Mulai Main, grab the Starter Weapon on the left, and defeat the monsters chasing the two remaining villagers!',
+      textId: 'Satu warga baru saja dibawa terbang monster ke langit hingga menghilang! Dua warga lainnya masih diserang monster tepat di depanmu — tekan Mulai Main, segera ambil Senjata Pemula di sebelah kiri dan habisi monster-monster itu!',
+      accentColor: '#ef4444',
+    };
+    this.pushHud(true);
+  }
+
+  private finishVillageAmbushCutscene(): void {
+    soundEngine.setPrologueSceneMusic(null);
+    const amb = this.villageAmbushState;
+    if (amb && amb.inCutscene) {
+      amb.inCutscene = false;
+      // Ubah monster penyerang cutscene menjadi monster pertarungan NYATA di depan pemain!
+      for (let i = 0; i < amb.cutsceneMonsters.length; i++) {
+        const cm = amb.cutsceneMonsters[i];
+        this.overworldGroup.remove(cm.mesh);
+        const spec = MONSTER_SPECS[cm.type];
+        const mesh = createMonsterMesh(cm.type, this.palette);
+        const groundY = getArchipelagoGroundY(cm.x, cm.z);
+        const sy = groundY + spec.hoverY;
+        mesh.position.set(cm.x, sy, cm.z);
+        const ring = new THREE.Mesh(
+          new THREE.RingGeometry(0.85 * spec.baseScale, 1.15 * spec.baseScale, 20),
+          new THREE.MeshBasicMaterial({
+            color: 0xef4444,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.85,
+          }),
+        );
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.y = 0.06 - spec.hoverY;
+        mesh.add(ring);
+        mesh.userData.combatRing = ring;
+
+        this.nightMonsterSeq += 1;
+        const mId = `ambush_${Date.now()}_${i}_${this.nightMonsterSeq}`;
+        mesh.userData.monsterId = mId;
+        this.overworldGroup.add(mesh);
+        this.overworldClickables.push(mesh);
+
+        this.monsters.push({
+          id: mId,
+          type: cm.type,
+          name: spec.name,
+          zoneId: 'desa_sapaan',
+          homeX: cm.x,
+          homeZ: cm.z,
+          x: cm.x,
+          y: sy,
+          z: cm.z,
+          maxHp: spec.quizHp,
+          mobHp: 2,
+          maxMobHp: 2,
+          rewardXp: spec.rewardXp,
+          rewardDiamonds: spec.rewardDiamonds,
+          rewardScore: spec.rewardScore,
+          combatOnly: true,
+          isVillageAmbushTarget: true,
+          isNightMonster: this.getCurrentDayPhase() === 'malam',
+          aggroActive: true,
+          attackCooldown: 1.0,
+          windupTimer: -1,
+          lungeTimer: 0,
+          hitFlashTimer: 0,
+          mesh,
+          alive: true,
+          respawnTimer: 0,
+          patrolPhase: cm.patrolPhase,
+          angryTimer: 0,
+        });
+      }
+      amb.cutsceneMonsters = [];
+      this.rebuildOverworldMonsterPool();
+    }
+
+    this.storyDialog = null;
     this.phase = 'playing';
+    this.hero.root.visible = true;
     const sp = OVERWORLD_ANCHORS.desaSpawn;
     this.heroPos.set(sp.x, getArchipelagoGroundY(sp.x, sp.z), sp.z);
     this.savedOverworldHeroPos.copy(this.heroPos);
     this.heroYaw = sp.yaw;
     this.hero.root.position.copy(this.heroPos);
     this.hero.body.rotation.y = this.heroYaw;
+    this.starterPickupMesh.visible = this.worldMode === 'overworld' && !this.starterWeaponPicked;
     this.applyCameraVisibilityAndControls();
     this.snapCameraBehindHero();
     this.saveProgress();
     this.showBanner(
-      skipped
-        ? '🎯 Misi Awal (Desa Sapaan): Ikuti cahaya biru di kiri desa untuk ambil Senjata Pemula!'
-        : '🎯 Misi Pertama (Desa Sapaan): Ambil Senjata Pemula di sisi kiri desa lalu temui Tetua Adat!',
-      5.0,
+      '⚠️ CEPAT! Ambil Senjata Pemula di sebelah kiri dan habisi monster untuk menolong 2 warga!',
+      5.5,
     );
     soundEngine.playBuild();
+    this.pushHud(true);
+  }
+
+  private completeVillageAmbushRescue(): void {
+    const amb = this.villageAmbushState;
+    if (!amb || amb.resolved) return;
+    amb.resolved = true;
+    amb.timer = 0;
+    for (const npc of amb.npcs) {
+      if (npc.role === 'survivor' && npc.alive) {
+        npc.shoutLive = '🎉 Terima kasih Pahlawan! Kami berlindung di rumah!';
+      }
+    }
+    this.gainXp(60);
+    this.diamonds += 2;
+    this.addScore(250);
+    soundEngine.playWin();
+    this.showBanner(
+      '🎉 2 Warga Desa Sapaan terselamatkan & segera berlindung ke rumah! +60 XP · +2 💎',
+      5.2,
+    );
+    this.saveProgress();
     this.pushHud(true);
   }
 
@@ -7132,6 +7517,10 @@ export class RpgWorldEngine {
     const twilightGlow = Math.exp(-Math.pow((sunY + 0.02) / 0.22, 2));
     const isDawn = t >= 22200 || t < 1800;
 
+    const inProloguePeaceful =
+      this.phase === 'story' &&
+      this.storyDialog?.kind === 'prologue' &&
+      this.storyDialog.step === 0;
     const inPrologueScene2 =
       this.phase === 'story' &&
       this.storyDialog?.kind === 'prologue' &&
@@ -7150,6 +7539,9 @@ export class RpgWorldEngine {
     _skyColorScratch.lerp(isDawn ? _skyDawnCol : _skyDuskCol, twilightGlow * 0.28);
     if (inPrologueScene2) {
       _skyColorScratch.lerp(_hemiGndNightCol, 0.35 + stormMistT * 0.45);
+    } else if (!inProloguePeaceful) {
+      // Hawa monster menyelimuti seluruh kepulauan dengan kabut mencekam baik siang maupun malam
+      _skyColorScratch.lerp(_skyTenseMistCol, THREE.MathUtils.lerp(0.24, 0.56, daylight));
     }
 
     (this.scene.background as THREE.Color).copy(_skyColorScratch);
@@ -7157,9 +7549,12 @@ export class RpgWorldEngine {
       this.scene.fog.color.copy(_skyColorScratch);
       this.scene.fog.density = inPrologueScene2
         ? THREE.MathUtils.lerp(0.0072, 0.022, stormMistT)
-        : THREE.MathUtils.lerp(0.0068, 0.0034, daylight);
+        : inProloguePeaceful
+        ? THREE.MathUtils.lerp(0.0068, 0.003, daylight)
+        : THREE.MathUtils.lerp(0.0175, 0.0112, daylight) + twilightGlow * 0.0022;
     }
 
+    const moodLightFactor = inProloguePeaceful ? 1.0 : THREE.MathUtils.lerp(0.92, 0.78, daylight);
     _hemiSkyScratch
       .copy(_hemiSkyNightCol)
       .lerp(_hemiSkyDayCol, daylight)
@@ -7169,7 +7564,7 @@ export class RpgWorldEngine {
     this.hemiLight.groundColor.copy(_hemiGndScratch);
     this.hemiLight.intensity =
       (THREE.MathUtils.lerp(0.34, 0.98, daylight) + (this.preferLiteShader ? 0.2 : 0)) *
-      (inPrologueScene2 ? 1 - stormMistT * 0.42 : 1);
+      (inPrologueScene2 ? 1 - stormMistT * 0.42 : moodLightFactor);
 
     _sunColorScratch
       .copy(_sunNightCol)
@@ -7177,7 +7572,7 @@ export class RpgWorldEngine {
     this.sunLight.color.copy(_sunColorScratch);
     this.sunLight.intensity =
       (THREE.MathUtils.lerp(0.46, 1.95, daylight) + twilightGlow * 0.22) *
-      (inPrologueScene2 ? 1 - stormMistT * 0.48 : 1);
+      (inPrologueScene2 ? 1 - stormMistT * 0.48 : moodLightFactor);
 
     const focusX = inPrologueScene2
       ? OVERWORLD_ANCHORS.istanaFloating.x
@@ -7210,7 +7605,7 @@ export class RpgWorldEngine {
     this.rimLight.intensity =
       THREE.MathUtils.lerp(0.28, 0.42, daylight) + (this.preferLiteShader ? 0.08 : 0);
     if (!this.preferLiteShader) {
-      this.scene.environmentIntensity = THREE.MathUtils.lerp(0.32, 1.0, daylight);
+      this.scene.environmentIntensity = THREE.MathUtils.lerp(0.32, 1.0, daylight) * moodLightFactor;
     }
     this.playerCaveLight.intensity = daylight < 0.35 ? THREE.MathUtils.lerp(1.15, 0, daylight / 0.35) : 0;
     this.playerCaveLight.position.set(this.heroPos.x, this.heroPos.y + 2.6, this.heroPos.z);
@@ -13303,6 +13698,14 @@ export class RpgWorldEngine {
       );
     }
     if (this.worldMode === 'overworld') {
+      if (
+        m.isVillageAmbushTarget &&
+        this.villageAmbushState?.active &&
+        !this.villageAmbushState.resolved &&
+        !this.monsters.some((om) => om.alive && om.isVillageAmbushTarget)
+      ) {
+        this.completeVillageAmbushRescue();
+      }
       this.checkMissionWaveCompletion();
     }
     this.syncDungeonMonsterStats();
@@ -15984,11 +16387,283 @@ export class RpgWorldEngine {
     this.controls.target.lerp(_v2, camLerp);
   }
 
+  private animateVillagerPanic(
+    actor: VillagerActor,
+    walkPhase: number,
+    seed: number,
+    fleeSpeed: number,
+    inAir = false,
+  ): void {
+    const vBlink = computeBlinkScale(this.elapsed, seed);
+    actor.leftEye.scale.y = vBlink;
+    actor.rightEye.scale.y = vBlink;
+    const swing = Math.sin(walkPhase) * (inAir ? 1.05 : 0.88);
+    actor.leftLeg.rotation.x = swing;
+    actor.rightLeg.rotation.x = -swing;
+    actor.bodyPivot.position.y = inAir ? 0 : Math.abs(Math.sin(walkPhase)) * 0.12;
+    actor.bodyPivot.rotation.x = inAir ? 0.32 : 0.2;
+    actor.headGroup.rotation.y = Math.sin(this.elapsed * 12 + seed) * 0.5;
+    actor.headGroup.rotation.x = inAir ? -0.35 : -0.06;
+    actor.leftArm.rotation.x = inAir ? -2.2 + Math.sin(walkPhase) * 0.5 : -0.95 - swing * 0.65;
+    actor.rightArm.rotation.x = inAir ? -2.2 - Math.sin(walkPhase) * 0.5 : -0.95 + swing * 0.65;
+    actor.leftArm.rotation.z = 0.28;
+    actor.rightArm.rotation.z = -0.28;
+    void fleeSpeed;
+  }
+
+  private updateVillageAmbushState(dt: number): void {
+    const amb = this.villageAmbushState;
+    if (!amb || !amb.active) return;
+    amb.timer += dt;
+
+    // 1. Update monster terbang yang menculik 1 NPC ke langit lalu menghilang
+    if (amb.abductor && amb.abductor.active) {
+      const abd = amb.abductor;
+      const kidnapped = amb.npcs.find((n) => n.role === 'abducted');
+      const t = amb.timer;
+      if (t < 1.65) {
+        const p = t / 1.65;
+        const ease = p * p * (3 - 2 * p);
+        const startX = -2.5;
+        const startY = 13.5;
+        const startZ = 101.0;
+        const tgtX = kidnapped ? kidnapped.x : -1.2;
+        const tgtZ = kidnapped ? kidnapped.z : 117.2;
+        const tgtY = getArchipelagoGroundY(tgtX, tgtZ) + 2.35;
+        abd.x = THREE.MathUtils.lerp(startX, tgtX, ease);
+        abd.y = THREE.MathUtils.lerp(startY, tgtY, ease);
+        abd.z = THREE.MathUtils.lerp(startZ, tgtZ, ease);
+        abd.yaw = Math.atan2(tgtX - startX, tgtZ - startZ);
+      } else {
+        const liftDt = t - 1.65;
+        const climbSpeed = amb.inCutscene ? 6.2 : 11.5;
+        abd.y += climbSpeed * dt;
+        abd.z -= 4.2 * dt;
+        abd.x -= 1.4 * dt;
+        abd.yaw = Math.atan2(-1.4, -4.2);
+        if (kidnapped && kidnapped.alive) {
+          kidnapped.x = abd.x;
+          kidnapped.z = abd.z;
+          kidnapped.y = abd.y - 1.75;
+          kidnapped.yaw = abd.yaw + Math.PI;
+          kidnapped.actor.root.position.set(kidnapped.x, kidnapped.y, kidnapped.z);
+          kidnapped.actor.root.rotation.y = kidnapped.yaw;
+          kidnapped.actor.walkPhase += dt * 18;
+          this.animateVillagerPanic(kidnapped.actor, kidnapped.actor.walkPhase, 1.2, 6, true);
+        }
+        const fadeStart = 3.6;
+        if (liftDt >= fadeStart) {
+          const vanishP = THREE.MathUtils.clamp((liftDt - fadeStart) / 1.4, 0, 1);
+          const sc = Math.max(0.01, 1 - vanishP);
+          abd.mesh.scale.setScalar(1.12 * sc);
+          if (kidnapped && kidnapped.alive) {
+            kidnapped.actor.root.scale.setScalar(sc);
+          }
+          if (vanishP >= 1) {
+            abd.active = false;
+            abd.mesh.visible = false;
+            this.overworldGroup.remove(abd.mesh);
+            if (kidnapped) {
+              kidnapped.alive = false;
+              kidnapped.actor.root.visible = false;
+              this.overworldGroup.remove(kidnapped.actor.root);
+            }
+          }
+        }
+      }
+      if (abd.active) {
+        abd.mesh.position.set(abd.x, abd.y, abd.z);
+        abd.mesh.rotation.y = abd.yaw;
+        animateMonsterRig(abd.mesh, {
+          mode: t >= 1.5 && t < 2.2 ? 'attack' : 'patrol',
+          speed: 7.0,
+          walkPhase: this.elapsed * 9,
+          elapsed: this.elapsed,
+          phase: 0.7,
+          attackProgress: t >= 1.5 && t < 2.2 ? (t - 1.5) / 0.7 : 0,
+          dt,
+        });
+      }
+    }
+
+    // 2. Update NPC yang berlari panik atau masuk ke rumah setelah diselamatkan
+    const ambushMonsters = this.monsters.filter((m) => m.alive && m.isVillageAmbushTarget);
+    let anySurvivorAlive = false;
+
+    for (let i = 0; i < amb.npcs.length; i++) {
+      const n = amb.npcs[i];
+      if (!n.alive) continue;
+      if (n.role === 'abducted' && amb.timer >= 1.65) continue;
+
+      if (amb.resolved) {
+        anySurvivorAlive = true;
+        if (amb.timer < 1.15) {
+          // Melompat gembira sebentar lalu lari masuk ke rumah
+          n.yaw = Math.atan2(this.heroPos.x - n.x, this.heroPos.z - n.z);
+          n.y = getArchipelagoGroundY(n.x, n.z) + Math.abs(Math.sin(this.elapsed * 9 + i)) * 0.28;
+          n.actor.root.position.set(n.x, n.y, n.z);
+          n.actor.root.rotation.y = n.yaw;
+          n.actor.leftArm.rotation.x = -2.4;
+          n.actor.rightArm.rotation.x = -2.4;
+        } else {
+          const [hx, hz] = n.homeDoor;
+          const dx = hx - n.x;
+          const dz = hz - n.z;
+          const dist = Math.hypot(dx, dz);
+          if (dist < 1.35) {
+            n.alive = false;
+            n.sheltering = true;
+            n.actor.root.visible = false;
+            this.overworldGroup.remove(n.actor.root);
+            continue;
+          }
+          const step = Math.min(dist, 5.4 * dt);
+          n.x += (dx / dist) * step;
+          n.z += (dz / dist) * step;
+          n.y = getArchipelagoGroundY(n.x, n.z);
+          n.yaw = Math.atan2(dx, dz);
+          n.actor.walkPhase += dt * 13;
+          n.actor.root.position.set(n.x, n.y, n.z);
+          n.actor.root.rotation.y = n.yaw;
+          this.animateVillagerPanic(n.actor, n.actor.walkPhase, i * 2.1, 5.4, false);
+        }
+        continue;
+      }
+
+      anySurvivorAlive = true;
+      if (amb.inCutscene) {
+        const p = this.elapsed * (n.role === 'abducted' ? 1.1 : 1.35) + n.orbitPhase;
+        const radX = n.role === 'abducted' ? 1.45 : 3.2;
+        const radZ = n.role === 'abducted' ? 1.25 : 2.6;
+        const tx = n.loopCenter[0] + Math.cos(p) * radX;
+        const tz = n.loopCenter[1] + Math.sin(p) * radZ;
+        const dx = tx - n.x;
+        const dz = tz - n.z;
+        const dist = Math.hypot(dx, dz) || 1;
+        const step = Math.min(dist, n.speed * dt);
+        n.x += (dx / dist) * step;
+        n.z += (dz / dist) * step;
+        n.y = getArchipelagoGroundY(n.x, n.z);
+        n.yaw = Math.atan2(dx, dz);
+      } else {
+        // Saat mode main aktif, 2 NPC selamat terus berlari menghindar monster pengejar di alun-alun
+        let threatX = n.loopCenter[0];
+        let threatZ = n.loopCenter[1];
+        let bestD = Infinity;
+        for (const m of ambushMonsters) {
+          const d = Math.hypot(m.x - n.x, m.z - n.z);
+          if (d < bestD) {
+            bestD = d;
+            threatX = m.x;
+            threatZ = m.z;
+          }
+        }
+        const awayX = n.x - threatX;
+        const awayZ = n.z - threatZ;
+        const awayLen = Math.hypot(awayX, awayZ) || 1;
+        const toCenterX = n.loopCenter[0] - n.x;
+        const toCenterZ = n.loopCenter[1] - n.z;
+        const tangX = Math.cos(this.elapsed * 1.4 + n.orbitPhase) * 0.7;
+        const tangZ = Math.sin(this.elapsed * 1.4 + n.orbitPhase) * 0.7;
+        let dirX = (bestD < 12 ? awayX / awayLen : 0) + toCenterX * 0.28 + tangX;
+        let dirZ = (bestD < 12 ? awayZ / awayLen : 0) + toCenterZ * 0.28 + tangZ;
+        const dLen = Math.hypot(dirX, dirZ) || 1;
+        dirX /= dLen;
+        dirZ /= dLen;
+        _moveScratchOrClamp: {
+          const clampPt = this._desaColScratch;
+          clampPt.x = THREE.MathUtils.clamp(n.x + dirX * n.speed * dt, -10.5, 9.5);
+          clampPt.z = THREE.MathUtils.clamp(n.z + dirZ * n.speed * dt, 108.5, 123.5);
+          const gy = getArchipelagoGroundY(clampPt.x, clampPt.z);
+          resolveObstacleBoxes(clampPt, 0.56, this.villageRig.obstacles, gy, 2.0);
+          constrainToWalkableArchipelago(clampPt, 0.56);
+          n.yaw = Math.atan2(clampPt.x - n.x, clampPt.z - n.z);
+          n.x = clampPt.x;
+          n.z = clampPt.z;
+          n.y = getArchipelagoGroundY(n.x, n.z);
+          break _moveScratchOrClamp;
+        }
+      }
+
+      n.actor.walkPhase += dt * (10.5 + n.speed);
+      n.actor.root.position.set(n.x, n.y, n.z);
+      n.actor.root.rotation.y = n.yaw;
+      this.animateVillagerPanic(n.actor, n.actor.walkPhase, i * 2.3 + 0.5, n.speed, false);
+    }
+
+    // 3. Animasi monster penyerang saat masih dalam adegan cutscene (sebelum tombol Mulai Main ditekan)
+    if (amb.inCutscene) {
+      for (let i = 0; i < amb.cutsceneMonsters.length; i++) {
+        const cm = amb.cutsceneMonsters[i];
+        const target = amb.npcs[cm.targetNpcIdx] ?? amb.npcs[1];
+        if (!target) continue;
+        const spec = MONSTER_SPECS[cm.type];
+        const dx = target.x - cm.x;
+        const dz = target.z - cm.z;
+        const dist = Math.hypot(dx, dz) || 1;
+        if (dist > 1.35) {
+          const spd = 4.6 * spec.speedMult * dt;
+          cm.x += (dx / dist) * Math.min(dist - 1.1, spd);
+          cm.z += (dz / dist) * Math.min(dist - 1.1, spd);
+        }
+        cm.y = getArchipelagoGroundY(cm.x, cm.z) + spec.hoverY;
+        cm.yaw = Math.atan2(dx, dz);
+        cm.mesh.position.set(cm.x, cm.y, cm.z);
+        cm.mesh.rotation.y = cm.yaw;
+        const atkCycle = (this.elapsed * 1.45 + cm.patrolPhase) % 1;
+        const attacking = dist < 2.6 && atkCycle > 0.65;
+        animateMonsterRig(cm.mesh, {
+          mode: attacking ? 'attack' : 'patrol',
+          speed: 4.6,
+          walkPhase: this.elapsed * 8 + cm.patrolPhase,
+          elapsed: this.elapsed,
+          phase: cm.patrolPhase,
+          attackProgress: attacking ? (atkCycle - 0.65) / 0.35 : 0,
+          dt,
+        });
+      }
+    }
+
+    if (amb.resolved && !anySurvivorAlive && (!amb.abductor || !amb.abductor.active)) {
+      amb.active = false;
+      this.villageAmbushState = null;
+    }
+  }
+
   private updateStoryAnimations(dt: number): void {
     this.storyTimer += dt;
 
     if (this.storyDialog?.kind === 'prologue') {
       this.updatePrologueAnimations(dt);
+      return;
+    }
+
+    if (this.owlState === 'leave_to_ambush' && this.storyDialog?.kind === 'owl_depart') {
+      const flap = Math.sin(this.elapsed * 19) * 0.72;
+      this.owlRig.leftWing.rotation.z = flap;
+      this.owlRig.rightWing.rotation.z = -flap;
+      const owlBlink = computeBlinkScale(this.elapsed, 0.9);
+      this.owlRig.leftEye.scale.y = owlBlink;
+      this.owlRig.rightEye.scale.y = owlBlink;
+      this.owlRig.root.position.y += dt * 10.5;
+      this.owlRig.root.position.x += dt * 7.5;
+      this.owlRig.root.position.z -= dt * 6.5;
+      if (this.storyTimer >= 1.35) {
+        this.startVillageAmbushCutscene();
+      }
+      return;
+    }
+
+    if (this.storyDialog?.kind === 'village_ambush') {
+      this.updateVillageAmbushState(dt);
+      const lookX = -0.8;
+      const lookY = this.heroPos.y + 2.2;
+      const lookZ = 115.0;
+      _v1.set(this.heroPos.x - 2.6, this.heroPos.y + 4.3, this.heroPos.z + 5.2);
+      _v2.set(lookX, lookY, lookZ);
+      const camLerp = 1 - Math.exp(-5.0 * dt);
+      this.camera.position.lerp(_v1, camLerp);
+      this.controls.target.lerp(_v2, camLerp);
       return;
     }
 
@@ -16286,13 +16961,17 @@ export class RpgWorldEngine {
 
     // Keep Hero breathing, blinking & alive even on title/story/dialogue/pause screens!
     const inPrologue = this.phase === 'story' && this.storyDialog?.kind === 'prologue';
+    const inAmbushCutscene =
+      this.phase === 'story' && this.storyDialog?.kind === 'village_ambush';
     const inStoryCutscene =
       this.phase === 'story' &&
       (this.storyDialog?.kind === 'prologue' ||
         this.storyDialog?.kind === 'opening' ||
+        this.storyDialog?.kind === 'owl_depart' ||
+        this.storyDialog?.kind === 'village_ambush' ||
         this.storyDialog?.kind === 'dungeon_intro' ||
         this.storyDialog?.kind === 'dungeon_rescue');
-    if (inPrologue) {
+    if (inPrologue || inAmbushCutscene) {
       for (const m of this.overworldAllMonsters) {
         m.mesh.visible = false;
       }
@@ -16302,6 +16981,9 @@ export class RpgWorldEngine {
       for (const p of this.villageRig.pillagers) {
         p.root.visible = false;
       }
+    }
+    if (this.phase === 'playing' && this.villageAmbushState?.active && !this.villageAmbushState.inCutscene) {
+      this.updateVillageAmbushState(dt);
     }
     if (this.phase !== 'playing') {
       this.heroIdleTime = 0;
@@ -16462,11 +17144,12 @@ export class RpgWorldEngine {
         const minDistSq = Math.min(distSqH, dxC * dxC + dzC * dzC);
         const visLim = m.isSeaMonster || m.isSkyMonster ? 160 * 160 : 130 * 130;
         const keepVis =
-          !canVisCull ||
-          minDistSq <= visLim ||
-          Boolean(m.aggroActive) ||
-          m.sunburnTimer !== undefined ||
-          m.angryTimer > 0;
+          !inAmbushCutscene &&
+          (!canVisCull ||
+            minDistSq <= visLim ||
+            Boolean(m.aggroActive) ||
+            m.sunburnTimer !== undefined ||
+            m.angryTimer > 0);
         if (m.mesh.visible !== keepVis) {
           m.mesh.visible = keepVis;
           if (keepVis) {
@@ -16818,7 +17501,7 @@ export class RpgWorldEngine {
       }
 
       // Distance culling for far Overworld surface monsters (keeps 50-mob Night & 30-mob Day locked at 60 FPS)
-      const nearestBrawlerTgt =
+      let nearestBrawlerTgt =
         this.worldMode === 'overworld' && this.multiplayerActive
           ? this.getNearestPlayerTarget(m.x, m.z, 'overworld')
           : {
@@ -16831,6 +17514,34 @@ export class RpgWorldEngine {
               dist: Math.hypot(this.heroPos.x - m.x, this.heroPos.z - m.z),
               isLocal: true,
             };
+      let chasingAmbushNpc = false;
+      if (
+        m.isVillageAmbushTarget &&
+        this.villageAmbushState?.active &&
+        !this.villageAmbushState.resolved &&
+        nearestBrawlerTgt.dist > 6.5 &&
+        (m.mobHp ?? 2) >= (m.maxMobHp ?? 2)
+      ) {
+        let bestNpcDist = Infinity;
+        for (const ambNpc of this.villageAmbushState.npcs) {
+          if (!ambNpc.alive || ambNpc.role !== 'survivor') continue;
+          const dNpc = Math.hypot(ambNpc.x - m.x, ambNpc.z - m.z);
+          if (dNpc < bestNpcDist) {
+            bestNpcDist = dNpc;
+            chasingAmbushNpc = true;
+            nearestBrawlerTgt = {
+              x: ambNpc.x,
+              y: ambNpc.y,
+              z: ambNpc.z,
+              dx: ambNpc.x - m.x,
+              dz: ambNpc.z - m.z,
+              distSq: dNpc * dNpc,
+              dist: dNpc,
+              isLocal: false,
+            };
+          }
+        }
+      }
       const dxHero = nearestBrawlerTgt.dx;
       const dzHero = nearestBrawlerTgt.dz;
       const distSqHero = nearestBrawlerTgt.distSq;
@@ -16862,12 +17573,12 @@ export class RpgWorldEngine {
 
         const aggroRange =
           this.worldMode === 'overworld' ? spec.aggroRange : calmMult < 0.7 ? 7.8 : 12.8;
-        if (this.phase === 'playing' && distH < aggroRange) {
+        if (this.phase === 'playing' && (distH < aggroRange || chasingAmbushNpc)) {
           if (!m.aggroActive) {
             soundEngine.playMonster();
           }
           m.aggroActive = true;
-        } else if (this.worldMode === 'overworld' && distH > aggroRange + 7.0) {
+        } else if (this.worldMode === 'overworld' && !m.isVillageAmbushTarget && distH > aggroRange + 7.0) {
           m.aggroActive = false;
         }
 
@@ -17319,7 +18030,7 @@ export class RpgWorldEngine {
       halfD: 0.65,
     });
     for (const npc of this.npcs.values()) {
-      if (npc.koTimer > 0) continue;
+      if (npc.koTimer > 0 || !this.isNpcOnDuty(npc.shift)) continue;
       this.extraVillageColliders.push({
         x: npc.x,
         z: npc.z,
@@ -17446,16 +18157,26 @@ export class RpgWorldEngine {
     let npcIdx = 0;
     for (const [npcId, npc] of this.npcs.entries()) {
       const isOnDuty = (npc.shift === 'night') === isNightShift;
+      if (!isOnDuty) {
+        // NPC lepas piket bersembunyi aman di dalam rumah (tidak berkeliaran di luar saat keadaan mencekam)
+        npc.mesh.visible = false;
+        npc.alertMesh.visible = false;
+        npc.aura.group.visible = false;
+        npc.poseMode = 'stand';
+        npc.fleeTimer = 0;
+        npcIdx++;
+        continue;
+      }
       if (npc.koTimer > 0) {
         npc.koTimer = Math.max(0, npc.koTimer - dt);
         npc.mesh.visible = false;
         npc.alertMesh.visible = false;
         npc.aura.group.visible = false;
         if (npc.koTimer <= 0) {
-          const rx = isOnDuty ? npc.standX : npc.offDutyX;
-          const ry = isOnDuty ? npc.standY : npc.offDutyY;
-          const rz = isOnDuty ? npc.standZ : npc.offDutyZ;
-          const rYaw = isOnDuty ? npc.standRotY : npc.offDutyRotY;
+          const rx = npc.standX;
+          const ry = npc.standY;
+          const rz = npc.standZ;
+          const rYaw = npc.standRotY;
           npc.x = rx;
           npc.z = rz;
           npc.yaw = rYaw;
@@ -17464,17 +18185,17 @@ export class RpgWorldEngine {
           npc.mesh.position.set(rx, ry, rz);
           npc.mesh.visible = true;
           npc.aura.group.position.set(rx, ry, rz);
-          npc.aura.group.visible = !inPrologue && isOnDuty;
+          npc.aura.group.visible = !inPrologue && !inAmbushCutscene;
           this.spawnBurst(rx, ry + 1.2, rz, 0x38bdf8, 12);
         }
         npcIdx++;
         continue;
       }
       npc.mesh.visible = true;
-      npc.aura.group.visible = !inPrologue && isOnDuty;
+      npc.aura.group.visible = !inPrologue && !inAmbushCutscene;
 
       const q = this.quests.find((item) => item.npcId === npc.dayNpcId);
-      const showAlert = !inPrologue && isOnDuty && !q?.claimed;
+      const showAlert = !inPrologue && !inAmbushCutscene && !q?.claimed;
       const distHero = Math.hypot(this.heroPos.x - npc.x, this.heroPos.z - npc.z);
 
       // Threat scan: Overworld NPCs sprint away fast when a moving or honking car approaches
@@ -17735,7 +18456,7 @@ export class RpgWorldEngine {
         if (this.npcThoughtCooldown <= 0) {
           const candidates: string[] = [];
           for (const [id, npc] of this.npcs.entries()) {
-            if (npc.poseMode !== 'stand' || id === this.nearbyNpcId) continue;
+            if (!this.isNpcOnDuty(npc.shift) || npc.poseMode !== 'stand' || id === this.nearbyNpcId) continue;
             const dHero = Math.hypot(this.heroPos.x - npc.x, this.heroPos.z - npc.z);
             if (dHero < 26) candidates.push(id);
           }
@@ -17837,9 +18558,10 @@ export class RpgWorldEngine {
       this.hpRegenTimer = 0;
     }
 
+    const ambushActive = Boolean(this.villageAmbushState?.active && !this.villageAmbushState.resolved);
     if (this.ownedWeapons.has('ketapel') && this.weaponAmmo.ketapel < 5) {
       this.ketapelRegenTimer += dt;
-      if (this.ketapelRegenTimer >= 20) {
+      if (this.ketapelRegenTimer >= (ambushActive ? 4 : 20)) {
         this.ketapelRegenTimer = 0;
         this.weaponAmmo.ketapel += 1;
       }
@@ -18541,7 +19263,7 @@ export class RpgWorldEngine {
 
       // Prevent Hero from walking straight through Quest NPCs
       for (const npc of this.npcs.values()) {
-        if (npc.koTimer > 0) continue;
+        if (npc.koTimer > 0 || !this.isNpcOnDuty(npc.shift)) continue;
         const ny = getArchipelagoGroundY(npc.x, npc.z);
         pushHeroCircle(npc.x, ny, npc.z, 1.05, 2.4);
       }
@@ -19794,12 +20516,17 @@ export class RpgWorldEngine {
         this.ownedWeapons.add('ketapel');
         this.activeWeapon = 'ketapel';
         this.activeHotbarSlot = 0;
-        this.weaponAmmo.ketapel = Math.min(MAX_AMMO, this.weaponAmmo.ketapel + 6);
+        this.weaponAmmo.ketapel = Math.min(MAX_AMMO, this.weaponAmmo.ketapel + 8);
         this.refreshWeaponVisual();
         this.spawnBurst(sw.x, swY + 1.5, sw.z, 0xfacc15, 26);
         soundEngine.playPick();
+        const rescuePending = Boolean(
+          this.villageAmbushState?.active && !this.villageAmbushState.resolved,
+        );
         this.showBanner(
-          '✨ Senjata Pemula Didapat! (Damage Kecil: 1 · Jelajahi Gua & kalahkan Bos untuk senjata kuat!)',
+          rescuePending
+            ? '✨ Senjata Pemula Didapat! Cepat tembak & habisi monster yang mengejar warga di alun-alun!'
+            : '✨ Senjata Pemula Didapat! (Damage Kecil: 1 · Jelajahi Gua & kalahkan Bos untuk senjata kuat!)',
           4.8,
         );
         this.saveProgress();
@@ -19857,7 +20584,7 @@ export class RpgWorldEngine {
       if (this.carMode === 'none' && this.planeMode === 'none') {
         for (const npc of ALL_OVERWORLD_NPCS) {
           const live = this.npcs.get(npc.id);
-          if (live && live.koTimer > 0) continue;
+          if (live && (live.koTimer > 0 || !this.isNpcOnDuty(live.shift))) continue;
           const nx = live?.x ?? npc.x;
           const nz = live?.z ?? npc.z;
           const ny = getArchipelagoGroundY(nx, nz);
@@ -19865,7 +20592,8 @@ export class RpgWorldEngine {
           const d = Math.hypot(this.heroPos.x - nx, this.heroPos.z - nz);
           if (d >= 5.6) continue;
           const onDuty = live ? this.isNpcOnDuty(live.shift) : npc.shiftRole !== 'night';
-          const score = d - (onDuty ? 0.65 : 0);
+          if (!onDuty) continue;
+          const score = d - 0.65;
           if (score < bestNpcScore) {
             bestNpcScore = score;
             bestNpc = npc.id;
@@ -21581,6 +22309,46 @@ export class RpgWorldEngine {
       return labels;
     }
 
+    if (this.villageAmbushState?.active) {
+      const amb = this.villageAmbushState;
+      for (const n of amb.npcs) {
+        if (!n.alive) continue;
+        const p = projectPoint(n.x, n.y + 2.65, n.z);
+        if (!p) continue;
+        const msg =
+          n.role === 'abducted'
+            ? amb.timer >= 1.65
+              ? '😱 Tidaaak! Tolooong!!'
+              : n.shoutCutscene
+            : amb.inCutscene
+            ? n.shoutCutscene
+            : n.shoutLive;
+        labels.push({
+          id: `amb_npc_${n.id}`,
+          x: p.x,
+          y: p.y,
+          title: msg,
+          kind: 'speech',
+        });
+      }
+      if (amb.inCutscene) {
+        if (this.starterPickupMesh.visible) {
+          const sw = OVERWORLD_ANCHORS.starterWeapon;
+          const sp = projectPoint(sw.x, getArchipelagoGroundY(sw.x, sw.z) + 3.2, sw.z);
+          if (sp) {
+            labels.push({
+              id: 'amb_starter_hint',
+              x: sp.x,
+              y: sp.y,
+              title: '✨ Senjata Pemula (Ambil di sini!)',
+              kind: 'pickup',
+            });
+          }
+        }
+        return labels;
+      }
+    }
+
     if (this.phase !== 'playing' && this.phase !== 'title') return [];
 
     if (
@@ -21825,6 +22593,7 @@ export class RpgWorldEngine {
       const liveNpc = this.npcs.get(npc.id);
       if (liveNpc && liveNpc.koTimer > 0) continue;
       const isOnDuty = liveNpc ? this.isNpcOnDuty(liveNpc.shift) : npc.shiftRole !== 'night';
+      if (!isOnDuty) continue;
       const nx = liveNpc?.x ?? npc.x;
       const nz = liveNpc?.z ?? npc.z;
       const ny = getArchipelagoGroundY(nx, nz);

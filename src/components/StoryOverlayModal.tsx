@@ -269,6 +269,70 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
 }) => {
   if (!story) return null;
 
+  if (story.kind === 'owl_depart') {
+    return null;
+  }
+
+  if (story.kind === 'village_ambush') {
+    return (
+      <>
+        {projectedLabels && projectedLabels.length > 0 && (
+          <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden">
+            {projectedLabels.map((lbl) => (
+              <div
+                key={lbl.id}
+                style={{ transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)` }}
+                className={`absolute left-0 top-0 whitespace-nowrap shadow-lg ${
+                  lbl.kind === 'speech'
+                    ? 'rounded-2xl border-2 border-rose-400 bg-white/95 px-3 py-1 text-xs font-extrabold text-rose-700'
+                    : 'rounded-xl border border-rose-300/80 bg-slate-950/85 px-2.5 py-1 text-[11px] font-bold text-rose-200'
+                }`}
+              >
+                {lbl.title}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex flex-col items-center px-3 pb-3 sm:px-6 sm:pb-5">
+          <div className="pointer-events-auto flex w-full max-w-3xl flex-col gap-2.5 rounded-2xl border-2 border-rose-400/70 bg-slate-950/70 px-4 py-3 text-amber-50 shadow-[0_10px_32px_rgba(0,0,0,0.6)] backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-3.5">
+            <div className="min-w-0 flex-1">
+              <div className="mb-1 flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center rounded-full border border-rose-400/70 bg-rose-600/85 px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wide text-white">
+                  {story.speakerName}
+                </span>
+                {onToggleMute && (
+                  <button
+                    type="button"
+                    onClick={onToggleMute}
+                    title={muted ? 'Nyalakan Musik & Suara' : 'Bisukan Musik & Suara'}
+                    className={`flex h-6 w-6 items-center justify-center rounded-lg border transition ${
+                      muted
+                        ? 'border-rose-400/60 bg-rose-950/75 text-rose-200 hover:bg-rose-900/75'
+                        : 'border-white/25 bg-slate-900/60 text-amber-100 hover:bg-slate-800/75'
+                    }`}
+                  >
+                    {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+                  </button>
+                )}
+              </div>
+              <p className="text-xs font-bold leading-relaxed text-white sm:text-sm">
+                {story.textId}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={onAdvance}
+              className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-xl border-2 border-amber-200 bg-gradient-to-r from-emerald-500 to-lime-400 px-5 py-2.5 text-sm font-black text-slate-950 shadow-lg transition hover:brightness-105 active:scale-95"
+            >
+              <span>Mulai Main</span>
+              <ChevronRight className="h-4 w-4" />
+            </button>
+          </div>
+        </div>
+      </>
+    );
+  }
+
   if (story.kind === 'prologue') {
     return (
       <StorybookPrologueBox

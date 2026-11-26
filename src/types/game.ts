@@ -421,6 +421,8 @@ export interface StoryDialogState {
   kind:
     | 'prologue'
     | 'opening'
+    | 'owl_depart'
+    | 'village_ambush'
     | 'area_cleared'
     | 'defeat_exit'
     | 'dungeon_intro'
