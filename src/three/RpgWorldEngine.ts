@@ -1047,6 +1047,11 @@ export class RpgWorldEngine {
   private hitMarkerKind: 'none' | 'hit' | 'kill' = 'none';
   private damageFlashTimer = 0;
   private damageFlashSeq = 0;
+  private lastDamageAmount = 1;
+  private lastDamageDir: 'front' | 'back' | 'left' | 'right' | 'center' = 'center';
+  private lastDefeatReason: string | null = null;
+  private cameraShakeTimer = 0;
+  private cameraShakeStrength = 0;
   private crosshairOnEnemy = false;
   private pointerLocked = false;
   private heroIdleTime = 0;
@@ -5058,6 +5063,11 @@ export class RpgWorldEngine {
     this.crosshairSpread = 0;
     this.crosshairOnEnemy = false;
 
+    this.damageFlashTimer = 0;
+    this.cameraShakeTimer = 0;
+    this.lastDefeatReason = null;
+    this.lastDamageDir = 'center';
+    this.lastDamageAmount = 1;
     const startHp = DIFF_CONFIG[this.settings.difficulty].startHp;
     this.xp = 0;
     this.hp = startHp;
@@ -6722,6 +6732,7 @@ export class RpgWorldEngine {
 
   private triggerDefeatExit(lastZoneId?: ZoneId): void {
     this.damageFlashTimer = 0;
+    this.cameraShakeTimer = 0;
     this.clearSubScenes();
     this.worldMode = 'overworld';
     this.overworldGroup.visible = true;
@@ -6757,6 +6768,7 @@ export class RpgWorldEngine {
       textEn: 'Rest up, Hoot! Your heart is half-recovered. Want to head right back or catch your breath first?',
       textId: `Jangan menyerah, Hoot! Nyawamu dipulihkan (${this.hp}/${this.maxHp} ❤️). Ingin langsung kembali ke ${npc?.zoneName || 'sana'} atau istirahat dulu?`,
       accentColor: npc?.accentColor || '#f59e0b',
+      defeatReason: this.lastDefeatReason || undefined,
     };
     soundEngine.playLose();
     this.saveProgress();
@@ -6775,6 +6787,7 @@ export class RpgWorldEngine {
     this.lookPointer = null;
     if (next !== 'playing') {
       this.damageFlashTimer = 0;
+      this.cameraShakeTimer = 0;
       this.voiceMoveTimer = 0;
       this.voiceMoveVec = { x: 0, z: 0 };
       this.voiceSprint = false;
@@ -10711,6 +10724,7 @@ export class RpgWorldEngine {
       _forward.set(Math.sin(this.heroYaw), 0, Math.cos(this.heroYaw));
       this.heroVel.addScaledVector(_forward, -16);
       if (this.hp <= 0) {
+        this.lastDefeatReason = 'Kehabisan nyawa saat kabur dari duel';
         if (this.worldMode !== 'overworld') {
           this.triggerDefeatExit(battle.zoneId);
         } else {
@@ -10719,6 +10733,7 @@ export class RpgWorldEngine {
         }
       } else {
         this.phase = 'playing';
+        this.triggerDamageFlash(1, 'Kehabisan nyawa saat kabur dari duel');
         this.showBanner('Berhasil kabur dari duel (-1 ❤️)', 2.4);
       }
       this.saveProgress();
@@ -10727,6 +10742,10 @@ export class RpgWorldEngine {
     }
 
     if (outcome === 'defeat' || this.hp <= 0) {
+      const lostMonster = this.getActiveMonsters().find((item) => item.id === battle.monsterId);
+      this.lastDefeatReason = lostMonster
+        ? `Kalah duel melawan ${lostMonster.name}`
+        : 'Kalah dalam duel kuis melawan monster';
       if (this.worldMode !== 'overworld') {
         this.triggerDefeatExit(battle.zoneId);
       } else {
@@ -11387,9 +11406,9 @@ export class RpgWorldEngine {
     this.phase = 'playing';
     this.applyCameraVisibilityAndControls();
 
+    const blk = this.dungeonRig?.caveBlocks.find((b) => b.id === blockId && b.alive);
     if (correct) {
       this.localMabarStats.challenges += 1;
-      const blk = this.dungeonRig?.caveBlocks.find((b) => b.id === blockId && b.alive);
       if (blk) {
         this.shatterCaveBlock(blk, true);
       } else {
@@ -11400,11 +11419,11 @@ export class RpgWorldEngine {
     } else {
       this.hp = Math.max(0, this.hp - 1);
       soundEngine.playHurt();
+      this.triggerDamageFlash(1, 'Gagal menjawab tantangan segel gua', blk ? { x: blk.x, z: blk.z } : undefined);
       if (this.hp <= 0) {
         this.triggerDefeatExit(this.dungeonState?.zoneId);
         return;
       }
-      this.triggerDamageFlash();
       this.showBanner('Jawaban belum tepat! Segel tetap kokoh (-1 ❤️)', 2.8);
     }
     this.saveProgress();
@@ -12412,10 +12431,47 @@ export class RpgWorldEngine {
     this.hitMarkerKind = isKill ? 'kill' : 'hit';
   }
 
-  private triggerDamageFlash(): void {
-    this.damageFlashTimer = 0.58;
-    this.damageFlashSeq += 1;
-    this.pushHud(true);
+  private computeDamageDirection(
+    sourcePos?: { x: number; z: number },
+  ): 'front' | 'back' | 'left' | 'right' | 'center' {
+    if (!sourcePos) return 'center';
+    const dx = sourcePos.x - this.heroPos.x;
+    const dz = sourcePos.z - this.heroPos.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist < 0.15) return 'center';
+    this.camera.getWorldDirection(_v1);
+    _v1.y = 0;
+    if (_v1.lengthSq() < 0.001) {
+      _v1.set(Math.sin(this.heroYaw), 0, Math.cos(this.heroYaw));
+    }
+    _v1.normalize();
+    const fx = _v1.x;
+    const fz = _v1.z;
+    const rx = -fz;
+    const rz = fx;
+    const forwardDot = (dx * fx + dz * fz) / dist;
+    const rightDot = (dx * rx + dz * rz) / dist;
+    if (Math.abs(rightDot) >= Math.abs(forwardDot)) {
+      return rightDot >= 0 ? 'right' : 'left';
+    }
+    return forwardDot >= 0 ? 'front' : 'back';
+  }
+
+  private triggerDamageFlash(
+    amount = 1,
+    reason = 'Serangan monster',
+    sourcePos?: { x: number; z: number },
+  ): void {
+    this.lastDamageAmount = Math.max(1, amount);
+    this.lastDefeatReason = reason;
+    this.lastDamageDir = this.computeDamageDirection(sourcePos);
+    this.cameraShakeTimer = 0.34;
+    this.cameraShakeStrength = amount >= 2 ? 0.38 : 0.25;
+    if (this.hp > 0) {
+      this.damageFlashTimer = 0.58;
+      this.damageFlashSeq += 1;
+      this.pushHud(true);
+    }
   }
 
   private getCrosshairAimInfo(): { point: THREE.Vector3; hitEnemy: boolean } {
@@ -13807,7 +13863,27 @@ export class RpgWorldEngine {
       }
     }
 
+    const applyCamShake = this.phase === 'playing' && this.cameraShakeTimer > 0;
+    let shakeOffX = 0;
+    let shakeOffY = 0;
+    let shakeOffZ = 0;
+    if (applyCamShake) {
+      const shakeT = this.cameraShakeTimer / 0.34;
+      const modeScale = this.cameraMode === 'first_person' ? 0.42 : 1.0;
+      const amp = this.cameraShakeStrength * shakeT * shakeT * modeScale;
+      shakeOffX = Math.sin(this.elapsed * 58) * amp;
+      shakeOffY = Math.cos(this.elapsed * 73) * amp * 0.72;
+      shakeOffZ = Math.sin(this.elapsed * 49 + 1.3) * amp;
+      this.camera.position.x += shakeOffX;
+      this.camera.position.y += shakeOffY;
+      this.camera.position.z += shakeOffZ;
+    }
     this.renderer.render(this.scene, this.camera);
+    if (applyCamShake) {
+      this.camera.position.x -= shakeOffX;
+      this.camera.position.y -= shakeOffY;
+      this.camera.position.z -= shakeOffZ;
+    }
     const workMs = performance.now() - now;
     this.emaFrameWorkMs = this.emaFrameWorkMs * 0.9 + workMs * 0.1;
 
@@ -14311,13 +14387,13 @@ export class RpgWorldEngine {
           this.heroVelY = 4.2;
           this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.2, this.heroPos.z, 0xef4444, 14);
           this.showBanner(`⚔️ Diserang ${m.name}! (-${dmg} ❤️)`, 2.0);
+          this.triggerDamageFlash(dmg, `Serangan ${m.name}`, { x: m.x, z: m.z });
           if (this.hp <= 0) {
             this.phase = 'gameover';
             soundEngine.playLose();
             this.pushHud(true);
             return;
           }
-          this.triggerDamageFlash();
         }
         continue;
       }
@@ -14455,11 +14531,11 @@ export class RpgWorldEngine {
                     'BOOM! Terkena semburan Cave Spider! Tahan dengan Blok Pelindung (-1 ❤️)',
                     2.6,
                   );
+                  this.triggerDamageFlash(1, 'Ledakan racun Cave Spider', { x: m.x, z: m.z });
                   if (this.hp <= 0) {
                     this.triggerDefeatExit(this.dungeonState?.zoneId);
                     return;
                   }
-                  this.triggerDamageFlash();
                 }
               }
             }
@@ -14571,11 +14647,11 @@ export class RpgWorldEngine {
           m.x = THREE.MathUtils.clamp(m.x - (dxH / len) * 2.8, -17.5, 17.5);
           m.z = THREE.MathUtils.clamp(m.z - (dzH / len) * 2.8, -17.5, 17.5);
           this.showBanner(`Diserang ${m.name}! Tembak dengan senjatamu (-1 ❤️)`, 2.2);
+          this.triggerDamageFlash(1, `Serangan ${m.name}`, { x: m.x, z: m.z });
           if (this.hp <= 0) {
             this.triggerDefeatExit(this.dungeonState?.zoneId);
             return;
           }
-          this.triggerDamageFlash();
         }
         continue;
       }
@@ -14698,6 +14774,7 @@ export class RpgWorldEngine {
               `⚔️ Diserang ${m.name} (ATK ${spec.stats.atk})! Lompat / Tembak (-${dmg} ❤️)`,
               2.2,
             );
+            this.triggerDamageFlash(dmg, `Serangan ${m.name}`, { x: m.x, z: m.z });
             if (this.hp <= 0) {
               if (this.worldMode !== 'overworld') {
                 this.triggerDefeatExit(this.dungeonState?.zoneId);
@@ -14708,7 +14785,6 @@ export class RpgWorldEngine {
               }
               return;
             }
-            this.triggerDamageFlash();
           }
         } else if (m.windupTimer !== undefined && m.windupTimer > 0) {
           // Phase B: Telegraphing windup before lunge
@@ -15638,6 +15714,9 @@ export class RpgWorldEngine {
     if (this.damageFlashTimer > 0) {
       this.damageFlashTimer = Math.max(0, this.damageFlashTimer - dt);
     }
+    if (this.cameraShakeTimer > 0) {
+      this.cameraShakeTimer = Math.max(0, this.cameraShakeTimer - dt);
+    }
     this.recoilPitch = THREE.MathUtils.damp(this.recoilPitch, 0, 11, dt);
     this.crosshairSpread = THREE.MathUtils.damp(this.crosshairSpread, 0, 9, dt);
 
@@ -16000,11 +16079,11 @@ export class RpgWorldEngine {
                 '🫧 Kehabisan napas! Cari Gelembung O₂, naik ke permukaan, atau ambil Pakaian Renang! (-1 ❤️)',
                 2.5,
               );
+              this.triggerDamageFlash(1, 'Kehabisan oksigen di bawah laut');
               if (this.hp <= 0) {
                 this.triggerDefeatExit();
                 return;
               }
-              this.triggerDamageFlash();
             }
           } else {
             this.oceanSuffocateTimer = 0;
@@ -16057,11 +16136,11 @@ export class RpgWorldEngine {
           soundEngine.playHurt();
           this.spawnBurst(this.heroPos.x, this.heroPos.y + 0.9, this.heroPos.z, 0xf97316, 12);
           this.showBanner('🔥 Tersengat Karang Api! Menjauh sedikit dari koral jingga (-1 ❤️)', 2.4);
+          this.triggerDamageFlash(1, 'Sengatan Karang Api', { x: node.x, z: node.z });
           if (this.hp <= 0) {
             this.triggerDefeatExit();
             return;
           }
-          this.triggerDamageFlash();
         }
         if (node.speciesId === 'sea_turtle' && d3 < 4.4) {
           nearTurtle = true;
@@ -16634,13 +16713,16 @@ export class RpgWorldEngine {
             `⚠️ Terkena ${obsEval.hazardHit.name}! ${obsEval.hazardHit.hint} (-1 ❤️)`,
             2.8,
           );
+          this.triggerDamageFlash(1, `Rintangan ${obsEval.hazardHit.name}`, {
+            x: this.heroPos.x - obsEval.hazardHit.knockX,
+            z: this.heroPos.z - obsEval.hazardHit.knockZ,
+          });
           if (this.hp <= 0) {
             this.phase = 'gameover';
             soundEngine.playLose();
             this.pushHud(true);
             return;
           }
-          this.triggerDamageFlash();
         }
       }
 
@@ -16713,13 +16795,13 @@ export class RpgWorldEngine {
                   '🫧 Kehabisan napas! Cari Gelembung O₂, berenang naik, atau ambil Pakaian Renang! (-1 ❤️)',
                   2.5,
                 );
+                this.triggerDamageFlash(1, 'Kehabisan oksigen di bawah laut');
                 if (this.hp <= 0) {
                   this.phase = 'gameover';
                   soundEngine.playLose();
                   this.pushHud(true);
                   return;
                 }
-                this.triggerDamageFlash();
               }
             } else {
               this.oceanSuffocateTimer = 0;
@@ -16771,13 +16853,13 @@ export class RpgWorldEngine {
             soundEngine.playHurt();
             this.spawnBurst(this.heroPos.x, this.heroPos.y + 0.9, this.heroPos.z, 0xf97316, 12);
             this.showBanner('🔥 Tersengat Karang Api! Menjauh sedikit dari koral jingga (-1 ❤️)', 2.4);
+            this.triggerDamageFlash(1, 'Sengatan Karang Api', { x: node.x, z: node.z });
             if (this.hp <= 0) {
               this.phase = 'gameover';
               soundEngine.playLose();
               this.pushHud(true);
               return;
             }
-            this.triggerDamageFlash();
           }
           if (node.speciesId === 'sea_turtle' && d3 < 4.6) {
             nearTurtle = true;
@@ -17919,11 +18001,15 @@ export class RpgWorldEngine {
             : 'Kena Jebakan Duri! Tunggu duri turun sebelum lewat (-1 ❤️)',
           2.4,
         );
+        this.triggerDamageFlash(
+          1,
+          trap.kind === 'lava' ? 'Lantai Lava Gua' : 'Jebakan Duri Gua',
+          { x: trap.x, z: trap.z },
+        );
         if (this.hp <= 0) {
           this.triggerDefeatExit(this.dungeonState?.zoneId);
           return;
         }
-        this.triggerDamageFlash();
       }
     }
 
@@ -18011,11 +18097,11 @@ export class RpgWorldEngine {
             'Kena Batu Runtuh Bos! Hindari lingkaran merah di lantai (-1 ❤️)',
             2.4,
           );
+          this.triggerDamageFlash(1, 'Batu Runtuh Bos Gua', { x: b.x, z: b.z });
           if (this.hp <= 0) {
             this.triggerDefeatExit(this.dungeonState?.zoneId);
             return;
           }
-          this.triggerDamageFlash();
         }
       }
     }
@@ -18042,11 +18128,11 @@ export class RpgWorldEngine {
           'Awas Jurang Lava! Lompat (⬆️ / J) atau pasang Blok Pelindung sebagai jembatan (-1 ❤️)',
           2.6,
         );
+        this.triggerDamageFlash(1, 'Jatuh ke Jurang Lava Gua', { x: chasm.x, z: chasm.z });
         if (this.hp <= 0) {
           this.triggerDefeatExit(this.dungeonState?.zoneId);
           return;
         }
-        this.triggerDamageFlash();
       }
     }
 
@@ -18152,11 +18238,11 @@ export class RpgWorldEngine {
           this.hp = Math.max(0, this.hp - 1);
           this.encounterGraceTimer = 1.4;
           soundEngine.playHurt();
+          this.triggerDamageFlash(1, 'Ledakan TNT di jarak dekat', { x: tnt.x, z: tnt.z });
           if (this.hp <= 0) {
             this.triggerDefeatExit(this.dungeonState?.zoneId);
             return;
           }
-          this.triggerDamageFlash();
         }
 
         this.showBanner(
@@ -19017,6 +19103,10 @@ export class RpgWorldEngine {
           this.encounterGraceTimer = 1.6;
           soundEngine.playHurt();
           this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.5, this.heroPos.z, 0xf43f5e, 14);
+          this.triggerDamageFlash(1, 'Tembakan proyektil monster', {
+            x: this.heroPos.x - p.vx,
+            z: this.heroPos.z - p.vz,
+          });
           if (this.hp <= 0) {
             if (this.worldMode !== 'overworld') {
               this.triggerDefeatExit(this.dungeonState?.zoneId);
@@ -19027,7 +19117,6 @@ export class RpgWorldEngine {
             }
           } else {
             this.showBanner('💥 Terkena tembakan monster! (-1 ❤️)', 1.9);
-            this.triggerDamageFlash();
           }
         }
       }
@@ -19704,13 +19793,13 @@ export class RpgWorldEngine {
             : `🌊 Diserang ${m.name}! Pakai senjata wilayah untuk membunuhnya (-${dmg} ❤️)`,
           2.6,
         );
+        this.triggerDamageFlash(dmg, `Serangan ${m.name}`, { x: m.x, z: m.z });
         if (this.hp <= 0) {
           this.phase = 'gameover';
           soundEngine.playLose();
           this.pushHud(true);
           return;
         }
-        this.triggerDamageFlash();
       }
     } else if (m.windupTimer !== undefined && m.windupTimer > 0) {
       m.windupTimer -= dt;
@@ -19987,13 +20076,13 @@ export class RpgWorldEngine {
         this.heroVelY = 3.8;
         this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.4, this.heroPos.z, 0xf97316, 16);
         this.showBanner(`🦅 Diserang ${m.name} dari langit! (-${dmg} ❤️)`, 2.4);
+        this.triggerDamageFlash(dmg, `Serangan ${m.name} dari langit`, { x: m.x, z: m.z });
         if (this.hp <= 0) {
           this.phase = 'gameover';
           soundEngine.playLose();
           this.pushHud(true);
           return;
         }
-        this.triggerDamageFlash();
       }
     } else if (m.windupTimer !== undefined && m.windupTimer > 0) {
       m.windupTimer -= dt;
@@ -21031,6 +21120,9 @@ export class RpgWorldEngine {
       isAiming: this.isAiming,
       hitMarkerKind: this.hitMarkerTimer > 0 ? this.hitMarkerKind : 'none',
       damageFlashSeq: this.damageFlashTimer > 0 ? this.damageFlashSeq : 0,
+      lastDamageAmount: this.lastDamageAmount,
+      lastDamageDir: this.lastDamageDir,
+      defeatReason: this.phase === 'gameover' ? this.lastDefeatReason : null,
       crosshairOnEnemy: this.crosshairOnEnemy,
       crosshairSpread: Math.min(
         1,

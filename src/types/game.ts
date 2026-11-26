@@ -442,6 +442,7 @@ export interface StoryDialogState {
   ribbonQuote?: string;
   sageQuote?: string;
   rewardSummary?: string;
+  defeatReason?: string;
 }
 
 export interface GameSettings {
@@ -617,6 +618,9 @@ export interface RpgHudSnapshot {
   isAiming: boolean;
   hitMarkerKind: 'none' | 'hit' | 'kill';
   damageFlashSeq?: number;
+  lastDamageAmount?: number;
+  lastDamageDir?: 'front' | 'back' | 'left' | 'right' | 'center';
+  defeatReason?: string | null;
   crosshairOnEnemy: boolean;
   crosshairSpread: number;
   pointerLocked: boolean;

@@ -84,8 +84,16 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
       : story.speakerName;
 
   const topAccessory =
-    story.rewardSummary || story.ribbonQuote ? (
+    story.rewardSummary || story.ribbonQuote || (story.kind === 'defeat_exit' && story.defeatReason) ? (
       <div className="flex max-w-xl flex-col gap-1.5 rounded-2xl border-2 border-amber-300/70 bg-slate-950/90 px-3.5 py-2.5 text-amber-50 shadow-xl">
+        {story.kind === 'defeat_exit' && story.defeatReason && (
+          <div className="flex items-center gap-2 text-xs font-extrabold text-rose-200">
+            <span className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white">
+              Kalah
+            </span>
+            <span>Penyebab: {story.defeatReason}</span>
+          </div>
+        )}
         {story.rewardSummary && (
           <div className="flex items-center gap-2 text-xs font-extrabold text-amber-200">
             <Award className="h-4 w-4 shrink-0 text-amber-300" />

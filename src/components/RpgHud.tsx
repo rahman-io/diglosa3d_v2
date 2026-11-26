@@ -521,6 +521,8 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   const hpPct = Math.max(0, Math.min(100, Math.round((hud.hp / Math.max(1, hud.maxHp)) * 100)));
   const isLowHp = hud.hp > 0 && (hud.hp <= 1 || hpPct <= 25);
   const damageFlashSeq = hud.damageFlashSeq ?? 0;
+  const lastDamageAmount = Math.max(1, hud.lastDamageAmount ?? 1);
+  const lastDamageDir = hud.lastDamageDir ?? 'center';
   const activeQuestCount = hud.quests.filter((q) => q.accepted && !q.claimed).length;
 
   const nearbyOverworldNpc =
@@ -673,6 +675,33 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         />
       )}
 
+      {/* Directional Attack Edge Indicator (front / back / left / right) */}
+      {damageFlashSeq > 0 && lastDamageDir !== 'center' && (
+        <div
+          key={`dmg-dir-${damageFlashSeq}`}
+          aria-hidden="true"
+          className={`animate-dir-flash pointer-events-none fixed z-[16] flex items-center justify-center ${
+            lastDamageDir === 'front'
+              ? 'inset-x-0 top-0 h-16 bg-gradient-to-b from-rose-500/85 via-rose-600/35 to-transparent'
+              : lastDamageDir === 'back'
+              ? 'inset-x-0 bottom-0 h-16 bg-gradient-to-t from-rose-500/85 via-rose-600/35 to-transparent'
+              : lastDamageDir === 'left'
+              ? 'inset-y-0 left-0 w-16 bg-gradient-to-r from-rose-500/85 via-rose-600/35 to-transparent'
+              : 'inset-y-0 right-0 w-16 bg-gradient-to-l from-rose-500/85 via-rose-600/35 to-transparent'
+          }`}
+        >
+          <span className="rounded-full border border-rose-200/80 bg-rose-600/95 px-2.5 py-0.5 text-xs font-black text-white shadow-[0_0_16px_rgba(244,63,94,0.95)]">
+            {lastDamageDir === 'front'
+              ? '▲'
+              : lastDamageDir === 'back'
+              ? '▼'
+              : lastDamageDir === 'left'
+              ? '◀'
+              : '▶'}
+          </span>
+        </div>
+      )}
+
       {/* Subtle World-Space Nameplates (hidden by default; shown when Info HUD toggle is active) */}
       {showInfoHud &&
         hud.projectedLabels.map((lbl) => (
@@ -802,51 +831,65 @@ export const RpgHud: React.FC<RpgHudProps> = ({
       <div className="pointer-events-auto fixed right-2.5 top-2.5 z-20 flex flex-col items-end gap-1.5 sm:right-4 sm:top-4">
         <div className="flex items-center gap-2">
           {/* Sleek RPG Health & Compact Stats Pill */}
-          <div
-            className={`flex flex-col items-end rounded-xl border bg-slate-950/85 px-2.5 py-1.5 text-white shadow-lg transition-colors ${
-              damageFlashSeq > 0 || isLowHp
-                ? 'border-rose-500/85 ring-2 ring-rose-500/60'
-                : 'border-amber-300/25'
-            }`}
-          >
-            <div className="flex items-center gap-1.5">
-              <img
-                src="./assets/ui/icon_heart.png"
-                alt="Nyawa"
-                className="h-4 w-4 shrink-0 object-contain"
-                draggable={false}
-              />
-              <div className="h-2 w-20 overflow-hidden rounded-full bg-slate-900/90 ring-1 ring-white/15 sm:w-24">
-                <div
-                  className="h-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-200"
-                  style={{ width: `${hpPct}%` }}
+          <div className="relative">
+            <div
+              key={damageFlashSeq > 0 ? `hp-pill-${damageFlashSeq}` : 'hp-pill-idle'}
+              className={`flex flex-col items-end rounded-xl border bg-slate-950/85 px-2.5 py-1.5 text-white shadow-lg transition-colors ${
+                damageFlashSeq > 0
+                  ? 'animate-hp-shake border-rose-400 ring-2 ring-rose-500/85'
+                  : isLowHp
+                  ? 'border-rose-500/85 ring-2 ring-rose-500/60'
+                  : 'border-amber-300/25'
+              }`}
+            >
+              <div className="flex items-center gap-1.5">
+                <img
+                  src="./assets/ui/icon_heart.png"
+                  alt="Nyawa"
+                  className="h-4 w-4 shrink-0 object-contain"
+                  draggable={false}
                 />
+                <div className="h-2 w-20 overflow-hidden rounded-full bg-slate-900/90 ring-1 ring-white/15 sm:w-24">
+                  <div
+                    className="h-full bg-gradient-to-r from-rose-600 to-rose-400 transition-all duration-200"
+                    style={{ width: `${hpPct}%` }}
+                  />
+                </div>
+                <span className="font-mono-nums text-[10px] font-black text-rose-200">
+                  {hud.hp}/{hud.maxHp}
+                </span>
               </div>
-              <span className="font-mono-nums text-[10px] font-black text-rose-200">
-                {hud.hp}/{hud.maxHp}
-              </span>
+              <div className="mt-1 flex items-center gap-2.5 font-mono-nums text-[10px] font-bold">
+                <span className="text-amber-300">Lv.{String(hud.level).padStart(2, '0')}</span>
+                <span className="flex items-center gap-1 text-cyan-300">
+                  <img
+                    src="./assets/ui/icon_diamond.png"
+                    alt="Berlian"
+                    className="h-3.5 w-3.5 shrink-0 object-contain"
+                    draggable={false}
+                  />
+                  {hud.diamonds}
+                </span>
+                <span className="flex items-center gap-1 text-amber-300">
+                  <img
+                    src="./assets/ui/icon_crown.png"
+                    alt="Mahkota"
+                    className="h-3.5 w-3.5 shrink-0 object-contain"
+                    draggable={false}
+                  />
+                  {hud.crowns}/6
+                </span>
+              </div>
             </div>
-            <div className="mt-1 flex items-center gap-2.5 font-mono-nums text-[10px] font-bold">
-              <span className="text-amber-300">Lv.{String(hud.level).padStart(2, '0')}</span>
-              <span className="flex items-center gap-1 text-cyan-300">
-                <img
-                  src="./assets/ui/icon_diamond.png"
-                  alt="Berlian"
-                  className="h-3.5 w-3.5 shrink-0 object-contain"
-                  draggable={false}
-                />
-                {hud.diamonds}
+
+            {damageFlashSeq > 0 && (
+              <span
+                key={`dmg-pop-${damageFlashSeq}`}
+                className="animate-dmg-float pointer-events-none absolute -bottom-6 right-1 z-30 whitespace-nowrap rounded-full border border-rose-200/85 bg-rose-600 px-2 py-0.5 font-mono-nums text-[11px] font-black text-white shadow-[0_4px_12px_rgba(225,29,72,0.85)]"
+              >
+                -{lastDamageAmount} ❤️
               </span>
-              <span className="flex items-center gap-1 text-amber-300">
-                <img
-                  src="./assets/ui/icon_crown.png"
-                  alt="Mahkota"
-                  className="h-3.5 w-3.5 shrink-0 object-contain"
-                  draggable={false}
-                />
-                {hud.crowns}/6
-              </span>
-            </div>
+            )}
           </div>
 
           {/* Active Weapon & Tool Box (tap to open Tas) */}

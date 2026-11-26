@@ -59,6 +59,12 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
                 Nyawa Hoot Habis
               </span>
 
+              {hud.defeatReason && (
+                <div className="mt-1.5 max-w-full rounded-xl border border-rose-400/45 bg-rose-950/75 px-3 py-1 text-[11px] font-extrabold text-rose-100 shadow-inner sm:text-xs">
+                  Penyebab: <span className="text-amber-200">{hud.defeatReason}</span>
+                </div>
+              )}
+
               <RpgNameplate className="mt-2 max-w-full">
                 <div className="min-w-0 text-center leading-tight">
                   <h2 className="truncate text-sm font-black tracking-tight text-[#3b1b06] sm:text-base">
