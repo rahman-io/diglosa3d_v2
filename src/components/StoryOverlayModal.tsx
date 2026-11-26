@@ -122,7 +122,7 @@ const StorybookPrologueBox: React.FC<{
         </div>
       )}
 
-      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex flex-col items-center px-3 pb-3 sm:px-6 sm:pb-5">
+      <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex flex-col items-center px-3 pb-2.5 sm:px-6 sm:pb-4">
         <div className="pointer-events-auto relative w-full max-w-4xl">
         <div
           role="button"
@@ -135,19 +135,19 @@ const StorybookPrologueBox: React.FC<{
               handleInteract();
             }
           }}
-          className="cursor-pointer select-none rounded-2xl border-2 border-amber-300/70 bg-gradient-to-b from-slate-950/88 via-slate-900/92 to-slate-950/95 px-4 py-3.5 text-amber-50 shadow-[0_18px_45px_rgba(2,6,23,0.75)] backdrop-blur-md transition focus:outline-none sm:px-6 sm:py-4"
+          className="cursor-pointer select-none rounded-2xl border border-amber-300/45 bg-slate-950/22 px-4 py-2.5 text-amber-50 shadow-[0_8px_28px_rgba(0,0,0,0.45)] backdrop-blur-[1.5px] transition focus:outline-none sm:px-5 sm:py-3"
         >
           {/* Header Bar */}
-          <div className="mb-2 flex flex-wrap items-center justify-between gap-2 border-b border-amber-300/20 pb-2">
-            <div className="flex min-w-0 items-center gap-2">
-              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-300/50 bg-amber-500/20 px-2.5 py-0.5 text-[11px] font-black tracking-wide text-amber-200">
+          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 border-b border-white/15 pb-1.5">
+            <div className="flex min-w-0 items-center gap-2 [text-shadow:0_1px_3px_rgba(0,0,0,0.95)]">
+              <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-amber-300/45 bg-slate-950/35 px-2.5 py-0.5 text-[11px] font-black tracking-wide text-amber-200">
                 <BookOpen className="h-3.5 w-3.5" />
                 <span>
                   Adegan {currentNum} dari {totalSteps}
                 </span>
               </span>
               {story.sceneTitle && (
-                <span className="truncate text-xs font-extrabold tracking-wide text-amber-100/90 sm:text-sm">
+                <span className="truncate text-xs font-extrabold tracking-wide text-amber-100 sm:text-sm">
                   {story.sceneTitle}
                 </span>
               )}
@@ -162,10 +162,10 @@ const StorybookPrologueBox: React.FC<{
                   <button
                     type="button"
                     onClick={() => setShowEn((prev) => !prev)}
-                    className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-extrabold transition ${
+                    className={`inline-flex items-center gap-1 rounded-lg border px-2 py-1 text-[11px] font-extrabold [text-shadow:0_1px_2px_rgba(0,0,0,0.9)] transition ${
                       showEn
-                        ? 'border-sky-300 bg-sky-600 text-white'
-                        : 'border-amber-300/40 bg-slate-800/80 text-amber-100 hover:bg-slate-700/90'
+                        ? 'border-sky-300/80 bg-sky-600/75 text-white'
+                        : 'border-white/25 bg-slate-950/35 text-amber-100 hover:bg-slate-900/55'
                     }`}
                   >
                     <Languages className="h-3 w-3 shrink-0" />
@@ -175,7 +175,7 @@ const StorybookPrologueBox: React.FC<{
                     type="button"
                     onClick={() => soundEngine.speakEnglish(story.textEn)}
                     title="Dengarkan Bahasa Inggris"
-                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-amber-300/40 bg-slate-800/80 text-amber-100 transition hover:bg-slate-700/90"
+                    className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/25 bg-slate-950/35 text-amber-100 transition hover:bg-slate-900/55"
                   >
                     <Volume2 className="h-3.5 w-3.5" />
                   </button>
@@ -188,8 +188,8 @@ const StorybookPrologueBox: React.FC<{
                   title={muted ? 'Nyalakan Musik & Suara' : 'Bisukan Musik & Suara'}
                   className={`flex h-7 w-7 items-center justify-center rounded-lg border transition ${
                     muted
-                      ? 'border-rose-400/60 bg-rose-950/85 text-rose-200 hover:bg-rose-900/90'
-                      : 'border-amber-300/40 bg-slate-800/80 text-amber-100 hover:bg-slate-700/90'
+                      ? 'border-rose-400/60 bg-rose-950/65 text-rose-200 hover:bg-rose-900/75'
+                      : 'border-white/25 bg-slate-950/35 text-amber-100 hover:bg-slate-900/55'
                   }`}
                 >
                   {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
@@ -198,7 +198,7 @@ const StorybookPrologueBox: React.FC<{
               <button
                 type="button"
                 onClick={onSkip}
-                className="inline-flex items-center gap-1 rounded-lg border border-amber-300/60 bg-[#1e325c]/95 px-2.5 py-1 text-[11px] font-extrabold text-amber-100 shadow transition hover:bg-[#274075]"
+                className="inline-flex items-center gap-1 rounded-lg border border-amber-300/45 bg-slate-950/35 px-2.5 py-1 text-[11px] font-extrabold text-amber-100 [text-shadow:0_1px_2px_rgba(0,0,0,0.9)] shadow transition hover:bg-slate-900/55"
               >
                 <span>Lewati Prolog</span>
                 <SkipForward className="h-3.5 w-3.5" />
@@ -207,26 +207,26 @@ const StorybookPrologueBox: React.FC<{
           </div>
 
           {/* Storybook Narrative Body */}
-          <p className="min-h-[68px] text-[13.5px] font-semibold leading-relaxed text-amber-50/95 sm:min-h-[76px] sm:text-[15.5px] sm:leading-relaxed">
+          <p className="min-h-[52px] text-[13.5px] font-bold leading-relaxed text-white [text-shadow:0_1px_3px_rgba(0,0,0,0.98),0_2px_8px_rgba(0,0,0,0.9)] sm:min-h-[58px] sm:text-[15.5px] sm:leading-relaxed">
             {fullText.slice(0, revealedCount)}
           </p>
 
           {/* Footer Step Dots + Next Action */}
-          <div className="mt-2.5 flex items-center justify-between gap-3 pt-1">
+          <div className="mt-2 flex items-center justify-between gap-3 pt-0.5">
             <div className="flex items-center gap-1.5">
               {Array.from({ length: totalSteps }).map((_, idx) => (
                 <span
                   key={idx}
                   className={`h-2 rounded-full transition-all ${
                     idx === story.step
-                      ? 'w-6 bg-amber-300'
+                      ? 'w-6 bg-amber-300 shadow-[0_1px_4px_rgba(0,0,0,0.85)]'
                       : idx < story.step
-                      ? 'w-2 bg-emerald-400/80'
-                      : 'w-2 bg-slate-600'
+                      ? 'w-2 bg-emerald-400/90'
+                      : 'w-2 bg-white/35'
                   }`}
                 />
               ))}
-              <span className="ml-2 hidden text-[11px] font-medium text-amber-200/70 sm:inline">
+              <span className="ml-2 hidden text-[11px] font-semibold text-amber-100/90 [text-shadow:0_1px_3px_rgba(0,0,0,0.95)] sm:inline">
                 {isTyping ? 'Klik untuk percepat teks' : 'Klik Lanjut atau tekan Spasi'}
               </span>
             </div>
@@ -237,7 +237,7 @@ const StorybookPrologueBox: React.FC<{
                 e.stopPropagation();
                 handleInteract();
               }}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200/70 bg-gradient-to-r from-amber-400 to-yellow-300 px-3.5 py-1.5 text-xs font-black text-slate-950 shadow-md transition hover:brightness-105 active:scale-95 sm:px-4 sm:text-sm"
+              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200/75 bg-gradient-to-r from-amber-400/90 to-yellow-300/90 px-3.5 py-1.5 text-xs font-black text-slate-950 shadow-md transition hover:brightness-105 active:scale-95 sm:px-4 sm:text-sm"
             >
               <span>
                 {isTyping
