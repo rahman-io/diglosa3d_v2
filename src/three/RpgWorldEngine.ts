@@ -160,6 +160,7 @@ import {
   computeBlinkScale,
   createAcademyHallEnvironment,
   createAreaMists,
+  createCaptiveMesh,
   createCaveTntMesh,
   createCaveTorchMesh,
   createDungeonEnvironment,
@@ -597,6 +598,111 @@ export interface RpgEngineCallbacks {
   onMultiplayerPacket?: (pkt: P2pReliableMessage, targetUid?: string) => void;
 }
 
+interface PrologueSceneSpec {
+  sceneTitle: string;
+  accentColor: string;
+  worldTimeTick: number;
+  textId: string;
+  textEn: string;
+}
+
+const PROLOGUE_SCENES: PrologueSceneSpec[] = [
+  {
+    sceneTitle: 'Menyapu Langit di Atas Kerajaan Kata yang Damai',
+    accentColor: '#f59e0b',
+    worldTimeTick: 4200,
+    textId:
+      'Dahulu kala, di seberang lautan biru yang tenang, berdirilah sebuah kerajaan yang indah bernama Kerajaan Kata, tempat enam pulau hijau saling terhubung oleh jembatan cahaya dan angin pagi yang lembut. Kerajaan itu dipimpin oleh Raja Aksara yang arif lagi pemurah, sehingga seluruh penduduk di Desa Sapaan, Pasar Rasa, Hutan Satwa, Gerbang Kota, Menara Waktu, hingga Gua Portal dapat hidup rukun, saling menyapa dengan kata-kata yang hangat, serta bernyanyi riang setiap hari. Di antara rakyat yang berbahagia itu, hiduplah seorang pemuda pemberani bernama Hoot bersama adiknya yang lemah lembut bernama Lila, seorang gadis kecil berhati emas yang selalu menghiasi rambutnya dengan pita merah yang indah.',
+    textEn:
+      'Long ago, across a tranquil blue sea, there stood a lovely kingdom named Kerajaan Kata, where six green islands were joined by bridges of light and gentle morning breezes. The realm was ruled by wise and generous Raja Aksara, so the townsfolk across Desa Sapaan, Pasar Rasa, Hutan Satwa, Gerbang Kota, Menara Waktu, and Gua Portal lived in harmony, greeting one another with warm words and singing joyfully each day. Among those happy people lived a brave young explorer named Hoot and his gentle little sister Lila, a kind-hearted girl who always adorned her hair with a bright red ribbon.',
+  },
+  {
+    sceneTitle: 'Malam Kelam Ketika Badai Bayangan Menyerbu Istana',
+    accentColor: '#7c3aed',
+    worldTimeTick: 17400,
+    textId:
+      'Namun ketenteraman yang manis itu tidak berlangsung selamanya, karena pada suatu malam yang gelap tanpa cahaya bulan, gerombolan monster bayangan bersenjata datang menyerbu bagaikan badai dingin yang menakutkan. Mereka mengepung Istana Utara, lalu memecahkan Mahkota Kerajaan yang suci menjadi enam kepingan berkilau sebelum merampas hampir seluruh kata Bahasa Inggris dari ingatan negeri itu. Dalam sekejap, lagu-lagu ceria di alun-alun pun terhenti, dan nyala lentera di istana meredup ditelan kabut kelam yang turun menyelimuti langit.',
+    textEn:
+      'Yet that sweet peace did not last forever, for on a dark and moonless night, a horde of armed shadow monsters swept in like a bitter storm. They surrounded the Northern Palace and shattered the sacred Royal Crown into six gleaming shards before stealing nearly every English word from the memory of the realm. In an instant, the cheerful songs in the village squares fell silent, and the palace lanterns dimmed beneath the dark mist descending across the sky.',
+  },
+  {
+    sceneTitle: 'Kesunyian yang Menyelimuti Keenam Pulau',
+    accentColor: '#475569',
+    worldTimeTick: 14800,
+    textId:
+      'Sejak malam malapetaka itu tiba, keenam pecahan mahkota tersebar jauh ke enam penjuru pulau dan dijaga ketat oleh para monster bos raksasa yang buas. Sementara itu, para penduduk desa yang ketakutan memilih mengunci pintu rumah mereka rapat-rapat, sehingga pasar yang dahulu ramai kini berubah lengang dan hutan yang ramah dipenuhi bayangan yang mengintai. Setiap pulau seakan tertidur dalam kesunyian yang panjang, menunggu datangnya seorang penjelajah yang sanggup mengembalikan suara dan keberanian mereka.',
+    textEn:
+      'Ever since that fateful night, the six crown shards were scattered far across the six islands and guarded closely by fierce giant boss monsters. Meanwhile, the frightened villagers bolted their doors tight, so the once lively markets grew empty and the friendly woods filled with lurking shadows. Every island seemed to fall into a long silence, awaiting a brave explorer who could restore their voice and courage.',
+  },
+  {
+    sceneTitle: 'Pengungsian di Balik Pintu Ungu dan Jejak Pita Merah Lila',
+    accentColor: '#e11d48',
+    worldTimeTick: 22400,
+    textId:
+      'Beruntunglah pada saat-saat genting itu, Raja Aksara berhasil membawa Lila menyingkir jauh hingga berlindung di balik Pintu Ungu yang kokoh di pulau paling utara. Meskipun hatinya diliputi rindu kepada sang kakak, Lila yang cerdik tidak pernah menyerah, karena sepanjang perjalanan melintasi kepulauan ia sengaja menjatuhkan enam pita merah kesayangannya sebagai penunjuk jalan bagi Hoot. Sebelum gerbang istana tertutup rapat, ia pun sempat menuliskan sepucuk surat bersampul merah, lalu menyerahkannya kepada seekor burung hantu setia agar segera diterbangkan mencari kakaknya.',
+    textEn:
+      'Fortunately in that perilous hour, Raja Aksara managed to lead Lila safely away to shelter behind the sturdy Purple Gate on the northernmost island. Though her heart ached for her brother, clever little Lila never gave up, for along her journey across the archipelago she quietly dropped six of her beloved red ribbons to guide Hoot. Before the palace gate swung shut, she wrote a red-sealed letter and entrusted it to a faithful messenger owl to carry to her brother.',
+  },
+  {
+    sceneTitle: 'Terbang Menurun Menuju Desa Sapaan',
+    accentColor: '#10b981',
+    worldTimeTick: 2200,
+    textId:
+      'Kini burung hantu utusan istana itu membelah awan dan meluncur menembus kabut pagi, menyusuri lautan hingga akhirnya tiba di langit Desa Sapaan yang tenang. Di tengah alun-alun desa yang berumput hijau, tampaklah Hoot berdiri seorang diri dengan wajah penuh tanda tanya, menatap langit sambil menunggu kabar tentang nasib adiknya serta negerinya. Perlahan sang burung hantu menukik turun sambil mencengkeram surat bersampul merah itu erat-erat, karena kisah petualangan besar untuk menyelamatkan Kerajaan Kata baru saja akan dimulai.',
+    textEn:
+      'Now the royal messenger owl parts the clouds and glides through the morning mist, soaring across the sea until it reaches the quiet skies above Desa Sapaan. In the center of the green village square, Hoot stands alone with an anxious gaze, looking up toward the clouds as he awaits word of his sister and his homeland. Gently the owl swoops down clutching the red-sealed letter tight, for the grand adventure to save Kerajaan Kata is just about to begin.',
+  },
+];
+
+interface PrologueKingRig {
+  root: THREE.Group;
+  body: THREE.Group;
+  upperBody: THREE.Group;
+  headGroup: THREE.Group;
+  leftArm: THREE.Group;
+  rightArm: THREE.Group;
+  leftLeg: THREE.Group;
+  rightLeg: THREE.Group;
+  crown: THREE.Group;
+}
+
+interface PrologueCutsceneRig {
+  group: THREE.Group;
+  king: PrologueKingRig;
+  lilaMesh: THREE.Group;
+  villagers: Array<{
+    mesh: THREE.Group;
+    x: number;
+    z: number;
+    yaw: number;
+    phase: number;
+  }>;
+  bridgeBeams: THREE.Mesh[];
+  crownShards: Array<{
+    mesh: THREE.Mesh;
+    startPos: THREE.Vector3;
+    endPos: THREE.Vector3;
+  }>;
+  raiders: Array<{
+    mesh: THREE.Group;
+    type: MonsterType;
+    startPos: THREE.Vector3;
+    targetPos: THREE.Vector3;
+    phase: number;
+  }>;
+  bosses: Array<{
+    mesh: THREE.Group;
+    type: MonsterType;
+    pos: THREE.Vector3;
+    phase: number;
+  }>;
+  ribbonDrops: Array<{
+    mesh: THREE.Group;
+    pos: THREE.Vector3;
+    dropTime: number;
+  }>;
+}
+
 export class RpgWorldEngine {
   private container: HTMLElement;
   private renderer: THREE.WebGLRenderer;
@@ -1015,6 +1121,8 @@ export class RpgWorldEngine {
     textEn: string;
   }> = [];
   private owlState: 'hidden' | 'fly' | 'land' | 'leave' = 'hidden';
+  private savedPrologueWorldTimeTick: number | null = null;
+  private prologueRig: PrologueCutsceneRig | null = null;
   private cutsceneStartPos = new THREE.Vector3();
   private cutsceneTargetPos = new THREE.Vector3();
 
@@ -5233,10 +5341,463 @@ export class RpgWorldEngine {
       soundEngine.playWin();
       this.pushHud(true);
     } else {
-      // Begin Bab 4 Opening Story Sequence!
-      this.startOpeningStory();
+      // Begin animated 5-scene 3D Prologue before Messenger Owl meets Hero in Desa Sapaan
+      this.startOpeningPrologue();
     }
     this.saveProgress();
+  }
+
+  private buildPrologueKingMesh(): PrologueKingRig {
+    const root = new THREE.Group();
+    const body = new THREE.Group();
+    root.add(body);
+
+    const skinMat = this.palette.getMat(0xfed7aa, 'matte');
+    const robeMat = this.palette.getMat(0x312e81, 'matte');
+    const capeMat = this.palette.getMat(0xbe123c, 'matte');
+    const goldMat = this.palette.getMat(0xfacc15, 'metal');
+    const goldGlow = this.palette.getMat(0xfef08a, 'emissive');
+    const beardMat = this.palette.getMat(0xf8fafc, 'matte');
+    const darkMat = this.palette.getMat(0x0f172a, 'gloss');
+
+    const makeLeg = (lx: number): THREE.Group => {
+      const leg = new THREE.Group();
+      leg.position.set(lx, 0.9, 0);
+      const cloth = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.7, 0.38), robeMat);
+      cloth.position.y = -0.35;
+      cloth.castShadow = true;
+      const boot = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.24, 0.46), darkMat);
+      boot.position.set(0, -0.78, 0.04);
+      boot.castShadow = true;
+      leg.add(cloth, boot);
+      return leg;
+    };
+    const leftLeg = makeLeg(-0.22);
+    const rightLeg = makeLeg(0.22);
+    const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.62, 0.64), robeMat);
+    skirt.position.y = 0.72;
+    skirt.castShadow = true;
+    body.add(leftLeg, rightLeg, skirt);
+
+    const upperBody = new THREE.Group();
+    upperBody.position.set(0, 0.96, 0);
+    body.add(upperBody);
+
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.98, 1.0, 0.6), robeMat);
+    torso.position.y = 0.5;
+    torso.castShadow = true;
+    const sash = new THREE.Mesh(new THREE.BoxGeometry(1.02, 0.16, 0.64), goldMat);
+    sash.position.y = 0.12;
+    const cape = new THREE.Mesh(new THREE.BoxGeometry(1.06, 1.32, 0.16), capeMat);
+    cape.position.set(0, 0.34, -0.36);
+    cape.rotation.x = 0.12;
+    cape.castShadow = true;
+    const pauldronL = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.2, 0.66), goldMat);
+    pauldronL.position.set(-0.56, 0.92, 0);
+    const pauldronR = pauldronL.clone();
+    pauldronR.position.x = 0.56;
+    upperBody.add(torso, sash, cape, pauldronL, pauldronR);
+
+    const headGroup = new THREE.Group();
+    headGroup.position.set(0, 1.05, 0);
+    upperBody.add(headGroup);
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.76, 0.76), skinMat);
+    head.position.y = 0.38;
+    head.castShadow = true;
+    const hair = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.28, 0.82), beardMat);
+    hair.position.set(0, 0.66, -0.04);
+    const beard = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.38, 0.22), beardMat);
+    beard.position.set(0, 0.12, 0.36);
+    const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.11, 0.06), darkMat);
+    eyeL.position.set(-0.17, 0.4, 0.4);
+    const eyeR = eyeL.clone();
+    eyeR.position.x = 0.17;
+    headGroup.add(head, hair, beard, eyeL, eyeR);
+
+    // Removable glowing Royal Crown on Raja Aksara's head
+    const crown = new THREE.Group();
+    crown.position.set(0, 0.84, 0);
+    const band = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.2, 0.86), goldMat);
+    const ruby = new THREE.Mesh(new THREE.OctahedronGeometry(0.12, 0), this.palette.getMat(0xef4444, 'emissive'));
+    ruby.position.set(0, 0.04, 0.46);
+    crown.add(band, ruby);
+    for (const [px, pz] of [
+      [-0.32, 0.32],
+      [0.32, 0.32],
+      [-0.32, -0.32],
+      [0.32, -0.32],
+      [0, 0.34],
+      [0, -0.34],
+    ]) {
+      const prong = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.28, 0.14), goldGlow);
+      prong.position.set(px, 0.22, pz);
+      crown.add(prong);
+    }
+    headGroup.add(crown);
+
+    const makeArm = (ax: number, withScepter: boolean): THREE.Group => {
+      const arm = new THREE.Group();
+      arm.position.set(ax, 0.88, 0);
+      const sleeve = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.56, 0.3), robeMat);
+      sleeve.position.y = -0.24;
+      sleeve.castShadow = true;
+      const hand = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.24), skinMat);
+      hand.position.y = -0.58;
+      arm.add(sleeve, hand);
+      if (withScepter) {
+        const staff = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.55, 6), goldMat);
+        staff.position.set(0, -0.55, 0.28);
+        staff.rotation.x = Math.PI * 0.35;
+        const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.18, 0), goldGlow);
+        orb.position.set(0, -0.1, 0.84);
+        arm.add(staff, orb);
+      }
+      return arm;
+    };
+    const leftArm = makeArm(-0.62, false);
+    const rightArm = makeArm(0.62, true);
+    upperBody.add(leftArm, rightArm);
+
+    root.scale.setScalar(1.18);
+    return { root, body, upperBody, headGroup, leftArm, rightArm, leftLeg, rightLeg, crown };
+  }
+
+  private buildPrologueStage(): PrologueCutsceneRig {
+    this.cleanupPrologueStage();
+    const group = new THREE.Group();
+    this.scene.add(group);
+
+    // 1. Raja Aksara on the central Hub terrace overlooking bridges
+    const king = this.buildPrologueKingMesh();
+    const hubX = -6.0;
+    const hubZ = -2.0;
+    king.root.position.set(hubX, getArchipelagoGroundY(hubX, hubZ), hubZ);
+    group.add(king.root);
+
+    // 2. Lila with pink dress and vivid red hair ribbon
+    const lilaMesh = createCaptiveMesh('girl', 0xf472b6, this.palette);
+    const lilaCapRig = lilaMesh.userData.captiveRig as { headGroup?: THREE.Group } | undefined;
+    if (lilaCapRig?.headGroup) {
+      const bowCenter = new THREE.Mesh(
+        new THREE.BoxGeometry(0.36, 0.18, 0.18),
+        this.palette.getMat(0xe11d48, 'emissive'),
+      );
+      bowCenter.position.set(0.22, 0.74, 0.12);
+      const bowTail = new THREE.Mesh(
+        new THREE.BoxGeometry(0.14, 0.28, 0.1),
+        this.palette.getMat(0xf43f5e, 'emissive'),
+      );
+      bowTail.position.set(0.34, 0.56, 0.1);
+      bowTail.rotation.z = -0.25;
+      lilaCapRig.headGroup.add(bowCenter, bowTail);
+    }
+    lilaMesh.position.set(-10.8, getArchipelagoGroundY(-10.8, 121.0), 121.0);
+    group.add(lilaMesh);
+
+    // 3. Cheerful chatting villagers in open Desa Sapaan square
+    const villagerConfigs: Array<{ id: string; x: number; z: number; yaw: number; phase: number }> = [
+      { id: 'npc_petani_prolog', x: -10.8, z: 116.8, yaw: 1.25, phase: 0.4 },
+      { id: 'npc_bunga_prolog', x: -9.0, z: 117.3, yaw: -1.85, phase: 1.9 },
+      { id: 'npc_bocah_prolog', x: 1.8, z: 116.2, yaw: 1.35, phase: 2.7 },
+      { id: 'npc_siswi_prolog', x: 3.6, z: 116.8, yaw: -1.8, phase: 4.1 },
+    ];
+    const villagerArchetypeMap: Record<string, string> = {
+      npc_petani_prolog: 'npc_tetua',
+      npc_bunga_prolog: 'npc_koki',
+      npc_bocah_prolog: 'npc_rubah',
+      npc_siswi_prolog: 'npc_penjaga',
+    };
+    const villagers = villagerConfigs.map((cfg) => {
+      const mesh = createZoneNpc(villagerArchetypeMap[cfg.id] || 'npc_tetua', this.palette);
+      mesh.position.set(cfg.x, getArchipelagoGroundY(cfg.x, cfg.z), cfg.z);
+      mesh.rotation.y = cfg.yaw;
+      group.add(mesh);
+      return { mesh, x: cfg.x, z: cfg.z, yaw: cfg.yaw, phase: cfg.phase };
+    });
+
+    // 4. Shimmering "Jembatan Cahaya" pillars across the 6 island connections
+    const bridgeCenters: Array<[number, number, number]> = [
+      [-22, 4.2, 47.8],
+      [-65, 3.8, 17.5],
+      [55.5, 4.4, 26.2],
+      [-74.5, 9.2, -32.5],
+      [81, 8.8, -43],
+      [11, 10.5, -104],
+    ];
+    const beamMat = new THREE.MeshBasicMaterial({
+      color: 0xfde047,
+      transparent: true,
+      opacity: 0.34,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const beamGeo = new THREE.CylinderGeometry(0.45, 1.35, 16, 10, 1, true);
+    const bridgeBeams = bridgeCenters.map(([bx, by, bz]) => {
+      const bm = new THREE.Mesh(beamGeo, beamMat.clone());
+      bm.position.set(bx, by + 7.5, bz);
+      group.add(bm);
+      return bm;
+    });
+
+    // 5. Six glowing golden Crown Shards (shatter in Scene 2)
+    const shardTargets: ZoneId[] = [
+      'desa_sapaan',
+      'pasar_rasa',
+      'hutan_satwa',
+      'gerbang_kota',
+      'menara_waktu',
+      'gua_portal',
+    ];
+    const shardGeo = new THREE.OctahedronGeometry(0.7, 0);
+    const shardMat = this.palette.getMat(0xfacc15, 'emissive');
+    const portalPt = OVERWORLD_ANCHORS.portal;
+    const crownShards = shardTargets.map((zId, idx) => {
+      const mesh = new THREE.Mesh(shardGeo, shardMat);
+      const startPos = new THREE.Vector3(portalPt.x, portalPt.y + 3.2, portalPt.z + 6);
+      const za = OVERWORLD_ANCHORS.zones[zId];
+      const ang = (idx / 6) * Math.PI * 2;
+      const endPos = new THREE.Vector3(
+        THREE.MathUtils.lerp(startPos.x, za.x, 0.35) + Math.cos(ang) * 14,
+        startPos.y + 12 + (idx % 2) * 4,
+        THREE.MathUtils.lerp(startPos.z, za.z, 0.35) + Math.sin(ang) * 14,
+      );
+      mesh.position.copy(startPos);
+      mesh.visible = false;
+      group.add(mesh);
+      return { mesh, startPos, endPos };
+    });
+
+    // 6. Shadow Raiders invading the northern terrace in Scene 2
+    const raiderConfigs: Array<{ type: MonsterType; sx: number; sy: number; sz: number; tx: number; tz: number; phase: number }> = [
+      { type: 'skeleton_warrior', sx: portalPt.x - 16, sy: portalPt.y, sz: portalPt.z + 24, tx: portalPt.x - 4.2, tz: portalPt.z + 8.5, phase: 0.2 },
+      { type: 'lava_imp', sx: portalPt.x + 15, sy: portalPt.y + 4, sz: portalPt.z + 22, tx: portalPt.x + 4.0, tz: portalPt.z + 8.0, phase: 1.4 },
+      { type: 'stone_gargoyle', sx: portalPt.x - 11, sy: portalPt.y + 8, sz: portalPt.z + 10, tx: portalPt.x - 3.6, tz: portalPt.z + 4.4, phase: 2.3 },
+      { type: 'shadow_harpy', sx: portalPt.x + 12, sy: portalPt.y + 9, sz: portalPt.z + 11, tx: portalPt.x + 3.5, tz: portalPt.z + 4.5, phase: 3.1 },
+      { type: 'thorn_goblin', sx: portalPt.x, sy: portalPt.y, sz: portalPt.z + 26, tx: portalPt.x + 0.4, tz: portalPt.z + 10.2, phase: 4.5 },
+    ];
+    const raiders = raiderConfigs.map((rc) => {
+      const mesh = createMonsterMesh(rc.type, this.palette, 1.15);
+      const startPos = new THREE.Vector3(rc.sx, getArchipelagoGroundY(rc.sx, rc.sz) + (rc.sy - portalPt.y), rc.sz);
+      const targetPos = new THREE.Vector3(rc.tx, getArchipelagoGroundY(rc.tx, rc.tz) + (rc.sy > portalPt.y ? 2.4 : 0), rc.tz);
+      mesh.position.copy(startPos);
+      mesh.visible = false;
+      group.add(mesh);
+      return { mesh, type: rc.type, startPos, targetPos, phase: rc.phase };
+    });
+
+    // 7. Giant Boss Monsters looming over the 6 misty islands in Scene 3
+    const bossSpecs: Array<{ zId: ZoneId; type: MonsterType; phase: number }> = [
+      { zId: 'desa_sapaan', type: 'forest_slime', phase: 0.4 },
+      { zId: 'pasar_rasa', type: 'magma_elemental', phase: 1.2 },
+      { zId: 'hutan_satwa', type: 'ancient_treant', phase: 2.1 },
+      { zId: 'gerbang_kota', type: 'iron_juggernaut', phase: 3.0 },
+      { zId: 'menara_waktu', type: 'obsidian_hydra', phase: 3.9 },
+      { zId: 'gua_portal', type: 'titan_colossus', phase: 4.8 },
+    ];
+    const bosses = bossSpecs.map((bs) => {
+      const za = OVERWORLD_ANCHORS.zones[bs.zId];
+      const mesh = createMonsterMesh(bs.type, this.palette, 1.85);
+      const gy = getArchipelagoGroundY(za.x, za.z);
+      const pos = new THREE.Vector3(za.x, gy, za.z);
+      mesh.position.copy(pos);
+      mesh.visible = false;
+      group.add(mesh);
+      return { mesh, type: bs.type, pos, phase: bs.phase };
+    });
+
+    // 8. Red Ribbons dropped by Lila along the escape trail to the Purple Gate in Scene 4
+    const ribbonCoords: Array<{ x: number; z: number; t: number }> = [
+      { x: portalPt.x + 1.8, z: portalPt.z + 24, t: 0.6 },
+      { x: portalPt.x + 0.9, z: portalPt.z + 18, t: 1.3 },
+      { x: portalPt.x + 0.4, z: portalPt.z + 12, t: 2.0 },
+      { x: portalPt.x - 0.2, z: portalPt.z + 7, t: 2.7 },
+    ];
+    const ribbonRed = this.palette.getMat(0xe11d48, 'emissive');
+    const ribbonTrim = this.palette.getMat(0xfda4af, 'emissive');
+    const ribbonDrops = ribbonCoords.map((rc) => {
+      const rGroup = new THREE.Group();
+      const wingL = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.22, 0.14), ribbonRed);
+      wingL.position.x = -0.24;
+      wingL.rotation.z = 0.22;
+      const wingR = wingL.clone();
+      wingR.position.x = 0.24;
+      wingR.rotation.z = -0.22;
+      const knot = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.18, 0.18), ribbonTrim);
+      rGroup.add(wingL, wingR, knot);
+      const gy = getArchipelagoGroundY(rc.x, rc.z);
+      const pos = new THREE.Vector3(rc.x, gy + 0.75, rc.z);
+      rGroup.position.copy(pos);
+      rGroup.visible = false;
+      group.add(rGroup);
+      return { mesh: rGroup, pos, dropTime: rc.t };
+    });
+
+    return {
+      group,
+      king,
+      lilaMesh,
+      villagers,
+      bridgeBeams,
+      crownShards,
+      raiders,
+      bosses,
+      ribbonDrops,
+    };
+  }
+
+  private cleanupPrologueStage(): void {
+    if (this.prologueRig) {
+      this.scene.remove(this.prologueRig.group);
+      this.prologueRig = null;
+    }
+    if (this.savedPrologueWorldTimeTick !== null) {
+      this.worldTimeTick = this.savedPrologueWorldTimeTick;
+      this.savedPrologueWorldTimeTick = null;
+    }
+    for (const m of this.overworldAllMonsters) {
+      m.mesh.visible = m.alive;
+    }
+    for (const s of this.shooters) {
+      s.mesh.visible = s.alive;
+    }
+    for (const p of this.villageRig.pillagers) {
+      p.root.visible = this.getCurrentDayPhase() === 'malam';
+    }
+    this.starterPickupMesh.visible = this.worldMode === 'overworld' && !this.starterWeaponPicked;
+    this.swimSuitPickupMesh.visible = this.worldMode === 'overworld' && !this.swimSuitPicked;
+    this.refreshAreaMists();
+    this.updateOverworldDayNightAtmosphere(0, false);
+
+    // Reset Hero limb transforms cleanly before Owl conversation or playing
+    this.hero.body.position.y = 0;
+    this.hero.upperBody.rotation.set(0, 0, 0);
+    this.hero.headGroup.rotation.set(0, 0, 0);
+    this.hero.leftArm.rotation.set(0, 0, 0);
+    this.hero.rightArm.rotation.set(0, 0, 0);
+    this.hero.leftLeg.rotation.set(0, 0, 0);
+    this.hero.rightLeg.rotation.set(0, 0, 0);
+  }
+
+  private applyPrologueSceneStep(step: number): void {
+    const idx = THREE.MathUtils.clamp(step, 0, PROLOGUE_SCENES.length - 1);
+    const spec = PROLOGUE_SCENES[idx];
+    this.storyTimer = 0;
+    this.worldTimeTick = spec.worldTimeTick;
+    this.updateOverworldDayNightAtmosphere(0, false);
+
+    if (this.prologueRig) {
+      const rig = this.prologueRig;
+      const showPeaceful = idx === 0;
+      const showRaid = idx === 1;
+      const showSilence = idx === 2;
+      const showEscape = idx === 3;
+      const showOwlFlight = idx === 4;
+
+      rig.bridgeBeams.forEach((bm) => {
+        bm.visible = showPeaceful;
+      });
+      rig.villagers.forEach((v) => {
+        v.mesh.visible = showPeaceful;
+      });
+      rig.crownShards.forEach((sh) => {
+        sh.mesh.visible = showRaid;
+        sh.mesh.position.copy(sh.startPos);
+      });
+      rig.raiders.forEach((rd) => {
+        rd.mesh.visible = showRaid;
+        rd.mesh.position.copy(rd.startPos);
+      });
+      rig.bosses.forEach((bs) => {
+        bs.mesh.visible = showSilence;
+      });
+      rig.ribbonDrops.forEach((rb) => {
+        rb.mesh.visible = false;
+      });
+
+      rig.king.root.visible = showPeaceful || showRaid || showEscape;
+      rig.king.crown.visible = showPeaceful || showRaid;
+      rig.king.root.scale.setScalar(1.18);
+      rig.lilaMesh.visible = showPeaceful || showEscape;
+      rig.lilaMesh.scale.setScalar(0.86);
+
+      if (showPeaceful) {
+        const hubX = -6.0;
+        const hubZ = -2.0;
+        rig.king.root.position.set(hubX, getArchipelagoGroundY(hubX, hubZ), hubZ);
+        rig.king.root.rotation.y = 0.25;
+        this.hero.root.visible = true;
+        this.heroPos.set(-12.2, getArchipelagoGroundY(-12.2, 121.0), 121.0);
+        this.hero.root.position.copy(this.heroPos);
+        this.owlRig.root.visible = false;
+        this.camera.position.set(-95, 76, 130);
+        this.controls.target.set(0, 8, -10);
+      } else if (showRaid) {
+        const pt = OVERWORLD_ANCHORS.portal;
+        rig.king.root.position.set(pt.x, getArchipelagoGroundY(pt.x, pt.z + 6), pt.z + 6);
+        rig.king.root.rotation.y = 0.1;
+        this.hero.root.visible = false;
+        this.owlRig.root.visible = false;
+        this.camera.position.set(pt.x - 12, pt.y + 9, pt.z + 24);
+        this.controls.target.set(pt.x, pt.y + 2.5, pt.z + 5);
+        soundEngine.playHit();
+      } else if (showSilence) {
+        this.hero.root.visible = false;
+        this.owlRig.root.visible = false;
+        this.camera.position.set(-135, 58, 95);
+        this.controls.target.set(-20, 10, -30);
+      } else if (showEscape) {
+        const pt = OVERWORLD_ANCHORS.portal;
+        rig.king.root.position.set(pt.x - 0.8, getArchipelagoGroundY(pt.x - 0.8, pt.z + 22), pt.z + 22);
+        rig.lilaMesh.position.set(pt.x + 1.0, getArchipelagoGroundY(pt.x + 1.0, pt.z + 23), pt.z + 23);
+        this.hero.root.visible = false;
+        this.owlRig.root.visible = true;
+        this.owlRig.envelope.visible = true;
+        this.owlRig.root.position.set(pt.x + 2.4, pt.y + 3.8, pt.z + 11.0);
+        this.camera.position.set(pt.x - 11, pt.y + 7.5, pt.z + 29);
+        this.controls.target.set(pt.x, pt.y + 2.6, pt.z + 11);
+      } else if (showOwlFlight) {
+        const stage = this.getOpeningStageAnchors();
+        this.hero.root.visible = true;
+        this.heroPos.set(stage.heroX, stage.heroY, stage.heroZ);
+        this.heroYaw = Math.atan2(stage.owlX - stage.heroX, stage.owlZ - stage.heroZ);
+        this.hero.root.position.copy(this.heroPos);
+        this.hero.body.rotation.y = this.heroYaw;
+        this.owlRig.root.visible = true;
+        this.owlRig.envelope.visible = true;
+        this.owlRig.root.position.set(8, 36, -65);
+        this.camera.position.set(16, 40, -52);
+        this.controls.target.set(6, 34, -66);
+      }
+      this.controls.update();
+    }
+
+    this.storyDialog = {
+      kind: 'prologue',
+      step: idx,
+      maxStep: PROLOGUE_SCENES.length - 1,
+      sceneTitle: spec.sceneTitle,
+      speakerName: 'Kisah Kerajaan Kata',
+      speakerRole: `Adegan ${idx + 1} dari ${PROLOGUE_SCENES.length}`,
+      textEn: spec.textEn,
+      textId: spec.textId,
+      accentColor: spec.accentColor,
+    };
+    this.pushHud(true);
+  }
+
+  private startOpeningPrologue(): void {
+    this.phase = 'story';
+    this.heldKeys.clear();
+    this.applyCameraVisibilityAndControls();
+    if (this.savedPrologueWorldTimeTick === null) {
+      this.savedPrologueWorldTimeTick = this.worldTimeTick;
+    }
+    this.prologueRig = this.buildPrologueStage();
+    this.starterPickupMesh.visible = false;
+    this.swimSuitPickupMesh.visible = false;
+    this.applyPrologueSceneStep(0);
+    soundEngine.playWin();
   }
 
   private getOpeningStageAnchors(): {
@@ -5266,10 +5827,12 @@ export class RpgWorldEngine {
   }
 
   private startOpeningStory(): void {
+    this.cleanupPrologueStage();
     this.phase = 'story';
     this.applyCameraVisibilityAndControls();
     this.storyTimer = 0;
     this.owlState = 'fly';
+    this.hero.root.visible = true;
 
     const stage = this.getOpeningStageAnchors();
     this.heroPos.set(stage.heroX, stage.heroY, stage.heroZ);
@@ -5322,6 +5885,17 @@ export class RpgWorldEngine {
   public advanceStory(): void {
     if (!this.storyDialog) return;
 
+    if (this.storyDialog.kind === 'prologue') {
+      const nextStep = this.storyDialog.step + 1;
+      if (nextStep < PROLOGUE_SCENES.length) {
+        soundEngine.playDoor();
+        this.applyPrologueSceneStep(nextStep);
+      } else {
+        this.startOpeningStory();
+      }
+      return;
+    }
+
     if (this.storyDialog.kind === 'opening') {
       const nextStep = this.storyDialog.step + 1;
       if (nextStep === 1) {
@@ -5336,7 +5910,7 @@ export class RpgWorldEngine {
           speakerKind: 'owl',
           speakerSide: 'npc',
           textEn: 'I carry a red-sealed letter from your sister Lila. She wanted you to know that when the monsters attacked, she and Raja Aksara took shelter behind the Purple Gate on the northernmost island, and she is waiting for you there.',
-          textId: 'Aku membawa surat bersampul merah dari adikmu, Lila. Ia berpesan agar kamu tenang—saat serangan terjadi, ia dan Raja Aksara berhasil berlindung di balik Pintu Ungu di pulau paling utara, dan kini ia menunggumu di sana.',
+          textId: 'Aku membawa surat bersampul merah dari adikmu, Lila. Ia berpesan agar kamu tetap tenang, karena saat serangan terjadi ia dan Raja Aksara berhasil berlindung di balik Pintu Ungu di pulau paling utara, dan kini ia menunggumu di sana.',
           accentColor: '#e11d48',
         };
         soundEngine.speakEnglish('Your sister Lila is safe behind the Purple Gate and waiting for you!');
@@ -5351,7 +5925,7 @@ export class RpgWorldEngine {
           speakerKind: 'owl',
           speakerSide: 'npc',
           textEn: 'Raja Aksara also asked me to tell you this: very few words remain in the palace, while six crown shards are scattered across six islands guarded by mighty bosses. Baginda asks you to free every island starting from Desa Sapaan!',
-          textId: 'Raja Aksara juga memintaku menyampaikan hal ini: hanya tersisa sedikit kata di istana, sementara enam pecahan mahkota tersebar di enam pulau dan dijaga monster bos besar. Baginda memintamu membebaskan keenam pulau dimulai dari Desa Sapaan!',
+          textId: 'Raja Aksara juga memintaku menyampaikan bahwa kini hanya tersisa sedikit kata di istana, sementara enam pecahan mahkota tersebar di enam pulau dan dijaga monster bos besar, sehingga Baginda memintamu membebaskan keenam pulau dimulai dari Desa Sapaan.',
           accentColor: '#8b5cf6',
         };
         soundEngine.speakEnglish('Raja Aksara asks you to recover all six crown shards across six islands!');
@@ -5515,7 +6089,10 @@ export class RpgWorldEngine {
 
   public skipStory(): void {
     if (!this.storyDialog) return;
-    if (this.storyDialog.kind === 'opening') {
+    if (this.storyDialog.kind === 'prologue') {
+      this.cleanupPrologueStage();
+      this.finishOpeningStory(true);
+    } else if (this.storyDialog.kind === 'opening') {
       this.finishOpeningStory(true);
     } else if (this.storyDialog.kind === 'dungeon_intro') {
       this.finishDungeonIntroCutscene();
@@ -5718,6 +6295,8 @@ export class RpgWorldEngine {
   }
 
   private finishOpeningStory(skipped: boolean): void {
+    this.cleanupPrologueStage();
+    this.hero.root.visible = true;
     this.introDone = true;
     this.storyDialog = null;
     this.owlState = 'leave';
@@ -14055,8 +14634,339 @@ export class RpgWorldEngine {
     );
   }
 
+  private updatePrologueAnimations(dt: number): void {
+    const rig = this.prologueRig;
+    if (!rig || !this.storyDialog || this.storyDialog.kind !== 'prologue') return;
+
+    const step = this.storyDialog.step;
+    const t = this.storyTimer;
+    const camLerp = 1 - Math.exp(-3.4 * dt);
+
+    // Subtle King breathing helper
+    const animateKing = (waving: boolean, distressed: boolean, walking: boolean) => {
+      const k = rig.king;
+      if (walking) {
+        const stride = this.elapsed * 7.2;
+        const swing = Math.sin(stride) * 0.48;
+        k.leftLeg.rotation.x = swing;
+        k.rightLeg.rotation.x = -swing;
+        k.leftArm.rotation.x = -swing * 0.55;
+        k.rightArm.rotation.x = swing * 0.35;
+        k.body.position.y = Math.abs(Math.sin(stride)) * 0.08;
+        k.headGroup.rotation.y = Math.sin(this.elapsed * 2.2) * 0.14;
+      } else if (distressed) {
+        k.leftLeg.rotation.x = 0.08;
+        k.rightLeg.rotation.x = -0.08;
+        k.body.position.y = Math.abs(Math.sin(this.elapsed * 5.2)) * 0.05;
+        k.upperBody.rotation.x = -0.08 + Math.sin(this.elapsed * 6.0) * 0.06;
+        k.leftArm.rotation.x = -1.65 + Math.sin(this.elapsed * 7.5) * 0.35;
+        k.leftArm.rotation.z = 0.48;
+        k.rightArm.rotation.x = -1.35 + Math.cos(this.elapsed * 6.8) * 0.3;
+        k.rightArm.rotation.z = -0.4;
+        k.headGroup.rotation.y = Math.sin(this.elapsed * 5.0) * 0.32;
+      } else if (waving) {
+        k.leftLeg.rotation.x = 0;
+        k.rightLeg.rotation.x = 0;
+        k.body.position.y = Math.sin(this.elapsed * 2.4) * 0.03;
+        k.upperBody.rotation.x = 0.04;
+        k.leftArm.rotation.x = -2.2 + Math.sin(this.elapsed * 5.5) * 0.36;
+        k.leftArm.rotation.z = 0.32 + Math.cos(this.elapsed * 5.5) * 0.14;
+        k.rightArm.rotation.x = -0.35 + Math.sin(this.elapsed * 2.2) * 0.08;
+        k.rightArm.rotation.z = -0.16;
+        k.headGroup.rotation.y = Math.sin(this.elapsed * 1.6) * 0.18;
+      }
+    };
+
+    if (step === 0) {
+      // Adegan 1: Kerajaan Kata yang Damai — Jembatan Cahaya, Raja Aksara, Warga Rukun, Hoot & Lila
+      rig.bridgeBeams.forEach((bm, i) => {
+        const mat = bm.material as THREE.MeshBasicMaterial;
+        mat.opacity = 0.24 + Math.sin(this.elapsed * 2.6 + i * 0.9) * 0.12;
+        bm.rotation.y += dt * 0.7;
+      });
+      animateKing(true, false, false);
+
+      // Cheerful chatting & waving villagers in Desa Sapaan
+      rig.villagers.forEach((v, i) => {
+        animateZoneNpc(v.mesh, this.elapsed, v.phase, true, dt, 'stand');
+        v.mesh.rotation.y = v.yaw + Math.sin(this.elapsed * 1.9 + i * 1.1) * 0.18;
+      });
+
+      // Hoot & Lila walking joyfully together across Desa Sapaan square, then chatting & waving
+      const walkStart = 4.6;
+      const walkEnd = 9.8;
+      const wp = THREE.MathUtils.clamp((t - walkStart) / (walkEnd - walkStart), 0, 1);
+      const easeW = wp < 1 ? 1 - Math.pow(1 - wp, 2) : 1;
+      const hX = THREE.MathUtils.lerp(-11.2, -5.8, easeW);
+      const hZ = THREE.MathUtils.lerp(120.2, 124.2, easeW);
+      const lX = hX + 1.45;
+      const lZ = hZ + 0.35;
+      const walkYaw = Math.atan2(-5.8 - -11.2, 124.2 - 120.2);
+
+      this.heroPos.set(hX, getArchipelagoGroundY(hX, hZ), hZ);
+      this.hero.root.position.copy(this.heroPos);
+      rig.lilaMesh.position.set(lX, getArchipelagoGroundY(lX, lZ), lZ);
+
+      const hBlink = computeBlinkScale(this.elapsed, 0.25);
+      this.hero.leftEye.scale.y = hBlink;
+      this.hero.rightEye.scale.y = hBlink;
+
+      if (wp > 0 && wp < 1) {
+        const stride = this.elapsed * 8.4;
+        const swing = Math.sin(stride) * 0.52;
+        this.heroYaw = walkYaw;
+        this.hero.body.rotation.y = this.heroYaw;
+        this.hero.body.position.y = Math.abs(Math.sin(stride)) * 0.09;
+        this.hero.leftLeg.rotation.x = swing;
+        this.hero.rightLeg.rotation.x = -swing;
+        this.hero.leftArm.rotation.x = -swing * 0.65;
+        this.hero.rightArm.rotation.x = swing * 0.65;
+        this.hero.headGroup.rotation.y = Math.sin(this.elapsed * 2.5) * 0.22;
+
+        rig.lilaMesh.rotation.y = walkYaw;
+        rig.lilaMesh.position.y = getArchipelagoGroundY(lX, lZ) + Math.abs(Math.sin(stride + 0.6)) * 0.14;
+        animateCaptiveMesh(rig.lilaMesh, this.elapsed * 1.15, true);
+      } else {
+        // Facing gently toward each other / camera smiling & waving
+        const chatFace = wp >= 1 ? Math.atan2(lX - hX, lZ - hZ) * 0.55 + 0.35 : walkYaw;
+        this.heroYaw = chatFace;
+        this.hero.body.rotation.y = THREE.MathUtils.damp(this.hero.body.rotation.y, chatFace, 8, dt);
+        this.hero.body.position.y = Math.sin(this.elapsed * 3.0) * 0.03;
+        this.hero.leftLeg.rotation.x = THREE.MathUtils.damp(this.hero.leftLeg.rotation.x, 0, 10, dt);
+        this.hero.rightLeg.rotation.x = THREE.MathUtils.damp(this.hero.rightLeg.rotation.x, 0, 10, dt);
+        this.hero.leftArm.rotation.x = -0.35 + Math.sin(this.elapsed * 2.8) * 0.16;
+        this.hero.rightArm.rotation.x = -2.0 + Math.sin(this.elapsed * 5.2) * 0.32;
+        this.hero.rightArm.rotation.z = -0.25;
+        this.hero.headGroup.rotation.y = Math.sin(this.elapsed * 2.2) * 0.16;
+
+        rig.lilaMesh.rotation.y = wp >= 1 ? Math.atan2(hX - lX, hZ - lZ) * 0.55 - 0.3 : walkYaw;
+        rig.lilaMesh.position.y = getArchipelagoGroundY(lX, lZ) + Math.abs(Math.sin(this.elapsed * 4.5)) * 0.09;
+        animateCaptiveMesh(rig.lilaMesh, this.elapsed, true);
+      }
+
+      // 3-part sweeping camera choreography across Adegan 1
+      if (t < 3.6) {
+        const p = t / 3.6;
+        const ang = THREE.MathUtils.lerp(2.25, 0.95, p);
+        _v1.set(Math.cos(ang) * 105, THREE.MathUtils.lerp(74, 52, p), Math.sin(ang) * 105);
+        _v2.set(0, 8, -10);
+      } else if (t < 6.8) {
+        const p = (t - 3.6) / 3.2;
+        const ease = p * p * (3 - 2 * p);
+        _v1.set(
+          THREE.MathUtils.lerp(18, -14, ease),
+          THREE.MathUtils.lerp(22, 13.5, ease),
+          THREE.MathUtils.lerp(22, 18, ease),
+        );
+        _v2.set(
+          THREE.MathUtils.lerp(-6, -4, ease),
+          THREE.MathUtils.lerp(8.5, 4.5, ease),
+          THREE.MathUtils.lerp(-2, 42, ease),
+        );
+      } else {
+        // Settle warmly onto Desa Sapaan square showing Hoot & Lila + chatting villagers
+        const p = Math.min(1, (t - 6.8) / 3.2);
+        const ease = 1 - Math.pow(1 - p, 2);
+        _v1.set(
+          THREE.MathUtils.lerp(-14, hX + 4.4, ease),
+          THREE.MathUtils.lerp(13.5, this.heroPos.y + 3.4, ease),
+          THREE.MathUtils.lerp(110, hZ + 6.4, ease),
+        );
+        _v2.set(
+          THREE.MathUtils.lerp(-4, (hX + lX) * 0.5, ease),
+          THREE.MathUtils.lerp(4.5, this.heroPos.y + 1.25, ease),
+          THREE.MathUtils.lerp(116, (hZ + lZ) * 0.5, ease),
+        );
+      }
+      this.camera.position.lerp(_v1, camLerp);
+      this.controls.target.lerp(_v2, camLerp);
+      return;
+    }
+
+    if (step === 1) {
+      // Adegan 2: Serangan Monster Bayangan & Pecahnya Mahkota menjadi 6 Keping
+      const pt = OVERWORLD_ANCHORS.portal;
+      const raidP = Math.min(1, t / 1.7);
+      const shattered = t >= 1.65;
+      rig.king.crown.visible = !shattered;
+      animateKing(false, true, false);
+
+      rig.raiders.forEach((rd) => {
+        const moveP = Math.min(1, raidP * 1.15);
+        rd.mesh.position.lerpVectors(rd.startPos, rd.targetPos, moveP);
+        rd.mesh.rotation.y = Math.atan2(
+          rig.king.root.position.x - rd.mesh.position.x,
+          rig.king.root.position.z - rd.mesh.position.z,
+        );
+        animateMonsterRig(rd.mesh, {
+          mode: moveP < 0.98 ? 'patrol' : 'attack',
+          speed: moveP < 0.98 ? 6.0 : 0,
+          elapsed: this.elapsed,
+          phase: rd.phase,
+          dt,
+        });
+      });
+
+      const burstT = THREE.MathUtils.clamp((t - 1.65) / 2.6, 0, 1);
+      const easeB = 1 - Math.pow(1 - burstT, 3);
+      rig.crownShards.forEach((sh, i) => {
+        sh.mesh.visible = shattered;
+        if (shattered) {
+          sh.mesh.position.lerpVectors(sh.startPos, sh.endPos, easeB);
+          sh.mesh.position.y += Math.sin(burstT * Math.PI) * 9.5 + Math.sin(this.elapsed * 3.5 + i) * 0.3;
+          sh.mesh.rotation.y += dt * 3.2;
+        }
+      });
+
+      const orbitA = Math.sin(t * 0.35) * 0.55;
+      _v1.set(
+        pt.x - 10 + Math.sin(orbitA) * 9,
+        pt.y + 9 + Math.min(7, t * 1.4),
+        pt.z + 24 + Math.cos(orbitA) * 4,
+      );
+      _v2.set(pt.x, pt.y + 3.0 + Math.min(3, burstT * 3), pt.z + 6);
+      this.camera.position.lerp(_v1, camLerp);
+      this.controls.target.lerp(_v2, camLerp);
+      return;
+    }
+
+    if (step === 2) {
+      // Adegan 3: Kesunyian & Kabut di Keenam Pulau + Monster Bos Raksasa
+      rig.bosses.forEach((bs) => {
+        bs.mesh.position.set(bs.pos.x, bs.pos.y + Math.sin(this.elapsed * 1.8 + bs.phase) * 0.25, bs.pos.z);
+        bs.mesh.rotation.y = Math.sin(this.elapsed * 0.7 + bs.phase) * 0.65;
+        animateMonsterRig(bs.mesh, {
+          mode: 'patrol',
+          speed: 0,
+          elapsed: this.elapsed,
+          phase: bs.phase,
+          dt,
+        });
+      });
+
+      const sweepA = 2.4 - t * 0.16;
+      _v1.set(Math.cos(sweepA) * 155, 62 + Math.sin(t * 0.4) * 5, Math.sin(sweepA) * 145);
+      _v2.set(Math.cos(sweepA + 0.5) * 28, 8, Math.sin(sweepA + 0.5) * 28);
+      this.camera.position.lerp(_v1, camLerp);
+      this.controls.target.lerp(_v2, camLerp);
+      return;
+    }
+
+    if (step === 3) {
+      // Adegan 4: Pelarian Raja Aksara & Lila ke Pintu Ungu, Jejak Pita Merah & Utusan Burung Hantu
+      const pt = OVERWORLD_ANCHORS.portal;
+      const runP = Math.min(1, t / 3.4);
+      const kx = THREE.MathUtils.lerp(pt.x - 1.2, pt.x - 0.8, runP);
+      const kz = THREE.MathUtils.lerp(pt.z + 25, pt.z + 4.0, runP);
+      const lx = THREE.MathUtils.lerp(pt.x + 1.2, pt.x + 0.8, runP);
+      const lz = THREE.MathUtils.lerp(pt.z + 26, pt.z + 5.2, runP);
+      rig.king.root.position.set(kx, getArchipelagoGroundY(kx, kz), kz);
+      rig.king.root.rotation.y = Math.PI;
+      rig.lilaMesh.position.set(lx, getArchipelagoGroundY(lx, lz), lz);
+      rig.lilaMesh.rotation.y = Math.PI;
+
+      animateKing(false, false, runP < 0.98);
+      animateCaptiveMesh(rig.lilaMesh, this.elapsed * (runP < 0.98 ? 1.4 : 0.9), false);
+
+      // Pop Lila's dropped red ribbons along the escape trail
+      rig.ribbonDrops.forEach((rb, i) => {
+        if (t >= rb.dropTime) {
+          rb.mesh.visible = true;
+          rb.mesh.position.y = rb.pos.y + Math.sin(this.elapsed * 3.4 + i) * 0.18;
+          rb.mesh.rotation.y += dt * 1.9;
+        }
+      });
+
+      // Fade Raja Aksara & Lila into shelter behind the Purple Gate once inside
+      if (t > 3.6) {
+        const shelterFade = Math.max(0.01, 1 - (t - 3.6) / 0.85);
+        rig.king.root.scale.setScalar(1.18 * shelterFade);
+        rig.lilaMesh.scale.setScalar(0.86 * shelterFade);
+        if (shelterFade <= 0.03) {
+          rig.king.root.visible = false;
+          rig.lilaMesh.visible = false;
+        }
+      }
+
+      // Owl waits at the Purple Gate and ascends holding the red-sealed letter
+      const owlTakeoff = THREE.MathUtils.clamp((t - 2.6) / 2.8, 0, 1);
+      const flap = Math.sin(this.elapsed * 15.5) * 0.62;
+      this.owlRig.leftWing.rotation.z = 0.12 + flap;
+      this.owlRig.rightWing.rotation.z = -0.12 - flap;
+      this.owlRig.root.position.set(
+        THREE.MathUtils.lerp(pt.x + 2.2, pt.x + 12, owlTakeoff),
+        THREE.MathUtils.lerp(pt.y + 3.2, pt.y + 18, owlTakeoff) + Math.sin(this.elapsed * 3.2) * 0.25,
+        THREE.MathUtils.lerp(pt.z + 8.5, pt.z + 42, owlTakeoff),
+      );
+      this.owlRig.root.rotation.set(0.08, 0.25, Math.sin(this.elapsed * 2.5) * 0.08);
+
+      _v1.set(pt.x - 10.5, pt.y + 7.5 + owlTakeoff * 6, THREE.MathUtils.lerp(pt.z + 29, pt.z + 18, runP));
+      _v2.set(pt.x, pt.y + 2.6 + owlTakeoff * 4, THREE.MathUtils.lerp(pt.z + 15, pt.z + 5, runP));
+      this.camera.position.lerp(_v1, camLerp);
+      this.controls.target.lerp(_v2, camLerp);
+      return;
+    }
+
+    // Adegan 5: Burung Hantu Terbang Menurun Menuju Desa Sapaan tempat Hoot Menunggu
+    const stage = this.getOpeningStageAnchors();
+    const glideP = Math.min(1, t / 5.2);
+    const easeG = 1 - Math.pow(1 - glideP, 2);
+    const owlStartX = 18;
+    const owlStartY = 40;
+    const owlStartZ = -70;
+    const owlGoalX = stage.owlX - 6.5;
+    const owlGoalY = stage.owlY + 6.5;
+    const owlGoalZ = stage.owlZ - 5.5;
+
+    const ox = THREE.MathUtils.lerp(owlStartX, owlGoalX, easeG);
+    const oy = THREE.MathUtils.lerp(owlStartY, owlGoalY, easeG) + Math.sin(this.elapsed * 3.6) * 0.32;
+    const oz = THREE.MathUtils.lerp(owlStartZ, owlGoalZ, easeG);
+    this.owlRig.root.position.set(ox, oy, oz);
+    this.owlRig.root.rotation.set(
+      0.16,
+      Math.atan2(stage.heroX - ox, stage.heroZ - oz),
+      Math.sin(this.elapsed * 2.8) * 0.08,
+    );
+    const flap = Math.sin(this.elapsed * 16) * 0.65;
+    this.owlRig.leftWing.rotation.z = 0.14 + flap;
+    this.owlRig.rightWing.rotation.z = -0.14 - flap;
+
+    // Hoot stands in Desa Sapaan looking up toward the descending Owl
+    this.heroPos.set(stage.heroX, stage.heroY, stage.heroZ);
+    this.hero.root.position.copy(this.heroPos);
+    this.heroYaw = Math.atan2(ox - stage.heroX, oz - stage.heroZ);
+    this.hero.body.rotation.y = this.heroYaw;
+    this.hero.headGroup.rotation.x = -0.34 + Math.sin(this.elapsed * 2.1) * 0.05;
+    this.hero.leftArm.rotation.x = -0.18;
+    this.hero.rightArm.rotation.x = -0.22;
+
+    if (glideP < 0.72) {
+      _v1.set(ox + 9.5, oy + 4.2, oz - 10.5);
+      _v2.set(
+        THREE.MathUtils.lerp(ox, stage.heroX, glideP * 0.6),
+        THREE.MathUtils.lerp(oy - 1.5, stage.heroY + 2.5, glideP * 0.6),
+        THREE.MathUtils.lerp(oz, stage.heroZ, glideP * 0.6),
+      );
+    } else {
+      const fP = (glideP - 0.72) / 0.28;
+      _v1.set(
+        THREE.MathUtils.lerp(ox + 9.5, stage.heroX + 6.5, fP),
+        THREE.MathUtils.lerp(oy + 4.2, stage.heroY + 4.8, fP),
+        THREE.MathUtils.lerp(oz - 10.5, stage.heroZ + 7.0, fP),
+      );
+      _v2.set(stage.heroX, stage.heroY + 2.2, stage.heroZ);
+    }
+    this.camera.position.lerp(_v1, camLerp);
+    this.controls.target.lerp(_v2, camLerp);
+  }
+
   private updateStoryAnimations(dt: number): void {
     this.storyTimer += dt;
+
+    if (this.storyDialog?.kind === 'prologue') {
+      this.updatePrologueAnimations(dt);
+      return;
+    }
 
     if (this.storyDialog?.kind === 'cave_guardian' && this.dungeonRig) {
       const gPos = this.dungeonRig.guardianPos;
@@ -14351,11 +15261,24 @@ export class RpgWorldEngine {
     }
 
     // Keep Hero breathing, blinking & alive even on title/story/dialogue/pause screens!
+    const inPrologue = this.phase === 'story' && this.storyDialog?.kind === 'prologue';
     const inStoryCutscene =
       this.phase === 'story' &&
-      (this.storyDialog?.kind === 'opening' ||
+      (this.storyDialog?.kind === 'prologue' ||
+        this.storyDialog?.kind === 'opening' ||
         this.storyDialog?.kind === 'dungeon_intro' ||
         this.storyDialog?.kind === 'dungeon_rescue');
+    if (inPrologue) {
+      for (const m of this.overworldAllMonsters) {
+        m.mesh.visible = false;
+      }
+      for (const s of this.shooters) {
+        s.mesh.visible = false;
+      }
+      for (const p of this.villageRig.pillagers) {
+        p.root.visible = false;
+      }
+    }
     if (this.phase !== 'playing') {
       this.heroIdleTime = 0;
       this.heroThoughtText = null;
@@ -15315,7 +16238,9 @@ export class RpgWorldEngine {
     if (this.worldMode !== 'overworld') return;
 
     this.areaMists.forEach((mist, zId) => {
-      if (this.liberatedZones.has(zId)) {
+      if (this.storyDialog?.kind === 'prologue') {
+        mist.visible = this.storyDialog.step >= 2;
+      } else if (this.liberatedZones.has(zId)) {
         mist.visible = false;
       } else if (!canVisCull) {
         mist.visible = true;

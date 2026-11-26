@@ -419,6 +419,7 @@ export interface ProjectedLabel {
 
 export interface StoryDialogState {
   kind:
+    | 'prologue'
     | 'opening'
     | 'area_cleared'
     | 'defeat_exit'
@@ -427,6 +428,7 @@ export interface StoryDialogState {
     | 'cave_guardian';
   step: number;
   maxStep?: number;
+  sceneTitle?: string;
   zoneId?: ZoneId;
   speakerName: string;
   speakerRole: string;
