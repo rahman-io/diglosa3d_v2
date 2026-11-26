@@ -10,6 +10,7 @@ import {
   ParkingCircle,
   RotateCw,
   Search,
+  User as UserIcon,
   X,
   Zap,
 } from 'lucide-react';
@@ -119,6 +120,7 @@ interface RpgHudProps {
   onOpenGuide: () => void;
   onOpenOptions: () => void;
   onOpenLeaderboard: () => void;
+  onOpenProfile?: () => void;
   onPrimaryAction: () => void;
   onFireWeapon: () => void;
   onSetFireHeld: (held: boolean) => void;
@@ -273,6 +275,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   onOpenGuide,
   onOpenOptions,
   onOpenLeaderboard,
+  onOpenProfile,
   onPrimaryAction,
   onFireWeapon,
   onSetFireHeld,
@@ -621,7 +624,13 @@ export const RpgHud: React.FC<RpgHudProps> = ({
     onVirtualMoveRef.current(0, 0);
   };
 
-  const drawerItems = [
+  const drawerItems: Array<{
+    label: string;
+    iconSrc?: string;
+    customIcon?: React.ReactNode;
+    onClick: () => void;
+    badge?: number;
+  }> = [
     { label: 'Tas', iconSrc: './assets/ui/icon_bag.png', onClick: onOpenBag, badge: hud.ownedWeapons.length },
     { label: 'Kamus', iconSrc: './assets/ui/icon_kamus.png', onClick: onOpenKamus, badge: hud.wordsMastered },
     { label: 'Misi', iconSrc: './assets/ui/icon_quest.png', onClick: onOpenQuests, badge: activeQuestCount },
@@ -640,6 +649,19 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         setTutorialDismissed(false);
       },
     },
+    ...(onOpenProfile
+      ? [
+          {
+            label: 'Profil',
+            customIcon: (
+              <span className="flex h-8 w-8 items-center justify-center rounded-full border border-cyan-300/60 bg-cyan-500/20 text-cyan-200 sm:h-9 sm:w-9">
+                <UserIcon className="h-5 w-5" />
+              </span>
+            ),
+            onClick: onOpenProfile,
+          },
+        ]
+      : []),
     { label: 'Opsi', iconSrc: './assets/ui/icon_settings.png', onClick: onOpenOptions },
     { label: 'Ranking', iconSrc: './assets/ui/menu_trophy.png', onClick: onOpenLeaderboard },
     { label: 'Jeda', iconSrc: './assets/ui/btn_pause.png', onClick: onPause },
@@ -1493,12 +1515,14 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                       {item.badge}
                     </span>
                   )}
-                  <img
-                    src={item.iconSrc}
-                    alt={item.label}
-                    className="h-8 w-8 shrink-0 object-contain sm:h-9 sm:w-9"
-                    draggable={false}
-                  />
+                  {item.customIcon ?? (
+                    <img
+                      src={item.iconSrc}
+                      alt={item.label}
+                      className="h-8 w-8 shrink-0 object-contain sm:h-9 sm:w-9"
+                      draggable={false}
+                    />
+                  )}
                   <span className="line-clamp-1 w-full [text-shadow:0_1px_2px_rgba(0,0,0,0.92)]">{item.label}</span>
                 </button>
               ))}

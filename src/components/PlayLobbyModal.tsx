@@ -257,8 +257,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
   const activePreset = getCharacterPreset(characterId);
   const activeDiffSpec =
     DIFFICULTY_CARDS.find((c) => c.id === difficulty) || DIFFICULTY_CARDS[1];
-  const trimmedName = playerName.trim();
-  const isNameValid = trimmedName.length >= 2;
+  const trimmedName = playerName.trim() || 'Petualang';
 
   const handleCopyCode = async () => {
     if (!activeRoom?.code) return;
@@ -323,18 +322,18 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
       ? `Room Grup · Kode ${activeRoom.code}`
       : `Room Publik · Kode ${activeRoom.code}`
     : wizardStep === 'character'
-    ? 'Pilih Karakter Petualang'
-    : wizardStep === 'name'
-    ? 'Isi Nama Karakter'
-    : 'Pilih Mode Permainan';
+      ? 'Pilih Karakter Petualang'
+      : 'Pilih Mode Permainan';
 
   const stepItems: Array<{ key: LobbyWizardStep; num: number; label: string }> = [
     { key: 'character', num: 1, label: 'Pilih Karakter' },
-    { key: 'name', num: 2, label: 'Nama Karakter' },
-    { key: 'mode', num: 3, label: 'Mode Main' },
+    { key: 'mode', num: 2, label: 'Mode Main' },
   ];
 
-  const activeStepIdx = stepItems.findIndex((s) => s.key === wizardStep);
+  const activeStepIdx = Math.max(
+    0,
+    stepItems.findIndex((s) => s.key === wizardStep),
+  );
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-[radial-gradient(circle_at_50%_20%,rgba(30,58,138,0.58),rgba(4,9,22,0.96))] p-2 backdrop-blur-md sm:p-4">
@@ -343,7 +342,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-400/15 pb-2.5">
           <div className="flex min-w-0 items-center gap-2.5">
             <span className="inline-flex shrink-0 items-center rounded-lg border border-sky-300/40 bg-sky-500/15 px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-sky-200 sm:text-xs">
-              {activeRoom ? 'Ruang Tunggu Mabar' : `Langkah ${activeStepIdx + 1}/3`}
+              {activeRoom ? 'Ruang Tunggu Mabar' : `Langkah ${activeStepIdx + 1}/2`}
             </span>
             <h2 className="truncate text-base font-black tracking-tight text-white drop-shadow sm:text-xl">
               {headerTitle}
@@ -356,12 +355,10 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                 {stepItems.map((st, idx) => {
                   const isCurrent = st.key === wizardStep;
                   const isCompleted = idx < activeStepIdx;
-                  const canJump = idx < activeStepIdx || (idx === 1) || (idx === 2 && isNameValid);
                   return (
                     <button
                       key={st.key}
                       type="button"
-                      disabled={!canJump}
                       onClick={() => {
                         setErrorMsg(null);
                         setWizardStep(st.key);
@@ -370,8 +367,8 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                         isCurrent
                           ? 'bg-sky-500/25 text-amber-200 ring-1 ring-amber-300/50'
                           : isCompleted
-                          ? 'text-emerald-300 hover:bg-white/5'
-                          : 'text-slate-400 hover:text-slate-200 disabled:opacity-50'
+                            ? 'text-emerald-300 hover:bg-white/5'
+                            : 'text-slate-300 hover:bg-white/5 hover:text-white'
                       }`}
                     >
                       <span
@@ -379,8 +376,8 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                           isCurrent
                             ? 'bg-amber-400 text-slate-950'
                             : isCompleted
-                            ? 'bg-emerald-500 text-white'
-                            : 'bg-slate-800 text-slate-300'
+                              ? 'bg-emerald-500 text-white'
+                              : 'bg-slate-800 text-slate-300'
                         }`}
                       >
                         {isCompleted ? <Check className="h-2.5 w-2.5" /> : st.num}
@@ -832,117 +829,9 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                       type="button"
                       onClick={() => {
                         setErrorMsg(null);
-                        setWizardStep('name');
-                      }}
-                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 px-5 py-2.5 text-xs font-black text-slate-950 shadow-[0_6px_22px_rgba(245,158,11,0.38)] transition hover:brightness-110 active:translate-y-0.5 sm:text-sm"
-                    >
-                      <span>Lanjut Isi Nama</span>
-                      <ArrowRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* STEP 2: DEDICATED CHARACTER NAME PAGE */}
-            {wizardStep === 'name' && (
-              <div className="grid grid-cols-1 gap-3 md:grid-cols-[260px_1fr]">
-                <div className="flex flex-col items-center justify-center rounded-2xl border border-sky-300/25 bg-[#0b1a36]/80 p-3 text-center">
-                  <HeroPreviewCanvas characterId={characterId} className="h-44 sm:h-52" />
-                  <div className="mt-2">
-                    <span
-                      className="inline-flex rounded-md border border-white/25 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-white"
-                      style={{ backgroundColor: activePreset.badgeColor }}
-                    >
-                      {activePreset.name} · {activePreset.roleTitle}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="flex flex-col justify-between gap-4 rounded-2xl border border-white/12 bg-slate-900/75 p-4 sm:p-5">
-                  <div className="space-y-3">
-                    <div>
-                      <span className="text-[11px] font-black uppercase tracking-wider text-cyan-300">
-                        Identitas Petualang
-                      </span>
-                      <h3 className="mt-0.5 text-lg font-black text-white sm:text-xl">
-                        Masukkan Nama Karakter Kamu
-                      </h3>
-                      <p className="mt-1 text-xs font-medium text-slate-300">
-                        Nama ini akan tampil di atas karakter 3D kamu, di daftar pemain room
-                        multiplayer, serta saat bertarung dan berpetualang di dunia Diglosa.
-                      </p>
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label
-                        htmlFor="lobby-player-name"
-                        className="block text-xs font-extrabold text-slate-200"
-                      >
-                        Nama Karakter (2–24 karakter)
-                      </label>
-                      <input
-                        id="lobby-player-name"
-                        type="text"
-                        autoFocus
-                        maxLength={24}
-                        value={playerName}
-                        onChange={(e) => {
-                          setErrorMsg(null);
-                          onPreviewCharacter(characterId, e.target.value);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && isNameValid) {
-                            e.preventDefault();
-                            setWizardStep('mode');
-                          }
-                        }}
-                        placeholder={`Misalnya ${activePreset.name} Hebat`}
-                        className="w-full rounded-xl border-2 border-sky-400/35 bg-slate-950/90 px-4 py-3 text-base font-black text-white outline-none transition focus:border-amber-300"
-                      />
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                        <span
-                          className={`text-[11px] font-bold ${
-                            isNameValid ? 'text-emerald-300' : 'text-amber-300'
-                          }`}
-                        >
-                          {isNameValid
-                            ? `Siap tampil sebagai "${trimmedName}"`
-                            : 'Minimal 2 karakter untuk melanjutkan.'}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => onPreviewCharacter(characterId, activePreset.name)}
-                          className="rounded-lg border border-white/15 bg-slate-800/80 px-2.5 py-1 text-[11px] font-bold text-slate-200 transition hover:bg-slate-700"
-                        >
-                          Pakai "{activePreset.name}"
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-white/10 pt-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setErrorMsg(null);
-                        setWizardStep('character');
-                      }}
-                      className="inline-flex items-center gap-1.5 rounded-xl border border-white/20 bg-slate-950/75 px-4 py-2.5 text-xs font-black text-slate-200 transition hover:border-white/40 hover:bg-slate-800"
-                    >
-                      <ArrowLeft className="h-4 w-4" />
-                      <span>Kembali ke Pilih Karakter</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      disabled={!isNameValid}
-                      onClick={() => {
-                        if (!isNameValid) return;
-                        setErrorMsg(null);
                         setWizardStep('mode');
                       }}
-                      className="inline-flex items-center gap-2 rounded-xl border border-sky-300/65 bg-gradient-to-r from-sky-500 to-blue-600 px-5 py-2.5 text-xs font-black text-white shadow-[0_6px_22px_rgba(14,165,233,0.38)] transition hover:brightness-110 disabled:opacity-45 sm:text-sm"
+                      className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-amber-200/60 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 px-5 py-2.5 text-xs font-black text-slate-950 shadow-[0_6px_22px_rgba(245,158,11,0.38)] transition hover:brightness-110 active:translate-y-0.5 sm:text-sm"
                     >
                       <span>Lanjut Pilih Mode Main</span>
                       <ArrowRight className="h-4 w-4" />
@@ -952,10 +841,10 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
               </div>
             )}
 
-            {/* STEP 3: 3 GAME MODES SELECTION */}
+            {/* STEP 2: 3 GAME MODES SELECTION */}
             {wizardStep === 'mode' && (
               <>
-                {/* Selected Character + Nickname Summary Bar */}
+                {/* Selected Character + Account Name Summary Bar */}
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-white/12 bg-slate-900/75 px-3.5 py-2">
                   <div className="flex min-w-0 items-center gap-2.5">
                     <span
@@ -965,10 +854,13 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                       <UserIcon className="h-4 w-4" />
                     </span>
                     <div className="min-w-0">
-                      <div className="truncate text-xs font-black text-white">
-                        {trimmedName || activePreset.name}{' '}
+                      <div className="flex flex-wrap items-center gap-1.5 truncate text-xs font-black text-white">
+                        <span>{trimmedName}</span>
                         <span className="font-bold text-cyan-300">
                           ({activePreset.name} · {activePreset.roleTitle})
+                        </span>
+                        <span className="rounded-md border border-emerald-400/35 bg-emerald-500/15 px-1.5 py-0.5 text-[9.5px] font-bold text-emerald-200">
+                          Nama Akun · Ubah di Profil
                         </span>
                       </div>
                       <div className="truncate text-[10px] font-medium text-slate-400">
@@ -979,14 +871,6 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                   </div>
 
                   <div className="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => setWizardStep('name')}
-                      className="inline-flex items-center gap-1 rounded-xl border border-white/15 bg-slate-950/80 px-2.5 py-1.5 text-[11px] font-bold text-slate-200 transition hover:border-white/35 hover:bg-slate-800"
-                    >
-                      <Edit3 className="h-3 w-3" />
-                      <span>Ubah Nama</span>
-                    </button>
                     <button
                       type="button"
                       onClick={() => setWizardStep('character')}

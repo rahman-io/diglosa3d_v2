@@ -144,12 +144,22 @@ export function getCharacterPreset(id?: string | null): CharacterPreset {
 
 const CHAR_STORAGE_KEY = 'diglosa_character_id';
 const NAME_STORAGE_KEY = 'diglosa_player_name';
+const ACCOUNT_CHAR_PREFIX = 'diglosa_account_char_';
+const ACCOUNT_NAME_PREFIX = 'diglosa_account_name_';
+
+function isValidPresetId(raw: string | null | undefined): raw is CharacterPresetId {
+  return Boolean(raw && CHARACTER_PRESETS.some((c) => c.id === raw));
+}
+
+export function sanitizeCharacterName(raw: string | null | undefined): string {
+  return (raw || '').trim().replace(/\s+/g, ' ').slice(0, 24);
+}
 
 export function loadSavedCharacterId(): CharacterPresetId {
   try {
     const raw = localStorage.getItem(CHAR_STORAGE_KEY);
-    if (CHARACTER_PRESETS.some((c) => c.id === raw)) {
-      return raw as CharacterPresetId;
+    if (isValidPresetId(raw)) {
+      return raw;
     }
   } catch {
     // ignore
@@ -165,23 +175,82 @@ export function saveCharacterId(id: CharacterPresetId): void {
   }
 }
 
-export function loadSavedPlayerName(fallback = 'Petualang'): string {
+export function loadAccountCharacterId(uid?: string | null): CharacterPresetId {
   try {
-    const raw = localStorage.getItem(NAME_STORAGE_KEY);
-    if (raw && raw.trim().length > 0) return raw.trim().slice(0, 24);
+    if (uid) {
+      const accountRaw = localStorage.getItem(`${ACCOUNT_CHAR_PREFIX}${uid}`);
+      if (isValidPresetId(accountRaw)) {
+        return accountRaw;
+      }
+    }
   } catch {
     // ignore
   }
-  return fallback;
+  return loadSavedCharacterId();
+}
+
+export function saveAccountCharacterId(id: CharacterPresetId, uid?: string | null): void {
+  saveCharacterId(id);
+  if (!uid) return;
+  try {
+    localStorage.setItem(`${ACCOUNT_CHAR_PREFIX}${uid}`, id);
+  } catch {
+    // ignore
+  }
+}
+
+export function loadSavedPlayerName(fallback = 'Petualang'): string {
+  try {
+    const raw = sanitizeCharacterName(localStorage.getItem(NAME_STORAGE_KEY));
+    if (raw.length >= 2) return raw;
+  } catch {
+    // ignore
+  }
+  return sanitizeCharacterName(fallback) || 'Petualang';
 }
 
 export function savePlayerName(name: string): void {
   try {
-    const clean = name.trim().slice(0, 24);
-    if (clean) localStorage.setItem(NAME_STORAGE_KEY, clean);
+    const clean = sanitizeCharacterName(name);
+    if (clean.length >= 2) localStorage.setItem(NAME_STORAGE_KEY, clean);
   } catch {
     // ignore
   }
+}
+
+export function loadAccountPlayerName(uid?: string | null, fallback = 'Petualang'): string {
+  const safeFallback = sanitizeCharacterName(fallback) || 'Petualang';
+  try {
+    if (uid) {
+      const accountRaw = sanitizeCharacterName(localStorage.getItem(`${ACCOUNT_NAME_PREFIX}${uid}`));
+      if (accountRaw.length >= 2) {
+        return accountRaw;
+      }
+      const legacyRaw = sanitizeCharacterName(localStorage.getItem(NAME_STORAGE_KEY));
+      if (legacyRaw.length >= 2 && legacyRaw !== 'Petualang' && legacyRaw !== 'Builder') {
+        localStorage.setItem(`${ACCOUNT_NAME_PREFIX}${uid}`, legacyRaw);
+        return legacyRaw;
+      }
+      return safeFallback;
+    }
+  } catch {
+    // ignore
+  }
+  return loadSavedPlayerName(safeFallback);
+}
+
+export function saveAccountPlayerName(name: string, uid?: string | null): string {
+  const clean = sanitizeCharacterName(name);
+  if (clean.length < 2) return clean;
+  savePlayerName(clean);
+  if (uid) {
+    try {
+      localStorage.setItem(`${ACCOUNT_NAME_PREFIX}${uid}`, clean);
+    } catch {
+      // ignore
+    }
+  }
+  return clean;
 }
 
 /**

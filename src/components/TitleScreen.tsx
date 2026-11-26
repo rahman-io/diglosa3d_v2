@@ -6,13 +6,15 @@ import {
   RefreshCw,
   Sparkles,
   Trophy,
+  User as UserIcon,
   Volume2,
   X,
 } from 'lucide-react';
 import { User } from 'firebase/auth';
 import { soundEngine } from '../audio/soundEngine';
+import { getCharacterPreset } from '../data/characterPresets';
 import { getWordOfTheDay } from '../data/vocabCatalog';
-import { LearningModeType } from '../types/game';
+import { CharacterPresetId, LearningModeType } from '../types/game';
 import { isFullscreenActive, toggleAppFullscreen } from '../utils/fullscreen';
 import { PWAInstallButton } from './PwaControls';
 
@@ -25,6 +27,9 @@ interface TitleScreenProps {
   onQuickLearn: (mode: LearningModeType) => void;
   onOpenLeaderboard: () => void;
   onOpenGuide: () => void;
+  onOpenProfile?: () => void;
+  playerName?: string;
+  characterId?: CharacterPresetId;
   bestLocalScore: number;
   user: User | null;
   onSignOut?: () => Promise<void>;
@@ -45,6 +50,9 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   onQuickLearn,
   onOpenLeaderboard,
   onOpenGuide,
+  onOpenProfile,
+  playerName = 'Petualang',
+  characterId = 'hoot_emerald',
   bestLocalScore,
   user,
   onSignOut,
@@ -60,6 +68,8 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [isFs, setIsFs] = useState(false);
   const wotd = getWordOfTheDay();
+  const preset = getCharacterPreset(characterId);
+  const resolvedPlayerName = playerName.trim() || 'Petualang';
 
   useEffect(() => {
     const onFsChange = () => setIsFs(isFullscreenActive());
@@ -88,9 +98,36 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
   return (
     <div className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-3 sm:p-6">
-      {/* TOP BAR: Title Logo Upper-Center + Top-Left Install CTA + Top-Right Medallions */}
+      {/* TOP BAR: Title Logo Upper-Center + Top-Left Profile & Install CTA + Top-Right Medallions */}
       <div className="relative flex w-full items-start justify-center">
-        <div className="pointer-events-auto absolute left-0 top-0 flex items-center gap-2">
+        <div className="pointer-events-auto absolute left-0 top-0 flex items-center gap-1.5 sm:gap-2">
+          {onOpenProfile && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowInfoSheet(false);
+                setShowQuickMenu(false);
+                onOpenProfile();
+              }}
+              title="Menu Profil & Nama Karakter"
+              className="inline-flex max-w-[140px] items-center gap-1.5 rounded-full border-2 border-amber-300/65 bg-slate-950/85 py-1 pl-1 pr-2.5 text-left text-white shadow-lg backdrop-blur-md transition hover:border-amber-300 hover:bg-slate-900 sm:max-w-[200px] sm:pr-3"
+            >
+              <span
+                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/40 text-xs font-black text-white shadow sm:h-8 sm:w-8"
+                style={{ backgroundColor: preset.badgeColor }}
+              >
+                {resolvedPlayerName.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="min-w-0 leading-tight">
+                <span className="block truncate text-[11px] font-black text-amber-100 sm:text-xs">
+                  {resolvedPlayerName}
+                </span>
+                <span className="block truncate text-[9px] font-bold text-cyan-300">
+                  Menu Profil
+                </span>
+              </span>
+            </button>
+          )}
           <PWAInstallButton compact />
         </div>
 
@@ -203,36 +240,51 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
               </div>
 
               {user && (
-                <div className="mt-2.5 flex items-center justify-between gap-2 rounded-xl border border-emerald-400/25 bg-emerald-950/35 px-2.5 py-2">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-emerald-300/50 bg-emerald-500/25 text-xs font-black text-emerald-200">
-                      {(user.displayName || user.email || 'P').slice(0, 1).toUpperCase()}
-                    </span>
-                    <div className="min-w-0">
-                      <div className="truncate text-xs font-black text-white">
-                        {user.displayName || 'Petualang'}
-                      </div>
-                      <div className="truncate text-[10px] text-emerald-200/85">
-                        {user.email || 'Akun Google Aktif'}
+                <div className="mt-2.5 space-y-2 rounded-xl border border-emerald-400/25 bg-emerald-950/35 px-2.5 py-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-emerald-300/50 bg-emerald-500/25 text-xs font-black text-emerald-200">
+                        {(user.displayName || user.email || 'P').slice(0, 1).toUpperCase()}
+                      </span>
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-black text-white">
+                          {resolvedPlayerName}
+                        </div>
+                        <div className="truncate text-[10px] text-emerald-200/85">
+                          {user.email || user.displayName || 'Akun Google Aktif'}
+                        </div>
                       </div>
                     </div>
+                    {onSignOut && (
+                      <button
+                        type="button"
+                        disabled={logoutBusy}
+                        onClick={() => {
+                          setLogoutBusy(true);
+                          void onSignOut().finally(() => {
+                            setLogoutBusy(false);
+                            setShowInfoSheet(false);
+                          });
+                        }}
+                        title="Logout dari Akun Google"
+                        className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-400/45 bg-rose-500/20 px-2.5 py-1.5 text-[10px] font-black text-rose-100 transition hover:bg-rose-500/35 disabled:opacity-50"
+                      >
+                        <LogOut className="h-3 w-3" />
+                        <span>{logoutBusy ? '...' : 'Logout'}</span>
+                      </button>
+                    )}
                   </div>
-                  {onSignOut && (
+                  {onOpenProfile && (
                     <button
                       type="button"
-                      disabled={logoutBusy}
                       onClick={() => {
-                        setLogoutBusy(true);
-                        void onSignOut().finally(() => {
-                          setLogoutBusy(false);
-                          setShowInfoSheet(false);
-                        });
+                        setShowInfoSheet(false);
+                        onOpenProfile();
                       }}
-                      title="Logout dari Akun Google"
-                      className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-400/45 bg-rose-500/20 px-2.5 py-1.5 text-[10px] font-black text-rose-100 transition hover:bg-rose-500/35 disabled:opacity-50"
+                      className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-amber-300/45 bg-amber-500/20 py-1.5 text-[11px] font-extrabold text-amber-200 transition hover:bg-amber-500/35"
                     >
-                      <LogOut className="h-3 w-3" />
-                      <span>{logoutBusy ? '...' : 'Logout'}</span>
+                      <UserIcon className="h-3.5 w-3.5" />
+                      <span>Buka Menu Profil &amp; Ganti Nama</span>
                     </button>
                   )}
                 </div>
@@ -378,13 +430,15 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
             type="button"
             onClick={onPlayMenu ? onPlayMenu : hasSavedGame ? onContinue : onStartNew}
             title={
-              hasResumableRoom
-                ? 'Kembali ke Room Mabar atau Pilih Mode'
-                : hasSavedGame
-                  ? 'Pilih Mode (Lanjut Solo atau Mabar)'
-                  : 'Mulai Petualangan'
+              hasResumableRoom || hasSavedGame
+                ? 'Lanjutkan Permainan'
+                : 'Mulai Petualangan'
             }
-            aria-label={hasSavedGame ? 'Pilih Mode Permainan' : 'Mulai Petualangan'}
+            aria-label={
+              hasResumableRoom || hasSavedGame
+                ? 'Lanjutkan Permainan'
+                : 'Mulai Petualangan'
+            }
             className="relative flex h-[88px] w-[88px] items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:h-[108px] sm:w-[108px]"
           >
             <img

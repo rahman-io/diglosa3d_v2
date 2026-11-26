@@ -539,6 +539,60 @@ interface SavedStatePayload {
   oceanMaterials?: OceanMaterials;
   discoveredBiota?: SeaBiotaId[];
   oceanOpenedChests?: string[];
+  characterId?: CharacterPresetId;
+}
+
+export interface SavedGameSummary {
+  level: number;
+  score: number;
+  diamonds: number;
+  crowns: number;
+  wordsMastered: number;
+  monstersDefeated: number;
+  difficulty: DifficultyMode;
+  worldMode: WorldLocationMode;
+  zoneName: string;
+  characterId?: CharacterPresetId;
+}
+
+export function readSavedGameSummary(): SavedGameSummary | null {
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as Partial<SavedStatePayload>;
+    if (!data || typeof data !== 'object') return null;
+    const xp = typeof data.xp === 'number' ? data.xp : 0;
+    const levelInfo = getLevelInfo(xp);
+    const wordProgress = data.wordProgress || {};
+    let wordsMastered = 0;
+    for (const wp of Object.values(wordProgress)) {
+      if (wp && typeof wp.b === 'number' && wp.b >= 3) wordsMastered++;
+    }
+    const worldMode: WorldLocationMode = data.lastWorldMode || 'overworld';
+    const zoneId = data.lastDungeonZoneId;
+    const zoneName =
+      worldMode === 'dungeon' && zoneId && ZONE_INFO[zoneId]
+        ? `Gua ${ZONE_INFO[zoneId].name}`
+        : worldMode === 'ocean'
+          ? 'Dunia Bawah Laut'
+          : worldMode === 'academy'
+            ? 'Istana IELTS'
+            : 'Nusantara Kata';
+    return {
+      level: levelInfo.level,
+      score: typeof data.score === 'number' ? data.score : 0,
+      diamonds: typeof data.diamonds === 'number' ? data.diamonds : 0,
+      crowns: Array.isArray(data.ribbons) ? data.ribbons.length : 0,
+      wordsMastered,
+      monstersDefeated: typeof data.monstersDefeated === 'number' ? data.monstersDefeated : 0,
+      difficulty: data.settings?.difficulty || 'petualang',
+      worldMode,
+      zoneName,
+      characterId: data.characterId,
+    };
+  } catch {
+    return null;
+  }
 }
 
 const MAX_COLLECTIBLES = 56;
@@ -2091,6 +2145,7 @@ export class RpgWorldEngine {
         oceanMaterials: { ...this.oceanMaterials },
         discoveredBiota: Array.from(this.discoveredBiota),
         oceanOpenedChests: Array.from(this.openedOceanChests),
+        characterId: this.localCharacterId,
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
       this.hasSave = true;
@@ -2104,6 +2159,10 @@ export class RpgWorldEngine {
       const raw = localStorage.getItem(SAVE_KEY);
       if (!raw) return false;
       const data = JSON.parse(raw) as SavedStatePayload;
+      if (data.characterId) {
+        this.localCharacterId = data.characterId;
+        applyHeroAppearance(this.hero, getCharacterPreset(data.characterId).colors, data.characterId);
+      }
       this.xp = data.xp || 0;
       this.maxHp = data.maxHp || TUNE.hpStart;
       this.hp = Math.max(1, Math.min(this.maxHp, data.hp || this.maxHp));

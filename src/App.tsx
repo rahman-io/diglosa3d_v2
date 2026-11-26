@@ -15,6 +15,7 @@ import { LeaderboardModal } from './components/LeaderboardModal';
 import { LearningModeModal } from './components/LearningModeModal';
 import { LoginGateScreen } from './components/LoginGateScreen';
 import { NpcDialogueModal } from './components/NpcDialogueModal';
+import { ProfileModal } from './components/ProfileModal';
 import {
   getGlobalPwaInstallState,
   OfflineIndicator,
@@ -22,6 +23,8 @@ import {
   useOnlineStatus,
   usePWAInstall,
 } from './components/PwaControls';
+import { ResumeCountdownOverlay } from './components/ResumeCountdownOverlay';
+import { ResumeSessionModal } from './components/ResumeSessionModal';
 import { RpgHud } from './components/RpgHud';
 import { RpgSideModals, SideModalTab } from './components/RpgSideModals';
 import { StoryOverlayModal } from './components/StoryOverlayModal';
@@ -31,6 +34,7 @@ import { auth, probeFirestoreReachable, signInWithGoogleAccount } from './fireba
 import {
   fetchPublicLeaderboard,
   loadUserProgress,
+  saveAccountPlayerNameToCloud,
   syncRunToCloud,
 } from './services/leaderboardService';
 import {
@@ -62,10 +66,12 @@ import {
   VoiceCommandController,
 } from './services/voiceCommandService';
 import {
+  loadAccountCharacterId,
+  loadAccountPlayerName,
   loadSavedCharacterId,
   loadSavedPlayerName,
-  saveCharacterId,
-  savePlayerName,
+  saveAccountCharacterId,
+  saveAccountPlayerName,
 } from './data/characterPresets';
 import {
   ActiveSessionSnapshot,
@@ -289,6 +295,12 @@ function DiglosaRpgApp() {
   const [craftingOpen, setCraftingOpen] = useState(false);
   const [dialogueNpcId, setDialogueNpcId] = useState<string | null>(null);
   const [sideTab, setSideTab] = useState<SideModalTab>(null);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [resumePromptOpen, setResumePromptOpen] = useState(false);
+  const [resumeCountdown, setResumeCountdown] = useState<{
+    label: string;
+    isMultiplayer?: boolean;
+  } | null>(null);
   const [difficultyPromptOpen, setDifficultyPromptOpen] = useState(false);
   const [pendingDifficulty, setPendingDifficulty] = useState<DifficultyMode>(
     () => initialSessionRef.current?.lobbyDraft.difficulty ?? 'petualang',
@@ -746,12 +758,12 @@ function DiglosaRpgApp() {
   useEffect(() => {
     const introActive =
       !showAssetDownloader &&
-      (hud.phase === 'title' || difficultyPromptOpen);
+      (hud.phase === 'title' || difficultyPromptOpen || resumePromptOpen);
     soundEngine.setIntroMusic(introActive);
     return () => {
       soundEngine.setIntroMusic(false);
     };
-  }, [showAssetDownloader, hud.phase, difficultyPromptOpen]);
+  }, [showAssetDownloader, hud.phase, difficultyPromptOpen, resumePromptOpen]);
 
   useEffect(() => {
     if (!showAssetDownloader) {
@@ -858,18 +870,17 @@ function DiglosaRpgApp() {
     const unsubAuth = onAuthStateChanged(auth, async (nextUser) => {
       setUser(nextUser);
       setAuthChecked(true);
-      if (nextUser?.displayName) {
-        setPlayerName((prev) => {
-          const wasEditingLobby = initialSessionRef.current?.stage === 'lobby';
-          if ((!prev && !wasEditingLobby) || prev === 'Petualang') {
-            const cleaned = nextUser.displayName!.trim().slice(0, 24);
-            if (cleaned) savePlayerName(cleaned);
-            return cleaned || prev;
-          }
-          return prev;
-        });
-      }
       if (nextUser) {
+        const accountChar = loadAccountCharacterId(nextUser.uid);
+        const accountName = loadAccountPlayerName(
+          nextUser.uid,
+          nextUser.displayName || 'Petualang',
+        );
+        setCharacterId(accountChar);
+        setPlayerName(accountName);
+        saveAccountPlayerName(accountName, nextUser.uid);
+        engineRef.current?.setLocalAppearance(accountChar, accountName);
+
         if (typeof navigator !== 'undefined' && !navigator.onLine) return;
         try {
           const reachable = await probeFirestoreReachable();
@@ -879,6 +890,16 @@ function DiglosaRpgApp() {
             setUserProfile(profile);
             if (profile) {
               setBestLocalScore((prev) => (profile.bestScore > prev ? profile.bestScore : prev));
+              const cloudName = (profile.playerName || '').trim().slice(0, 24);
+              if (
+                cloudName.length >= 2 &&
+                cloudName !== 'Builder' &&
+                cloudName !== 'Petualang'
+              ) {
+                setPlayerName(cloudName);
+                saveAccountPlayerName(cloudName, nextUser.uid);
+                engineRef.current?.setLocalAppearance(accountChar, cloudName);
+              }
             }
           }
         } catch {
@@ -902,6 +923,15 @@ function DiglosaRpgApp() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
 
       if (e.code === 'Escape') {
+        if (resumeCountdown) return;
+        if (profileOpen) {
+          setProfileOpen(false);
+          return;
+        }
+        if (resumePromptOpen) {
+          setResumePromptOpen(false);
+          return;
+        }
         if (vsIntroData) {
           const wasMp = vsIntroData.isMultiplayer;
           setVsIntroData(null);
@@ -952,6 +982,9 @@ function DiglosaRpgApp() {
       } else if (
         (e.code === 'KeyM' || e.code === 'KeyH') &&
         hud.phase === 'playing' &&
+        !resumeCountdown &&
+        !profileOpen &&
+        !resumePromptOpen &&
         !activeBattle &&
         !activeLearning &&
         !activeCaveSeal &&
@@ -966,6 +999,9 @@ function DiglosaRpgApp() {
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
+    resumeCountdown,
+    profileOpen,
+    resumePromptOpen,
     vsIntroData,
     difficultyPromptOpen,
     activeRoom,
@@ -1004,6 +1040,7 @@ function DiglosaRpgApp() {
         }
         setSyncing(true);
         syncRunToCloud({
+          playerName,
           score: hud.score,
           cityLevel: hud.level,
           landmarksCount: hud.wordsMastered,
@@ -1190,9 +1227,20 @@ function DiglosaRpgApp() {
     voiceControllerRef.current?.toggle();
   }, []);
 
+  const startResumeCountdown = useCallback((label: string, isMultiplayer = false) => {
+    engineRef.current?.setPhase('paused');
+    setResumeCountdown({ label, isMultiplayer });
+  }, []);
+
+  const handleResumeCountdownComplete = useCallback(() => {
+    setResumeCountdown(null);
+    engineRef.current?.setPhase('playing');
+  }, []);
+
   const handleContinue = useCallback(() => {
     if (getAlwaysFullscreenPref()) void requestAppFullscreen();
     setDifficultyPromptOpen(false);
+    setResumePromptOpen(false);
     setIsMultiplayerPlaying(false);
     setActiveBattle(null);
     setActiveLearning(null);
@@ -1204,9 +1252,9 @@ function DiglosaRpgApp() {
     setCloudSyncNote(null);
     engineRef.current?.setLocalAppearance(characterId, playerName);
     engineRef.current?.setMultiplayerActive(false);
-    engineRef.current?.continueGame();
-    setHudTutorialRunKey((k) => k + 1);
-  }, [characterId, playerName]);
+    engineRef.current?.continueGame({ silent: true, targetPhase: 'paused' });
+    startResumeCountdown('Melanjutkan Petualangan Solo', false);
+  }, [characterId, playerName, startResumeCountdown]);
 
   const appendChatMessage = useCallback((msg: RoomChatMessage): boolean => {
     if (chatSeenIdsRef.current.has(msg.id)) return false;
@@ -1286,8 +1334,8 @@ function DiglosaRpgApp() {
           waveCount,
           squadName,
         });
+        engine.setPhase('paused');
         if (!isRejoin) {
-          engine.setPhase('paused');
           setHudTutorialRunKey((k) => k + 1);
         }
       }
@@ -1322,6 +1370,7 @@ function DiglosaRpgApp() {
         });
       } else {
         setVsIntroData(null);
+        setResumePromptOpen(false);
         const transport = transportRef.current;
         if (transport) {
           if (transport.getOpenChannelCount() > 0) {
@@ -1331,6 +1380,7 @@ function DiglosaRpgApp() {
             transport.reconnectAllPeers();
           }
         }
+        startResumeCountdown(`Melanjutkan Room Mabar · ${room.code}`, true);
       }
     },
     [
@@ -1341,6 +1391,7 @@ function DiglosaRpgApp() {
       user?.uid,
       roomMembers,
       buildWaveMissionPreview,
+      startResumeCountdown,
     ],
   );
 
@@ -1927,24 +1978,53 @@ function DiglosaRpgApp() {
 
   const handlePreviewCharacter = useCallback(
     (nextId: CharacterPresetId, nextName: string) => {
+      const fixedName = (playerName || nextName || 'Petualang').trim().slice(0, 24) || 'Petualang';
       setCharacterId(nextId);
-      setPlayerName(nextName);
-      saveCharacterId(nextId);
-      if (nextName.trim()) savePlayerName(nextName);
-      engineRef.current?.setLocalAppearance(nextId, nextName);
+      saveAccountCharacterId(nextId, user?.uid);
+      engineRef.current?.setLocalAppearance(nextId, fixedName);
       if (activeRoom?.roomId) {
         void updateMyMemberProfile({
           roomId: activeRoom.roomId,
-          displayName: nextName || 'Petualang',
+          displayName: fixedName,
           characterId: nextId,
         }).catch(() => undefined);
       }
     },
-    [activeRoom?.roomId],
+    [activeRoom?.roomId, playerName, user?.uid],
+  );
+
+  const handleSaveProfileName = useCallback(
+    async (nextName: string) => {
+      const clean = saveAccountPlayerName(nextName, user?.uid);
+      if (clean.length < 2) {
+        throw new Error('Nama karakter minimal 2 karakter.');
+      }
+      setPlayerName(clean);
+      engineRef.current?.setLocalAppearance(characterId, clean);
+      if (activeRoom?.roomId) {
+        await updateMyMemberProfile({
+          roomId: activeRoom.roomId,
+          displayName: clean,
+          characterId,
+        }).catch(() => undefined);
+      }
+      if (user?.emailVerified) {
+        const updatedProfile = await saveAccountPlayerNameToCloud({
+          playerName: clean,
+          cachedProfile: userProfileRef.current,
+        });
+        if (updatedProfile) {
+          setUserProfile(updatedProfile);
+        }
+        leaderboardFetchedAtRef.current = 0;
+      }
+    },
+    [activeRoom?.roomId, characterId, user?.emailVerified, user?.uid],
   );
 
   const handleStartNew = useCallback(() => {
     if (getAlwaysFullscreenPref()) void requestAppFullscreen();
+    setResumePromptOpen(false);
     setRestoredLobbyDraft(null);
     setPendingDifficulty(hud.settings.difficulty);
     setDifficultyPromptOpen(true);
@@ -1954,6 +2034,15 @@ function DiglosaRpgApp() {
       });
     }
   }, [hud.settings.difficulty, user?.uid, user?.emailVerified, activeRoom, resumableRoom]);
+
+  const handlePlayMenu = useCallback(() => {
+    if (getAlwaysFullscreenPref()) void requestAppFullscreen();
+    if (hud.hasSavedGame || Boolean(resumableRoom)) {
+      setResumePromptOpen(true);
+      return;
+    }
+    handleStartNew();
+  }, [hud.hasSavedGame, resumableRoom, handleStartNew]);
 
   const handleConfirmSolo = useCallback(
     (difficulty: DifficultyMode, spawnMode: SpawnPreference) => {
@@ -2034,6 +2123,7 @@ function DiglosaRpgApp() {
       characterId,
     });
     setResumableRoom(null);
+    setResumePromptOpen(false);
     setMySpawnIndex(res.spawnIndex);
     applyMetaToRoomRef(res.room.roomId, {
       g: res.room.groupName,
@@ -2045,6 +2135,8 @@ function DiglosaRpgApp() {
     setActiveRoom(res.room);
     if (res.room.status === 'playing') {
       enterMultiplayerMatch(res.room, res.spawnIndex, true);
+    } else {
+      setDifficultyPromptOpen(true);
     }
   }, [resumableRoom, playerName, characterId, applyMetaToRoomRef, enterMultiplayerMatch]);
 
@@ -2298,6 +2390,7 @@ function DiglosaRpgApp() {
     try {
       const questsDone = hud.quests.filter((q) => q.claimed).length;
       const { newPersonalBest, profile } = await syncRunToCloud({
+        playerName,
         score: hud.score,
         cityLevel: hud.level,
         landmarksCount: hud.wordsMastered,
@@ -2318,7 +2411,7 @@ function DiglosaRpgApp() {
     } finally {
       setSyncing(false);
     }
-  }, [hud, leaderboardOpen, refreshLeaderboard]);
+  }, [hud, playerName, leaderboardOpen, refreshLeaderboard]);
 
   const isAuthenticatedUser = Boolean(user && user.emailVerified);
   const shouldIdle3dWorld =
@@ -2326,7 +2419,12 @@ function DiglosaRpgApp() {
     !authChecked ||
     !isAuthenticatedUser ||
     ((hud.phase === 'title' || !activeRoom || !isMultiplayerPlaying) &&
-      (difficultyPromptOpen || leaderboardOpen || Boolean(sideTab) || Boolean(vsIntroData)));
+      (difficultyPromptOpen ||
+        resumePromptOpen ||
+        profileOpen ||
+        leaderboardOpen ||
+        Boolean(sideTab) ||
+        Boolean(vsIntroData)));
 
   useEffect(() => {
     engineRef.current?.setBackgroundIdle(shouldIdle3dWorld);
@@ -2453,8 +2551,13 @@ function DiglosaRpgApp() {
       quickLearnStandaloneRef.current = false;
       const targetPhase =
         saved.phase === 'paused' || saved.phase === 'gameover' ? saved.phase : 'playing';
+      const shouldRunCountdown =
+        targetPhase === 'playing' && !saved.vsIntroData && !saved.activeLearning;
       engine.setMultiplayerActive(false);
-      engine.continueGame({ silent: true, targetPhase });
+      engine.continueGame({
+        silent: true,
+        targetPhase: shouldRunCountdown ? 'paused' : targetPhase,
+      });
       if (saved.vsIntroData) {
         setVsIntroData(saved.vsIntroData);
       }
@@ -2464,6 +2567,9 @@ function DiglosaRpgApp() {
       }
       if (saved.sideTab) setSideTab(saved.sideTab);
       if (saved.leaderboardOpen) setLeaderboardOpen(true);
+      if (shouldRunCountdown) {
+        startResumeCountdown('Melanjutkan Sesi Aktif', false);
+      }
       finishRestore();
       return;
     }
@@ -2477,6 +2583,7 @@ function DiglosaRpgApp() {
     playerName,
     applyMetaToRoomRef,
     enterMultiplayerMatch,
+    startResumeCountdown,
   ]);
 
   // Continuously persist current stage in sessionStorage so browser refresh preserves exact screen/progress
@@ -2623,13 +2730,14 @@ function DiglosaRpgApp() {
         authChecked &&
         isAuthenticatedUser &&
         sessionRestoreDone &&
-        !difficultyPromptOpen && (
+        !difficultyPromptOpen &&
+        !resumePromptOpen && (
         <TitleScreen
           hasSavedGame={hud.hasSavedGame}
           hasResumableRoom={Boolean(resumableRoom)}
           onContinue={handleContinue}
           onStartNew={handleStartNew}
-          onPlayMenu={handleStartNew}
+          onPlayMenu={handlePlayMenu}
           onQuickLearn={(mode) => {
             if (getAlwaysFullscreenPref()) void requestAppFullscreen();
             quickLearnStandaloneRef.current = true;
@@ -2637,6 +2745,9 @@ function DiglosaRpgApp() {
           }}
           onOpenLeaderboard={() => setLeaderboardOpen(true)}
           onOpenGuide={() => setSideTab('guide')}
+          onOpenProfile={() => setProfileOpen(true)}
+          playerName={playerName}
+          characterId={characterId}
           bestLocalScore={bestLocalScore}
           user={user}
           onSignOut={handleSignOut}
@@ -2645,8 +2756,11 @@ function DiglosaRpgApp() {
           disableShortcuts={
             showAssetDownloader ||
             difficultyPromptOpen ||
+            resumePromptOpen ||
+            profileOpen ||
             leaderboardOpen ||
-            Boolean(sideTab)
+            Boolean(sideTab) ||
+            Boolean(resumeCountdown)
           }
           offlineReady={offlineReady}
           offlineVersion={offlineVersion}
@@ -2682,6 +2796,7 @@ function DiglosaRpgApp() {
           onOpenGuide={() => setSideTab('guide')}
           onOpenOptions={() => setSideTab('options')}
           onOpenLeaderboard={() => setLeaderboardOpen(true)}
+          onOpenProfile={() => setProfileOpen(true)}
           onPrimaryAction={() => engineRef.current?.triggerPrimaryAction()}
           onFireWeapon={() => engineRef.current?.fireActiveWeapon(false)}
           onSetFireHeld={(held) => engineRef.current?.setFireHeld(held)}
@@ -2722,6 +2837,7 @@ function DiglosaRpgApp() {
           onSetPlaneFireHeld={(held) => engineRef.current?.setPlaneFireHeld(held)}
           tutorialRunKey={hudTutorialRunKey}
           suppressTutorial={
+            Boolean(resumeCountdown) ||
             Boolean(vsIntroData) ||
             Boolean(activeBattle) ||
             Boolean(activeLearning) ||
@@ -2730,6 +2846,8 @@ function DiglosaRpgApp() {
             craftingOpen ||
             Boolean(dialogueNpcId) ||
             Boolean(sideTab) ||
+            profileOpen ||
+            resumePromptOpen ||
             leaderboardOpen ||
             difficultyPromptOpen ||
             showAssetDownloader ||
@@ -2884,11 +3002,12 @@ function DiglosaRpgApp() {
         onDiveOcean={() => engineRef.current?.toggleDiveOcean()}
         onUpdateSettings={(partial) => engineRef.current?.updateSettings(partial)}
         onOpenOfflineSync={() => void runServerAndCacheCheck(true)}
+        onOpenProfile={() => setProfileOpen(true)}
         user={user}
         onSignOut={handleSignOut}
       />
 
-      {!vsIntroData && (
+      {!vsIntroData && !resumeCountdown && (
         <GameOverModal
           hud={hud}
           playerName={playerName}
@@ -2940,6 +3059,19 @@ function DiglosaRpgApp() {
         onNewWave={() => void handleStartNewRandomWave()}
       />
 
+      <ResumeSessionModal
+        open={resumePromptOpen}
+        playerName={playerName}
+        characterId={characterId}
+        hasSavedGame={hud.hasSavedGame}
+        resumableRoom={resumableRoom}
+        onContinueSolo={handleContinue}
+        onRejoinRoom={handleRejoinRoom}
+        onDismissResumableRoom={handleDismissResumableRoom}
+        onOpenNewModeLobby={handleStartNew}
+        onClose={() => setResumePromptOpen(false)}
+      />
+
       <PlayLobbyModal
         open={difficultyPromptOpen}
         user={user}
@@ -2966,15 +3098,10 @@ function DiglosaRpgApp() {
         onStartMultiplayerMatch={handleStartMultiplayerMatch}
         onEnterPlayingRoom={() => {
           if (activeRoom) {
-            const shouldRejoinSync = Boolean(
-              activeRoom.status === 'playing' &&
-                roomMembers.length > 1 &&
-                activeRoom.hostUid !== user?.uid,
-            );
             enterMultiplayerMatch(
               mergeRoomWithCachedMeta(activeRoom),
               mySpawnIndex,
-              shouldRejoinSync,
+              true,
             );
           }
         }}
@@ -2985,6 +3112,26 @@ function DiglosaRpgApp() {
         }}
         restoredLobbyDraft={restoredLobbyDraft}
         onLobbyDraftChange={setLobbyDraft}
+      />
+
+      <ProfileModal
+        open={profileOpen}
+        user={user}
+        userProfile={userProfile}
+        bestLocalScore={bestLocalScore}
+        playerName={playerName}
+        characterId={characterId}
+        onSaveProfileName={handleSaveProfileName}
+        onSelectCharacter={(nextId) => handlePreviewCharacter(nextId, playerName)}
+        onSignOut={handleSignOut}
+        onClose={() => setProfileOpen(false)}
+      />
+
+      <ResumeCountdownOverlay
+        active={Boolean(resumeCountdown)}
+        subtitle={resumeCountdown?.label}
+        playerName={playerName}
+        onComplete={handleResumeCountdownComplete}
       />
 
       <LeaderboardModal

@@ -13,6 +13,7 @@ import {
   ScrollText,
   Search,
   Settings,
+  User as UserIcon,
   Volume2,
   X,
 } from 'lucide-react';
@@ -75,6 +76,7 @@ interface RpgSideModalsProps {
   onDiveOcean?: () => void;
   onUpdateSettings: (partial: Partial<GameSettings>) => void;
   onOpenOfflineSync?: () => void;
+  onOpenProfile?: () => void;
   user?: User | null;
   onSignOut?: () => Promise<void>;
 }
@@ -97,6 +99,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
   onDiveOcean,
   onUpdateSettings,
   onOpenOfflineSync,
+  onOpenProfile,
   user,
   onSignOut,
 }) => {
@@ -1327,27 +1330,42 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-2.5">
                       <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-400/50 bg-emerald-950/60 text-sm font-black text-emerald-200">
-                        {(user.displayName || user.email || 'P').slice(0, 1).toUpperCase()}
+                        {resolvedPlayerName.slice(0, 1).toUpperCase()}
                       </span>
                       <div className="min-w-0">
                         <div className="truncate text-xs font-black text-slate-100">
-                          Profil Akun Google · {user.displayName || 'Petualang'}
+                          {resolvedPlayerName} · {user.displayName || 'Akun Google'}
                         </div>
                         <div className="truncate text-[11px] font-medium text-slate-300">
                           {user.email || 'Sesi aktif tersimpan di perangkat ini'}
                         </div>
                       </div>
                     </div>
-                    {onSignOut && (
-                      <button
-                        type="button"
-                        onClick={() => void onSignOut()}
-                        className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-rose-300/60 bg-rose-600/85 px-3.5 py-2 text-xs font-black text-white transition hover:bg-rose-500"
-                      >
-                        <LogOut className="h-3.5 w-3.5" />
-                        <span>Logout Akun</span>
-                      </button>
-                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      {onOpenProfile && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onOpenProfile();
+                          }}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-amber-300/65 bg-amber-500/85 px-3.5 py-2 text-xs font-black text-slate-950 transition hover:bg-amber-400"
+                        >
+                          <UserIcon className="h-3.5 w-3.5" />
+                          <span>Edit Profil &amp; Nama</span>
+                        </button>
+                      )}
+                      {onSignOut && (
+                        <button
+                          type="button"
+                          onClick={() => void onSignOut()}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-xl border border-rose-300/60 bg-rose-600/85 px-3.5 py-2 text-xs font-black text-white transition hover:bg-rose-500"
+                        >
+                          <LogOut className="h-3.5 w-3.5" />
+                          <span>Logout Akun</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               )}

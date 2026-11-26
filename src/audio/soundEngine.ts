@@ -550,6 +550,19 @@ class SoundEngine {
     this.beep(440, 0.05, 'sine', 0.06, 560);
   }
 
+  public playCountdownTick(step: 3 | 2 | 1 | 'go'): void {
+    if (step === 3) {
+      this.beep(440, 0.14, 'triangle', 0.11);
+    } else if (step === 2) {
+      this.beep(523.25, 0.14, 'triangle', 0.12);
+    } else if (step === 1) {
+      this.beep(659.25, 0.16, 'triangle', 0.13);
+    } else {
+      this.beep(783.99, 0.14, 'sine', 0.13);
+      this.beep(1046.5, 0.24, 'triangle', 0.14, undefined, 0.08);
+    }
+  }
+
   // Backward-compatible aliases used across existing modules
   public playSparkPickup(combo = 1): void {
     const pentatonic = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5];

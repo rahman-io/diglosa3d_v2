@@ -227,3 +227,99 @@ export async function syncRunToCloud(params: {
 
   return { newPersonalBest: isNewBest, profile: updatedProfile };
 }
+
+export async function saveAccountPlayerNameToCloud(params: {
+  playerName: string;
+  cachedProfile?: UserProfileRecord | null;
+}): Promise<UserProfileRecord | undefined> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) {
+    return undefined;
+  }
+
+  const uid = user.uid;
+  const safeName = sanitizeName(params.playerName, user.displayName || 'Petualang').slice(0, 24);
+  if (safeName.length < 2) {
+    throw new Error('Nama karakter minimal 2 karakter.');
+  }
+
+  const userPath = `${USERS_COLLECTION}/${uid}`;
+  let updatedProfile: UserProfileRecord | undefined;
+
+  try {
+    const userRef = doc(db, USERS_COLLECTION, uid);
+    const known = params.cachedProfile && params.cachedProfile.uid === uid ? params.cachedProfile : null;
+    if (known) {
+      updatedProfile = {
+        uid,
+        playerName: safeName,
+        bestScore: clampInt(known.bestScore || 0, 0, 99999999),
+        highestLevel: clampInt(known.highestLevel || 1, 1, 100),
+        totalBuilt: clampInt(known.totalBuilt || 0, 0, 1000000),
+        questsCompleted: clampInt(known.questsCompleted || 0, 0, 1000000),
+      };
+      await updateDoc(userRef, {
+        playerName: updatedProfile.playerName,
+        bestScore: updatedProfile.bestScore,
+        highestLevel: updatedProfile.highestLevel,
+        totalBuilt: updatedProfile.totalBuilt,
+        questsCompleted: updatedProfile.questsCompleted,
+        updatedAt: serverTimestamp(),
+      });
+    } else {
+      const snap = await getDoc(userRef);
+      if (!snap.exists()) {
+        updatedProfile = {
+          uid,
+          playerName: safeName,
+          bestScore: 0,
+          highestLevel: 1,
+          totalBuilt: 0,
+          questsCompleted: 0,
+        };
+        await setDoc(userRef, {
+          ...updatedProfile,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+      } else {
+        const existing = snap.data() as UserProfileRecord;
+        updatedProfile = {
+          uid,
+          playerName: safeName,
+          bestScore: clampInt(existing.bestScore || 0, 0, 99999999),
+          highestLevel: clampInt(existing.highestLevel || 1, 1, 100),
+          totalBuilt: clampInt(existing.totalBuilt || 0, 0, 1000000),
+          questsCompleted: clampInt(existing.questsCompleted || 0, 0, 1000000),
+        };
+        await updateDoc(userRef, {
+          playerName: updatedProfile.playerName,
+          bestScore: updatedProfile.bestScore,
+          highestLevel: updatedProfile.highestLevel,
+          totalBuilt: updatedProfile.totalBuilt,
+          questsCompleted: updatedProfile.questsCompleted,
+          updatedAt: serverTimestamp(),
+        });
+      }
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, userPath);
+  }
+
+  const lbPath = `${LEADERBOARD_COLLECTION}/${uid}`;
+  try {
+    const lbRef = doc(db, LEADERBOARD_COLLECTION, uid);
+    const lbSnap = await getDoc(lbRef);
+    if (lbSnap.exists()) {
+      await updateDoc(lbRef, {
+        playerName: safeName,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (error) {
+    handleFirestoreError(error, OperationType.WRITE, lbPath);
+  }
+
+  return updatedProfile;
+}
+

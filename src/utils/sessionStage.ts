@@ -10,7 +10,7 @@ import type {
   WaveMissionState,
 } from '../types/game';
 
-export type LobbyWizardStep = 'character' | 'name' | 'mode';
+export type LobbyWizardStep = 'character' | 'mode';
 
 export interface LobbyDraftState {
   wizardStep: LobbyWizardStep;
@@ -67,7 +67,13 @@ export function loadActiveSessionStage(): ActiveSessionSnapshot | null {
       groupName: typeof parsed.groupName === 'string' ? parsed.groupName : 'ELITE SQUAD',
       lobbyOpen: Boolean(parsed.lobbyOpen),
       lobbyDraft: {
-        wizardStep: parsed.lobbyDraft?.wizardStep ?? 'character',
+        wizardStep:
+          parsed.lobbyDraft?.wizardStep === 'character'
+            ? 'character'
+            : (parsed.lobbyDraft?.wizardStep as string) === 'name' ||
+                parsed.lobbyDraft?.wizardStep === 'mode'
+              ? 'mode'
+              : 'character',
         playMode: parsed.lobbyDraft?.playMode ?? 'solo',
         difficulty: parsed.lobbyDraft?.difficulty ?? 'petualang',
         spawnPref: parsed.lobbyDraft?.spawnPref ?? 'random',
