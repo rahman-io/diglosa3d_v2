@@ -336,7 +336,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     );
   }
 
-  if (story.kind === 'village_rescue_escort') {
+  if (story.kind === 'village_rescue_escort' || (story.kind === 'dungeon_reunion_exit' && story.step === 0)) {
     return (
       <>
         {projectedLabels && projectedLabels.length > 0 && (
@@ -363,7 +363,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
                 {story.speakerName}
               </span>
               <p className="text-xs font-bold leading-relaxed text-white sm:text-sm">
-                {story.textId}
+                {personalizePlayerText(story.textId, playerName)}
               </p>
             </div>
             <button
@@ -399,7 +399,8 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     story.kind === 'village_rescue_talk' ||
     story.kind === 'dungeon_intro' ||
     story.kind === 'cave_guardian' ||
-    story.kind === 'dungeon_rescue';
+    story.kind === 'dungeon_rescue' ||
+    story.kind === 'dungeon_reunion_exit';
 
   const caveStory = story.zoneId ? ZONE_CAVE_STORIES[story.zoneId] : null;
 

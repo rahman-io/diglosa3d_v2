@@ -1397,7 +1397,28 @@ export interface ArchipelagoRig {
   istanaRig: IstanaFloatingRig;
   airbaseRig: AirbaseWorldRig;
   zooCritters: Array<{ root: THREE.Group; head: THREE.Group; phase: number }>;
+  caveGates: Partial<Record<ZoneId, CaveGateRig>>;
   disposables: Array<{ dispose: () => void }>;
+}
+
+export interface CaveGateRig {
+  group: THREE.Group;
+  leftPivot: THREE.Group;
+  rightPivot: THREE.Group;
+  lockGlow: THREE.Mesh;
+}
+
+export function setCaveGateOpenAngle(
+  rig: ArchipelagoRig | null | undefined,
+  zoneId: ZoneId,
+  openProgress: number,
+): void {
+  const gate = rig?.caveGates?.[zoneId];
+  if (!gate) return;
+  const p = THREE.MathUtils.clamp(openProgress, 0, 1);
+  gate.leftPivot.rotation.y = -p * 1.42;
+  gate.rightPivot.rotation.y = p * 1.42;
+  gate.lockGlow.visible = p < 0.08;
 }
 
 const _cartPosScratch = new THREE.Vector3();
@@ -1794,6 +1815,7 @@ export function createArchipelagoWorld(
   const crystalMeshes: THREE.Mesh[] = [];
   const lavaMeshes: THREE.Mesh[] = [];
   const zooCritters: ArchipelagoRig['zooCritters'] = [];
+  const caveGates: Partial<Record<ZoneId, CaveGateRig>> = {};
   const disposables: Array<{ dispose: () => void }> = [];
   const waterUniforms = { uTime: { value: 0 } };
 
@@ -2890,6 +2912,63 @@ export function createArchipelagoWorld(
     lavaMeshes.push(caveEmberMesh);
     group.add(caveDarkMesh, caveEmberMesh);
     cameraOccluders.push(caveDarkMesh);
+
+    // Animated Twin-Leaf Voxel Cave Gate at Mulut Gua Hutan Kata (x=28.65, y=3.2, z=118.0)
+    {
+      const gateGroup = new THREE.Group();
+      const gateOakMat = palette.getMat(0x5c3a1e, 'matte');
+      const gatePlankMat = palette.getMat(0x78492a, 'matte');
+      const gateIronMat = palette.getMat(0x334155, 'metal');
+      const gateGoldMat = palette.getMat(0xf59e0b, 'metal');
+      const gateLockMat = palette.getMat(0xfbbf24, 'emissive');
+      const leafGeo = new THREE.BoxGeometry(0.42, 6.4, 4.32);
+      const braceGeo = new THREE.BoxGeometry(0.54, 0.42, 4.38);
+      const stileGeo = new THREE.BoxGeometry(0.5, 6.42, 0.46);
+      const studGeo = new THREE.BoxGeometry(0.58, 0.24, 0.24);
+      const lockGeo = new THREE.BoxGeometry(0.64, 0.86, 0.72);
+      disposables.push(leafGeo, braceGeo, stileGeo, studGeo, lockGeo);
+
+      const buildGateLeaf = (dirZ: 1 | -1): THREE.Group => {
+        const pivot = new THREE.Group();
+        pivot.position.set(28.65, 3.2, dirZ === 1 ? 113.6 : 122.4);
+        const cz = dirZ * 2.16;
+        const body = new THREE.Mesh(leafGeo, gateOakMat);
+        body.position.set(0, 3.2, cz);
+        body.castShadow = true;
+        body.receiveShadow = true;
+        const innerStile = new THREE.Mesh(stileGeo, gatePlankMat);
+        innerStile.position.set(0, 3.2, dirZ * 4.1);
+        const outerStile = new THREE.Mesh(stileGeo, gateIronMat);
+        outerStile.position.set(0, 3.2, dirZ * 0.24);
+        pivot.add(body, innerStile, outerStile);
+        [1.1, 3.2, 5.2].forEach((by) => {
+          const band = new THREE.Mesh(braceGeo, gateIronMat);
+          band.position.set(0, by, cz);
+          pivot.add(band);
+          [0.9, 2.2, 3.5].forEach((sz) => {
+            const stud = new THREE.Mesh(studGeo, gateGoldMat);
+            stud.position.set(0, by, dirZ * sz);
+            pivot.add(stud);
+          });
+        });
+        return pivot;
+      };
+
+      const leftPivot = buildGateLeaf(1);
+      const rightPivot = buildGateLeaf(-1);
+      const lockGlow = new THREE.Mesh(lockGeo, gateLockMat);
+      lockGlow.position.set(-0.08, 2.75, -4.15);
+      rightPivot.add(lockGlow);
+
+      gateGroup.add(leftPivot, rightPivot);
+      group.add(gateGroup);
+      caveGates.desa_sapaan = {
+        group: gateGroup,
+        leftPivot,
+        rightPivot,
+        lockGlow,
+      };
+    }
 
     // Twin Tall Stone Torch Pedestals Flanking the Wooden Cave Deck
     [111.5, 124.5].forEach((tz) => {
@@ -4621,6 +4700,7 @@ export function createArchipelagoWorld(
     istanaRig,
     airbaseRig,
     zooCritters,
+    caveGates,
     disposables,
   };
 }

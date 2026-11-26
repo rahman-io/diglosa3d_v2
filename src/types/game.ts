@@ -218,7 +218,9 @@ export interface DoorDef {
   mode: LearningModeType | 'duel';
   modeLabel: string;
   x: number;
+  y?: number;
   z: number;
+  rotY?: number;
   minPct: number;
 }
 
@@ -434,6 +436,7 @@ export interface StoryDialogState {
     | 'defeat_exit'
     | 'dungeon_intro'
     | 'dungeon_rescue'
+    | 'dungeon_reunion_exit'
     | 'cave_guardian';
   step: number;
   maxStep?: number;
