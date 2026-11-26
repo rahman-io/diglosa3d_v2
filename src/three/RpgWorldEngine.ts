@@ -4044,8 +4044,8 @@ export class RpgWorldEngine {
     }
 
     if (this.worldMode === 'dungeon' && this.dungeonRig) {
-      // Keep camera cleanly below cavern ceiling (9.8)
-      const maxCamY = 8.95;
+      // Keep camera cleanly below cavern ceiling (14.5 in Desa Sapaan, 9.8 elsewhere)
+      const maxCamY = this.dungeonState?.zoneId === 'desa_sapaan' ? 13.0 : 8.95;
       if (dirY > 0.01 && originY + dirY * safeDist > maxCamY) {
         safeDist = Math.min(safeDist, Math.max(1.2, (maxCamY - originY) / dirY));
       }
@@ -7503,6 +7503,7 @@ export class RpgWorldEngine {
     this.storyDialog = null;
     this.phase = 'playing';
     this.heroPos.set(2.4, 0, 12.6);
+    this.heroYaw = Math.PI - 0.14;
     this.heroVel.set(0, 0, 0);
     this.heroVelY = 0;
     this.heroOnGround = true;
@@ -8432,6 +8433,23 @@ export class RpgWorldEngine {
         this.rimLight.intensity = 0.58;
         if (!this.preferLiteShader) this.scene.environmentIntensity = 0.92;
         this.playerCaveLight.intensity = 1.25;
+      } else if (zoneId === 'desa_sapaan') {
+        (this.scene.background as THREE.Color).setHex(0x1e1836);
+        if (this.scene.fog instanceof THREE.FogExp2) {
+          this.scene.fog.color.setHex(0x1e1836);
+          this.scene.fog.density = 0.0082;
+        }
+        this.hemiLight.color.setHex(0xe0e7ff);
+        this.hemiLight.groundColor.setHex(0x4d7c0f);
+        this.hemiLight.intensity = 0.86 + liteBoost;
+        this.sunLight.target.position.set(0, 0, 0);
+        this.sunLight.target.updateMatrixWorld();
+        this.sunLight.color.setHex(0xfff4d6);
+        this.sunLight.position.set(42, 68, 42);
+        this.sunLight.intensity = 0.62;
+        this.rimLight.intensity = 0.44;
+        if (!this.preferLiteShader) this.scene.environmentIntensity = 0.52;
+        this.playerCaveLight.intensity = 1.95;
       } else {
         const fogHex =
           zoneId === 'gua_portal'
