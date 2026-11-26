@@ -616,6 +616,7 @@ export interface RpgHudSnapshot {
   } | null;
   isAiming: boolean;
   hitMarkerKind: 'none' | 'hit' | 'kill';
+  damageFlashSeq?: number;
   crosshairOnEnemy: boolean;
   crosshairSpread: number;
   pointerLocked: boolean;

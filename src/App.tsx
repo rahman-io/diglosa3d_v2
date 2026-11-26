@@ -241,6 +241,7 @@ const INITIAL_HUD: RpgHudSnapshot = {
   targetedBlock: null,
   isAiming: false,
   hitMarkerKind: 'none',
+  damageFlashSeq: 0,
   crosshairOnEnemy: false,
   crosshairSpread: 0,
   pointerLocked: false,

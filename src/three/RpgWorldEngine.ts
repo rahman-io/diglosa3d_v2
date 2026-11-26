@@ -1045,6 +1045,8 @@ export class RpgWorldEngine {
   private crosshairSpread = 0;
   private hitMarkerTimer = 0;
   private hitMarkerKind: 'none' | 'hit' | 'kill' = 'none';
+  private damageFlashTimer = 0;
+  private damageFlashSeq = 0;
   private crosshairOnEnemy = false;
   private pointerLocked = false;
   private heroIdleTime = 0;
@@ -6719,6 +6721,7 @@ export class RpgWorldEngine {
   }
 
   private triggerDefeatExit(lastZoneId?: ZoneId): void {
+    this.damageFlashTimer = 0;
     this.clearSubScenes();
     this.worldMode = 'overworld';
     this.overworldGroup.visible = true;
@@ -6771,6 +6774,7 @@ export class RpgWorldEngine {
     this.heldKeys.clear();
     this.lookPointer = null;
     if (next !== 'playing') {
+      this.damageFlashTimer = 0;
       this.voiceMoveTimer = 0;
       this.voiceMoveVec = { x: 0, z: 0 };
       this.voiceSprint = false;
@@ -11400,6 +11404,7 @@ export class RpgWorldEngine {
         this.triggerDefeatExit(this.dungeonState?.zoneId);
         return;
       }
+      this.triggerDamageFlash();
       this.showBanner('Jawaban belum tepat! Segel tetap kokoh (-1 ❤️)', 2.8);
     }
     this.saveProgress();
@@ -12405,6 +12410,12 @@ export class RpgWorldEngine {
   private triggerHitMarker(isKill: boolean): void {
     this.hitMarkerTimer = 0.2;
     this.hitMarkerKind = isKill ? 'kill' : 'hit';
+  }
+
+  private triggerDamageFlash(): void {
+    this.damageFlashTimer = 0.58;
+    this.damageFlashSeq += 1;
+    this.pushHud(true);
   }
 
   private getCrosshairAimInfo(): { point: THREE.Vector3; hitEnemy: boolean } {
@@ -14306,6 +14317,7 @@ export class RpgWorldEngine {
             this.pushHud(true);
             return;
           }
+          this.triggerDamageFlash();
         }
         continue;
       }
@@ -14447,6 +14459,7 @@ export class RpgWorldEngine {
                     this.triggerDefeatExit(this.dungeonState?.zoneId);
                     return;
                   }
+                  this.triggerDamageFlash();
                 }
               }
             }
@@ -14562,6 +14575,7 @@ export class RpgWorldEngine {
             this.triggerDefeatExit(this.dungeonState?.zoneId);
             return;
           }
+          this.triggerDamageFlash();
         }
         continue;
       }
@@ -14694,6 +14708,7 @@ export class RpgWorldEngine {
               }
               return;
             }
+            this.triggerDamageFlash();
           }
         } else if (m.windupTimer !== undefined && m.windupTimer > 0) {
           // Phase B: Telegraphing windup before lunge
@@ -15620,6 +15635,9 @@ export class RpgWorldEngine {
       this.hitMarkerTimer = Math.max(0, this.hitMarkerTimer - dt);
       if (this.hitMarkerTimer === 0) this.hitMarkerKind = 'none';
     }
+    if (this.damageFlashTimer > 0) {
+      this.damageFlashTimer = Math.max(0, this.damageFlashTimer - dt);
+    }
     this.recoilPitch = THREE.MathUtils.damp(this.recoilPitch, 0, 11, dt);
     this.crosshairSpread = THREE.MathUtils.damp(this.crosshairSpread, 0, 9, dt);
 
@@ -15986,6 +16004,7 @@ export class RpgWorldEngine {
                 this.triggerDefeatExit();
                 return;
               }
+              this.triggerDamageFlash();
             }
           } else {
             this.oceanSuffocateTimer = 0;
@@ -16042,6 +16061,7 @@ export class RpgWorldEngine {
             this.triggerDefeatExit();
             return;
           }
+          this.triggerDamageFlash();
         }
         if (node.speciesId === 'sea_turtle' && d3 < 4.4) {
           nearTurtle = true;
@@ -16620,6 +16640,7 @@ export class RpgWorldEngine {
             this.pushHud(true);
             return;
           }
+          this.triggerDamageFlash();
         }
       }
 
@@ -16698,6 +16719,7 @@ export class RpgWorldEngine {
                   this.pushHud(true);
                   return;
                 }
+                this.triggerDamageFlash();
               }
             } else {
               this.oceanSuffocateTimer = 0;
@@ -16755,6 +16777,7 @@ export class RpgWorldEngine {
               this.pushHud(true);
               return;
             }
+            this.triggerDamageFlash();
           }
           if (node.speciesId === 'sea_turtle' && d3 < 4.6) {
             nearTurtle = true;
@@ -17900,6 +17923,7 @@ export class RpgWorldEngine {
           this.triggerDefeatExit(this.dungeonState?.zoneId);
           return;
         }
+        this.triggerDamageFlash();
       }
     }
 
@@ -17991,6 +18015,7 @@ export class RpgWorldEngine {
             this.triggerDefeatExit(this.dungeonState?.zoneId);
             return;
           }
+          this.triggerDamageFlash();
         }
       }
     }
@@ -18021,6 +18046,7 @@ export class RpgWorldEngine {
           this.triggerDefeatExit(this.dungeonState?.zoneId);
           return;
         }
+        this.triggerDamageFlash();
       }
     }
 
@@ -18130,6 +18156,7 @@ export class RpgWorldEngine {
             this.triggerDefeatExit(this.dungeonState?.zoneId);
             return;
           }
+          this.triggerDamageFlash();
         }
 
         this.showBanner(
@@ -18996,7 +19023,11 @@ export class RpgWorldEngine {
             } else {
               this.phase = 'gameover';
               soundEngine.playLose();
+              this.pushHud(true);
             }
+          } else {
+            this.showBanner('💥 Terkena tembakan monster! (-1 ❤️)', 1.9);
+            this.triggerDamageFlash();
           }
         }
       }
@@ -19679,6 +19710,7 @@ export class RpgWorldEngine {
           this.pushHud(true);
           return;
         }
+        this.triggerDamageFlash();
       }
     } else if (m.windupTimer !== undefined && m.windupTimer > 0) {
       m.windupTimer -= dt;
@@ -19961,6 +19993,7 @@ export class RpgWorldEngine {
           this.pushHud(true);
           return;
         }
+        this.triggerDamageFlash();
       }
     } else if (m.windupTimer !== undefined && m.windupTimer > 0) {
       m.windupTimer -= dt;
@@ -20997,6 +21030,7 @@ export class RpgWorldEngine {
           : null,
       isAiming: this.isAiming,
       hitMarkerKind: this.hitMarkerTimer > 0 ? this.hitMarkerKind : 'none',
+      damageFlashSeq: this.damageFlashTimer > 0 ? this.damageFlashSeq : 0,
       crosshairOnEnemy: this.crosshairOnEnemy,
       crosshairSpread: Math.min(
         1,

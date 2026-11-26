@@ -62,3 +62,33 @@
   animation: diglosa-ko-pop 0.42s cubic-bezier(0.18, 0.89, 0.32, 1.28) forwards;
 }
 
+@keyframes diglosa-damage-flash {
+  0% {
+    opacity: 0.96;
+  }
+  22% {
+    opacity: 0.84;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes diglosa-low-hp-pulse {
+  0%,
+  100% {
+    opacity: 0.34;
+  }
+  50% {
+    opacity: 0.72;
+  }
+}
+
+.animate-damage-flash {
+  animation: diglosa-damage-flash 0.52s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+
+.animate-low-hp-pulse {
+  animation: diglosa-low-hp-pulse 1.35s ease-in-out infinite;
+}
+

@@ -519,6 +519,8 @@ export const RpgHud: React.FC<RpgHudProps> = ({
   }
 
   const hpPct = Math.max(0, Math.min(100, Math.round((hud.hp / Math.max(1, hud.maxHp)) * 100)));
+  const isLowHp = hud.hp > 0 && (hud.hp <= 1 || hpPct <= 25);
+  const damageFlashSeq = hud.damageFlashSeq ?? 0;
   const activeQuestCount = hud.quests.filter((q) => q.accepted && !q.claimed).length;
 
   const nearbyOverworldNpc =
@@ -643,6 +645,34 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
   return (
     <div className="pointer-events-none fixed inset-0 z-10 overflow-hidden">
+      {/* Critical Low-HP Persistent Edge Pulse */}
+      {isLowHp && (
+        <div
+          aria-hidden="true"
+          className="animate-low-hp-pulse pointer-events-none fixed inset-0 z-[14]"
+          style={{
+            background:
+              'radial-gradient(ellipse at center, rgba(220,38,38,0) 56%, rgba(185,28,28,0.28) 82%, rgba(127,29,29,0.62) 100%)',
+            boxShadow: 'inset 0 0 42px 8px rgba(220,38,38,0.48)',
+          }}
+        />
+      )}
+
+      {/* Full-Screen Red Border Flash on Damage */}
+      {damageFlashSeq > 0 && (
+        <div
+          key={`dmg-flash-${damageFlashSeq}`}
+          aria-hidden="true"
+          className="animate-damage-flash pointer-events-none fixed inset-0 z-[15]"
+          style={{
+            background:
+              'radial-gradient(ellipse at center, rgba(239,68,68,0) 46%, rgba(220,38,38,0.42) 78%, rgba(185,28,28,0.82) 100%)',
+            boxShadow:
+              'inset 0 0 64px 16px rgba(239,68,68,0.78), inset 0 0 18px 4px rgba(248,113,113,0.72)',
+          }}
+        />
+      )}
+
       {/* Subtle World-Space Nameplates (hidden by default; shown when Info HUD toggle is active) */}
       {showInfoHud &&
         hud.projectedLabels.map((lbl) => (
@@ -772,7 +802,13 @@ export const RpgHud: React.FC<RpgHudProps> = ({
       <div className="pointer-events-auto fixed right-2.5 top-2.5 z-20 flex flex-col items-end gap-1.5 sm:right-4 sm:top-4">
         <div className="flex items-center gap-2">
           {/* Sleek RPG Health & Compact Stats Pill */}
-          <div className="flex flex-col items-end rounded-xl border border-amber-300/25 bg-slate-950/85 px-2.5 py-1.5 text-white shadow-lg">
+          <div
+            className={`flex flex-col items-end rounded-xl border bg-slate-950/85 px-2.5 py-1.5 text-white shadow-lg transition-colors ${
+              damageFlashSeq > 0 || isLowHp
+                ? 'border-rose-500/85 ring-2 ring-rose-500/60'
+                : 'border-amber-300/25'
+            }`}
+          >
             <div className="flex items-center gap-1.5">
               <img
                 src="./assets/ui/icon_heart.png"
