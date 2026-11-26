@@ -1426,6 +1426,15 @@ export class RpgWorldEngine {
   private bannerMessage: string | null = null;
   private bannerTimer = 0;
   private lastHudPushMs = 0;
+  private sideCamCacheKey = '';
+  private sideCamCacheX = 0;
+  private sideCamCacheY = 0;
+  private sideCamCacheZ = 0;
+  private sideCamCacheLookX = 0;
+  private sideCamCacheLookY = 0;
+  private sideCamCacheLookZ = 0;
+  private harvestCamCacheKey = '';
+  private harvestCamSafeDist = 6.7;
   private hasSave = false;
   private localCharacterId: CharacterPresetId = loadSavedCharacterId();
   private localPlayerName = loadSavedPlayerName('Hoot');
@@ -16121,7 +16130,7 @@ export class RpgWorldEngine {
       return this.isLowEndMobile ? 44 : this.isMobileDevice ? 38 : 32;
     }
     if (this.phase === 'dialogue' || this.phase === 'story') {
-      return this.isMobileDevice ? 32 : 16;
+      return this.isLowEndMobile ? 42 : this.isMobileDevice ? 34 : 24;
     }
     const fx = this.settings.fxLevel;
     if (fx === 'off') return 32;
@@ -16267,9 +16276,15 @@ export class RpgWorldEngine {
           Math.abs(this.sunLight.position.x - this.lastShadowSunX) > 0.95 ||
           Math.abs(this.sunLight.position.y - this.lastShadowSunY) > 0.95;
         const modeChanged = this.worldMode !== this.lastShadowMode;
-        const timeRefresh =
-          now - this.lastShadowUpdateMs >
-          (this.phase === 'title' ? 3200 : this.isLowEndMobile ? 1250 : 900);
+        const refreshIntervalMs =
+          this.phase === 'title'
+            ? 3200
+            : this.phase === 'dialogue'
+            ? 2400
+            : this.isLowEndMobile
+            ? 1250
+            : 900;
+        const timeRefresh = now - this.lastShadowUpdateMs > refreshIntervalMs;
         if (heroMoved || sunMoved || modeChanged || timeRefresh) {
           this.renderer.shadowMap.needsUpdate = true;
           this.lastShadowHeroX = this.heroPos.x;
@@ -16370,7 +16385,12 @@ export class RpgWorldEngine {
     const dirX = offX / desiredDist;
     const dirY = offY / desiredDist;
     const dirZ = offZ / desiredDist;
-    const safeDist = this.computeSpringArmDist(tx, ty, tz, dirX, dirY, dirZ, desiredDist);
+    const hKey = `${this.worldMode}|${this.storyDialog?.kind ?? ''}|${Math.round(tx * 4)},${Math.round(tz * 4)}`;
+    if (hKey !== this.harvestCamCacheKey) {
+      this.harvestCamCacheKey = hKey;
+      this.harvestCamSafeDist = this.computeSpringArmDist(tx, ty, tz, dirX, dirY, dirZ, desiredDist);
+    }
+    const safeDist = this.harvestCamSafeDist;
 
     _v1.set(tx + dirX * safeDist, ty + dirY * safeDist, tz + dirZ * safeDist);
     _v2.set(tx, ty, tz);
@@ -16620,64 +16640,78 @@ export class RpgWorldEngine {
     const lookY = Math.min(heroY, partnerY) + 1.05;
     const lookZ = midZ;
 
-    const offY = 1.9;
-    const armHoriz = 5.4;
-    const curSideDot = (this.camera.position.x - lookX) * (-toPartnerZ) + (this.camera.position.z - lookZ) * toPartnerX;
-    // Angles > 90 deg step slightly behind-beside Hero on the open courtyard side away from cave walls behind the Guardian
-    const candidateAngles = [-2.01, 2.01, -1.75, 1.75, -2.3, 2.3, -1.4, 1.4];
+    const cacheKey = `${this.worldMode}|${this.dialogueTargetNpcId ?? ''}|${this.storyDialog?.kind ?? ''}|${Math.round(heroX * 4)},${Math.round(heroZ * 4)}|${Math.round(partnerX * 4)},${Math.round(partnerZ * 4)}`;
+    if (snap || cacheKey !== this.sideCamCacheKey) {
+      const offY = 1.9;
+      const armHoriz = 5.4;
+      const curSideDot = (this.camera.position.x - lookX) * (-toPartnerZ) + (this.camera.position.z - lookZ) * toPartnerX;
+      // Angles > 90 deg step slightly behind-beside Hero on the open courtyard side away from cave walls behind the Guardian
+      const candidateAngles = [-2.01, 2.01, -1.75, 1.75, -2.3, 2.3, -1.4, 1.4];
 
-    let bestScore = -Infinity;
-    let bestCamX = lookX - toPartnerZ * armHoriz - toPartnerX * 0.6;
-    let bestCamY = lookY + offY;
-    let bestCamZ = lookZ + toPartnerX * armHoriz - toPartnerZ * 0.6;
+      let bestScore = -Infinity;
+      let bestCamX = lookX - toPartnerZ * armHoriz - toPartnerX * 0.6;
+      let bestCamY = lookY + offY;
+      let bestCamZ = lookZ + toPartnerX * armHoriz - toPartnerZ * 0.6;
 
-    for (const ang of candidateAngles) {
-      const ca = Math.cos(ang);
-      const sa = Math.sin(ang);
-      const rx = toPartnerX * ca - toPartnerZ * sa;
-      const rz = toPartnerX * sa + toPartnerZ * ca;
-      const candOffX = rx * armHoriz;
-      const candOffZ = rz * armHoriz;
-      const desiredDist = Math.hypot(candOffX, offY, candOffZ);
-      const ux = candOffX / desiredDist;
-      const uy = offY / desiredDist;
-      const uz = candOffZ / desiredDist;
+      for (const ang of candidateAngles) {
+        const ca = Math.cos(ang);
+        const sa = Math.sin(ang);
+        const rx = toPartnerX * ca - toPartnerZ * sa;
+        const rz = toPartnerX * sa + toPartnerZ * ca;
+        const candOffX = rx * armHoriz;
+        const candOffZ = rz * armHoriz;
+        const desiredDist = Math.hypot(candOffX, offY, candOffZ);
+        const ux = candOffX / desiredDist;
+        const uy = offY / desiredDist;
+        const uz = candOffZ / desiredDist;
 
-      const safeDist = this.computeSpringArmDist(lookX, lookY, lookZ, ux, uy, uz, desiredDist);
-      const camX = lookX + ux * safeDist;
-      const camY = lookY + uy * safeDist;
-      const camZ = lookZ + uz * safeDist;
+        const safeDist = this.computeSpringArmDist(lookX, lookY, lookZ, ux, uy, uz, desiredDist);
+        const camX = lookX + ux * safeDist;
+        const camY = lookY + uy * safeDist;
+        const camZ = lookZ + uz * safeDist;
 
-      let terrainPenalty = 0;
-      if (this.worldMode === 'overworld') {
-        for (const frac of [0.5, 1.0]) {
-          const sx = lookX + ux * safeDist * frac;
-          const sy = lookY + uy * safeDist * frac;
-          const sz = lookZ + uz * safeDist * frac;
-          const tSamp = sampleArchipelagoTerrain(sx, sz);
-          if (tSamp.isLandOrBridge && sy < tSamp.groundY + 0.72) {
-            terrainPenalty -= 45;
+        let terrainPenalty = 0;
+        if (this.worldMode === 'overworld') {
+          for (const frac of [0.5, 1.0]) {
+            const sx = lookX + ux * safeDist * frac;
+            const sy = lookY + uy * safeDist * frac;
+            const sz = lookZ + uz * safeDist * frac;
+            const tSamp = sampleArchipelagoTerrain(sx, sz);
+            if (tSamp.isLandOrBridge && sy < tSamp.groundY + 0.72) {
+              terrainPenalty -= 45;
+            }
           }
+        }
+
+        const heroLos = safeDist >= 2.2 && this.hasCameraSightline(camX, camY, camZ, heroX, heroY + 1.4, heroZ);
+        const partnerLos = safeDist >= 2.2 && this.hasCameraSightline(camX, camY, camZ, partnerX, partnerY + 1.4, partnerZ);
+        const losScore = heroLos && partnerLos ? 100 : heroLos || partnerLos ? 40 : -80;
+        const openCourtyardBonus = Math.abs(ang) >= 1.72 ? 6 : 0;
+        const sideHysteresis = !snap && ((ang > 0 ? 1 : -1) * curSideDot > 0) ? 3 : 0;
+        const score = losScore + terrainPenalty + Math.min(safeDist, desiredDist) * 12 + openCourtyardBonus + sideHysteresis;
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestCamX = camX;
+          bestCamY = camY;
+          bestCamZ = camZ;
+        }
+        if (heroLos && partnerLos && terrainPenalty === 0 && safeDist >= desiredDist - 0.15 && Math.abs(ang) >= 1.72) {
+          break;
         }
       }
 
-      const heroLos = this.hasCameraSightline(camX, camY, camZ, heroX, heroY + 1.4, heroZ);
-      const partnerLos = this.hasCameraSightline(camX, camY, camZ, partnerX, partnerY + 1.4, partnerZ);
-      const losScore = (heroLos && partnerLos ? 100 : heroLos || partnerLos ? 40 : -80);
-      const openCourtyardBonus = Math.abs(ang) >= 1.72 ? 6 : 0;
-      const sideHysteresis = !snap && ((ang > 0 ? 1 : -1) * curSideDot > 0) ? 3 : 0;
-      const score = losScore + terrainPenalty + Math.min(safeDist, desiredDist) * 12 + openCourtyardBonus + sideHysteresis;
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestCamX = camX;
-        bestCamY = camY;
-        bestCamZ = camZ;
-      }
+      this.sideCamCacheKey = cacheKey;
+      this.sideCamCacheX = bestCamX;
+      this.sideCamCacheY = bestCamY;
+      this.sideCamCacheZ = bestCamZ;
+      this.sideCamCacheLookX = lookX;
+      this.sideCamCacheLookY = lookY;
+      this.sideCamCacheLookZ = lookZ;
     }
 
-    _v1.set(bestCamX, bestCamY, bestCamZ);
-    _v2.set(lookX, lookY, lookZ);
+    _v1.set(this.sideCamCacheX, this.sideCamCacheY, this.sideCamCacheZ);
+    _v2.set(this.sideCamCacheLookX, this.sideCamCacheLookY, this.sideCamCacheLookZ);
     if (snap) {
       this.camera.position.copy(_v1);
       this.controls.target.copy(_v2);

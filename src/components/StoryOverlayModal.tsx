@@ -54,7 +54,7 @@ const StorybookPrologueBox: React.FC<{
 
     let cursor = 0;
     timerRef.current = window.setInterval(() => {
-      cursor += 1;
+      cursor = Math.min(fullText.length, cursor + 2);
       setRevealedCount(cursor);
       if (cursor >= fullText.length) {
         if (timerRef.current !== null) {
@@ -62,7 +62,7 @@ const StorybookPrologueBox: React.FC<{
           timerRef.current = null;
         }
       }
-    }, 18);
+    }, 32);
 
     return () => {
       if (timerRef.current !== null) {
@@ -398,6 +398,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     story.kind === 'opening' ||
     story.kind === 'village_rescue_talk' ||
     story.kind === 'dungeon_intro' ||
+    story.kind === 'cave_guardian' ||
     story.kind === 'dungeon_rescue';
 
   const caveStory = story.zoneId ? ZONE_CAVE_STORIES[story.zoneId] : null;

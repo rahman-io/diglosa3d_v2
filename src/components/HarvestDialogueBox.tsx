@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Languages, Volume2 } from 'lucide-react';
+import { ChevronRight, Languages, Volume2 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { CharacterPresetId } from '../types/game';
 import { DialoguePortraitCanvas, DialogueSpeakerKind } from './DialoguePortraitCanvas';
@@ -69,10 +69,10 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
             : -45;
     let cursor = 0;
     timerRef.current = window.setInterval(() => {
-      cursor += 1;
+      cursor = Math.min(fullText.length, cursor + 2);
       setRevealedCount(cursor);
       const ch = fullText.charAt(cursor - 1);
-      if (ch && ch !== ' ' && cursor % 2 === 1) {
+      if (ch && ch !== ' ' && cursor % 4 === 2) {
         soundEngine.playDialogueBlip(pitchOffset);
       }
       if (cursor >= fullText.length) {
@@ -81,7 +81,7 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
           timerRef.current = null;
         }
       }
-    }, 24);
+    }, 36);
 
     return () => {
       if (timerRef.current !== null) {
@@ -145,9 +145,6 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
               ? 'h-[132px] w-[148px] sm:h-[170px] sm:w-[192px]'
               : 'h-[126px] w-[112px] sm:h-[164px] sm:w-[144px]'
           }`}
-          style={{
-            filter: 'drop-shadow(0 6px 14px rgba(15, 23, 42, 0.45))',
-          }}
         >
           <DialoguePortraitCanvas
             speakerKind={speakerKind}
@@ -282,6 +279,23 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
                   onClick={(e) => e.stopPropagation()}
                 >
                   {footerActions}
+                </div>
+              )}
+
+              {/* Explicit Next / Reveal button for advancing dialogue beats */}
+              {canAdvance && onAdvance && !footerActions && (
+                <div className="flex items-center justify-end pt-0.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleBoxInteract();
+                    }}
+                    className="inline-flex items-center gap-1 rounded-full border-2 border-[#b45309]/55 bg-gradient-to-r from-[#f59e0b] to-[#fbbf24] px-3 py-1 text-[11px] font-black text-[#3b1b06] shadow-sm transition hover:brightness-105 active:scale-95 sm:px-3.5 sm:text-xs"
+                  >
+                    <span>{isTyping ? 'Tampilkan' : 'Lanjut'}</span>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               )}
             </div>
