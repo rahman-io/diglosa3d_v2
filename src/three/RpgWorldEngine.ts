@@ -130,6 +130,7 @@ import {
 import {
   appendVehicleVillageColliders,
   ArchipelagoRig,
+  BRIDGE_SPANS,
   constrainHeroToWorldBounds,
   constrainToWalkableArchipelago,
   createArchipelagoWorld,
@@ -138,6 +139,7 @@ import {
   getArchipelagoGroundY,
   getArchipelagoSeabedY,
   IELTS_TEMPORARILY_LOCKED,
+  ISLAND_DISKS,
   isWalkableArchipelago,
   OVERWORLD_ANCHORS,
   OVERWORLD_ZONE_DOORS,
@@ -559,6 +561,9 @@ const _skyDawnCol = new THREE.Color(0xfdba74);
 const _skyDuskCol = new THREE.Color(0xf97316);
 const _skyNightCol = new THREE.Color(0x091128);
 const _skyTenseMistCol = new THREE.Color(0x475569);
+const _skyDayMistCol = new THREE.Color(0xb4c4d4);
+const _mistDayCol = new THREE.Color(0xdbeafe);
+const _mistNightCol = new THREE.Color(0x64748b);
 const _sunDayCol = new THREE.Color(0xfff4d6);
 const _sunDawnCol = new THREE.Color(0xfdba74);
 const _sunNightCol = new THREE.Color(0x93c5fd);
@@ -809,6 +814,20 @@ export class RpgWorldEngine {
   private swimSuitPickupMesh: THREE.Group;
   private carRig!: DriveableCarRig;
   private areaMists: Map<ZoneId, THREE.Mesh>;
+  private worldMistMesh: THREE.InstancedMesh | null = null;
+  private worldMistMat: THREE.MeshBasicMaterial | null = null;
+  private worldMistSeeds: Array<{
+    baseX: number;
+    baseY: number;
+    baseZ: number;
+    sx: number;
+    sy: number;
+    sz: number;
+    driftX: number;
+    driftZ: number;
+    phase: number;
+    rotY: number;
+  }> = [];
   private isSoftwareGl: boolean;
   private isMobileDevice: boolean;
   private isLowEndMobile: boolean;
@@ -1213,7 +1232,10 @@ export class RpgWorldEngine {
     active: boolean;
     inCutscene: boolean;
     resolved: boolean;
+    stage: 'ambush' | 'rescue_talk' | 'escort' | 'awaiting_guardian_talk' | 'walking_home';
     timer: number;
+    talkMidX?: number;
+    talkMidZ?: number;
     abductedStartPos: THREE.Vector3;
     abductor: {
       mesh: THREE.Group;
@@ -1572,6 +1594,7 @@ export class RpgWorldEngine {
 
     this.areaMists = createAreaMists();
     this.areaMists.forEach((m) => this.overworldGroup.add(m));
+    this.createSpreadingWorldMist();
 
     this.starterPickupMesh = createStarterWeaponPickup(this.palette);
     const sw = OVERWORLD_ANCHORS.starterWeapon;
@@ -1783,6 +1806,7 @@ export class RpgWorldEngine {
     dyn.add(this.diamondInstanced);
     dyn.add(this.heartInstanced);
     this.areaMists.forEach((m) => dyn.add(m));
+    if (this.worldMistMesh) dyn.add(this.worldMistMesh);
     this.npcs.forEach((n) => {
       dyn.add(n.mesh);
       dyn.add(n.alertMesh);
@@ -2492,6 +2516,21 @@ export class RpgWorldEngine {
 
     if (this.getCurrentDayPhase() === 'malam') {
       this.nightPermittedZones.add(npc.zoneId);
+    }
+    if (
+      this.villageAmbushState?.active &&
+      (this.villageAmbushState.stage === 'awaiting_guardian_talk' ||
+        this.villageAmbushState.stage === 'escort') &&
+      def.zoneId === 'desa_sapaan'
+    ) {
+      this.villageAmbushState.stage = 'walking_home';
+      this.villageAmbushState.resolved = true;
+      this.villageAmbushState.timer = 0;
+      for (const ambNpc of this.villageAmbushState.npcs) {
+        if (ambNpc.role === 'survivor' && ambNpc.alive) {
+          ambNpc.shoutLive = '👋 Kami pulang ke rumah dulu ya, Pahlawan! Semoga berhasil!';
+        }
+      }
     }
     this.dialogueTargetNpcId = npcId;
     const npcGroundY = getArchipelagoGroundY(npc.x, npc.z);
@@ -6750,6 +6789,55 @@ export class RpgWorldEngine {
       return;
     }
 
+    if (this.storyDialog.kind === 'village_rescue_talk') {
+      const nextStep = this.storyDialog.step + 1;
+      if (nextStep === 1) {
+        this.storyDialog = {
+          kind: 'village_rescue_talk',
+          step: 1,
+          maxStep: 2,
+          speakerName: 'Laras & Bagas (Warga Desa)',
+          speakerRole: 'Petunjuk & Arah ke Penjaga Pulau',
+          speakerKind: 'captive',
+          captiveKind: 'girl',
+          captiveColor: 0xf472b6,
+          speakerSide: 'npc',
+          textEn:
+            'Since the dark fog spread across the archipelago, everyone hid indoors and the village doors lost their greeting words! Come with us now—we will lead you straight to the Desa Sapaan Island Guardian!',
+          textId:
+            'Sejak kabut pekat menyelimuti pulau ini, semua warga sembunyi di dalam rumah dan pintu-pintu kehilangan kata sapaannya! Ayo ikut kami sekarang—kami antar kamu langsung menemui Penjaga Pulau Desa Sapaan!',
+          accentColor: '#f59e0b',
+        };
+        soundEngine.playPick();
+        this.pushHud(true);
+      } else if (nextStep === 2) {
+        this.storyDialog = {
+          kind: 'village_rescue_talk',
+          step: 2,
+          maxStep: 2,
+          speakerName: 'Hoot',
+          speakerRole: 'Penjelajah Nusantara Kata',
+          speakerKind: 'hero',
+          speakerSide: 'hero',
+          textEn:
+            'I am glad you two are safe! I will rescue our kidnapped neighbor and free every island. Lead the way to the Island Guardian!',
+          textId:
+            'Syukurlah kalian selamat! Aku pasti menemukan warga yang diculik itu dan membebaskan seluruh pulau. Ayo antarkan aku menemui Penjaga Pulau sekarang!',
+          accentColor: '#10b981',
+        };
+        soundEngine.playPick();
+        this.pushHud(true);
+      } else {
+        this.startVillageRescueEscort();
+      }
+      return;
+    }
+
+    if (this.storyDialog.kind === 'village_rescue_escort') {
+      this.finishVillageRescueEscort();
+      return;
+    }
+
     if (this.storyDialog.kind === 'dungeon_intro') {
       const zId = this.storyDialog.zoneId!;
       const story = ZONE_CAVE_STORIES[zId];
@@ -6884,6 +6972,10 @@ export class RpgWorldEngine {
       this.startVillageAmbushCutscene();
     } else if (this.storyDialog.kind === 'village_ambush') {
       this.finishVillageAmbushCutscene();
+    } else if (this.storyDialog.kind === 'village_rescue_talk') {
+      this.startVillageRescueEscort();
+    } else if (this.storyDialog.kind === 'village_rescue_escort') {
+      this.finishVillageRescueEscort();
     } else if (this.storyDialog.kind === 'dungeon_intro') {
       this.finishDungeonIntroCutscene();
     } else if (this.storyDialog.kind === 'dungeon_rescue') {
@@ -7270,6 +7362,7 @@ export class RpgWorldEngine {
       active: true,
       inCutscene: true,
       resolved: false,
+      stage: 'ambush',
       timer: 0,
       abductedStartPos: new THREE.Vector3(npcConfigs[0].x, getArchipelagoGroundY(npcConfigs[0].x, npcConfigs[0].z), npcConfigs[0].z),
       abductor: {
@@ -7396,22 +7489,177 @@ export class RpgWorldEngine {
 
   private completeVillageAmbushRescue(): void {
     const amb = this.villageAmbushState;
-    if (!amb || amb.resolved) return;
-    amb.resolved = true;
+    if (!amb || amb.stage !== 'ambush') return;
+    amb.stage = 'rescue_talk';
+    amb.resolved = false;
+    amb.inCutscene = false;
     amb.timer = 0;
-    for (const npc of amb.npcs) {
-      if (npc.role === 'survivor' && npc.alive) {
-        npc.shoutLive = '🎉 Terima kasih Pahlawan! Kami berlindung di rumah!';
-      }
-    }
+
     this.gainXp(60);
     this.diamonds += 2;
     this.addScore(250);
     soundEngine.playWin();
+
+    // Posisikan Hero & 2 warga selamat saling berhadapan di area alun-alun Desa Sapaan yang terbuka
+    const baseHeroX = THREE.MathUtils.clamp(this.heroPos.x, -3.5, 11.5);
+    const baseHeroZ = THREE.MathUtils.clamp(this.heroPos.z, 114.0, 122.0);
+    const heroSpot = new THREE.Vector3(baseHeroX, getArchipelagoGroundY(baseHeroX, baseHeroZ), baseHeroZ);
+    resolveObstacleBoxes(heroSpot, 0.72, this.villageRig.obstacles, heroSpot.y, 2.2);
+    constrainToWalkableArchipelago(heroSpot, 0.72);
+    heroSpot.y = getArchipelagoGroundY(heroSpot.x, heroSpot.z);
+
+    this.heroPos.copy(heroSpot);
+    this.heroVel.set(0, 0, 0);
+    this.heroVelY = 0;
+    this.heroOnGround = true;
+    this.hero.root.position.copy(this.heroPos);
+
+    const survivors = amb.npcs.filter((n) => n.role === 'survivor' && n.alive);
+    const npcOffsets: Array<[number, number]> = [
+      [3.15, -0.85],
+      [3.15, 0.85],
+    ];
+    let sumX = 0;
+    let sumZ = 0;
+    survivors.forEach((n, idx) => {
+      const [ox, oz] = npcOffsets[idx] ?? [3.15, 0];
+      const pt = new THREE.Vector3(
+        THREE.MathUtils.clamp(this.heroPos.x + ox, -9.0, 18.0),
+        this.heroPos.y,
+        THREE.MathUtils.clamp(this.heroPos.z + oz, 112.0, 124.0),
+      );
+      resolveObstacleBoxes(pt, 0.62, this.villageRig.obstacles, pt.y, 2.2);
+      constrainToWalkableArchipelago(pt, 0.62);
+      n.x = pt.x;
+      n.z = pt.z;
+      n.y = getArchipelagoGroundY(n.x, n.z);
+      n.yaw = Math.atan2(this.heroPos.x - n.x, this.heroPos.z - n.z);
+      n.actor.root.position.set(n.x, n.y, n.z);
+      n.actor.root.rotation.y = n.yaw;
+      n.shoutLive = idx === 0 ? '😭 Terima kasih, Pahlawan!' : '🙏 Kami diselamatkan!';
+      sumX += n.x;
+      sumZ += n.z;
+    });
+
+    const midX = survivors.length > 0 ? sumX / survivors.length : this.heroPos.x + 3.0;
+    const midZ = survivors.length > 0 ? sumZ / survivors.length : this.heroPos.z;
+    amb.talkMidX = midX;
+    amb.talkMidZ = midZ;
+    this.heroYaw = Math.atan2(midX - this.heroPos.x, midZ - this.heroPos.z);
+    this.hero.body.rotation.y = this.heroYaw;
+
+    this.heldKeys.clear();
+    this.leftFireHeld = false;
+    this.hudFireHeld = false;
+    this.phase = 'story';
+    this.storyTimer = 0;
+    this.applyCameraVisibilityAndControls();
+
+    this.storyDialog = {
+      kind: 'village_rescue_talk',
+      step: 0,
+      maxStep: 2,
+      speakerName: 'Laras & Bagas (Warga Desa)',
+      speakerRole: 'Warga Desa Sapaan · Terselamatkan',
+      speakerKind: 'captive',
+      captiveKind: 'girl',
+      captiveColor: 0xf472b6,
+      speakerSide: 'npc',
+      textEn:
+        'Thank you so much, Hero! You saved our lives! It happened so fast—a giant flying monster swooped down, snatched one villager into the sky until he vanished in the mist, and those monsters chased us here!',
+      textId:
+        'Terima kasih banyak, Pahlawan! Kau menyelamatkan nyawa kami! Tadi mengerikan sekali—monster terbang besar tiba-tiba menyambar satu warga kami ke langit hingga lenyap ditelan kabut, lalu monster-monster darat itu mengejar kami!',
+      accentColor: '#10b981',
+    };
+
+    this.saveProgress();
+    this.pushHud(true);
+  }
+
+  private startVillageRescueEscort(): void {
+    const amb = this.villageAmbushState;
+    if (!amb || !amb.active) {
+      this.storyDialog = null;
+      this.phase = 'playing';
+      this.applyCameraVisibilityAndControls();
+      this.pushHud(true);
+      return;
+    }
+    amb.stage = 'escort';
+    amb.timer = 0;
+    for (const n of amb.npcs) {
+      if (n.role === 'survivor' && n.alive) {
+        n.shoutLive = '🏃 Ikuti kami menuju Penjaga Pulau!';
+      }
+    }
+    this.phase = 'story';
+    this.storyTimer = 0;
+    this.heldKeys.clear();
+    this.applyCameraVisibilityAndControls();
+    this.storyDialog = {
+      kind: 'village_rescue_escort',
+      step: 0,
+      speakerName: 'Laras & Bagas (Memandu Jalan)',
+      speakerRole: 'Menuju Penjaga Pulau Desa Sapaan',
+      textEn: 'Follow the villagers to the Desa Sapaan Island Guardian!',
+      textId: 'Kedua warga sedang mengantarmu menemui Penjaga Pulau Desa Sapaan di dekat gerbang gua...',
+      accentColor: '#10b981',
+    };
+    soundEngine.playDoor();
+    this.pushHud(true);
+  }
+
+  private finishVillageRescueEscort(): void {
+    const amb = this.villageAmbushState;
+    const activeGuardian = getActiveZoneNpcDef('desa_sapaan', this.getCurrentDayPhase() === 'malam');
+    const guardianSpot = OVERWORLD_ANCHORS.npcs.npc_tetua;
+    const heroStandX = guardianSpot.x - 2.65;
+    const heroStandZ = guardianSpot.z;
+    const heroStandY = getArchipelagoGroundY(heroStandX, heroStandZ);
+
+    this.heroPos.set(heroStandX, heroStandY, heroStandZ);
+    this.heroVel.set(0, 0, 0);
+    this.heroVelY = 0;
+    this.heroOnGround = true;
+    this.heroYaw = Math.atan2(guardianSpot.x - heroStandX, guardianSpot.z - heroStandZ);
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.body.rotation.y = this.heroYaw;
+    this.savedOverworldHeroPos.copy(this.heroPos);
+
+    if (amb && amb.active) {
+      amb.stage = 'awaiting_guardian_talk';
+      amb.resolved = false;
+      amb.timer = 0;
+      const survivors = amb.npcs.filter((n) => n.role === 'survivor' && n.alive);
+      const waitCoords: Array<[number, number]> = [
+        [guardianSpot.x - 4.3, guardianSpot.z - 1.55],
+        [guardianSpot.x - 4.3, guardianSpot.z + 1.55],
+      ];
+      survivors.forEach((n, idx) => {
+        const [wx, wz] = waitCoords[idx] ?? [guardianSpot.x - 4.3, guardianSpot.z];
+        n.x = wx;
+        n.z = wz;
+        n.y = getArchipelagoGroundY(wx, wz);
+        n.yaw = Math.atan2(guardianSpot.x - wx, guardianSpot.z - wz);
+        n.actor.root.position.set(n.x, n.y, n.z);
+        n.actor.root.rotation.y = n.yaw;
+        n.shoutLive =
+          idx === 0
+            ? `👉 Itu ${activeGuardian.name}! Tekan BICARA (E)!`
+            : '💬 Bicaralah dengan Penjaga Pulau!';
+      });
+    }
+
+    this.storyDialog = null;
+    this.phase = 'playing';
+    this.nearbyNpcId = activeGuardian.id;
+    this.applyCameraVisibilityAndControls();
+    this.snapCameraBehindHero();
     this.showBanner(
-      '🎉 2 Warga Desa Sapaan terselamatkan & segera berlindung ke rumah! +60 XP · +2 💎',
-      5.2,
+      `👆 Tutorial: Tekan tombol BICARA (atau E) untuk berbicara dengan ${activeGuardian.name}!`,
+      6.0,
     );
+    soundEngine.playPick();
     this.saveProgress();
     this.pushHud(true);
   }
@@ -7540,18 +7788,27 @@ export class RpgWorldEngine {
     if (inPrologueScene2) {
       _skyColorScratch.lerp(_hemiGndNightCol, 0.35 + stormMistT * 0.45);
     } else if (!inProloguePeaceful) {
-      // Hawa monster menyelimuti seluruh kepulauan dengan kabut mencekam baik siang maupun malam
-      _skyColorScratch.lerp(_skyTenseMistCol, THREE.MathUtils.lerp(0.24, 0.56, daylight));
+      // Kabut tebal menyelimuti seluruh kepulauan pada malam, pagi, siang, hingga sore
+      _skyColorScratch.lerp(_skyDayMistCol, daylight * 0.62);
+      _skyColorScratch.lerp(_skyTenseMistCol, THREE.MathUtils.lerp(0.42, 0.36, daylight));
     }
 
     (this.scene.background as THREE.Color).copy(_skyColorScratch);
     if (this.scene.fog instanceof THREE.FogExp2) {
       this.scene.fog.color.copy(_skyColorScratch);
       this.scene.fog.density = inPrologueScene2
-        ? THREE.MathUtils.lerp(0.0072, 0.022, stormMistT)
+        ? THREE.MathUtils.lerp(0.014, 0.036, stormMistT)
         : inProloguePeaceful
         ? THREE.MathUtils.lerp(0.0068, 0.003, daylight)
-        : THREE.MathUtils.lerp(0.0175, 0.0112, daylight) + twilightGlow * 0.0022;
+        : THREE.MathUtils.lerp(0.042, 0.029, daylight) + twilightGlow * 0.005;
+    }
+
+    if (this.worldMistMesh && this.worldMistMat) {
+      this.worldMistMesh.visible = !inProloguePeaceful;
+      this.worldMistMat.color.copy(_mistNightCol).lerp(_mistDayCol, daylight * 0.86);
+      this.worldMistMat.opacity = inPrologueScene2
+        ? THREE.MathUtils.lerp(0.06, 0.36, stormMistT)
+        : THREE.MathUtils.lerp(0.36, 0.27, daylight) + twilightGlow * 0.04;
     }
 
     const moodLightFactor = inProloguePeaceful ? 1.0 : THREE.MathUtils.lerp(0.92, 0.78, daylight);
@@ -15745,6 +16002,258 @@ export class RpgWorldEngine {
     this.controls.target.lerp(_v2, k);
   }
 
+  private createSpreadingWorldMist(): void {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
+      ctx.clearRect(0, 0, 128, 128);
+      const puffs: Array<[number, number, number, number]> = [
+        [64, 64, 58, 0.52],
+        [46, 56, 40, 0.34],
+        [82, 58, 38, 0.32],
+        [62, 80, 36, 0.28],
+      ];
+      for (const [cx, cy, r, a] of puffs) {
+        const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+        g.addColorStop(0, `rgba(255,255,255,${a})`);
+        g.addColorStop(0.5, `rgba(241,245,249,${a * 0.48})`);
+        g.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    const mistTex = new THREE.CanvasTexture(canvas);
+    mistTex.colorSpace = THREE.SRGBColorSpace;
+
+    // Crossed 3-plane soft cloud cluster so fog wisps read smoothly from every angle without hard edges
+    const posArr: number[] = [];
+    const uvArr: number[] = [];
+    const idxArr: number[] = [];
+    const pushQuad = (
+      x0: number,
+      y0: number,
+      z0: number,
+      x1: number,
+      y1: number,
+      z1: number,
+      x2: number,
+      y2: number,
+      z2: number,
+      x3: number,
+      y3: number,
+      z3: number,
+    ) => {
+      const base = posArr.length / 3;
+      posArr.push(x0, y0, z0, x1, y1, z1, x2, y2, z2, x3, y3, z3);
+      uvArr.push(0, 0, 1, 0, 1, 1, 0, 1);
+      idxArr.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    };
+    pushQuad(-0.5, 0.14, -0.5, 0.5, 0.14, -0.5, 0.5, 0.14, 0.5, -0.5, 0.14, 0.5);
+    for (const ang of [0, Math.PI / 3, -Math.PI / 3]) {
+      const c = Math.cos(ang) * 0.5;
+      const s = Math.sin(ang) * 0.5;
+      pushQuad(-c, -0.1, -s, c, -0.1, s, c, 0.45, s, -c, 0.45, -s);
+    }
+    const mistGeo = new THREE.BufferGeometry();
+    mistGeo.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
+    mistGeo.setAttribute('uv', new THREE.Float32BufferAttribute(uvArr, 2));
+    mistGeo.setIndex(idxArr);
+    mistGeo.computeVertexNormals();
+
+    this.worldMistMat = new THREE.MeshBasicMaterial({
+      map: mistTex,
+      color: 0xdbeafe,
+      transparent: true,
+      opacity: 0.3,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+
+    const seeds: typeof this.worldMistSeeds = [];
+    const addSeed = (wx: number, wy: number, wz: number, sx: number, sy: number, sz: number, idx: number) => {
+      seeds.push({
+        baseX: wx,
+        baseY: wy,
+        baseZ: wz,
+        sx,
+        sy,
+        sz,
+        driftX: 1.6 + (idx % 4) * 0.65,
+        driftZ: 1.2 + ((idx + 2) % 4) * 0.55,
+        phase: idx * 0.73,
+        rotY: (idx * 1.17) % (Math.PI * 2),
+      });
+    };
+
+    let seedIdx = 0;
+    for (const disk of ISLAND_DISKS) {
+      const count = disk.id === 'desa_sapaan' ? 18 : 11;
+      for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2 + (seedIdx % 5) * 0.21;
+        const rRatio = disk.id === 'desa_sapaan' ? 0.14 + ((i * 7) % 10) * 0.082 : 0.18 + ((i * 5) % 10) * 0.08;
+        const rad = disk.radius * rRatio;
+        const wx = disk.cx + Math.cos(angle) * rad;
+        const wz = disk.cz + Math.sin(angle) * rad;
+        const gy = Math.max(0.2, getArchipelagoGroundY(wx, wz));
+        const scaleW = 14.0 + (seedIdx % 5) * 3.4;
+        const scaleH = 4.2 + (seedIdx % 3) * 1.1;
+        addSeed(wx, gy + 0.35 + (seedIdx % 3) * 0.45, wz, scaleW, scaleH, scaleW * 0.92, seedIdx);
+        seedIdx++;
+      }
+    }
+
+    for (const br of BRIDGE_SPANS) {
+      for (const u of [0.22, 0.52, 0.82]) {
+        const wx = THREE.MathUtils.lerp(br.ax, br.bx, u);
+        const wz = THREE.MathUtils.lerp(br.az, br.bz, u);
+        const wy = THREE.MathUtils.lerp(br.ay, br.by, u) + 0.6;
+        addSeed(wx, wy, wz, 15.5, 4.4, 15.5, seedIdx);
+        seedIdx++;
+      }
+    }
+
+    const mesh = new THREE.InstancedMesh(mistGeo, this.worldMistMat, seeds.length);
+    mesh.userData.isMapHidden = true;
+    mesh.frustumCulled = false;
+    mesh.renderOrder = 4;
+    for (let i = 0; i < seeds.length; i++) {
+      const s = seeds[i];
+      _cloudPos.set(s.baseX, s.baseY, s.baseZ);
+      _cloudQuat.setFromAxisAngle(_v3.set(0, 1, 0), s.rotY);
+      _cloudScale.set(s.sx, s.sy, s.sz);
+      _cloudMat.compose(_cloudPos, _cloudQuat, _cloudScale);
+      mesh.setMatrixAt(i, _cloudMat);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+    this.worldMistSeeds = seeds;
+    this.worldMistMesh = mesh;
+    this.overworldGroup.add(mesh);
+  }
+
+  private animateHeroConversation(heroSpeaking: boolean, dt: number): void {
+    const hBlink = computeBlinkScale(this.elapsed, 0.25);
+    this.hero.leftEye.scale.y = hBlink;
+    this.hero.rightEye.scale.y = hBlink;
+    const breathSy = 1 + Math.sin(this.elapsed * 2.8) * 0.032;
+    const breathSxz = 1 / Math.sqrt(breathSy);
+    this.hero.body.scale.set(breathSxz, breathSy, breathSxz);
+
+    const targetBodyY = heroSpeaking
+      ? Math.abs(Math.sin(this.elapsed * 3.6)) * 0.045
+      : Math.abs(Math.sin(this.elapsed * 2.2)) * 0.02;
+    const talkBeat = Math.sin(this.elapsed * 7.2);
+    const talkAlt = Math.cos(this.elapsed * 5.4);
+    const listenSway = Math.sin(this.elapsed * 2.2);
+    const nod = Math.max(0, Math.sin(this.elapsed * 3.1)) * 0.09;
+
+    const tUpperX = heroSpeaking ? 0.08 + Math.sin(this.elapsed * 4.4) * 0.06 : 0.04 + nod * 0.45;
+    const tUpperY = heroSpeaking ? talkAlt * 0.14 : listenSway * 0.07;
+    const tHeadX = heroSpeaking ? -0.14 + talkBeat * 0.09 : -0.18 + nod;
+    const tHeadY = heroSpeaking
+      ? Math.sin(this.elapsed * 2.7) * 0.12
+      : Math.sin(this.elapsed * 1.4) * 0.08;
+    const tHeadZ = heroSpeaking ? Math.cos(this.elapsed * 3.1) * 0.06 : listenSway * 0.04;
+    const tRightArmX = heroSpeaking
+      ? -0.82 + talkBeat * 0.34
+      : -0.24 + Math.sin(this.elapsed * 2.5) * 0.1;
+    const tRightArmZ = heroSpeaking
+      ? -0.32 - Math.abs(talkAlt) * 0.24
+      : -0.18 - Math.abs(listenSway) * 0.08;
+    const tLeftArmX = heroSpeaking
+      ? -0.45 - talkAlt * 0.28
+      : -0.2 + Math.cos(this.elapsed * 2.1) * 0.09;
+    const tLeftArmZ = heroSpeaking
+      ? 0.24 + Math.abs(talkBeat) * 0.18
+      : 0.16 + Math.abs(listenSway) * 0.06;
+    const tLeftLegX = heroSpeaking
+      ? 0.08 + Math.sin(this.elapsed * 2.8) * 0.05
+      : 0.05 + listenSway * 0.035;
+    const tRightLegX = heroSpeaking
+      ? -0.08 - Math.sin(this.elapsed * 2.8) * 0.05
+      : -0.05 - listenSway * 0.035;
+
+    this.hero.body.position.y = THREE.MathUtils.damp(this.hero.body.position.y, targetBodyY, 12, dt);
+    this.hero.upperBody.rotation.x = THREE.MathUtils.damp(this.hero.upperBody.rotation.x, tUpperX, 11, dt);
+    this.hero.upperBody.rotation.y = THREE.MathUtils.damp(this.hero.upperBody.rotation.y, tUpperY, 11, dt);
+    this.hero.headGroup.rotation.x = THREE.MathUtils.damp(this.hero.headGroup.rotation.x, tHeadX, 12, dt);
+    this.hero.headGroup.rotation.y = THREE.MathUtils.damp(this.hero.headGroup.rotation.y, tHeadY, 12, dt);
+    this.hero.headGroup.rotation.z = THREE.MathUtils.damp(this.hero.headGroup.rotation.z, tHeadZ, 12, dt);
+    this.hero.rightArm.rotation.x = THREE.MathUtils.damp(this.hero.rightArm.rotation.x, tRightArmX, 12, dt);
+    this.hero.rightArm.rotation.z = THREE.MathUtils.damp(this.hero.rightArm.rotation.z, tRightArmZ, 12, dt);
+    this.hero.leftArm.rotation.x = THREE.MathUtils.damp(this.hero.leftArm.rotation.x, tLeftArmX, 12, dt);
+    this.hero.leftArm.rotation.z = THREE.MathUtils.damp(this.hero.leftArm.rotation.z, tLeftArmZ, 12, dt);
+    this.hero.leftLeg.rotation.x = THREE.MathUtils.damp(this.hero.leftLeg.rotation.x, tLeftLegX, 10, dt);
+    this.hero.rightLeg.rotation.x = THREE.MathUtils.damp(this.hero.rightLeg.rotation.x, tRightLegX, 10, dt);
+  }
+
+  private updateSideAngleDialogueCamera(
+    heroX: number,
+    heroY: number,
+    heroZ: number,
+    partnerX: number,
+    partnerY: number,
+    partnerZ: number,
+    dt: number,
+  ): void {
+    const dx = partnerX - heroX;
+    const dz = partnerZ - heroZ;
+    const dist = Math.hypot(dx, dz) || 1;
+    const toPartnerX = dx / dist;
+    const toPartnerZ = dz / dist;
+    const sideX = -toPartnerZ;
+    const sideZ = toPartnerX;
+    const midX = (heroX + partnerX) * 0.5;
+    const midZ = (heroZ + partnerZ) * 0.5;
+
+    const lookX = midX;
+    const lookY = Math.min(heroY, partnerY) + 1.05;
+    const lookZ = midZ;
+
+    const offY = 1.9;
+    const posOffX = sideX * 5.6 - toPartnerX * 0.6;
+    const posOffZ = sideZ * 5.6 - toPartnerZ * 0.6;
+    const negOffX = -sideX * 5.6 - toPartnerX * 0.6;
+    const negOffZ = -sideZ * 5.6 - toPartnerZ * 0.6;
+    const desiredDist = Math.hypot(posOffX, offY, posOffZ);
+
+    const safePos = this.computeSpringArmDist(
+      lookX,
+      lookY,
+      lookZ,
+      posOffX / desiredDist,
+      offY / desiredDist,
+      posOffZ / desiredDist,
+      desiredDist,
+    );
+    const safeNeg = this.computeSpringArmDist(
+      lookX,
+      lookY,
+      lookZ,
+      negOffX / desiredDist,
+      offY / desiredDist,
+      negOffZ / desiredDist,
+      desiredDist,
+    );
+    const usePosSide = safePos >= safeNeg - 0.15;
+    const offX = usePosSide ? posOffX : negOffX;
+    const offZ = usePosSide ? posOffZ : negOffZ;
+    const safeDist = usePosSide ? safePos : safeNeg;
+
+    _v1.set(
+      lookX + (offX / desiredDist) * safeDist,
+      lookY + (offY / desiredDist) * safeDist,
+      lookZ + (offZ / desiredDist) * safeDist,
+    );
+    _v2.set(lookX, lookY, lookZ);
+    const camLerp = 1 - Math.exp(-5.0 * dt);
+    this.camera.position.lerp(_v1, camLerp);
+    this.controls.target.lerp(_v2, camLerp);
+  }
+
   private updateDialogueCamera(dt: number): void {
     const npc = this.dialogueTargetNpcId ? this.npcs.get(this.dialogueTargetNpcId) : null;
     if (!npc) return;
@@ -15757,8 +16266,10 @@ export class RpgWorldEngine {
     this.heroYaw = Math.atan2(npc.x - this.heroPos.x, npc.z - this.heroPos.z);
     this.hero.body.rotation.y = this.heroYaw;
     this.hero.root.position.copy(this.heroPos);
+    this.animateHeroConversation(false, dt);
 
-    this.updateHarvestDialogueCamera(
+    // Sudut pandang kamera 3/4 samping yang sama persis seperti saat bercakap dengan Burung Hantu
+    this.updateSideAngleDialogueCamera(
       this.heroPos.x,
       this.heroPos.y,
       this.heroPos.z,
@@ -16495,38 +17006,98 @@ export class RpgWorldEngine {
       if (!n.alive) continue;
       if (n.role === 'abducted' && amb.timer >= 1.65) continue;
 
-      if (amb.resolved) {
+      if (amb.stage === 'walking_home' || amb.resolved) {
         anySurvivorAlive = true;
-        if (amb.timer < 1.15) {
-          // Melompat gembira sebentar lalu lari masuk ke rumah
-          n.yaw = Math.atan2(this.heroPos.x - n.x, this.heroPos.z - n.z);
-          n.y = getArchipelagoGroundY(n.x, n.z) + Math.abs(Math.sin(this.elapsed * 9 + i)) * 0.28;
-          n.actor.root.position.set(n.x, n.y, n.z);
-          n.actor.root.rotation.y = n.yaw;
-          n.actor.leftArm.rotation.x = -2.4;
-          n.actor.rightArm.rotation.x = -2.4;
-        } else {
-          const [hx, hz] = n.homeDoor;
-          const dx = hx - n.x;
-          const dz = hz - n.z;
-          const dist = Math.hypot(dx, dz);
-          if (dist < 1.35) {
-            n.alive = false;
-            n.sheltering = true;
-            n.actor.root.visible = false;
-            this.overworldGroup.remove(n.actor.root);
-            continue;
-          }
-          const step = Math.min(dist, 5.4 * dt);
-          n.x += (dx / dist) * step;
-          n.z += (dz / dist) * step;
-          n.y = getArchipelagoGroundY(n.x, n.z);
-          n.yaw = Math.atan2(dx, dz);
-          n.actor.walkPhase += dt * 13;
-          n.actor.root.position.set(n.x, n.y, n.z);
-          n.actor.root.rotation.y = n.yaw;
-          this.animateVillagerPanic(n.actor, n.actor.walkPhase, i * 2.1, 5.4, false);
+        const [hx, hz] = n.homeDoor;
+        const dx = hx - n.x;
+        const dz = hz - n.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 1.45) {
+          n.alive = false;
+          n.sheltering = true;
+          n.actor.root.visible = false;
+          this.overworldGroup.remove(n.actor.root);
+          continue;
         }
+        const step = Math.min(dist, 4.6 * dt);
+        const movePt = this._desaColScratch;
+        movePt.x = n.x + (dx / dist) * step;
+        movePt.z = n.z + (dz / dist) * step;
+        const gy = getArchipelagoGroundY(movePt.x, movePt.z);
+        resolveObstacleBoxes(movePt, 0.56, this.villageRig.obstacles, gy, 2.0);
+        constrainToWalkableArchipelago(movePt, 0.56);
+        n.yaw = Math.atan2(movePt.x - n.x, movePt.z - n.z);
+        n.x = movePt.x;
+        n.z = movePt.z;
+        n.y = getArchipelagoGroundY(n.x, n.z);
+        n.actor.walkPhase += dt * 11;
+        n.actor.root.position.set(n.x, n.y, n.z);
+        n.actor.root.rotation.y = n.yaw;
+        const vBlink = computeBlinkScale(this.elapsed, i * 1.9);
+        n.actor.leftEye.scale.y = vBlink;
+        n.actor.rightEye.scale.y = vBlink;
+        const swing = Math.sin(n.actor.walkPhase) * 0.62;
+        n.actor.leftLeg.rotation.x = swing;
+        n.actor.rightLeg.rotation.x = -swing;
+        n.actor.leftArm.rotation.x = -swing * 0.55;
+        n.actor.rightArm.rotation.x = swing * 0.55;
+        n.actor.leftArm.rotation.z = 0.14;
+        n.actor.rightArm.rotation.z = -0.14;
+        n.actor.bodyPivot.position.y = Math.abs(Math.sin(n.actor.walkPhase)) * 0.06;
+        n.actor.bodyPivot.rotation.x = 0.06;
+        n.actor.headGroup.rotation.y = Math.sin(this.elapsed * 2.2 + i) * 0.12;
+        continue;
+      }
+
+      if (amb.stage === 'rescue_talk') {
+        anySurvivorAlive = true;
+        n.y = getArchipelagoGroundY(n.x, n.z);
+        n.yaw = Math.atan2(this.heroPos.x - n.x, this.heroPos.z - n.z);
+        n.actor.root.position.set(n.x, n.y, n.z);
+        n.actor.root.rotation.y = n.yaw;
+        const vBlink = computeBlinkScale(this.elapsed, i * 2.1 + 0.4);
+        n.actor.leftEye.scale.y = vBlink;
+        n.actor.rightEye.scale.y = vBlink;
+        const npcSpeaking = this.storyDialog?.speakerSide !== 'hero';
+        const nod = Math.sin(this.elapsed * (npcSpeaking ? 6.5 : 2.6) + i * 1.4);
+        n.actor.leftLeg.rotation.x = 0;
+        n.actor.rightLeg.rotation.x = 0;
+        n.actor.bodyPivot.position.y = npcSpeaking ? Math.abs(nod) * 0.045 : Math.sin(this.elapsed * 2.2 + i) * 0.02;
+        n.actor.bodyPivot.rotation.x = npcSpeaking ? 0.06 : 0.02;
+        n.actor.headGroup.rotation.x = npcSpeaking ? nod * 0.12 : Math.max(0, nod) * 0.08;
+        n.actor.headGroup.rotation.y = Math.sin(this.elapsed * 2.1 + i) * 0.1;
+        n.actor.leftArm.rotation.x = npcSpeaking ? -0.78 + nod * 0.28 : -0.22;
+        n.actor.rightArm.rotation.x = npcSpeaking ? -0.62 - nod * 0.24 : -0.22;
+        n.actor.leftArm.rotation.z = 0.24;
+        n.actor.rightArm.rotation.z = -0.24;
+        continue;
+      }
+
+      if (amb.stage === 'awaiting_guardian_talk') {
+        anySurvivorAlive = true;
+        const guardianSpot = OVERWORLD_ANCHORS.npcs.npc_tetua;
+        n.y = getArchipelagoGroundY(n.x, n.z);
+        n.yaw = Math.atan2(guardianSpot.x - n.x, guardianSpot.z - n.z);
+        n.actor.root.position.set(n.x, n.y, n.z);
+        n.actor.root.rotation.y = n.yaw;
+        const vBlink = computeBlinkScale(this.elapsed, i * 2.1 + 0.4);
+        n.actor.leftEye.scale.y = vBlink;
+        n.actor.rightEye.scale.y = vBlink;
+        n.actor.leftLeg.rotation.x = 0;
+        n.actor.rightLeg.rotation.x = 0;
+        n.actor.bodyPivot.position.y = Math.abs(Math.sin(this.elapsed * 3.0 + i)) * 0.03;
+        n.actor.bodyPivot.rotation.x = 0.04;
+        n.actor.headGroup.rotation.y = Math.sin(this.elapsed * 2.4 + i) * 0.16;
+        n.actor.headGroup.rotation.x = -0.05;
+        n.actor.rightArm.rotation.x = -1.25 + Math.sin(this.elapsed * 4.5 + i) * 0.22;
+        n.actor.leftArm.rotation.x = -0.26;
+        n.actor.leftArm.rotation.z = 0.18;
+        n.actor.rightArm.rotation.z = -0.22;
+        continue;
+      }
+
+      if (amb.stage === 'escort') {
+        anySurvivorAlive = true;
         continue;
       }
 
@@ -16667,6 +17238,134 @@ export class RpgWorldEngine {
       return;
     }
 
+    if (this.storyDialog?.kind === 'village_rescue_talk') {
+      this.updateVillageAmbushState(dt);
+      const amb = this.villageAmbushState;
+      const partnerX = amb?.talkMidX ?? this.heroPos.x + 3.1;
+      const partnerZ = amb?.talkMidZ ?? this.heroPos.z;
+      const partnerY = getArchipelagoGroundY(partnerX, partnerZ);
+      this.heroYaw = Math.atan2(partnerX - this.heroPos.x, partnerZ - this.heroPos.z);
+      this.hero.body.rotation.y = this.heroYaw;
+      this.hero.root.position.copy(this.heroPos);
+      this.animateHeroConversation(this.storyDialog.speakerSide === 'hero', dt);
+      this.updateSideAngleDialogueCamera(
+        this.heroPos.x,
+        this.heroPos.y,
+        this.heroPos.z,
+        partnerX,
+        partnerY,
+        partnerZ,
+        dt,
+      );
+      return;
+    }
+
+    if (this.storyDialog?.kind === 'village_rescue_escort') {
+      const amb = this.villageAmbushState;
+      if (!amb || !amb.active) {
+        this.finishVillageRescueEscort();
+        return;
+      }
+      const guardianSpot = OVERWORLD_ANCHORS.npcs.npc_tetua;
+      const heroTargetX = guardianSpot.x - 2.65;
+      const heroTargetZ = guardianSpot.z;
+      const survivors = amb.npcs.filter((n) => n.role === 'survivor' && n.alive);
+      const npcTargets: Array<[number, number]> = [
+        [guardianSpot.x - 4.3, guardianSpot.z - 1.55],
+        [guardianSpot.x - 4.3, guardianSpot.z + 1.55],
+      ];
+
+      let allNpcsNear = true;
+      survivors.forEach((n, idx) => {
+        const [finalX, finalZ] = npcTargets[idx] ?? [guardianSpot.x - 4.3, guardianSpot.z];
+        const useMid = Math.abs(n.z - guardianSpot.z) > 4.2 && n.x < 8.5;
+        const tx = useMid ? 9.5 : finalX;
+        const tz = useMid ? guardianSpot.z + (idx === 0 ? -1.1 : 1.1) : finalZ;
+        const dx = tx - n.x;
+        const dz = tz - n.z;
+        const dist = Math.hypot(dx, dz);
+        if (Math.hypot(finalX - n.x, finalZ - n.z) > 0.65) {
+          allNpcsNear = false;
+        }
+        if (dist > 0.18) {
+          const step = Math.min(dist, 5.1 * dt);
+          const pt = this._desaColScratch;
+          pt.x = n.x + (dx / dist) * step;
+          pt.z = n.z + (dz / dist) * step;
+          const gy = getArchipelagoGroundY(pt.x, pt.z);
+          resolveObstacleBoxes(pt, 0.56, this.villageRig.obstacles, gy, 2.0);
+          constrainToWalkableArchipelago(pt, 0.56);
+          n.yaw = Math.atan2(pt.x - n.x, pt.z - n.z);
+          n.x = pt.x;
+          n.z = pt.z;
+          n.y = getArchipelagoGroundY(n.x, n.z);
+          n.actor.walkPhase += dt * 11.5;
+          const swing = Math.sin(n.actor.walkPhase) * 0.65;
+          n.actor.leftLeg.rotation.x = swing;
+          n.actor.rightLeg.rotation.x = -swing;
+          n.actor.leftArm.rotation.x = -swing * 0.55;
+          n.actor.rightArm.rotation.x = swing * 0.55;
+          n.actor.bodyPivot.position.y = Math.abs(Math.sin(n.actor.walkPhase)) * 0.06;
+        } else {
+          n.yaw = Math.atan2(guardianSpot.x - n.x, guardianSpot.z - n.z);
+          n.actor.leftLeg.rotation.x = 0;
+          n.actor.rightLeg.rotation.x = 0;
+        }
+        const vBlink = computeBlinkScale(this.elapsed, idx * 1.8 + 0.3);
+        n.actor.leftEye.scale.y = vBlink;
+        n.actor.rightEye.scale.y = vBlink;
+        n.actor.root.position.set(n.x, n.y, n.z);
+        n.actor.root.rotation.y = n.yaw;
+      });
+
+      const hUseMid = Math.abs(this.heroPos.z - guardianSpot.z) > 4.2 && this.heroPos.x < 7.0;
+      const htx = hUseMid ? 8.0 : heroTargetX;
+      const htz = hUseMid ? guardianSpot.z : heroTargetZ;
+      const hdx = htx - this.heroPos.x;
+      const hdz = htz - this.heroPos.z;
+      const hDist = Math.hypot(hdx, hdz);
+      if (hDist > 0.2) {
+        const hStep = Math.min(hDist, 4.9 * dt);
+        const hPt = this._desaColScratch;
+        hPt.x = this.heroPos.x + (hdx / hDist) * hStep;
+        hPt.z = this.heroPos.z + (hdz / hDist) * hStep;
+        const hGy = getArchipelagoGroundY(hPt.x, hPt.z);
+        resolveObstacleBoxes(hPt, 0.65, this.villageRig.obstacles, hGy, 2.0);
+        constrainToWalkableArchipelago(hPt, 0.65);
+        this.heroYaw = Math.atan2(hPt.x - this.heroPos.x, hPt.z - this.heroPos.z);
+        this.heroPos.set(hPt.x, getArchipelagoGroundY(hPt.x, hPt.z), hPt.z);
+        this.walkCycle += dt * 11.2;
+        const swing = Math.sin(this.walkCycle) * 0.58;
+        this.hero.leftLeg.rotation.x = swing;
+        this.hero.rightLeg.rotation.x = -swing;
+        this.hero.leftArm.rotation.x = -swing * 0.65;
+        this.hero.rightArm.rotation.x = swing * 0.55;
+        this.hero.body.position.y = Math.abs(Math.sin(this.walkCycle)) * 0.08;
+      } else {
+        this.heroYaw = Math.atan2(guardianSpot.x - this.heroPos.x, guardianSpot.z - this.heroPos.z);
+      }
+      const hBlink = computeBlinkScale(this.elapsed, 0.25);
+      this.hero.leftEye.scale.y = hBlink;
+      this.hero.rightEye.scale.y = hBlink;
+      this.hero.root.position.copy(this.heroPos);
+      this.hero.body.rotation.y = this.heroYaw;
+
+      const camLerp = 1 - Math.exp(-4.5 * dt);
+      _v1.set(this.heroPos.x - 5.4, this.heroPos.y + 4.4, this.heroPos.z + 6.4);
+      _v2.set(
+        THREE.MathUtils.lerp(this.heroPos.x + 2.5, guardianSpot.x, 0.45),
+        this.heroPos.y + 1.4,
+        THREE.MathUtils.lerp(this.heroPos.z, guardianSpot.z, 0.5),
+      );
+      this.camera.position.lerp(_v1, camLerp);
+      this.controls.target.lerp(_v2, camLerp);
+
+      if ((allNpcsNear && Math.hypot(heroTargetX - this.heroPos.x, heroTargetZ - this.heroPos.z) < 0.7) || this.storyTimer > 9.5) {
+        this.finishVillageRescueEscort();
+      }
+      return;
+    }
+
     if (this.storyDialog?.kind === 'cave_guardian' && this.dungeonRig) {
       const gPos = this.dungeonRig.guardianPos;
       this.dungeonRig.guardianMesh.rotation.y = Math.atan2(
@@ -16787,62 +17486,7 @@ export class RpgWorldEngine {
       const heroSpeaking = this.storyDialog.speakerSide === 'hero';
       const owlSpeaking = !heroSpeaking;
 
-      // Expressive 3D conversation animation for Hero (hands, torso, legs, head)
-      const hBlink = computeBlinkScale(this.elapsed, 0.25);
-      this.hero.leftEye.scale.y = hBlink;
-      this.hero.rightEye.scale.y = hBlink;
-      const breathSy = 1 + Math.sin(this.elapsed * 2.8) * 0.032;
-      const breathSxz = 1 / Math.sqrt(breathSy);
-      this.hero.body.scale.set(breathSxz, breathSy, breathSxz);
-
-      const targetBodyY = heroSpeaking
-        ? Math.abs(Math.sin(this.elapsed * 3.6)) * 0.045
-        : Math.abs(Math.sin(this.elapsed * 2.2)) * 0.02;
-      const talkBeat = Math.sin(this.elapsed * 7.2);
-      const talkAlt = Math.cos(this.elapsed * 5.4);
-      const listenSway = Math.sin(this.elapsed * 2.2);
-      const nod = Math.max(0, Math.sin(this.elapsed * 3.1)) * 0.09;
-
-      const tUpperX = heroSpeaking
-        ? 0.08 + Math.sin(this.elapsed * 4.4) * 0.06
-        : 0.04 + nod * 0.45;
-      const tUpperY = heroSpeaking ? talkAlt * 0.14 : listenSway * 0.07;
-      const tHeadX = heroSpeaking ? -0.14 + talkBeat * 0.09 : -0.18 + nod;
-      const tHeadY = heroSpeaking
-        ? Math.sin(this.elapsed * 2.7) * 0.12
-        : Math.sin(this.elapsed * 1.4) * 0.08;
-      const tHeadZ = heroSpeaking ? Math.cos(this.elapsed * 3.1) * 0.06 : listenSway * 0.04;
-      const tRightArmX = heroSpeaking
-        ? -0.82 + talkBeat * 0.34
-        : -0.24 + Math.sin(this.elapsed * 2.5) * 0.1;
-      const tRightArmZ = heroSpeaking
-        ? -0.32 - Math.abs(talkAlt) * 0.24
-        : -0.18 - Math.abs(listenSway) * 0.08;
-      const tLeftArmX = heroSpeaking
-        ? -0.45 - talkAlt * 0.28
-        : -0.2 + Math.cos(this.elapsed * 2.1) * 0.09;
-      const tLeftArmZ = heroSpeaking
-        ? 0.24 + Math.abs(talkBeat) * 0.18
-        : 0.16 + Math.abs(listenSway) * 0.06;
-      const tLeftLegX = heroSpeaking
-        ? 0.08 + Math.sin(this.elapsed * 2.8) * 0.05
-        : 0.05 + listenSway * 0.035;
-      const tRightLegX = heroSpeaking
-        ? -0.08 - Math.sin(this.elapsed * 2.8) * 0.05
-        : -0.05 - listenSway * 0.035;
-
-      this.hero.body.position.y = THREE.MathUtils.damp(this.hero.body.position.y, targetBodyY, 12, dt);
-      this.hero.upperBody.rotation.x = THREE.MathUtils.damp(this.hero.upperBody.rotation.x, tUpperX, 11, dt);
-      this.hero.upperBody.rotation.y = THREE.MathUtils.damp(this.hero.upperBody.rotation.y, tUpperY, 11, dt);
-      this.hero.headGroup.rotation.x = THREE.MathUtils.damp(this.hero.headGroup.rotation.x, tHeadX, 12, dt);
-      this.hero.headGroup.rotation.y = THREE.MathUtils.damp(this.hero.headGroup.rotation.y, tHeadY, 12, dt);
-      this.hero.headGroup.rotation.z = THREE.MathUtils.damp(this.hero.headGroup.rotation.z, tHeadZ, 12, dt);
-      this.hero.rightArm.rotation.x = THREE.MathUtils.damp(this.hero.rightArm.rotation.x, tRightArmX, 12, dt);
-      this.hero.rightArm.rotation.z = THREE.MathUtils.damp(this.hero.rightArm.rotation.z, tRightArmZ, 12, dt);
-      this.hero.leftArm.rotation.x = THREE.MathUtils.damp(this.hero.leftArm.rotation.x, tLeftArmX, 12, dt);
-      this.hero.leftArm.rotation.z = THREE.MathUtils.damp(this.hero.leftArm.rotation.z, tLeftArmZ, 12, dt);
-      this.hero.leftLeg.rotation.x = THREE.MathUtils.damp(this.hero.leftLeg.rotation.x, tLeftLegX, 10, dt);
-      this.hero.rightLeg.rotation.x = THREE.MathUtils.damp(this.hero.rightLeg.rotation.x, tRightLegX, 10, dt);
+      this.animateHeroConversation(heroSpeaking, dt);
 
       // Expressive hovering & flapping animation for Owl in front of Player
       const flapSpeed = this.owlState === 'fly' ? 16 : owlSpeaking ? 13.5 : 10.5;
@@ -16889,42 +17533,15 @@ export class RpgWorldEngine {
       this.owlRig.root.rotation.z = Math.sin(this.elapsed * 2.6) * 0.09;
 
       // Side-angle 3D dialogue camera framing BOTH Hero & Owl clearly (never from behind either!)
-      const dx = stage.owlX - stage.heroX;
-      const dz = stage.owlZ - stage.heroZ;
-      const dist = Math.hypot(dx, dz) || 1;
-      const toOwlX = dx / dist;
-      const toOwlZ = dz / dist;
-      const sideX = -toOwlZ;
-      const sideZ = toOwlX;
-      const midX = (stage.heroX + stage.owlX) * 0.5;
-      const midZ = (stage.heroZ + stage.owlZ) * 0.5;
-
-      const lookX = midX;
-      const lookY = stage.heroY + 1.05;
-      const lookZ = midZ;
-      const offX = sideX * 5.6 - toOwlX * 0.6;
-      const offY = 1.9;
-      const offZ = sideZ * 5.6 - toOwlZ * 0.6;
-      const desiredDist = Math.hypot(offX, offY, offZ);
-      const safeDist = this.computeSpringArmDist(
-        lookX,
-        lookY,
-        lookZ,
-        offX / desiredDist,
-        offY / desiredDist,
-        offZ / desiredDist,
-        desiredDist,
+      this.updateSideAngleDialogueCamera(
+        stage.heroX,
+        stage.heroY,
+        stage.heroZ,
+        stage.owlX,
+        stage.heroY,
+        stage.owlZ,
+        dt,
       );
-
-      _v1.set(
-        lookX + (offX / desiredDist) * safeDist,
-        lookY + (offY / desiredDist) * safeDist,
-        lookZ + (offZ / desiredDist) * safeDist,
-      );
-      _v2.set(lookX, lookY, lookZ);
-      const camLerp = 1 - Math.exp(-5.0 * dt);
-      this.camera.position.lerp(_v1, camLerp);
-      this.controls.target.lerp(_v2, camLerp);
       return;
     }
 
@@ -16969,6 +17586,8 @@ export class RpgWorldEngine {
         this.storyDialog?.kind === 'opening' ||
         this.storyDialog?.kind === 'owl_depart' ||
         this.storyDialog?.kind === 'village_ambush' ||
+        this.storyDialog?.kind === 'village_rescue_talk' ||
+        this.storyDialog?.kind === 'village_rescue_escort' ||
         this.storyDialog?.kind === 'dungeon_intro' ||
         this.storyDialog?.kind === 'dungeon_rescue');
     if (inPrologue || inAmbushCutscene) {
@@ -16982,7 +17601,11 @@ export class RpgWorldEngine {
         p.root.visible = false;
       }
     }
-    if (this.phase === 'playing' && this.villageAmbushState?.active && !this.villageAmbushState.inCutscene) {
+    if (
+      (this.phase === 'playing' || this.phase === 'dialogue') &&
+      this.villageAmbushState?.active &&
+      !this.villageAmbushState.inCutscene
+    ) {
       this.updateVillageAmbushState(dt);
     }
     if (this.phase !== 'playing') {
@@ -16990,7 +17613,7 @@ export class RpgWorldEngine {
       this.heroThoughtText = null;
       this.heroThoughtTimer = 0;
     }
-    if (this.phase !== 'playing' && !inStoryCutscene) {
+    if (this.phase !== 'playing' && this.phase !== 'dialogue' && !inStoryCutscene) {
       const hasEquippedWeapon =
         this.activeHotbarSlot <= 7 && this.ownedWeapons.has(this.activeWeapon);
       applyHeroWeaponPose(this.hero, this.activeWeapon, hasEquippedWeapon, {
@@ -18118,6 +18741,21 @@ export class RpgWorldEngine {
         this.cloudsMesh.setMatrixAt(i, _cloudMat);
       }
       this.cloudsMesh.instanceMatrix.needsUpdate = true;
+
+      if (this.worldMistMesh && this.worldMistMesh.visible) {
+        for (let i = 0; i < this.worldMistSeeds.length; i++) {
+          const s = this.worldMistSeeds[i];
+          const mx = s.baseX + Math.sin(this.elapsed * 0.24 + s.phase) * s.driftX;
+          const my = s.baseY + Math.cos(this.elapsed * 0.35 + s.phase) * 0.22;
+          const mz = s.baseZ + Math.cos(this.elapsed * 0.21 + s.phase) * s.driftZ;
+          _cloudPos.set(mx, my, mz);
+          _cloudQuat.setFromAxisAngle(_v3.set(0, 1, 0), s.rotY + this.elapsed * 0.06);
+          _cloudScale.set(s.sx, s.sy, s.sz);
+          _cloudMat.compose(_cloudPos, _cloudQuat, _cloudScale);
+          this.worldMistMesh.setMatrixAt(i, _cloudMat);
+        }
+        this.worldMistMesh.instanceMatrix.needsUpdate = true;
+      }
     }
 
     this.portalRig.ringOuter.rotation.z += dt * 1.1;
@@ -22311,25 +22949,32 @@ export class RpgWorldEngine {
 
     if (this.villageAmbushState?.active) {
       const amb = this.villageAmbushState;
-      for (const n of amb.npcs) {
-        if (!n.alive) continue;
-        const p = projectPoint(n.x, n.y + 2.65, n.z);
-        if (!p) continue;
-        const msg =
-          n.role === 'abducted'
-            ? amb.timer >= 1.65
-              ? '😱 Tidaaak! Tolooong!!'
-              : n.shoutCutscene
-            : amb.inCutscene
-            ? n.shoutCutscene
-            : n.shoutLive;
-        labels.push({
-          id: `amb_npc_${n.id}`,
-          x: p.x,
-          y: p.y,
-          title: msg,
-          kind: 'speech',
-        });
+      const showAmbNpcLabels =
+        amb.stage === 'ambush' ||
+        amb.stage === 'escort' ||
+        amb.stage === 'awaiting_guardian_talk' ||
+        amb.stage === 'walking_home';
+      if (showAmbNpcLabels) {
+        for (const n of amb.npcs) {
+          if (!n.alive) continue;
+          const p = projectPoint(n.x, n.y + 2.65, n.z);
+          if (!p) continue;
+          const msg =
+            n.role === 'abducted'
+              ? amb.timer >= 1.65
+                ? '😱 Tidaaak! Tolooong!!'
+                : n.shoutCutscene
+              : amb.inCutscene
+              ? n.shoutCutscene
+              : n.shoutLive;
+          labels.push({
+            id: `amb_npc_${n.id}`,
+            x: p.x,
+            y: p.y,
+            title: msg,
+            kind: 'speech',
+          });
+        }
       }
       if (amb.inCutscene) {
         if (this.starterPickupMesh.visible) {
@@ -22346,6 +22991,29 @@ export class RpgWorldEngine {
           }
         }
         return labels;
+      }
+      if (amb.stage === 'escort' || amb.stage === 'awaiting_guardian_talk') {
+        const gDef = getActiveZoneNpcDef('desa_sapaan', this.getCurrentDayPhase() === 'malam');
+        const gLive = this.npcs.get(gDef.id);
+        const gx = gLive?.x ?? gDef.x;
+        const gz = gLive?.z ?? gDef.z;
+        const gy = getArchipelagoGroundY(gx, gz);
+        const gp = projectPoint(gx, gy + 5.1, gz);
+        if (gp) {
+          labels.push({
+            id: 'amb_guardian_tutorial',
+            x: gp.x,
+            y: gp.y,
+            title:
+              amb.stage === 'awaiting_guardian_talk'
+                ? `👇 Tekan BICARA (E) pada ${gDef.name}!`
+                : `🛡️ ${gDef.name} (Penjaga Pulau)`,
+            kind: 'npc_alert',
+          });
+        }
+        if (amb.stage === 'escort') {
+          return labels;
+        }
       }
     }
 
@@ -24181,6 +24849,14 @@ export class RpgWorldEngine {
           : ZONE_INFO[zoneId].name,
       rankTitle: getRankTitle(this.xp, this.ribbons.size, this.ieltsCleared),
       nearbyNpcId: this.nearbyNpcId,
+      guardianTalkTutorial: Boolean(
+        this.phase === 'playing' &&
+          this.worldMode === 'overworld' &&
+          this.villageAmbushState?.active &&
+          this.villageAmbushState.stage === 'awaiting_guardian_talk' &&
+          this.nearbyNpcId ===
+            getActiveZoneNpcDef('desa_sapaan', this.getCurrentDayPhase() === 'malam').id,
+      ),
       nearbyOverworldZoneDoor: this.nearbyOverworldZoneDoor,
       nightPermittedZones: Array.from(this.nightPermittedZones),
       nearbyMonsterId: this.nearbyMonsterId,

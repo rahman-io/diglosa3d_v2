@@ -180,6 +180,7 @@ const INITIAL_HUD: RpgHudSnapshot = {
   activeZoneName: 'Hutan Kata',
   rankTitle: 'Telur Pemula',
   nearbyNpcId: null,
+  guardianTalkTutorial: false,
   nearbyOverworldZoneDoor: null,
   nightPermittedZones: [],
   nearbyMonsterId: null,
@@ -2652,7 +2653,8 @@ function DiglosaRpgApp() {
         (hud.phase === 'story' &&
           hud.storyDialog?.kind !== 'prologue' &&
           hud.storyDialog?.kind !== 'owl_depart' &&
-          hud.storyDialog?.kind !== 'village_ambush') ||
+          hud.storyDialog?.kind !== 'village_ambush' &&
+          hud.storyDialog?.kind !== 'village_rescue_escort') ||
         hud.phase === 'battle' ||
         hud.phase === 'learning' ||
         hud.phase === 'dialogue' ||

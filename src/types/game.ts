@@ -423,6 +423,8 @@ export interface StoryDialogState {
     | 'opening'
     | 'owl_depart'
     | 'village_ambush'
+    | 'village_rescue_talk'
+    | 'village_rescue_escort'
     | 'area_cleared'
     | 'defeat_exit'
     | 'dungeon_intro'
@@ -585,6 +587,7 @@ export interface RpgHudSnapshot {
   activeZoneName: string;
   rankTitle: string;
   nearbyNpcId: string | null;
+  guardianTalkTutorial?: boolean;
   nearbyOverworldZoneDoor: ZoneId | null;
   nightPermittedZones: ZoneId[];
   nearbyMonsterId: string | null;

@@ -2398,20 +2398,34 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         }`}
       >
         {nearbyOverworldNpc && (
-          <button
-            type="button"
-            onClick={onPrimaryAction}
-            title={`Bicara: ${nearbyOverworldNpc.name}`}
-            aria-label={`Bicara dengan ${nearbyOverworldNpc.name}`}
-            className="relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_14px_rgba(245,158,11,0.48)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
-          >
-            <img
-              src="./assets/ui/btn_talk.png"
-              alt={nearbyOverworldNpc.name}
-              className="pointer-events-none h-full w-full select-none object-contain"
-              draggable={false}
-            />
-          </button>
+          <div className="relative flex flex-col items-center">
+            {hud.guardianTalkTutorial && (
+              <div className="pointer-events-none absolute bottom-full right-0 mb-2.5 flex flex-col items-end sm:right-auto sm:items-center">
+                <div className="animate-bounce max-w-[235px] rounded-xl border-2 border-amber-300 bg-emerald-950/95 px-3 py-1.5 text-center text-[11px] font-black leading-snug text-amber-100 shadow-[0_6px_20px_rgba(16,185,129,0.55)] sm:max-w-none sm:whitespace-nowrap">
+                  👆 Tutorial: Tekan tombol ini (atau E) untuk bicara dengan {nearbyOverworldNpc.name}!
+                </div>
+                <div className="mr-5 h-2.5 w-2.5 -mt-1.5 rotate-45 border-b-2 border-r-2 border-amber-300 bg-emerald-950 sm:mr-0" />
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={onPrimaryAction}
+              title={`Bicara: ${nearbyOverworldNpc.name}`}
+              aria-label={`Bicara dengan ${nearbyOverworldNpc.name}`}
+              className={`relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_14px_rgba(245,158,11,0.48)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px] ${
+                hud.guardianTalkTutorial
+                  ? 'ring-4 ring-emerald-400 ring-offset-2 ring-offset-slate-950/80 animate-pulse'
+                  : ''
+              }`}
+            >
+              <img
+                src="./assets/ui/btn_talk.png"
+                alt={nearbyOverworldNpc.name}
+                className="pointer-events-none h-full w-full select-none object-contain"
+                draggable={false}
+              />
+            </button>
+          </div>
         )}
 
         {nearbyOverworldDoorNpc && !nearbyOverworldNpc && !hud.nearPortal && (
