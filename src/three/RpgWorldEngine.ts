@@ -15892,6 +15892,120 @@ export class RpgWorldEngine {
     }
   }
 
+  private getShooterBaseY(s: EnemyShooter): number {
+    if (this.worldMode === 'overworld') {
+      return getArchipelagoGroundY(s.x, s.z);
+    }
+    if (this.worldMode === 'dungeon') {
+      return this.getDungeonSupportHeight(s.x, s.z, s.mesh.position.y + 0.6);
+    }
+    return s.mesh.position.y;
+  }
+
+  private getMonsterBaseY(m: RoamingMonster, hoverY: number): number {
+    if (m.y !== undefined) return m.y;
+    if (this.worldMode === 'overworld') {
+      return getArchipelagoGroundY(m.x, m.z) + hoverY;
+    }
+    if (this.worldMode === 'dungeon') {
+      return this.getDungeonSupportHeight(m.x, m.z, this.heroPos.y + 4) + hoverY;
+    }
+    return hoverY;
+  }
+
+  private hasClearCombatLineOfSight(
+    fromX: number,
+    fromY: number,
+    fromZ: number,
+    toX: number,
+    toY: number,
+    toZ: number,
+  ): boolean {
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const dz = toZ - fromZ;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist <= 0.65) return true;
+    const inv = 1 / dist;
+    const rx = dx * inv;
+    const ry = dy * inv;
+    const rz = dz * inv;
+    const maxDist = dist - 0.5;
+    if (maxDist <= 0.45) return true;
+
+    if (this.worldMode === 'dungeon' && this.dungeonRig) {
+      for (const col of this.dungeonRig.caveColliders) {
+        if (col.blockProjectiles === false) continue;
+        const hd = col.halfD ?? col.halfW;
+        const tWall = this.rayIntersectObbDist(
+          fromX,
+          fromY,
+          fromZ,
+          rx,
+          ry,
+          rz,
+          maxDist,
+          col.x,
+          col.z,
+          col.halfW,
+          hd,
+          col.minY ?? 0,
+          col.maxY ?? 6.5,
+          col.rotY ?? 0,
+        );
+        if (tWall !== null && tWall > 0.4 && tWall < maxDist) {
+          return false;
+        }
+      }
+      for (const blk of this.dungeonRig.caveBlocks) {
+        if (!blk.alive || blk.kind === 'player_shield') continue;
+        const tBlk = this.rayIntersectAabbDist(
+          fromX,
+          fromY,
+          fromZ,
+          rx,
+          ry,
+          rz,
+          maxDist,
+          blk.x - blk.halfW,
+          blk.x + blk.halfW,
+          blk.y - 0.85,
+          blk.y + 0.85,
+          blk.z - blk.halfW,
+          blk.z + blk.halfW,
+        );
+        if (tBlk !== null && tBlk > 0.4 && tBlk < maxDist) {
+          return false;
+        }
+      }
+    } else if (this.worldMode === 'overworld') {
+      for (const obs of this.villageRig.obstacles) {
+        const baseY = getArchipelagoGroundY(obs.x, obs.z);
+        const obsH = obs.halfW >= 2.2 ? 6.8 : 4.0;
+        const tObs = this.rayIntersectObbDist(
+          fromX,
+          fromY,
+          fromZ,
+          rx,
+          ry,
+          rz,
+          maxDist,
+          obs.x,
+          obs.z,
+          obs.halfW,
+          obs.halfD,
+          baseY - 0.2,
+          baseY + obsH,
+          obs.rotY ?? 0,
+        );
+        if (tObs !== null && tObs > 0.55 && tObs < maxDist) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
   private getCrosshairAimInfo(): { point: THREE.Vector3; hitEnemy: boolean } {
     this.raycaster.setFromCamera(_centerNdc, this.camera);
     const ro = this.raycaster.ray.origin;
@@ -15904,41 +16018,46 @@ export class RpgWorldEngine {
     let bestT = 78;
     let hitEnemy = false;
 
-    // 1. Check Shooters under crosshair ray
+    // 1. Check Shooters under crosshair ray (terrain/terrace elevation & close-range aware)
     for (const s of this.shooters) {
-      if (!s.alive) continue;
+      if (!s.alive || s.sunburnTimer !== undefined) continue;
+      const sCenterY = this.getShooterBaseY(s) + 1.38;
       const tx = s.x - ro.x;
-      const ty = 1.38 - ro.y;
+      const ty = sCenterY - ro.y;
       const tz = s.z - ro.z;
       const t = tx * rd.x + ty * rd.y + tz * rd.z;
-      if (t > heroDepth + 0.35 && t < bestT) {
+      const nearHero = Math.hypot(s.x - this.heroPos.x, s.z - this.heroPos.z) < 2.8 && Math.abs(sCenterY - (this.heroPos.y + 1.4)) < 2.8;
+      if (t > 0.55 && (t > heroDepth - 0.2 || nearHero) && t < bestT) {
         const px = ro.x + rd.x * t - s.x;
-        const py = ro.y + rd.y * t - 1.38;
+        const py = ro.y + rd.y * t - sCenterY;
         const pz = ro.z + rd.z * t - s.z;
-        if (px * px + py * py + pz * pz < 0.98 * 0.98) {
+        if (px * px + pz * pz < 1.18 * 1.18 && Math.abs(py) < 1.35) {
           bestT = t;
           hitEnemy = true;
         }
       }
     }
 
-    // 2. Check Monsters (ground, giant, & flying) under crosshair ray
+    // 2. Check Monsters (ground, giant, sea, & flying) under crosshair ray
     for (const m of this.getActiveMonsters()) {
-      if (!m.alive || m.angryTimer > 0) continue;
+      if (!m.alive || m.angryTimer > 0 || m.sunburnTimer !== undefined) continue;
       const spec = MONSTER_SPECS[m.type];
-      const baseGround =
-        m.y ?? (this.worldMode === 'overworld' ? getArchipelagoGroundY(m.x, m.z) + spec.hoverY : spec.hoverY);
+      const baseGround = this.getMonsterBaseY(m, spec.hoverY);
       const cy = baseGround + (m.isBoss ? 2.15 : spec.hitCenterY);
-      const rad = m.isBoss ? Math.max(1.85, spec.hitRadius * 1.15) : spec.hitRadius;
+      const rad = m.isBoss ? Math.max(1.95, spec.hitRadius * 1.15) : spec.hitRadius + 0.15;
+      const halfH = m.isBoss ? Math.max(2.35, spec.hitHalfH * 1.2) : spec.hitHalfH + 0.2;
       const tx = m.x - ro.x;
       const ty = cy - ro.y;
       const tz = m.z - ro.z;
       const t = tx * rd.x + ty * rd.y + tz * rd.z;
-      if (t > heroDepth + 0.35 && t < bestT) {
+      const nearHero =
+        Math.hypot(m.x - this.heroPos.x, m.z - this.heroPos.z) < rad + 1.35 &&
+        Math.abs(cy - (this.heroPos.y + 1.4)) < halfH + 1.4;
+      if (t > 0.55 && (t > heroDepth - 0.2 || nearHero) && t < bestT) {
         const px = ro.x + rd.x * t - m.x;
         const py = ro.y + rd.y * t - cy;
         const pz = ro.z + rd.z * t - m.z;
-        if (px * px + py * py + pz * pz < rad * rad) {
+        if (px * px + pz * pz < rad * rad && Math.abs(py) < halfH) {
           bestT = t;
           hitEnemy = true;
         }
@@ -15966,7 +16085,7 @@ export class RpgWorldEngine {
           col.maxY ?? 6.5,
           col.rotY ?? 0,
         );
-        if (tWall !== null && tWall > heroDepth + 0.35 && tWall < bestT) {
+        if (tWall !== null && tWall > 0.45 && tWall < bestT) {
           bestT = tWall;
           hitEnemy = false;
         }
@@ -15988,17 +16107,23 @@ export class RpgWorldEngine {
           blk.z - blk.halfW,
           blk.z + blk.halfW,
         );
-        if (tBlk !== null && tBlk > heroDepth + 0.35 && tBlk < bestT) {
+        if (tBlk !== null && tBlk > 0.45 && tBlk < bestT) {
           bestT = tBlk;
           hitEnemy = false;
         }
       }
     }
 
-    // 4. Ground plane stop if aiming downward at ground
+    // 4. Ground plane stop if aiming downward at ground (elevation-aware)
     if (!hitEnemy && rd.y < -0.01) {
-      const tGround = -ro.y / rd.y;
-      if (tGround > heroDepth + 0.5 && tGround < bestT) {
+      const groundRefY =
+        this.worldMode === 'overworld'
+          ? getArchipelagoGroundY(this.heroPos.x, this.heroPos.z)
+          : this.worldMode === 'ocean'
+          ? getOceanFloorY(this.heroPos.x, this.heroPos.z)
+          : this.heroPos.y;
+      const tGround = (groundRefY - ro.y) / rd.y;
+      if (tGround > heroDepth + 0.3 && tGround < bestT) {
         bestT = tGround;
       }
     }
@@ -16099,6 +16224,8 @@ export class RpgWorldEngine {
       poseCls === 'rifle_twohand' || poseCls === 'heavy_gatling' ? 1.45 : 1.15;
     const muzzleRight = this.cameraMode === 'first_person' ? 0.18 : 0.34;
 
+    let spawnDist = muzzleDist;
+    let spawnRight = muzzleRight;
     let aimYaw = this.heroYaw;
     let aimPitch = 0;
     let lockedTargetId: string | null = null;
@@ -16108,15 +16235,23 @@ export class RpgWorldEngine {
     let dirZ = Math.cos(aimYaw);
 
     if (isManualAim && (this.cameraMode === 'third_back' || this.cameraMode === 'first_person')) {
-      // Bidik Bebas: manual 3D crosshair aiming in TPS & FPS views (supports straight-up skyward shots)
+      // Bidik Bebas: manual 3D crosshair aiming in TPS & FPS views (supports straight-up skyward shots & point-blank enemies)
       const aim = this.getCrosshairAimInfo();
-      aimYaw = Math.atan2(aim.point.x - this.heroPos.x, aim.point.z - this.heroPos.z);
+      const targetHoriz = Math.hypot(aim.point.x - this.heroPos.x, aim.point.z - this.heroPos.z);
+      if (targetHoriz < muzzleDist + 0.65) {
+        spawnDist = Math.min(muzzleDist, Math.max(0.22, targetHoriz * 0.42));
+        spawnRight = muzzleRight * (spawnDist / muzzleDist);
+      }
+      aimYaw =
+        targetHoriz > 0.08
+          ? Math.atan2(aim.point.x - this.heroPos.x, aim.point.z - this.heroPos.z)
+          : this.cameraYaw + Math.PI;
 
       const mx0 =
-        this.heroPos.x + Math.sin(aimYaw) * muzzleDist - Math.cos(aimYaw) * muzzleRight;
+        this.heroPos.x + Math.sin(aimYaw) * spawnDist - Math.cos(aimYaw) * spawnRight;
       const my0 = this.heroPos.y + muzzleHeight;
       const mz0 =
-        this.heroPos.z + Math.cos(aimYaw) * muzzleDist + Math.sin(aimYaw) * muzzleRight;
+        this.heroPos.z + Math.cos(aimYaw) * spawnDist + Math.sin(aimYaw) * spawnRight;
       _v1.set(aim.point.x - mx0, aim.point.y - my0, aim.point.z - mz0);
       const len = _v1.length();
       if (len > 0.08) {
@@ -16131,43 +16266,70 @@ export class RpgWorldEngine {
       }
       aimPitch = Math.atan2(dirY, Math.max(0.05, Math.hypot(dirX, dirZ)));
     } else {
-      // Bidik Otomatis: auto-lock nearest ground, sea, or overhead sky enemy
-      let bestDist = Infinity;
+      // Bidik Otomatis: auto-lock nearest unoccluded enemy across overworld, dungeon, academy, sea, & sky
+      const heroEyeY = this.heroPos.y + muzzleHeight;
+      const wallBlockPenalty = this.worldMode === 'dungeon' ? 45 : 18;
+      let bestScore = Infinity;
       let targetX = 0;
-      let targetY = this.heroPos.y + muzzleHeight;
+      let targetY = heroEyeY;
       let targetZ = 0;
       let foundTarget = false;
 
-      if (this.worldMode === 'overworld') {
-        for (const s of this.shooters) {
-          if (!s.alive) continue;
-          const d = Math.hypot(s.x - this.heroPos.x, s.z - this.heroPos.z);
-          if (d < TUNE.autoAimRange && d < bestDist) {
-            bestDist = d;
-            targetX = s.x;
-            targetY = getArchipelagoGroundY(s.x, s.z) + 1.65;
-            targetZ = s.z;
-            lockedTargetId = s.id;
-            foundTarget = true;
-          }
+      for (const s of this.shooters) {
+        if (!s.alive || s.sunburnTimer !== undefined) continue;
+        const d2d = Math.hypot(s.x - this.heroPos.x, s.z - this.heroPos.z);
+        if (d2d > TUNE.autoAimRange) continue;
+        const tY = this.getShooterBaseY(s) + 1.42;
+        const dy = tY - heroEyeY;
+        const d3d = Math.hypot(d2d, dy);
+        const clearLos = this.hasClearCombatLineOfSight(
+          this.heroPos.x,
+          heroEyeY,
+          this.heroPos.z,
+          s.x,
+          tY,
+          s.z,
+        );
+        const elevPenalty = Math.abs(dy) > 3.8 ? Math.abs(dy) * 1.8 : 0;
+        const activeThreatBonus = d3d < 14 ? -0.65 : 0;
+        const score = d3d + elevPenalty + (clearLos ? 0 : wallBlockPenalty) + activeThreatBonus;
+        if (score < bestScore) {
+          bestScore = score;
+          targetX = s.x;
+          targetY = tY;
+          targetZ = s.z;
+          lockedTargetId = s.id;
+          foundTarget = true;
         }
       }
 
       for (const m of this.getActiveMonsters()) {
-        if (!m.alive) continue;
+        if (!m.alive || m.angryTimer > 0 || m.sunburnTimer !== undefined) continue;
         const d2d = Math.hypot(m.x - this.heroPos.x, m.z - this.heroPos.z);
         const maxRange = m.isSkyMonster ? TUNE.autoAimRange + 12 : TUNE.autoAimRange;
         if (d2d > maxRange) continue;
         const spec = MONSTER_SPECS[m.type];
-        const mBaseY =
-          m.y ??
-          (this.worldMode === 'overworld'
-            ? getArchipelagoGroundY(m.x, m.z) + spec.hoverY
-            : spec.hoverY);
+        const mBaseY = this.getMonsterBaseY(m, spec.hoverY);
         const tY = mBaseY + (m.isBoss ? 2.1 : spec.hitCenterY);
-        const d3d = m.isSkyMonster ? Math.hypot(d2d, tY - (this.heroPos.y + muzzleHeight)) : d2d;
-        if (d3d < bestDist) {
-          bestDist = d3d;
+        const dy = tY - heroEyeY;
+        const d3d = Math.hypot(d2d, dy);
+        if (d3d > maxRange + 8) continue;
+        const clearLos = m.isSkyMonster
+          ? true
+          : this.hasClearCombatLineOfSight(
+              this.heroPos.x,
+              heroEyeY,
+              this.heroPos.z,
+              m.x,
+              tY,
+              m.z,
+            );
+        const elevPenalty = !m.isSkyMonster && Math.abs(dy) > 3.8 ? Math.abs(dy) * 1.8 : 0;
+        const isActiveAttacker = Boolean(m.combatOnly || m.isCaveMob || m.aggroActive);
+        const activeThreatBonus = isActiveAttacker && d3d < 14 ? -0.5 : 0;
+        const score = d3d + elevPenalty + (clearLos ? 0 : wallBlockPenalty) + activeThreatBonus;
+        if (score < bestScore) {
+          bestScore = score;
           targetX = m.x;
           targetY = tY;
           targetZ = m.z;
@@ -16178,12 +16340,20 @@ export class RpgWorldEngine {
 
       if (foundTarget) {
         lockedTargetPos = { x: targetX, y: targetY, z: targetZ };
-        aimYaw = Math.atan2(targetX - this.heroPos.x, targetZ - this.heroPos.z);
+        const targetHoriz = Math.hypot(targetX - this.heroPos.x, targetZ - this.heroPos.z);
+        if (targetHoriz < muzzleDist + 0.65) {
+          spawnDist = Math.min(muzzleDist, Math.max(0.22, targetHoriz * 0.42));
+          spawnRight = muzzleRight * (spawnDist / muzzleDist);
+        }
+        aimYaw =
+          targetHoriz > 0.08
+            ? Math.atan2(targetX - this.heroPos.x, targetZ - this.heroPos.z)
+            : this.heroYaw;
         const mx0 =
-          this.heroPos.x + Math.sin(aimYaw) * muzzleDist - Math.cos(aimYaw) * muzzleRight;
+          this.heroPos.x + Math.sin(aimYaw) * spawnDist - Math.cos(aimYaw) * spawnRight;
         const my0 = this.heroPos.y + muzzleHeight;
         const mz0 =
-          this.heroPos.z + Math.cos(aimYaw) * muzzleDist + Math.sin(aimYaw) * muzzleRight;
+          this.heroPos.z + Math.cos(aimYaw) * spawnDist + Math.sin(aimYaw) * spawnRight;
         _v1.set(targetX - mx0, targetY - my0, targetZ - mz0);
         const len = _v1.length();
         if (len > 0.08) {
@@ -16201,10 +16371,10 @@ export class RpgWorldEngine {
         const aim = this.getCrosshairAimInfo();
         aimYaw = Math.atan2(aim.point.x - this.heroPos.x, aim.point.z - this.heroPos.z);
         const mx0 =
-          this.heroPos.x + Math.sin(aimYaw) * muzzleDist - Math.cos(aimYaw) * muzzleRight;
+          this.heroPos.x + Math.sin(aimYaw) * spawnDist - Math.cos(aimYaw) * spawnRight;
         const my0 = this.heroPos.y + muzzleHeight;
         const mz0 =
-          this.heroPos.z + Math.cos(aimYaw) * muzzleDist + Math.sin(aimYaw) * muzzleRight;
+          this.heroPos.z + Math.cos(aimYaw) * spawnDist + Math.sin(aimYaw) * spawnRight;
         _v1.set(aim.point.x - mx0, aim.point.y - my0, aim.point.z - mz0);
         const len = _v1.length();
         if (len > 0.08) {
@@ -16273,10 +16443,10 @@ export class RpgWorldEngine {
     }
 
     const muzzleX =
-      this.heroPos.x + Math.sin(aimYaw) * muzzleDist - Math.cos(aimYaw) * muzzleRight;
+      this.heroPos.x + Math.sin(aimYaw) * spawnDist - Math.cos(aimYaw) * spawnRight;
     const muzzleY = this.heroPos.y + muzzleHeight;
     const muzzleZ =
-      this.heroPos.z + Math.cos(aimYaw) * muzzleDist + Math.sin(aimYaw) * muzzleRight;
+      this.heroPos.z + Math.cos(aimYaw) * spawnDist + Math.sin(aimYaw) * spawnRight;
 
     // Subtle bright muzzle spark right at barrel exit
     this.spawnBurst(muzzleX, muzzleY, muzzleZ, wDef.colorHex, 5);
@@ -17080,6 +17250,26 @@ export class RpgWorldEngine {
             } else {
               this.engageMonster(m);
             }
+            return;
+          }
+        }
+      }
+    }
+
+    // Allow direct click/tap on an Enemy Shooter in Auto-Aim mode to fire immediately instead of walking into bullets
+    if (hasArmedWeapon && this.shooters.length > 0) {
+      const ro = this.raycaster.ray.origin;
+      const rd = this.raycaster.ray.direction;
+      for (const s of this.shooters) {
+        if (!s.alive || s.sunburnTimer !== undefined) continue;
+        const sCenterY = this.getShooterBaseY(s) + 1.38;
+        const t = (s.x - ro.x) * rd.x + (sCenterY - ro.y) * rd.y + (s.z - ro.z) * rd.z;
+        if (t > 0.6 && t < 44) {
+          const px = ro.x + rd.x * t - s.x;
+          const py = ro.y + rd.y * t - sCenterY;
+          const pz = ro.z + rd.z * t - s.z;
+          if (px * px + pz * pz < 1.3 * 1.3 && Math.abs(py) < 1.55) {
+            this.fireActiveWeapon(false);
             return;
           }
         }
@@ -22805,22 +22995,29 @@ export class RpgWorldEngine {
         let tx: number | null = null;
         let ty = 0;
         let tz = 0;
-        const tm = this.getActiveMonsters().find((item) => item.id === this.shootAimTargetId && item.alive);
+        const tm = this.getActiveMonsters().find(
+          (item) =>
+            item.id === this.shootAimTargetId &&
+            item.alive &&
+            item.angryTimer <= 0 &&
+            item.sunburnTimer === undefined,
+        );
         if (tm) {
           const spec = MONSTER_SPECS[tm.type];
-          const mBaseY =
-            tm.y ??
-            (this.worldMode === 'overworld'
-              ? getArchipelagoGroundY(tm.x, tm.z) + spec.hoverY
-              : spec.hoverY);
+          const mBaseY = this.getMonsterBaseY(tm, spec.hoverY);
           tx = tm.x;
           ty = mBaseY + (tm.isBoss ? 2.1 : spec.hitCenterY);
           tz = tm.z;
-        } else if (this.worldMode === 'overworld') {
-          const ts = this.shooters.find((item) => item.id === this.shootAimTargetId && item.alive);
+        } else {
+          const ts = this.shooters.find(
+            (item) =>
+              item.id === this.shootAimTargetId &&
+              item.alive &&
+              item.sunburnTimer === undefined,
+          );
           if (ts) {
             tx = ts.x;
-            ty = getArchipelagoGroundY(ts.x, ts.z) + 1.65;
+            ty = this.getShooterBaseY(ts) + 1.42;
             tz = ts.z;
           }
         }
@@ -24627,22 +24824,22 @@ export class RpgWorldEngine {
         let tx: number | null = null;
         let ty = 0;
         let tz = 0;
-        const tm = this.getActiveMonsters().find((item) => item.id === p.homingTargetId && item.alive);
+        const tm = this.getActiveMonsters().find(
+          (item) => item.id === p.homingTargetId && item.alive && item.angryTimer <= 0,
+        );
         if (tm) {
           const spec = MONSTER_SPECS[tm.type];
-          const mBaseY =
-            tm.y ??
-            (this.worldMode === 'overworld'
-              ? getArchipelagoGroundY(tm.x, tm.z) + spec.hoverY
-              : spec.hoverY);
+          const mBaseY = this.getMonsterBaseY(tm, spec.hoverY);
           tx = tm.x;
           ty = mBaseY + (tm.isBoss ? 2.1 : spec.hitCenterY);
           tz = tm.z;
         } else {
-          const ts = this.shooters.find((item) => item.id === p.homingTargetId && item.alive);
+          const ts = this.shooters.find(
+            (item) => item.id === p.homingTargetId && item.alive && item.sunburnTimer === undefined,
+          );
           if (ts) {
             tx = ts.x;
-            ty = (this.worldMode === 'overworld' ? getArchipelagoGroundY(ts.x, ts.z) : 0) + 1.45;
+            ty = this.getShooterBaseY(ts) + 1.45;
             tz = ts.z;
           }
         }
@@ -24658,8 +24855,11 @@ export class RpgWorldEngine {
           p.vz = THREE.MathUtils.lerp(p.vz, (dz / d3) * curSpd, steerAlpha);
         }
       }
+      const prevPx = p.x;
+      const prevPy = p.y ?? 1.35;
+      const prevPz = p.z;
       p.x += p.vx * dt;
-      p.y = (p.y ?? 1.35) + p.vy * dt;
+      p.y = prevPy + p.vy * dt;
       p.z += p.vz * dt;
       const projFloor =
         this.worldMode === 'overworld'
@@ -24832,16 +25032,28 @@ export class RpgWorldEngine {
         // Check Hit on Shooters (3 HP -> kills for XP + Ammo + Gem)
         let consumed = false;
         for (const s of this.shooters) {
-          if (!s.alive || p.hitIds.has(s.id)) continue;
-          const sy =
-            this.worldMode === 'overworld'
-              ? getArchipelagoGroundY(s.x, s.z)
-              : this.worldMode === 'dungeon'
-              ? this.getDungeonSupportHeight(s.x, s.z, s.mesh.position.y + 0.5)
+          if (!s.alive || s.sunburnTimer !== undefined || p.hitIds.has(s.id)) continue;
+          const sy = this.getShooterBaseY(s);
+          const scy = sy + 1.35;
+          const segDx = p.x - prevPx;
+          const segDy = p.y - prevPy;
+          const segDz = p.z - prevPz;
+          const segLenSq = segDx * segDx + segDy * segDy + segDz * segDz;
+          const tSeg =
+            segLenSq > 1e-6
+              ? THREE.MathUtils.clamp(
+                  ((s.x - prevPx) * segDx + (scy - prevPy) * segDy + (s.z - prevPz) * segDz) /
+                    segLenSq,
+                  0,
+                  1,
+                )
               : 0;
+          const cpx = prevPx + segDx * tSeg;
+          const cpy = prevPy + segDy * tSeg;
+          const cpz = prevPz + segDz * tSeg;
           const hitDist = p.fromPlane ? 2.4 : 1.6;
           const hitAlt = p.fromPlane ? 2.4 : 1.75;
-          if (Math.hypot(p.x - s.x, p.z - s.z) < hitDist && Math.abs(p.y - (sy + 1.35)) < hitAlt) {
+          if (Math.hypot(cpx - s.x, cpz - s.z) < hitDist && Math.abs(cpy - scy) < hitAlt) {
             p.hitIds.add(s.id);
             if (p.aoeRadius) {
               this.triggerPlaneExplosionAoe(
@@ -24962,17 +25174,31 @@ export class RpgWorldEngine {
 
         // Check Hit on Cave Mobs, 70% Combat Brawlers, & 30% Word Monsters
         for (const m of this.getActiveMonsters()) {
-          if (!m.alive || m.angryTimer > 0) continue;
+          if (!m.alive || m.angryTimer > 0 || m.sunburnTimer !== undefined) continue;
           const spec = MONSTER_SPECS[m.type];
           const hitRadius = (m.isBoss ? Math.max(2.1, spec.hitRadius * 1.15) : spec.hitRadius + 0.35) + (p.fromPlane ? 1.1 : 0);
-          const mBaseY =
-            m.y ??
-            (this.worldMode === 'overworld'
-              ? getArchipelagoGroundY(m.x, m.z) + spec.hoverY
-              : spec.hoverY);
+          const mBaseY = this.getMonsterBaseY(m, spec.hoverY);
           const targetCenterY = mBaseY + (m.isBoss ? 2.1 : spec.hitCenterY);
           const halfH = (m.isBoss ? Math.max(2.4, spec.hitHalfH * 1.2) : spec.hitHalfH + 0.35) + (p.fromPlane ? 0.85 : 0);
-          if (Math.hypot(p.x - m.x, p.z - m.z) < hitRadius && Math.abs(p.y - targetCenterY) < halfH) {
+          const segDx = p.x - prevPx;
+          const segDy = p.y - prevPy;
+          const segDz = p.z - prevPz;
+          const segLenSq = segDx * segDx + segDy * segDy + segDz * segDz;
+          const tSeg =
+            segLenSq > 1e-6
+              ? THREE.MathUtils.clamp(
+                  ((m.x - prevPx) * segDx +
+                    (targetCenterY - prevPy) * segDy +
+                    (m.z - prevPz) * segDz) /
+                    segLenSq,
+                  0,
+                  1,
+                )
+              : 0;
+          const cpx = prevPx + segDx * tSeg;
+          const cpy = prevPy + segDy * tSeg;
+          const cpz = prevPz + segDz * tSeg;
+          if (Math.hypot(cpx - m.x, cpz - m.z) < hitRadius && Math.abs(cpy - targetCenterY) < halfH) {
             p.active = false;
             p.mesh.visible = false;
 
@@ -28146,41 +28372,57 @@ export class RpgWorldEngine {
       if (slotIdx >= 0) this.selectHotbarSlot(slotIdx);
     }
 
-    // Cari monster / penembak terdekat (termasuk monster terbang di angkasa)
-    let bestTarget: { id: string; x: number; y: number; z: number; name: string; dist: number } | null = null;
+    // Cari monster / penembak terdekat (termasuk dungeon, academy, laut & monster terbang)
+    const heroEyeY = this.heroPos.y + 1.92;
+    const wallBlockPenalty = this.worldMode === 'dungeon' ? 45 : 18;
+    let bestTarget: { id: string; x: number; y: number; z: number; name: string; dist: number; score: number } | null = null;
     for (const m of this.getActiveMonsters()) {
-      if (!m.alive) continue;
+      if (!m.alive || m.angryTimer > 0 || m.sunburnTimer !== undefined) continue;
       const d = Math.hypot(m.x - this.heroPos.x, m.z - this.heroPos.z);
       const reach = m.isSkyMonster ? TUNE.autoAimRange + 12 : TUNE.autoAimRange + 6;
-      if (d <= reach && (!bestTarget || d < bestTarget.dist)) {
+      if (d <= reach) {
         const spec = MONSTER_SPECS[m.type];
-        const mBaseY =
-          m.y ??
-          (this.worldMode === 'overworld'
-            ? getArchipelagoGroundY(m.x, m.z) + spec.hoverY
-            : spec.hoverY);
-        bestTarget = {
-          id: m.id,
-          x: m.x,
-          y: mBaseY + (m.isBoss ? 2.1 : spec.hitCenterY),
-          z: m.z,
-          name: m.name,
-          dist: d,
-        };
+        const mBaseY = this.getMonsterBaseY(m, spec.hoverY);
+        const tY = mBaseY + (m.isBoss ? 2.1 : spec.hitCenterY);
+        const dy = tY - heroEyeY;
+        const d3d = Math.hypot(d, dy);
+        const clearLos = m.isSkyMonster
+          ? true
+          : this.hasClearCombatLineOfSight(this.heroPos.x, heroEyeY, this.heroPos.z, m.x, tY, m.z);
+        const elevPenalty = !m.isSkyMonster && Math.abs(dy) > 3.8 ? Math.abs(dy) * 1.8 : 0;
+        const score = d3d + elevPenalty + (clearLos ? 0 : wallBlockPenalty);
+        if (!bestTarget || score < bestTarget.score) {
+          bestTarget = {
+            id: m.id,
+            x: m.x,
+            y: tY,
+            z: m.z,
+            name: m.name,
+            dist: d,
+            score,
+          };
+        }
       }
     }
-    if (this.worldMode === 'overworld') {
-      for (const s of this.shooters) {
-        if (!s.alive) continue;
-        const d = Math.hypot(s.x - this.heroPos.x, s.z - this.heroPos.z);
-        if (d <= TUNE.autoAimRange + 6 && (!bestTarget || d < bestTarget.dist)) {
+    for (const s of this.shooters) {
+      if (!s.alive || s.sunburnTimer !== undefined) continue;
+      const d = Math.hypot(s.x - this.heroPos.x, s.z - this.heroPos.z);
+      if (d <= TUNE.autoAimRange + 6) {
+        const tY = this.getShooterBaseY(s) + 1.45;
+        const dy = tY - heroEyeY;
+        const d3d = Math.hypot(d, dy);
+        const clearLos = this.hasClearCombatLineOfSight(this.heroPos.x, heroEyeY, this.heroPos.z, s.x, tY, s.z);
+        const elevPenalty = Math.abs(dy) > 3.8 ? Math.abs(dy) * 1.8 : 0;
+        const score = d3d + elevPenalty + (clearLos ? 0 : wallBlockPenalty) - (d3d < 14 ? 0.65 : 0);
+        if (!bestTarget || score < bestTarget.score) {
           bestTarget = {
             id: s.id,
             x: s.x,
-            y: getArchipelagoGroundY(s.x, s.z) + 1.45,
+            y: tY,
             z: s.z,
             name: 'Penembak',
             dist: d,
+            score,
           };
         }
       }
