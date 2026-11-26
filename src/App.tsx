@@ -594,7 +594,7 @@ function DiglosaRpgApp() {
       const serverManifest = await fetchServerManifest(4500);
 
       if (!serverManifest) {
-        // Offline or server unreachable — verify local cache
+        // Offline or server unreachable, verify local cache
         const cacheCheck = await inspectLocalCache(null);
         if (localState.enrolled && cacheCheck.hasAnyCachedAssets) {
           setOfflineReady(true);
@@ -1518,7 +1518,7 @@ function DiglosaRpgApp() {
             ).then((claimed) => {
               if (claimed) {
                 engineRef.current?.showGroupNotice(
-                  '👑 Host sebelumnya keluar — kamu sekarang menjadi Host grup!',
+                  '👑 Host sebelumnya keluar sehingga kamu sekarang menjadi Host grup!',
                   3.0,
                 );
               }
@@ -1976,7 +1976,7 @@ function DiglosaRpgApp() {
       setSyncStatus(null);
       setDismissedVictorySeed(0);
 
-      const cleanPlayer = (playerName || 'HOOT').trim() || 'HOOT';
+      const cleanPlayer = (playerName || 'PETUALANG').trim() || 'PETUALANG';
       const firstToken = cleanPlayer.split(/\s+/)[0].toUpperCase();
       const soloSquadName = `${firstToken} SQUAD`;
       const waveSeed = generateRandomWaveSeed();
@@ -2208,7 +2208,7 @@ function DiglosaRpgApp() {
         source: res && res.sentP2pCount > 0 ? 'p2p' : 'firestore',
       };
       appendChatMessage(localMsg);
-      engineRef.current?.voiceShowFeedback(`💬 ${senderName}: ${clean}`);
+      engineRef.current?.voiceShowFeedback(`💬 ${senderName} · ${clean}`);
 
       const remoteMemberCount = roomMembers.filter((m) => m.uid !== user.uid).length;
       const shouldRelayFirestore = remoteMemberCount > 0 || activeRoom.memberCount > 1;
@@ -2236,7 +2236,7 @@ function DiglosaRpgApp() {
       if (actual && transport.hasMissingP2pPeers()) {
         transport.reconnectAllPeers();
         setVoiceChatError(
-          'Mic ON — mencoba sambung P2P langsung untuk suara (3D, Chat & Tim aktif via Cloud Relay).',
+          'Mic ON sambil mencoba sambung P2P langsung untuk suara (3D, Chat & Tim aktif via Cloud Relay).',
         );
         window.setTimeout(() => setVoiceChatError(null), 4500);
       }
@@ -2559,7 +2559,7 @@ function DiglosaRpgApp() {
     const activeSquadName =
       activeRoom?.groupName ||
       hud.waveMission?.squadName ||
-      `${(playerName || 'HOOT').trim().split(/\s+/)[0].toUpperCase()} SQUAD`;
+      `${(playerName || 'PETUALANG').trim().split(/\s+/)[0].toUpperCase()} SQUAD`;
     if (isMultiplayerPlaying && activeRoom && isHostInRoom) {
       await startMultiplayerMatch(activeRoom.roomId, activeRoom.difficulty, {
         waveSeed,
@@ -2858,6 +2858,7 @@ function DiglosaRpgApp() {
       <RpgSideModals
         tab={sideTab}
         hud={hud}
+        playerName={playerName}
         getLiveMapSnapshot={(kind) => engineRef.current?.getLiveMapSnapshot(kind) ?? null}
         onClose={() => setSideTab(null)}
         onOpenGuide={() => setSideTab('guide')}
@@ -2881,6 +2882,7 @@ function DiglosaRpgApp() {
       {!vsIntroData && (
         <GameOverModal
           hud={hud}
+          playerName={playerName}
           onResume={() => engineRef.current?.setPhase('playing')}
           onRestart={handleStartNew}
           onQuitToTitle={() => {

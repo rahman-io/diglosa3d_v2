@@ -10,6 +10,7 @@ import {
 
 interface GameOverModalProps {
   hud: RpgHudSnapshot;
+  playerName?: string;
   onResume: () => void;
   onRestart: () => void;
   onQuitToTitle: () => void;
@@ -29,6 +30,7 @@ const STAT_PLAQUE_STYLE: React.CSSProperties = {
 
 export const GameOverModal: React.FC<GameOverModalProps> = ({
   hud,
+  playerName,
   onResume,
   onRestart,
   onQuitToTitle,
@@ -38,6 +40,7 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
   if (hud.phase !== 'paused' && hud.phase !== 'gameover') return null;
 
   const isGameOver = hud.phase === 'gameover';
+  const resolvedPlayerName = playerName?.trim() || 'Petualang';
 
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto overscroll-contain touch-pan-y bg-[#060b16]/78 p-2 sm:p-4">
@@ -49,26 +52,26 @@ export const GameOverModal: React.FC<GameOverModalProps> = ({
               <div className="relative flex items-center justify-center">
                 <img
                   src="./assets/ui/icon_gameover_crest.png"
-                  alt="Emblem Nyawa Hoot Habis"
+                  alt={`Emblem Nyawa ${resolvedPlayerName} Habis`}
                   className="h-20 w-20 select-none object-contain drop-shadow-[0_10px_20px_rgba(0,0,0,0.75)] sm:h-24 sm:w-24"
                   draggable={false}
                 />
               </div>
 
               <span className="mt-1 inline-block rounded-lg border border-rose-400/60 bg-rose-950/90 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-rose-200 shadow sm:text-[11px]">
-                Nyawa Hoot Habis
+                Nyawa {resolvedPlayerName} Habis
               </span>
 
               {hud.defeatReason && (
                 <div className="mt-1.5 max-w-full rounded-xl border border-rose-400/45 bg-rose-950/75 px-3 py-1 text-[11px] font-extrabold text-rose-100 shadow-inner sm:text-xs">
-                  Penyebab: <span className="text-amber-200">{hud.defeatReason}</span>
+                  Penyebab <span className="text-amber-200">{hud.defeatReason}</span>
                 </div>
               )}
 
               <RpgNameplate className="mt-2 max-w-full">
                 <div className="min-w-0 text-center leading-tight">
                   <h2 className="truncate text-sm font-black tracking-tight text-[#3b1b06] sm:text-base">
-                    Catatan Petualangan Hoot
+                    Catatan Petualangan {resolvedPlayerName}
                   </h2>
                   <p className="truncate text-[10px] font-extrabold text-[#78350f] sm:text-[11px]">
                     Lv. {hud.level} · {hud.rankTitle}

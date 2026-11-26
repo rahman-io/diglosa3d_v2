@@ -76,7 +76,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Bermain riang & menyapa warga di sekitar sumur desa',
     skillId: 'Berlari lincah & menghafal sapaan',
     socialMessageId:
-      'Bocah Desa (Anak-anak · Laki-laki): "Hei Kak Hoot! Aku suka main dekat sumur desa sambil belajar Good morning!"',
+      'Bocah Desa (Anak-anak · Laki-laki) berkata, "Hei Kak {player}! Aku suka main dekat sumur desa sambil belajar Good morning!"',
     stats: { hp: 60, atk: 5, nrg: 100 },
     scaleY: 0.77,
     scaleXZ: 0.79,
@@ -103,7 +103,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Berangkat belajar dengan tas ransel biru & menyapa ramah',
     skillId: 'Membaca cepat & menulis rapi',
     socialMessageId:
-      'Siswi Sekolah (Anak-anak · Perempuan Berhijab): "Pagi! Tasku penuh buku kata baru. Ayo belajar bersama sebelum bel masuk!"',
+      'Siswi Sekolah (Anak-anak · Perempuan Berhijab) berkata, "Pagi! Tasku penuh buku kata baru. Ayo belajar bersama sebelum bel masuk!"',
     stats: { hp: 55, atk: 3, nrg: 110 },
     scaleY: 0.76,
     scaleXZ: 0.77,
@@ -130,7 +130,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Mencangkul bedengan gandum & merawat irigasi ladang',
     skillId: 'Bertani & memanen hasil bumi',
     socialMessageId:
-      'Pemuda Tani (Muda · Laki-laki): "Topi jeramiku siap di ladang! Panen gandum tahun ini subur berkat air sumur desa."',
+      'Pemuda Tani (Muda · Laki-laki) berkata, "Topi jeramiku siap di ladang! Panen gandum tahun ini subur berkat air sumur desa."',
     stats: { hp: 110, atk: 15, nrg: 130 },
     scaleY: 0.94,
     scaleXZ: 0.94,
@@ -157,7 +157,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Merawat bunga warna-warni & membawa keranjang buket segar',
     skillId: 'Botani taman & merangkai bunga',
     socialMessageId:
-      'Gadis Floris (Muda · Perempuan Non-Hijab): "Lihat keranjang bungaku! Lebah desa suka sekali menghampiri kelopak bunga segar."',
+      'Gadis Floris (Muda · Perempuan Non-Hijab) berkata, "Lihat keranjang bungaku! Lebah desa suka sekali menghampiri kelopak bunga segar."',
     stats: { hp: 95, atk: 8, nrg: 120 },
     scaleY: 0.92,
     scaleXZ: 0.9,
@@ -186,7 +186,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Memanggang tusuk sate panas & melayani pembeli pasar',
     skillId: 'Memasak cepat & berdagang ramah',
     socialMessageId:
-      'Pedagang Sate (Muda · Laki-laki): "Sate hangat baru matang di Pasar Rasa! Kalau butuh tenaga berpetualang, mampir ya!"',
+      'Pedagang Sate (Muda · Laki-laki) berkata, "Sate hangat baru matang di Pasar Rasa! Kalau butuh tenaga berpetualang, mampir ya!"',
     stats: { hp: 120, atk: 12, nrg: 140 },
     scaleY: 0.95,
     scaleXZ: 0.96,
@@ -213,7 +213,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Memanggang roti & menyajikan nampan kue keemasan',
     skillId: 'Seni pastri & resep kerajaan',
     socialMessageId:
-      'Koki Mimi (Muda · Perempuan Berhijab): "Nampan roti croissant hangat siap! Ayo pulihkan buku resep Pasar Rasa!"',
+      'Koki Mimi (Muda · Perempuan Berhijab) berkata, "Nampan roti croissant hangat siap! Ayo pulihkan buku resep Pasar Rasa!"',
     stats: { hp: 100, atk: 10, nrg: 130 },
     scaleY: 0.94,
     scaleXZ: 0.92,
@@ -242,7 +242,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Mencatat kondisi jerapah, zebra & panda di papan catatan',
     skillId: 'Perawatan satwa & observasi lapangan',
     socialMessageId:
-      'Penjaga Satwa (Dewasa · Perempuan Non-Hijab): "Daftar cek kandang lengkap! Jerapah, zebra, dan panda sehat berkat bantuanmu."',
+      'Penjaga Satwa (Dewasa · Perempuan Non-Hijab) berkata, "Daftar cek kandang lengkap! Jerapah, zebra, dan panda sehat berkat bantuanmu."',
     stats: { hp: 140, atk: 20, nrg: 150 },
     scaleY: 0.98,
     scaleXZ: 0.95,
@@ -269,7 +269,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Meneropong jalur hutan dengan ransel ekspedisi lengkap',
     skillId: 'Navigasi hutan & pelestarian satwa',
     socialMessageId:
-      'Ranger Rimba (Dewasa · Laki-laki): "Teropongku selalu mengawasi Hutan Satwa! Mari jaga keseimbangan alam rimba."',
+      'Ranger Rimba (Dewasa · Laki-laki) berkata, "Teropongku selalu mengawasi Hutan Satwa! Mari jaga keseimbangan alam rimba."',
     stats: { hp: 150, atk: 25, nrg: 160 },
     scaleY: 1.0,
     scaleXZ: 1.0,
@@ -298,7 +298,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Membawa buku pelajaran & membimbing siswa di halaman sekolah',
     skillId: 'Pedagogi bahasa & literasi kota',
     socialMessageId:
-      'Ibu Guru (Dewasa · Perempuan Berhijab): "Selamat datang di depan Sekolah Bata Merah! Rajinlah berlatih kosa kata setiap hari."',
+      'Ibu Guru (Dewasa · Perempuan Berhijab) berkata, "Selamat datang di depan Sekolah Bata Merah! Rajinlah berlatih kosa kata setiap hari."',
     stats: { hp: 130, atk: 15, nrg: 170 },
     scaleY: 0.97,
     scaleXZ: 0.94,
@@ -326,7 +326,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Mengatur lalu lintas jalan raya & menjaga ketertiban gerbang',
     skillId: 'Disiplin lalu lintas & investigasi',
     socialMessageId:
-      'Pak Polisi (Dewasa · Laki-laki): "Pos Gerbang Kota selalu sigap! Patuhi rambu lalu lintas dan jaga keamanan warga."',
+      'Pak Polisi (Dewasa · Laki-laki) berkata, "Pos Gerbang Kota selalu sigap! Patuhi rambu lalu lintas dan jaga keamanan warga."',
     stats: { hp: 180, atk: 35, nrg: 150 },
     scaleY: 1.02,
     scaleXZ: 1.02,
@@ -353,7 +353,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Memegang kemudi & memantau jalur jalan raya Gerbang Kota',
     skillId: 'Navigasi rute kota & ketepatan waktu',
     socialMessageId:
-      'Sopir Bus (Dewasa · Laki-laki): "Semua penumpang aman menuju sekolah dan pasar! Pastikan tahu nama tempat dalam Bahasa Inggris!"',
+      'Sopir Bus (Dewasa · Laki-laki) berkata, "Semua penumpang aman menuju sekolah dan pasar! Pastikan tahu nama tempat dalam Bahasa Inggris!"',
     stats: { hp: 160, atk: 18, nrg: 160 },
     scaleY: 1.0,
     scaleXZ: 1.0,
@@ -382,7 +382,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Menakar kunyit, cabai & rempah harum di lapak pasar',
     skillId: 'Meracik bumbu & niaga rempah',
     socialMessageId:
-      'Pedagang Rempah (Dewasa · Perempuan Berhijab): "Aroma kunyit dan kayu manis asli Pasar Rasa! Bahan dapur terbaik ada di sini."',
+      'Pedagang Rempah (Dewasa · Perempuan Berhijab) berkata, "Aroma kunyit dan kayu manis asli Pasar Rasa! Bahan dapur terbaik ada di sini."',
     stats: { hp: 130, atk: 12, nrg: 140 },
     scaleY: 0.98,
     scaleXZ: 0.96,
@@ -409,7 +409,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Menempa baja panas dengan palu berat di atas paron besi',
     skillId: 'Tempa senjata & perawatan perlengkapan',
     socialMessageId:
-      'Pandai Besi (Dewasa · Laki-laki): "CLANG! Baja yang kuat ditempa berulang kali—sama seperti latihan kosakata setiap hari!"',
+      'Pandai Besi (Dewasa · Laki-laki) berkata, "CLANG! Baja yang kuat ditempa berulang kali, sama seperti latihan kosakata setiap hari!"',
     stats: { hp: 200, atk: 45, nrg: 150 },
     scaleY: 1.03,
     scaleXZ: 1.09,
@@ -436,7 +436,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Menyetel arloji saku emas & menyinkronkan roda gigi raksasa',
     skillId: 'Mekanika waktu & presisi jam',
     socialMessageId:
-      'Pembuat Jam (Lansia · Laki-laki): "Detik demi detik harus selaras! Ayo bantu hidupkan kembali roda waktu di Menara Jam!"',
+      'Pembuat Jam (Lansia · Laki-laki) berkata, "Detik demi detik harus selaras! Ayo bantu hidupkan kembali roda waktu di Menara Jam!"',
     stats: { hp: 100, atk: 12, nrg: 130 },
     scaleY: 0.96,
     scaleXZ: 0.96,
@@ -463,7 +463,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Bertumpu pada tongkat kayu & memberi nasihat kebajikan',
     skillId: 'Kebijaksanaan sejarah & sastra sapaan',
     socialMessageId:
-      'Kakek Sapa (Lansia · Laki-laki): "Salam hangat, pahlawan muda! Kata sapaan yang tulus membuka setiap pintu persahabatan."',
+      'Kakek Sapa (Lansia · Laki-laki) berkata, "Salam hangat, {player}! Kata sapaan yang tulus membuka setiap pintu persahabatan."',
     stats: { hp: 110, atk: 18, nrg: 140 },
     scaleY: 0.96,
     scaleXZ: 0.98,
@@ -490,7 +490,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Menumbuk daun obat dengan lumpang batu di taman herbal',
     skillId: 'Pengobatan alami & tanaman berkhasiat',
     socialMessageId:
-      'Nenek Herbal (Lansia · Perempuan Berhijab): "Tumbuk perlahan daun penyembuh ini... Jangan lupa jaga kesehatanmu selama bertarung, Nak."',
+      'Nenek Herbal (Lansia · Perempuan Berhijab) berkata, "Tumbuk perlahan daun penyembuh ini... Jangan lupa jaga kesehatanmu selama bertarung, Nak."',
     stats: { hp: 90, atk: 10, nrg: 150 },
     scaleY: 0.93,
     scaleXZ: 0.95,
@@ -519,7 +519,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Membaca gulungan prasasti kuno di antara kristal bercahaya',
     skillId: 'Arkeologi kata tanya & energi kristal',
     socialMessageId:
-      'Nyonya Portal (Dewasa · Perempuan Berhijab): "Prasasti Who, What, Where, When, Why menyimpan kunci energi kristal Gua Portal!"',
+      'Nyonya Portal (Dewasa · Perempuan Berhijab) berkata, "Prasasti Who, What, Where, When, Why menyimpan kunci energi kristal Gua Portal!"',
     stats: { hp: 150, atk: 30, nrg: 200 },
     scaleY: 0.98,
     scaleXZ: 0.95,
@@ -548,7 +548,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Memikul beliung & memeriksa jalur rel lori tambang',
     skillId: 'Teknik tambang & keselamatan tebing',
     socialMessageId:
-      'Insinyur Tambang (Dewasa · Laki-laki): "Helm pengaman nyala! Rel lori tambang di Gua Portal sudah kucek aman sampai puncak!"',
+      'Insinyur Tambang (Dewasa · Laki-laki) berkata, "Helm pengaman nyala! Rel lori tambang di Gua Portal sudah kucek aman sampai puncak!"',
     stats: { hp: 170, atk: 35, nrg: 160 },
     scaleY: 1.01,
     scaleXZ: 1.03,
@@ -575,7 +575,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Berpatroli membawa lentera hangat menjaga reruntuhan kuno',
     skillId: 'Pertahanan benteng & strategi tempur',
     socialMessageId:
-      'Penjaga Kuil (Lansia · Laki-laki): "Lentera kuil ini menerangi jalan antar enam pulau. Tetap waspada bila malam tiba!"',
+      'Penjaga Kuil (Lansia · Laki-laki) berkata, "Lentera kuil ini menerangi jalan antar enam pulau. Tetap waspada bila malam tiba!"',
     stats: { hp: 220, atk: 50, nrg: 180 },
     scaleY: 1.02,
     scaleXZ: 1.08,
@@ -602,7 +602,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Membawa gulungan ijazah resmi & mengevaluasi kecakapan bahasa',
     skillId: 'Akademik Listening, Reading, Writing & Speaking',
     socialMessageId:
-      'Dekan IELTS (Lansia · Perempuan Berhijab): "Selamat datang, Cendekiawan! Kuasai seluruh kosakata enam pulau untuk ujian Istana IELTS!"',
+      'Dekan IELTS (Lansia · Perempuan Berhijab) berkata, "Selamat datang, Cendekiawan! Kuasai seluruh kosakata enam pulau untuk ujian Istana IELTS!"',
     stats: { hp: 180, atk: 20, nrg: 220 },
     scaleY: 0.97,
     scaleXZ: 0.95,
@@ -629,7 +629,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Berpatroli malam membawa lentera & kentongan kayu',
     skillId: 'Ronda malam & penjagaan pintu desa',
     socialMessageId:
-      'Ronda Bima (Dewasa · Laki-laki): "Malam aman terkendali! Kakek Sapa sedang beristirahat, biar aku yang berjaga di pintu Desa Sapaan."',
+      'Ronda Bima (Dewasa · Laki-laki) berkata, "Malam aman terkendali! Kakek Sapa sedang beristirahat, biar aku yang berjaga di pintu Desa Sapaan."',
     stats: { hp: 145, atk: 24, nrg: 155 },
     scaleY: 0.99,
     scaleXZ: 1.0,
@@ -656,7 +656,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Menjaga tungku sup hangat agar tetap menyala sepanjang malam',
     skillId: 'Masak tungku arang & kaldu malam',
     socialMessageId:
-      'Chef Bara (Dewasa · Laki-laki): "Tungku malam menyala! Koki Mimi lepas piket, aku yang menjaga pintu Pasar Rasa sampai pagi."',
+      'Chef Bara (Dewasa · Laki-laki) berkata, "Tungku malam menyala! Koki Mimi lepas piket, aku yang menjaga pintu Pasar Rasa sampai pagi."',
     stats: { hp: 135, atk: 22, nrg: 145 },
     scaleY: 0.97,
     scaleXZ: 1.01,
@@ -685,7 +685,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Memakai kacamata penglihatan malam & membawa lentera zamrud',
     skillId: 'Pelacakan jejak malam & perlindungan satwa',
     socialMessageId:
-      'Penjelajah Kirana (Muda · Perempuan Non-Hijab): "Kacamata malamku aktif! Aku menggantikan Ranger Rimba memantau jejak Kiki di Hutan Satwa."',
+      'Penjelajah Kirana (Muda · Perempuan Non-Hijab) berkata, "Kacamata malamku aktif! Aku menggantikan Ranger Rimba memantau jejak Kiki di Hutan Satwa."',
     stats: { hp: 140, atk: 28, nrg: 170 },
     scaleY: 0.94,
     scaleXZ: 0.91,
@@ -712,7 +712,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Mengatur lampu lalu lintas malam dengan tongkat sinyal biru',
     skillId: 'Patroli malam & keamanan kota',
     socialMessageId:
-      'Inspektur Sinta (Dewasa · Perempuan Berhijab): "Piket malam dimulai! Pak Polisi Gerbang sedang lepas tugas, biar aku yang kawal Gerbang Kota."',
+      'Inspektur Sinta (Dewasa · Perempuan Berhijab) berkata, "Piket malam dimulai! Pak Polisi Gerbang sedang lepas tugas, biar aku yang kawal Gerbang Kota."',
     stats: { hp: 185, atk: 34, nrg: 165 },
     scaleY: 0.96,
     scaleXZ: 0.93,
@@ -739,7 +739,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Mengamati gerak bintang & menjaga roda menara tetap aman saat malam',
     skillId: 'Astronomi waktu & kalibrasi malam',
     socialMessageId:
-      'Astronom Astra (Muda · Perempuan Non-Hijab): "Bintang malam membimbing waktu! Pembuat Jam istirahat dulu, sekarang giliranku menjaga Menara Waktu."',
+      'Astronom Astra (Muda · Perempuan Non-Hijab) berkata, "Bintang malam membimbing waktu! Pembuat Jam istirahat dulu, sekarang giliranku menjaga Menara Waktu."',
     stats: { hp: 120, atk: 18, nrg: 185 },
     scaleY: 0.95,
     scaleXZ: 0.91,
@@ -766,7 +766,7 @@ export const NPC_ARCHETYPES: Record<NpcArchetypeId, NpcArchetypeSpec> = {
     habitId: 'Meneliti resonansi kristal gua pada malam hari dengan orb bercahaya',
     skillId: 'Arkeologi kristal & kata tanya malam',
     socialMessageId:
-      'Arkeolog Orion (Dewasa · Laki-laki): "Kristal gua bersinar terang malam ini! Aku menggantikan Nyonya Portal menjaga pintu Gua Portal."',
+      'Arkeolog Orion (Dewasa · Laki-laki) berkata, "Kristal gua bersinar terang malam ini! Aku menggantikan Nyonya Portal menjaga pintu Gua Portal."',
     stats: { hp: 165, atk: 32, nrg: 210 },
     scaleY: 1.0,
     scaleXZ: 0.99,

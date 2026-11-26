@@ -61,7 +61,7 @@ function buildMcqRound(entry: VocabEntry, forceListen = false): McqRound {
   return {
     entry,
     prompt: forceListen
-      ? 'Dengarkan pelafalan lalu pilih artinya:'
+      ? 'Dengarkan pelafalan lalu pilih artinya'
       : askMeaning
       ? `Apa arti kata "${entry.word}"?`
       : `Bahasa Inggris dari "${entry.meaningId}"?`,
@@ -245,7 +245,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
     if (cur) onRecordWord(cur.id, false, false);
     soundEngine.playWrongAnswer();
     setCombo(0);
-    setFeedback({ ok: false, msg: `Waktu habis! Jawaban: "${cur?.word}" (${cur?.meaningId})` });
+    setFeedback({ ok: false, msg: `Waktu habis! Jawaban benar yaitu "${cur?.word}" (${cur?.meaningId})` });
     const nextTotal = totalAttempted + 1;
     setTotalAttempted(nextTotal);
     window.setTimeout(() => advanceQuestion(idx + 1, rightCount, nextTotal), 1150);
@@ -296,7 +296,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
     setCekRight(nextCekRight);
     setFeedback({
       ok,
-      msg: ok ? 'Benar!' : `Kurang tepat! Jawaban: "${round.choices[round.correctIdx]}"`,
+      msg: ok ? 'Benar!' : `Kurang tepat! Jawaban benar yaitu "${round.choices[round.correctIdx]}"`,
     });
 
     window.setTimeout(() => {
@@ -336,7 +336,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
       soundEngine.playWrongAnswer();
       setFeedback({
         ok: false,
-        msg: `Salah! Jawaban benar: "${mcq.choices[mcq.correctIdx]}"`,
+        msg: `Salah! Jawaban benar yaitu "${mcq.choices[mcq.correctIdx]}"`,
       });
     }
     setCombo(nextCombo);
@@ -371,7 +371,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
         onRecordWord(cur.id, false, false);
         const nextTotal = totalAttempted + 1;
         setTotalAttempted(nextTotal);
-        setFeedback({ ok: false, msg: `Jawaban benar: "${cur.word}"` });
+        setFeedback({ ok: false, msg: `Jawaban benar yaitu "${cur.word}"` });
         window.setTimeout(() => advanceQuestion(idx + 1, rightCount, nextTotal), 1200);
       } else {
         setFeedback({ ok: false, msg: 'Masih kurang tepat, coba 1 kali lagi!' });
@@ -460,9 +460,9 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
                     </h2>
                     <p className="truncate text-[10px] font-extrabold text-[#78350f] sm:text-[11px]">
                       {session.mode === 'match'
-                        ? `Pasangan: ${matchedIds.length}/${matchLeft.length} · Langkah: ${matchMoves}`
+                        ? `Pasangan ${matchedIds.length}/${matchLeft.length} · Langkah ${matchMoves}`
                         : cekCepatPool
-                        ? `Cek Cepat Kartu: ${cekIdx + 1}/${cekCepatPool.length}`
+                        ? `Cek Cepat Kartu ${cekIdx + 1}/${cekCepatPool.length}`
                         : `Kata ${Math.min(idx + 1, words.length)}/${words.length} · +${xpEarned} XP`}
                     </p>
                   </div>
@@ -525,7 +525,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
                     />
                   ))}
                 </div>
-                <h3 className="text-2xl font-black text-white">Skor: {resultData.pct}%</h3>
+                <h3 className="text-2xl font-black text-white">Skor {resultData.pct}%</h3>
                 <p className="text-sm font-bold text-amber-200/90">
                   {resultData.pct >= session.minPct
                     ? `Hebat! Syarat minimal (${session.minPct}%) terpenuhi! ${resultData.pct >= 70 ? '(+20 XP Bonus Sesi!)' : ''}`
@@ -673,7 +673,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
                   <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-amber-300/20 bg-slate-950/40 px-3 py-2 text-xs">
                     {peeked ? (
                       <span className="font-extrabold text-amber-200">
-                        Kata: &ldquo;{mcq.entry.word}&rdquo; (XP separuh, penguasaan tidak naik)
+                        Kata &ldquo;{mcq.entry.word}&rdquo; (XP separuh, penguasaan tidak naik)
                       </span>
                     ) : (
                       <span className="font-semibold text-amber-100/80">
@@ -740,7 +740,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
                         isCompactKeyboard ? 'text-[10px]' : 'block text-xs'
                       }`}
                     >
-                      Eja (Inggris):
+                      Eja (Inggris)
                     </span>
                     <div
                       className={`font-black text-white ${

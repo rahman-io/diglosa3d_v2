@@ -1,6 +1,11 @@
 import React, { useEffect, useRef } from 'react';
 import * as THREE from 'three';
 import { getCharacterPreset } from '../data/characterPresets';
+import {
+  buildDiverseNpcRig,
+  DiverseNpcRigResult,
+  NpcArchetypeId,
+} from '../three/diverseNpcs';
 import { createMaterialPalette } from '../three/materials';
 import {
   animateCaptiveMesh,
@@ -16,12 +21,13 @@ import {
 } from '../three/rpgModels';
 import { CharacterPresetId } from '../types/game';
 
-export type DialogueSpeakerKind = 'hero' | 'npc' | 'captive' | 'owl';
+export type DialogueSpeakerKind = 'hero' | 'npc' | 'captive' | 'owl' | 'villagers';
 
 interface DialoguePortraitCanvasProps {
   speakerKind: DialogueSpeakerKind;
   characterId: CharacterPresetId;
   npcId?: string;
+  villagerArchetypes?: string[];
   captiveKind?: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
   captiveColor?: number;
   isSpeaking?: boolean;
@@ -46,6 +52,7 @@ export const DialoguePortraitCanvas: React.FC<DialoguePortraitCanvasProps> = ({
   speakerKind,
   characterId,
   npcId = 'npc_tetua',
+  villagerArchetypes,
   captiveKind = 'girl',
   captiveColor = 0xf472b6,
   isSpeaking = false,
@@ -54,6 +61,7 @@ export const DialoguePortraitCanvas: React.FC<DialoguePortraitCanvasProps> = ({
   const hostRef = useRef<HTMLDivElement | null>(null);
   const speakingRef = useRef<boolean>(isSpeaking);
   speakingRef.current = isSpeaking;
+  const villagerKey = villagerArchetypes?.join(',') ?? '';
 
   const sceneRefs = useRef<{
     scene: THREE.Scene;
@@ -63,6 +71,7 @@ export const DialoguePortraitCanvas: React.FC<DialoguePortraitCanvasProps> = ({
     activeKind: DialogueSpeakerKind;
     heroRig: HeroAvatarRig | null;
     npcMesh: THREE.Group | null;
+    villagerRigs: DiverseNpcRigResult[];
     captiveMesh: THREE.Group | null;
     owlRig: OwlMessengerRig | null;
   } | null>(null);
@@ -112,6 +121,7 @@ export const DialoguePortraitCanvas: React.FC<DialoguePortraitCanvasProps> = ({
       activeKind: speakerKind,
       heroRig: null,
       npcMesh: null,
+      villagerRigs: [],
       captiveMesh: null,
       owlRig: null,
     };
@@ -166,6 +176,15 @@ export const DialoguePortraitCanvas: React.FC<DialoguePortraitCanvasProps> = ({
           if (rig?.headGroup && talking) {
             rig.headGroup.rotation.x = Math.sin(elapsed * 8.4) * 0.055;
           }
+        } else if (refs.activeKind === 'villagers' && refs.villagerRigs.length > 0) {
+          refs.villagerRigs.forEach((vRig, idx) => {
+            animateZoneNpc(vRig.root, elapsed, idx * 1.4, talking, dt, 'stand');
+            if (talking) {
+              vRig.headGroup.rotation.x = Math.sin(elapsed * 8.2 + idx * 1.1) * 0.06;
+              vRig.rightArm.rotation.x =
+                vRig.baseRightArmX - 0.35 + Math.sin(elapsed * 5.4 + idx) * 0.14;
+            }
+          });
         } else if (refs.activeKind === 'captive' && refs.captiveMesh) {
           animateCaptiveMesh(refs.captiveMesh, elapsed, talking);
         } else if (refs.activeKind === 'owl' && refs.owlRig) {
@@ -175,7 +194,8 @@ export const DialoguePortraitCanvas: React.FC<DialoguePortraitCanvasProps> = ({
           refs.owlRig.root.position.y = Math.sin(elapsed * 3.0) * 0.05;
         }
 
-        refs.pivot.rotation.y = 0.34 + Math.sin(elapsed * 1.1) * 0.03;
+        refs.pivot.rotation.y =
+          (refs.activeKind === 'villagers' ? 0.12 : 0.34) + Math.sin(elapsed * 1.1) * 0.03;
       }
 
       renderer.render(scene, camera);
@@ -214,6 +234,7 @@ export const DialoguePortraitCanvas: React.FC<DialoguePortraitCanvasProps> = ({
     }
     refs.heroRig = null;
     refs.npcMesh = null;
+    refs.villagerRigs = [];
     refs.captiveMesh = null;
     refs.owlRig = null;
     refs.activeKind = speakerKind;
@@ -230,6 +251,23 @@ export const DialoguePortraitCanvas: React.FC<DialoguePortraitCanvasProps> = ({
       });
       refs.heroRig = rig;
       targetRoot = rig.root;
+    } else if (speakerKind === 'villagers') {
+      const pair = new THREE.Group();
+      const archetypes: NpcArchetypeId[] =
+        villagerArchetypes && villagerArchetypes.length > 0
+          ? (villagerArchetypes as NpcArchetypeId[])
+          : ['florist_girl', 'farmer_boy'];
+      archetypes.forEach((archId, idx) => {
+        const rig = buildDiverseNpcRig(archId, refs.palette, false);
+        rig.root.userData.npcRig = rig;
+        if (archetypes.length === 2) {
+          rig.root.position.set(idx === 0 ? -0.46 : 0.46, 0, idx === 0 ? 0.04 : -0.04);
+          rig.root.rotation.y = idx === 0 ? 0.16 : -0.16;
+        }
+        refs.villagerRigs.push(rig);
+        pair.add(rig.root);
+      });
+      targetRoot = pair;
     } else if (speakerKind === 'captive') {
       const mesh = createCaptiveMesh(captiveKind, captiveColor, refs.palette);
       mesh.traverse((obj) => {
@@ -271,13 +309,19 @@ export const DialoguePortraitCanvas: React.FC<DialoguePortraitCanvasProps> = ({
         ? center.y + safeH * 0.04
         : box.max.y - safeH * 0.34;
     const dist =
-      speakerKind === 'owl' || captiveKind === 'fox_kit' || captiveKind === 'spirit'
-        ? Math.max(2.35, safeH * 2.15)
-        : Math.max(2.55, safeH * 1.38);
+      speakerKind === 'villagers'
+        ? Math.max(3.15, safeH * 1.48, size.x * 2.18)
+        : speakerKind === 'owl' || captiveKind === 'fox_kit' || captiveKind === 'spirit'
+          ? Math.max(2.35, safeH * 2.15)
+          : Math.max(2.55, safeH * 1.38);
 
-    refs.camera.position.set(0.08, bustFocusY + safeH * 0.04, dist);
-    refs.camera.lookAt(0, bustFocusY, 0);
-  }, [speakerKind, characterId, npcId, captiveKind, captiveColor]);
+    refs.camera.position.set(
+      speakerKind === 'villagers' ? 0.0 : 0.08,
+      bustFocusY + safeH * 0.04,
+      dist,
+    );
+    refs.camera.lookAt(center.x, bustFocusY, 0);
+  }, [speakerKind, characterId, npcId, villagerKey, captiveKind, captiveColor]);
 
   return (
     <div

@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BookOpen, CheckCircle2, Sparkles, Volume2, X } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
-import { getZoneNpcById, ZONE_DOORS } from '../data/diglosaCatalog';
+import { getZoneNpcById, personalizePlayerText, ZONE_DOORS } from '../data/diglosaCatalog';
 import { getWordsForZone, getWordStatus } from '../data/vocabCatalog';
 import { CharacterPresetId, RpgQuestState, WordProgress, ZoneId } from '../types/game';
 import { HarvestDialogueBox } from './HarvestDialogueBox';
@@ -74,7 +74,7 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
           speakerSide: 'npc',
           speakerName: npc.name,
           speakerRole: `${npc.zoneName} · Wilayah Bebas ✓`,
-          textId: npc.thanksId,
+          textId: personalizePlayerText(npc.thanksId, heroDisplayName),
           textEn: `Thank you, ${heroDisplayName}! ${npc.zoneName} is safe and shining bright again!`,
         },
         {
@@ -97,8 +97,8 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
         speakerSide: 'npc',
         speakerName: npc.name,
         speakerRole: npc.zoneName,
-        textId: npc.storyLine1Id,
-        textEn: npc.storyLine1En,
+        textId: personalizePlayerText(npc.storyLine1Id, heroDisplayName),
+        textEn: personalizePlayerText(npc.storyLine1En, heroDisplayName),
       },
       {
         speakerSide: 'hero',
@@ -111,8 +111,8 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
         speakerSide: 'npc',
         speakerName: npc.name,
         speakerRole: `${npc.zoneName} · Misi Gua (${clearedDoors.length}/${doors.length} Pintu)`,
-        textId: `${npc.storyLine2Id}${nightNote}`,
-        textEn: npc.storyLine2En,
+        textId: personalizePlayerText(`${npc.storyLine2Id}${nightNote}`, heroDisplayName),
+        textEn: personalizePlayerText(npc.storyLine2En, heroDisplayName),
       },
     ];
   }, [

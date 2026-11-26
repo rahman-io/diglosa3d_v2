@@ -428,7 +428,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
 
                 <div className="flex items-center gap-1.5 rounded-xl border border-amber-300/45 bg-slate-950 px-3 py-1">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Kode:
+                    Kode
                   </span>
                   <span className="font-mono-nums text-sm font-black tracking-widest text-amber-300">
                     {activeRoom.code}
@@ -453,7 +453,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                 </div>
 
                 <span className="rounded-full border border-white/15 bg-slate-950/80 px-2.5 py-1 text-[11px] font-bold text-slate-200">
-                  Level: <strong className="capitalize text-white">{activeRoom.difficulty}</strong>
+                  Level <strong className="capitalize text-white">{activeRoom.difficulty}</strong>
                 </span>
 
                 {editingRoomGroup && isHost && onUpdateRoomGroupName ? (
@@ -560,7 +560,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
 
             <div className="flex flex-col justify-between gap-2 rounded-xl border border-white/10 bg-slate-950/70 px-3 py-2.5 sm:flex-row sm:items-center">
               <div className="text-[11px] font-medium text-slate-300">
-                <strong className="text-cyan-200">Titik Spawn Kamu:</strong>{' '}
+                <strong className="text-cyan-200">Titik Spawn Kamu</strong> adalah{' '}
                 {getMultiplayerGroupSpawnPoint(mySpawnIndex).label} ·{' '}
                 Misi acak 20–50 monster &amp; 608 kata A1 sinkron untuk seluruh tim.
               </div>
@@ -701,7 +701,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                           {activePreset.name}
                         </h3>
                         <span className="text-[11px] font-extrabold text-amber-300">
-                          #{CHARACTER_PRESETS.findIndex((c) => c.id === characterId) + 1} HERO
+                          #{CHARACTER_PRESETS.findIndex((c) => c.id === characterId) + 1} KARAKTER
                         </span>
                       </div>
                       <p className="text-xs font-bold text-cyan-200">{activePreset.roleTitle}</p>
@@ -897,7 +897,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                             setWizardStep('mode');
                           }
                         }}
-                        placeholder={`Contoh: ${activePreset.name} Hebat`}
+                        placeholder={`Misalnya ${activePreset.name} Hebat`}
                         className="w-full rounded-xl border-2 border-sky-400/35 bg-slate-950/90 px-4 py-3 text-base font-black text-white outline-none transition focus:border-amber-300"
                       />
                       <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
@@ -1124,7 +1124,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                     {/* Spawn Option + Solo CTA */}
                     <div className="flex flex-col justify-between gap-2.5 rounded-2xl border border-white/12 bg-slate-900/75 px-3.5 py-2.5 sm:flex-row sm:items-center">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[11px] font-bold text-slate-300">Lokasi Spawn:</span>
+                        <span className="text-[11px] font-bold text-slate-300">Lokasi Spawn</span>
                         <button
                           type="button"
                           onClick={() => setSpawnPref('random')}
@@ -1237,7 +1237,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                             maxLength={32}
                             value={groupName}
                             onChange={(e) => onChangeGroupName(e.target.value)}
-                            placeholder="CONTOH: ELITE SQUAD"
+                            placeholder="MISALNYA ELITE SQUAD"
                             className="mt-1 w-full rounded-xl border border-amber-300/35 bg-slate-950 px-3 py-2 text-xs font-black uppercase tracking-wide text-white outline-none focus:border-amber-300"
                           />
                         </div>
@@ -1287,7 +1287,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                           onChange={(e) =>
                             setJoinCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))
                           }
-                          placeholder="CONTOH: K7M2XP"
+                          placeholder="MISALNYA K7M2XP"
                           className="mt-3 w-full rounded-xl border border-white/20 bg-slate-950 px-3.5 py-2.5 font-mono-nums text-sm font-black tracking-widest text-cyan-100 outline-none focus:border-cyan-400"
                         />
                       </div>
@@ -1324,12 +1324,12 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                           maxLength={32}
                           value={groupName}
                           onChange={(e) => onChangeGroupName(e.target.value)}
-                          placeholder="Nama Squad (cth: ELITE SQUAD)"
+                          placeholder="Nama Squad (misalnya ELITE SQUAD)"
                           aria-label="Nama Squad Publik"
                           className="w-52 rounded-lg border border-emerald-300/35 bg-slate-950 px-2.5 py-1 text-[11px] font-black uppercase text-white outline-none focus:border-emerald-300"
                         />
                         <span className="text-[11px] font-bold text-slate-300">
-                          Level jika buat baru:
+                          Level jika buat baru
                         </span>
                         {DIFFICULTY_CARDS.map((d) => (
                           <button

@@ -1398,7 +1398,7 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
     // Only redraw the cached frame's crisp edge accents by clipping outside inner box or drawing frame on top?
     // Wait: North badge & expand badge overlap the inner viewport slightly, so compositing outerCanvas first clipped them under the map!
     // Solution: let's keep outer frame drawn first, and redraw only the 2 small top/bottom-right badges cleanly OR split bezel vs badges.
-    // Even simpler: draw outerCanvas AFTER inner viewport would cover inner map because outerCanvas fills dark #090d16. Let's NOT change visual overlap — drawing North badge + Expand badge takes 8 canvas primitives (microseconds), while the linear gradient + vignette + 3x3 grid + rounded paths stay cached!
+    // Even simpler: draw outerCanvas AFTER inner viewport would cover inner map because outerCanvas fills dark #090d16. Let's NOT change visual overlap, since drawing North badge + Expand badge takes 8 canvas primitives (microseconds), while the linear gradient + vignette + 3x3 grid + rounded paths stay cached!
     ctx.scale(dpr, dpr);
     drawRoundedRectPath(ctx, pad, pad, viewSize, viewSize, cornerR - 2);
     ctx.lineWidth = 1.1;
@@ -1853,7 +1853,7 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
       ctx.textBaseline = 'middle';
       const zoneTitle =
         worldMode === 'dungeon'
-          ? `GUA: ${dungeonName || 'WILAYAH'}`
+          ? `GUA ${dungeonName || 'WILAYAH'}`
           : worldMode === 'academy'
           ? 'ISTANA IELTS 3D'
           : worldMode === 'ocean'

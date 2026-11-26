@@ -33,8 +33,8 @@ const LOADING_TIPS = [
   'Semua audio, gambar UI, & dunia 3D disimpan di perangkat agar Anda bisa bermain 100% offline kapan saja.',
   'Setiap refresh atau saat membuka aplikasi kembali, Diglosa 3D otomatis memeriksa dan mengunduh pembaruan dari server.',
   'Gunakan Ketapel Kristal dan jawab kuis kosakata Inggris A1 hingga IELTS dengan tepat untuk memulihkan HP!',
-  'Kosakata Hari Ini: "Resilient" berarti tangguh — terus berlatih di Menara Waktu dan Akademi IELTS.',
-  'Tips Gua Kristal: Bawa cukup Obor dan Blok Pelindung sebelum memecahkan segel teka-teki bawah tanah.',
+  'Kosakata Hari Ini yaitu "Resilient" yang berarti tangguh agar kita terus berlatih di Menara Waktu dan Akademi IELTS.',
+  'Tips Gua Kristal adalah membawa cukup Obor dan Blok Pelindung sebelum memecahkan segel teka-teki bawah tanah.',
 ];
 
 export const AssetDownloaderScreen: React.FC<AssetDownloaderScreenProps> = ({
@@ -150,7 +150,7 @@ export const AssetDownloaderScreen: React.FC<AssetDownloaderScreenProps> = ({
 
                 <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-medium text-slate-300 font-mono-nums">
                   <span>
-                    Ukuran paket: {syncState.manifest ? formatBytesMb(syncState.manifest.totalBytes) : '18.4 MB'}
+                    Ukuran paket {syncState.manifest ? formatBytesMb(syncState.manifest.totalBytes) : '18.4 MB'}
                   </span>
                   <span aria-hidden="true">·</span>
                   <span>
@@ -195,7 +195,7 @@ export const AssetDownloaderScreen: React.FC<AssetDownloaderScreenProps> = ({
                     <p className="mt-1 text-xs leading-relaxed text-slate-200 sm:text-[13px]">
                       {pwaInstall.isInstallable
                         ? 'Semua berkas offline siap. Ketuk tombol di bawah untuk langsung menginstal Diglosa 3D ke HP/perangkat Anda.'
-                        : 'Browser Safari iOS mewajibkan pemasangan lewat menu Bagikan agar ikon Diglosa 3D terpasang di Layar Utama:'}
+                        : 'Browser Safari iOS mewajibkan pemasangan lewat menu Bagikan agar ikon Diglosa 3D terpasang di Layar Utama.'}
                     </p>
                   </div>
                 </div>

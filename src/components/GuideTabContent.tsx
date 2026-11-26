@@ -15,10 +15,12 @@ type GuideSection = 'all' | 'flow' | 'cave' | 'weapons' | 'controls';
 
 interface GuideTabContentProps {
   hud: RpgHudSnapshot;
+  playerName?: string;
 }
 
-export const GuideTabContent: React.FC<GuideTabContentProps> = ({ hud }) => {
+export const GuideTabContent: React.FC<GuideTabContentProps> = ({ hud, playerName }) => {
   const [section, setSection] = useState<GuideSection>('all');
+  const resolvedPlayerName = playerName?.trim() || 'Petualang';
 
   const show = (key: Exclude<GuideSection, 'all'>) =>
     section === 'all' || section === key;
@@ -124,13 +126,13 @@ export const GuideTabContent: React.FC<GuideTabContentProps> = ({ hud }) => {
                 </span>
               </div>
               <p className="mt-1.5 text-[11px] leading-relaxed text-slate-200">
-                Arahkan ke balok gua lalu tekan <strong>Spasi / Gali</strong> (atau ketuk balok):
+                Arahkan ke balok gua lalu tekan <strong>Spasi / Gali</strong> (atau ketuk balok).
               </p>
               <ul className="mt-1.5 space-y-1 text-[11px] text-slate-200">
-                <li>• <strong>Batu / Lumut:</strong> Buka jalur &amp; dapat <strong>+1 Blok Pelindung</strong>.</li>
-                <li>• <strong>Bijih Berlian (💎):</strong> Tambah berlian untuk beli peluru.</li>
-                <li>• <strong>Kristal Hati (❤️):</strong> Pulihkan +1 nyawa Hoot.</li>
-                <li>• <strong>Segel Kata (🔮):</strong> Gali atau tekan <strong>E</strong> untuk Kuis Kilat!</li>
+                <li>• <strong>Batu / Lumut</strong> untuk membuka jalur &amp; dapat <strong>+1 Blok Pelindung</strong>.</li>
+                <li>• <strong>Bijih Berlian (💎)</strong> untuk menambah berlian beli peluru.</li>
+                <li>• <strong>Kristal Hati (❤️)</strong> untuk memulihkan +1 nyawa {resolvedPlayerName}.</li>
+                <li>• <strong>Segel Kata (🔮)</strong> dapat digali atau tekan <strong>E</strong> untuk Kuis Kilat!</li>
               </ul>
             </div>
 
@@ -145,7 +147,7 @@ export const GuideTabContent: React.FC<GuideTabContentProps> = ({ hud }) => {
                 Tekan <strong>Spasi / Obor</strong> untuk menaruh obor bercahaya di lantai gua.
               </p>
               <div className="mt-2 rounded-lg border border-yellow-300/20 bg-slate-950/45 p-2 text-[11px] font-semibold text-yellow-100">
-                ✨ Kegunaan: Menerangi lorong gelap <strong>dan membuat monster di dekat cahaya lebih tenang / lambat mengejar</strong>.
+                ✨ Kegunaan obor yaitu menerangi lorong gelap <strong>dan membuat monster di dekat cahaya lebih tenang / lambat mengejar</strong>.
               </div>
             </div>
 
@@ -160,7 +162,7 @@ export const GuideTabContent: React.FC<GuideTabContentProps> = ({ hud }) => {
                 </span>
               </div>
               <p className="mt-1.5 text-[11px] leading-relaxed text-slate-200">
-                Lihat kotak pratinjau biru di depanmu, lalu tekan <strong>Spasi / Pasang</strong> untuk menaruh benteng kubus (<strong>4 HP</strong>):
+                Lihat kotak pratinjau biru di depanmu, lalu tekan <strong>Spasi / Pasang</strong> untuk menaruh benteng kubus (<strong>4 HP</strong>).
               </p>
               <ul className="mt-1.5 space-y-1 text-[11px] text-slate-200">
                 <li>• Menahan laju monster &amp; memblokir peluru Penembak Gelap.</li>
@@ -174,16 +176,16 @@ export const GuideTabContent: React.FC<GuideTabContentProps> = ({ hud }) => {
             <div className="flex items-start gap-2 rounded-xl border border-cyan-300/35 bg-cyan-950/25 px-3 py-2 text-[11px] font-semibold text-cyan-100">
               <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-cyan-300" />
               <span>
-                <strong>Peti Senjata Rahasia Acak:</strong> Di setiap gua selalu tersembunyi <strong>1 Peti Bercahaya Biru</strong> di sudut acak. Hampiri, ketuk, atau tekan <strong>E</strong> untuk mendapat <strong>Ketapel Kerikil (Slot 8)</strong> + bonus peluru!
+                <strong>Peti Senjata Rahasia Acak</strong>, di setiap gua selalu tersembunyi <strong>1 Peti Bercahaya Biru</strong> di sudut acak. Hampiri, ketuk, atau tekan <strong>E</strong> untuk mendapat <strong>Ketapel Kerikil (Slot 8)</strong> + bonus peluru!
               </span>
             </div>
             <div className="rounded-xl border border-rose-300/35 bg-rose-950/25 px-3 py-2 text-[11px] font-semibold text-rose-100">
-              🔥 <strong>Monster &amp; Medan Gua Baru:</strong>
+              🔥 <strong>Monster &amp; Medan Gua Baru</strong>
               <ul className="mt-1 space-y-0.5 font-medium text-slate-200">
-                <li>• <strong>Creeper Kata &amp; Kelelawar Gua:</strong> Creeper berdesis lalu meledak (tahan pakai <strong>Blok Pelindung</strong>!). Kelelawar menukik dari langit-langit (tembak jatuh untuk +Peluru &amp; +Obor).</li>
-                <li>• <strong>Undakan Tebing &amp; Jurang Lava:</strong> Pakai tombol <strong>⬆️ Lompat (J / Shift)</strong> atau susun <strong>Blok Pelindung</strong> sebagai tangga &amp; jembatan untuk mengambil harta di tebing tinggi.</li>
-                <li>• <strong>⚒️ Meja Craft &amp; TNT (Slot T):</strong> Temui meja craft dekat pintu masuk gua untuk membuat <strong>Beliung Tier 2/3 (2×–3× cepat)</strong> &amp; <strong>TNT Tambang</strong>!</li>
-                <li>• <strong>Retakan Balok &amp; Jebakan:</strong> Balok menampilkan pola retakan bertahap saat digali. Waspadai Lantai Lava/Duri, Penjaga Kejutan, &amp; Batu Runtuh Bos!</li>
+                <li>• <strong>Creeper Kata &amp; Kelelawar Gua</strong> siap menghadang karena Creeper berdesis lalu meledak (tahan pakai <strong>Blok Pelindung</strong>!) dan Kelelawar menukik dari langit-langit (tembak jatuh untuk +Peluru &amp; +Obor).</li>
+                <li>• <strong>Undakan Tebing &amp; Jurang Lava</strong> dapat dilewati memakai tombol <strong>⬆️ Lompat (J / Shift)</strong> atau susun <strong>Blok Pelindung</strong> sebagai tangga &amp; jembatan untuk mengambil harta di tebing tinggi.</li>
+                <li>• <strong>⚒️ Meja Craft &amp; TNT (Slot T)</strong> tersedia di dekat pintu masuk gua untuk membuat <strong>Beliung Tier 2/3 (2×–3× cepat)</strong> &amp; <strong>TNT Tambang</strong>!</li>
+                <li>• <strong>Retakan Balok &amp; Jebakan</strong> akan menampilkan pola retakan bertahap saat digali. Waspadai Lantai Lava/Duri, Penjaga Kejutan, &amp; Batu Runtuh Bos!</li>
               </ul>
             </div>
           </div>
@@ -204,12 +206,12 @@ export const GuideTabContent: React.FC<GuideTabContentProps> = ({ hud }) => {
                 🛡️ Perisai Kata Monster (3 Poin)
               </div>
               <p className="mt-1 text-[11px] leading-relaxed text-slate-200">
-                Setiap senjata punya <strong>Kekuatan Perisai</strong> berbeda untuk memunculkan Kuis Duel monster:
+                Setiap senjata punya <strong>Kekuatan Perisai</strong> berbeda untuk memunculkan Kuis Duel monster.
               </p>
               <ul className="mt-1.5 space-y-1 text-[11px] text-slate-200">
-                <li>• <strong>Kekuatan 1 (3× tembakan):</strong> Ketapel Kata (1) &amp; Ketapel Kerikil gua (8).</li>
-                <li>• <strong>Kekuatan 2 (2× tembakan):</strong> Senjata Bos awal &amp; menengah (Slot 2–5).</li>
-                <li>• <strong>Kekuatan 3 (1× tembakan):</strong> Senjata Bos akhir (Slot 6–7).</li>
+                <li>• <strong>Kekuatan 1 (3× tembakan)</strong> pada Ketapel Kata (1) &amp; Ketapel Kerikil gua (8).</li>
+                <li>• <strong>Kekuatan 2 (2× tembakan)</strong> pada Senjata Bos awal &amp; menengah (Slot 2–5).</li>
+                <li>• <strong>Kekuatan 3 (1× tembakan)</strong> pada Senjata Bos akhir (Slot 6–7).</li>
               </ul>
             </div>
 
@@ -219,8 +221,8 @@ export const GuideTabContent: React.FC<GuideTabContentProps> = ({ hud }) => {
                 <span>⚡ Mencari Peluru &amp; Taktik Duel</span>
               </div>
               <ul className="mt-1.5 space-y-1 text-[11px] leading-relaxed text-slate-200">
-                <li>• <strong>Cari Peluru:</strong> Kalahkan <strong>Penembak Gelap</strong> bermata merah, buka <strong>Peti Rahasia Gua</strong>, atau buka <strong>Tas → Latihan Kuis Peluru / Beli dengan 💎</strong>.</li>
-                <li>• <strong>Duel Rebutan:</strong> Begitu kuis muncul, tekan <strong>AMBIL GILIRAN!</strong> secepatnya agar monster tidak menyerang duluan, lalu pilih jawaban yang tepat!</li>
+                <li>• <strong>Cari Peluru</strong> dengan mengalahkan <strong>Penembak Gelap</strong> bermata merah, buka <strong>Peti Rahasia Gua</strong>, atau buka <strong>Tas → Latihan Kuis Peluru / Beli dengan 💎</strong>.</li>
+                <li>• <strong>Duel Rebutan</strong> dimulai begitu kuis muncul, tekan <strong>AMBIL GILIRAN!</strong> secepatnya agar monster tidak menyerang duluan, lalu pilih jawaban yang tepat!</li>
               </ul>
             </div>
           </div>
@@ -274,12 +276,12 @@ export const GuideTabContent: React.FC<GuideTabContentProps> = ({ hud }) => {
                 📱 HP / Layar Sentuh
               </div>
               <ul className="mt-1.5 space-y-1 text-[11px] leading-relaxed text-slate-200">
-                <li>• <strong>Jalan (Floating Joystick):</strong> Sentuh &amp; geser di <strong>mana saja area kiri layar</strong>, joystick langsung muncul di bawah jarimu (atau ketuk lantai sisi kanan).</li>
-                <li>• <strong>Putar Kamera:</strong> Geser jari di <strong>area kanan layar</strong> (bisa bersamaan sambil berjalan!).</li>
-                <li>• <strong>Lompat &amp; Aksi Cepat:</strong> Tekan <strong>⬆️ Lompat</strong> untuk naik tebing/menyeberangi jurang, dan tombol bulat biru kanan bawah untuk <strong>Tembak / Gali / Obor / Pasang / TNT</strong>.</li>
-                <li>• <strong>Pilih Alat/Senjata:</strong> Ketuk kotak Hotbar bawah (<strong>1–8</strong>, <strong>⛏️</strong>, <strong>🔦</strong>, <strong>🧱</strong>, <strong>🧨</strong>).</li>
-                <li>• <strong>Gaya Membidik:</strong> Di <strong>Bidik Otomatis</strong> peluru mengunci musuh terdekat. Di <strong>Bidik Bebas</strong> arahkan crosshair secara manual &amp; tekan tombol <strong>Crosshair</strong> untuk Scope!</li>
-                <li>• <strong>Interaksi:</strong> Ketuk langsung NPC, Meja Craft, Pintu Misi, Peti, atau Balok, atau tekan tombol pop-up kanan bawah.</li>
+                <li>• <strong>Jalan (Floating Joystick)</strong> cukup dengan sentuh &amp; geser di <strong>mana saja area kiri layar</strong>, lalu joystick langsung muncul di bawah jarimu (atau ketuk lantai sisi kanan).</li>
+                <li>• <strong>Putar Kamera</strong> dengan menggeser jari di <strong>area kanan layar</strong> (bisa bersamaan sambil berjalan!).</li>
+                <li>• <strong>Lompat &amp; Aksi Cepat</strong> memakai tombol <strong>⬆️ Lompat</strong> untuk naik tebing/menyeberangi jurang, dan tombol bulat biru kanan bawah untuk <strong>Tembak / Gali / Obor / Pasang / TNT</strong>.</li>
+                <li>• <strong>Pilih Alat/Senjata</strong> dengan mengetuk kotak Hotbar bawah (<strong>1–8</strong>, <strong>⛏️</strong>, <strong>🔦</strong>, <strong>🧱</strong>, <strong>🧨</strong>).</li>
+                <li>• <strong>Gaya Membidik</strong> pada <strong>Bidik Otomatis</strong> mengarahkan peluru mengunci musuh terdekat, sedangkan di <strong>Bidik Bebas</strong> arahkan crosshair secara manual &amp; tekan tombol <strong>Crosshair</strong> untuk Scope!</li>
+                <li>• <strong>Interaksi</strong> dilakukan dengan mengetuk langsung NPC, Meja Craft, Pintu Misi, Peti, atau Balok, atau tekan tombol pop-up kanan bawah.</li>
               </ul>
             </div>
 
@@ -288,12 +290,12 @@ export const GuideTabContent: React.FC<GuideTabContentProps> = ({ hud }) => {
                 💻 Laptop / Browser PC
               </div>
               <ul className="mt-1.5 space-y-1 text-[11px] leading-relaxed text-slate-200">
-                <li>• <strong>Jalan &amp; Lompat:</strong> Tombol <strong>WASD</strong> / <strong>Panah</strong> untuk jalan · <strong>J</strong> atau <strong>Shift</strong> untuk lompat.</li>
-                <li>• <strong>Kamera:</strong> Geser mouse pada layar · Tekan <strong>C</strong> / <strong>F5</strong> untuk ganti mode (3D Belakang / FPS / Depan / Orbit).</li>
-                <li>• <strong>Gaya Membidik (Opsi):</strong> <strong>Bidik Otomatis</strong> (kunci target cerdas) atau <strong>Bidik Bebas</strong> (crosshair 360°, Scope via <strong>Klik Kanan / Q</strong>, kunci mouse via <strong>L</strong>).</li>
-                <li>• <strong>Hotbar:</strong> <strong>1–8</strong> Senjata · <strong>9</strong> Beliung (⛏️) · <strong>0</strong> Obor (🔦) · <strong>B</strong> Blok Pelindung (🧱) · <strong>T</strong> TNT Tambang (🧨).</li>
-                <li>• <strong>Aksi &amp; Interaksi:</strong> <strong>Spasi</strong> / <strong>Klik Kiri</strong> (Tembak/Gali/Obor/Pasang/TNT) · <strong>E</strong> (Bicara/Meja Craft/Pintu/Peti/Segel).</li>
-                <li>• <strong>Pintasan Menu:</strong> <strong>M</strong> Peta · <strong>H</strong> Petunjuk · <strong>Esc</strong> Jeda/Tutup.</li>
+                <li>• <strong>Jalan &amp; Lompat</strong> memakai tombol <strong>WASD</strong> / <strong>Panah</strong> untuk jalan · <strong>J</strong> atau <strong>Shift</strong> untuk lompat.</li>
+                <li>• <strong>Kamera</strong> digerakkan dengan menggeser mouse pada layar · Tekan <strong>C</strong> / <strong>F5</strong> untuk ganti mode (3D Belakang / FPS / Depan / Orbit).</li>
+                <li>• <strong>Gaya Membidik (Opsi)</strong> terdiri dari <strong>Bidik Otomatis</strong> (kunci target cerdas) atau <strong>Bidik Bebas</strong> (crosshair 360°, Scope via <strong>Klik Kanan / Q</strong>, kunci mouse via <strong>L</strong>).</li>
+                <li>• <strong>Hotbar</strong> meliputi <strong>1–8</strong> Senjata · <strong>9</strong> Beliung (⛏️) · <strong>0</strong> Obor (🔦) · <strong>B</strong> Blok Pelindung (🧱) · <strong>T</strong> TNT Tambang (🧨).</li>
+                <li>• <strong>Aksi &amp; Interaksi</strong> memakai <strong>Spasi</strong> / <strong>Klik Kiri</strong> (Tembak/Gali/Obor/Pasang/TNT) · <strong>E</strong> (Bicara/Meja Craft/Pintu/Peti/Segel).</li>
+                <li>• <strong>Pintasan Menu</strong> meliputi <strong>M</strong> Peta · <strong>H</strong> Petunjuk · <strong>Esc</strong> Jeda/Tutup.</li>
               </ul>
             </div>
           </div>

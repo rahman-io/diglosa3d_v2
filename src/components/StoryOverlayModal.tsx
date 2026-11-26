@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Award, Bookmark, BookOpen, ChevronRight, Heart, Languages, RotateCcw, SkipForward, Volume2, VolumeX } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
-import { ZONE_CAVE_STORIES } from '../data/diglosaCatalog';
+import { personalizePlayerText, ZONE_CAVE_STORIES } from '../data/diglosaCatalog';
 import { CharacterPresetId, ProjectedLabel, StoryDialogState } from '../types/game';
 import { DialogueSpeakerKind } from './DialoguePortraitCanvas';
 import { HarvestDialogueBox } from './HarvestDialogueBox';
@@ -21,14 +21,17 @@ interface StoryOverlayModalProps {
 
 const StorybookPrologueBox: React.FC<{
   story: StoryDialogState;
+  playerName?: string;
   projectedLabels?: ProjectedLabel[];
   muted?: boolean;
   onToggleMute?: () => void;
   onAdvance: () => void;
   onSkip: () => void;
-}> = ({ story, projectedLabels = [], muted = false, onToggleMute, onAdvance, onSkip }) => {
+}> = ({ story, playerName = 'Hoot', projectedLabels = [], muted = false, onToggleMute, onAdvance, onSkip }) => {
   const [showEn, setShowEn] = useState(false);
-  const fullText = showEn && story.textEn ? story.textEn : story.textId;
+  const resolvedTextId = personalizePlayerText(story.textId, playerName);
+  const resolvedTextEn = story.textEn ? personalizePlayerText(story.textEn, playerName) : undefined;
+  const fullText = showEn && resolvedTextEn ? resolvedTextEn : resolvedTextId;
   const [revealedCount, setRevealedCount] = useState(0);
   const timerRef = useRef<number | null>(null);
   const isTyping = revealedCount < fullText.length;
@@ -157,7 +160,7 @@ const StorybookPrologueBox: React.FC<{
               className="flex shrink-0 items-center gap-1.5"
               onClick={(e) => e.stopPropagation()}
             >
-              {story.textEn && (
+              {resolvedTextEn && (
                 <>
                   <button
                     type="button"
@@ -173,7 +176,7 @@ const StorybookPrologueBox: React.FC<{
                   </button>
                   <button
                     type="button"
-                    onClick={() => soundEngine.speakEnglish(story.textEn)}
+                    onClick={() => soundEngine.speakEnglish(resolvedTextEn)}
                     title="Dengarkan Bahasa Inggris"
                     className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/25 bg-slate-950/35 text-amber-100 transition hover:bg-slate-900/55"
                   >
@@ -381,6 +384,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     return (
       <StorybookPrologueBox
         story={story}
+        playerName={playerName}
         projectedLabels={projectedLabels}
         muted={muted}
         onToggleMute={onToggleMute}
@@ -441,10 +445,11 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     }
   }
 
+  const resolvedPlayerName = playerName.trim() || 'Hoot';
   const displaySpeakerName =
     speakerKind === 'hero' && (story.speakerName === 'Hoot' || story.speakerName === 'Kamu')
-      ? playerName.trim() || 'Hoot'
-      : story.speakerName;
+      ? resolvedPlayerName
+      : personalizePlayerText(story.speakerName, resolvedPlayerName);
 
   const topAccessory =
     story.rewardSummary || story.ribbonQuote || (story.kind === 'defeat_exit' && story.defeatReason) ? (
@@ -454,7 +459,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
             <span className="rounded bg-rose-600 px-1.5 py-0.5 text-[10px] font-black uppercase tracking-wide text-white">
               Kalah
             </span>
-            <span>Penyebab: {story.defeatReason}</span>
+            <span>Penyebabnya adalah {personalizePlayerText(story.defeatReason, resolvedPlayerName)}</span>
           </div>
         )}
         {story.rewardSummary && (
@@ -496,15 +501,16 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
   return (
     <HarvestDialogueBox
       speakerName={displaySpeakerName}
-      speakerRole={story.speakerRole}
+      speakerRole={personalizePlayerText(story.speakerRole, resolvedPlayerName)}
       speakerKind={speakerKind}
       characterId={characterId}
       npcId={npcId}
+      villagerArchetypes={story.villagerArchetypes}
       captiveKind={captiveKind}
       captiveColor={captiveColor}
       speakerSide={speakerSide}
-      textId={story.textId}
-      textEn={story.textEn}
+      textId={personalizePlayerText(story.textId, resolvedPlayerName)}
+      textEn={story.textEn ? personalizePlayerText(story.textEn, resolvedPlayerName) : undefined}
       topAccessory={topAccessory}
       footerActions={footerActions}
       canAdvance={story.kind !== 'defeat_exit'}

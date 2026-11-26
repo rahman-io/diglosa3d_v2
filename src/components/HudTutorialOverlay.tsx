@@ -40,7 +40,7 @@ export const HUD_TUTORIAL_STEPS: HudTutorialStep[] = [
     id: 'camera_view',
     title: 'Toggle Ganti View (Kamera)',
     description:
-      'Ketuk ikon Mata ini untuk berganti sudut pandang kamera: Kamera Belakang, Orang Pertama (FPS), Kamera Depan, atau Bebas.',
+      'Ketuk ikon Mata ini untuk berganti sudut pandang kamera antara Kamera Belakang, Orang Pertama (FPS), Kamera Depan, atau Bebas.',
     actionHint: 'Ketuk ikon Mata sekarang untuk mengganti view.',
     shape: 'circle',
     padding: 7,
@@ -290,7 +290,7 @@ export const HudTutorialOverlay: React.FC<HudTutorialOverlayProps> = ({
       className="pointer-events-none fixed inset-0 z-[45] select-none"
       role="dialog"
       aria-modal="false"
-      aria-label={`Panduan Tombol: ${step.title}`}
+      aria-label={`Panduan Tombol ${step.title}`}
     >
       {/* 4 Invisible Interactive Blocker Strips around the Spotlight Cutout (so user MUST tap the spotlighted button or Skip!) */}
       {r ? (

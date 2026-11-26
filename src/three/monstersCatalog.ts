@@ -1915,7 +1915,7 @@ export function buildMonsterRig(
     rig.tailPivot = tail;
     rig.eyes = eyes;
   } else if (type === 'titan_colossus') {
-    // titan_colossus (#20) — Ancient stone + gold rune monolith colossus
+    // titan_colossus (#20), Ancient stone + gold rune monolith colossus
     const colStone = palette.getMat(0x94a3b8, 'matte');
     const colDark = palette.getMat(0x475569, 'matte');
     const goldRune = palette.getMat(0xd97706, 'metal');
@@ -1955,7 +1955,7 @@ export function buildMonsterRig(
     rig.rightArm = rArm;
     rig.eyes = [visor];
   } else if (type === 'goring_shark') {
-    // Sea #1: Goring Shark (Hiu Ganas) — slate-grey shark, pale belly, crimson scars, red eyes, bloody teeth
+    // Sea #1: Goring Shark (Hiu Ganas) berupa slate-grey shark, pale belly, crimson scars, red eyes, bloody teeth
     const sharkGrey = palette.getMat(0x334155, 'gloss');
     const sharkDark = palette.getMat(0x1e293b, 'matte');
     const bellyMat = palette.getMat(0xcbd5e1, 'matte');
@@ -2035,7 +2035,7 @@ export function buildMonsterRig(
     rig.tailPivot = tail;
     rig.eyes = [eL, eR];
   } else if (type === 'abyssal_kraken') {
-    // Sea #2: Abyssal Kraken — massive purple mantle, glowing amber eyes, 8 curled tentacle arms + water swirl base
+    // Sea #2: Abyssal Kraken dengan massive purple mantle, glowing amber eyes, 8 curled tentacle arms + water swirl base
     const krakPurple = palette.getMat(0x4c1d95, 'gloss');
     const krakDark = palette.getMat(0x2e1065, 'matte');
     const suckerLilac = palette.getMat(0xc084fc, 'matte');
@@ -2093,7 +2093,7 @@ export function buildMonsterRig(
     rig.vortexRing = vortex;
     rig.eyes = [eL, eR];
   } else if (type === 'electric_eel_drakon') {
-    // Sea #3: Electric Eel-Drakon — S-curved aqua dragon-eel with golden belly/dorsal ridge & crackling lightning arcs
+    // Sea #3: Electric Eel-Drakon berupa S-curved aqua dragon-eel with golden belly/dorsal ridge & crackling lightning arcs
     const eelCyan = palette.getMat(0x06b6d4, 'gloss');
     const eelTeal = palette.getMat(0x0f766e, 'matte');
     const goldSpine = palette.getMat(0xfacc15, 'emissive');
@@ -2138,7 +2138,7 @@ export function buildMonsterRig(
     rig.segments = segments;
     rig.eyes = [eL, eR];
   } else if (type === 'leviathan_serpent') {
-    // Sea #4: Leviathan Serpent — towering sea-green horned dragon serpent rising out of crashing water splash
+    // Sea #4: Leviathan Serpent berupa towering sea-green horned dragon serpent rising out of crashing water splash
     const levGreen = palette.getMat(0x0f766e, 'gloss');
     const levScale = palette.getMat(0x134e4a, 'matte');
     const levBelly = palette.getMat(0x5eead4, 'matte');
@@ -2208,7 +2208,7 @@ export function buildMonsterRig(
     rig.vortexRing = vortex;
     rig.eyes = [eL, eR];
   } else if (type === 'venomous_box_jelly') {
-    // Sea #5: Venomous Box Jelly (Ubur-Ubur Maut) — translucent glowing ice-cyan cube bell + neon magenta inner core & tentacles
+    // Sea #5: Venomous Box Jelly (Ubur-Ubur Maut) dengan translucent glowing ice-cyan cube bell + neon magenta inner core & tentacles
     const bellGlass = palette.getMat(0x38bdf8, 'glass');
     const bellEdge = palette.getMat(0x67e8f9, 'emissive');
     const coreMagenta = palette.getMat(0xe879f9, 'emissive');
@@ -2250,7 +2250,7 @@ export function buildMonsterRig(
     rig.upperBody = bell;
     rig.tentacles = tentacles;
   } else if (type === 'giant_bone_jaw') {
-    // Sea #6: Giant Bone-Jaw (Ikan Purba / Dunkleosteus) — dark brown-tan plated armor fish & massive bone shear jaws
+    // Sea #6: Giant Bone-Jaw (Ikan Purba / Dunkleosteus) dengan dark brown-tan plated armor fish & massive bone shear jaws
     const armorDark = palette.getMat(0x451a03, 'matte');
     const armorPlate = palette.getMat(0x78350f, 'matte');
     const bonePlate = palette.getMat(0xd6b88d, 'matte');
@@ -2298,7 +2298,7 @@ export function buildMonsterRig(
     rig.tailPivot = tail;
     rig.eyes = [eL, eR];
   } else if (type === 'toxic_sea_viper') {
-    // Sea #7: Toxic Sea Viper (Naga Laut Beracun) — violet snake body, neon lime belly scutes, fin-frill & dripping venom fangs
+    // Sea #7: Toxic Sea Viper (Naga Laut Beracun) dengan violet snake body, neon lime belly scutes, fin-frill & dripping venom fangs
     const viperPurple = palette.getMat(0x581c87, 'gloss');
     const viperFrill = palette.getMat(0x7e22ce, 'matte');
     const venomGreen = palette.getMat(0x4ade80, 'emissive');
@@ -2341,7 +2341,7 @@ export function buildMonsterRig(
     rig.segments = segments;
     rig.eyes = [eL, eR];
   } else if (type === 'shadow_angler') {
-    // Sea #8: Shadow Angler (Monster Laut Dalam) — pitch-black blocky body, giant needle teeth jaw, cyan eyes, golden lantern stalk
+    // Sea #8: Shadow Angler (Monster Laut Dalam) dengan pitch-black blocky body, giant needle teeth jaw, cyan eyes, golden lantern stalk
     const abyssBlack = palette.getMat(0x090d16, 'gloss');
     const abyssSlate = palette.getMat(0x1e293b, 'matte');
     const cyanEye = palette.getMat(0x22d3ee, 'emissive');
@@ -2401,7 +2401,7 @@ export function buildMonsterRig(
     rig.weaponGroup = lurePivot;
     rig.eyes = [eL, eR];
   } else if (type === 'spiny_mega_stingray') {
-    // Sea #9: Spiny Mega-Stingray (Pari Berduri) — wide navy diamond wings w/ cyan glowing spots, steel dorsal spines & barbed whip tail
+    // Sea #9: Spiny Mega-Stingray (Pari Berduri) dengan wide navy diamond wings w/ cyan glowing spots, steel dorsal spines & barbed whip tail
     const rayNavy = palette.getMat(0x1e3a5f, 'gloss');
     const rayDark = palette.getMat(0x0f172a, 'matte');
     const spotCyan = palette.getMat(0x38bdf8, 'emissive');
@@ -2455,7 +2455,7 @@ export function buildMonsterRig(
     rig.tailPivot = tail;
     rig.eyes = [eL, eR];
   } else if (type === 'charybdis_maw') {
-    // Sea #10: Charybdis Maw — massive rotating whirlpool ringed by coral reef crust & concentric rings of sharp fangs
+    // Sea #10: Charybdis Maw berupa massive rotating whirlpool ringed by coral reef crust & concentric rings of sharp fangs
     const abyssCore = palette.getMat(0x020617, 'matte');
     const rockRim = palette.getMat(0x475569, 'matte');
     const coralPink = palette.getMat(0xf472b6, 'gloss');
@@ -2514,7 +2514,7 @@ export function buildMonsterRig(
     rig.vortexRing = vortex;
     rig.extraSpin = vortex;
   } else if (type === 'giga_wyvern') {
-    // Sky #1: Giga-Wyvern (Naga Pembom) — obsidian charcoal dragon, blazing crimson belly/wings, glowing ember throat, wide bat wings & whip tail
+    // Sky #1: Giga-Wyvern (Naga Pembom) dengan obsidian charcoal dragon, blazing crimson belly/wings, glowing ember throat, wide bat wings & whip tail
     const wyvCharcoal = palette.getMat(0x1f2430, 'matte');
     const wyvDark = palette.getMat(0x0f172a, 'matte');
     const wyvRedScale = palette.getMat(0xdc2626, 'gloss');
@@ -2600,7 +2600,7 @@ export function buildMonsterRig(
     rig.tailPivot = tail;
     rig.eyes = [eL, eR];
   } else if (type === 'crimson_phoenix') {
-    // Sky #2: Crimson Phoenix (Burung Api) — blazing crimson body, layered flame-orange & gold feathers, fiery crest & fanned flame tail
+    // Sky #2: Crimson Phoenix (Burung Api) dengan blazing crimson body, layered flame-orange & gold feathers, fiery crest & fanned flame tail
     const phxRed = palette.getMat(0xdc2626, 'gloss');
     const phxOrange = palette.getMat(0xf97316, 'emissive');
     const phxGold = palette.getMat(0xfacc15, 'emissive');
@@ -2670,7 +2670,7 @@ export function buildMonsterRig(
     rig.tailPivot = tail;
     rig.eyes = [eL, eR];
   } else if (type === 'shadow_harpy') {
-    // Sky #3: Shadow Harpy (Harpi Kegelapan) — charcoal-slate shadowed harpy maiden, wide raven wings, clawed hands & hooked talons
+    // Sky #3: Shadow Harpy (Harpi Kegelapan) berupa charcoal-slate shadowed harpy maiden, wide raven wings, clawed hands & hooked talons
     const hrpDark = palette.getMat(0x111827, 'matte');
     const hrpFeather = palette.getMat(0x1e293b, 'gloss');
     const hrpSkin = palette.getMat(0x475569, 'matte');
@@ -2725,7 +2725,7 @@ export function buildMonsterRig(
     rig.tailPivot = tail;
     rig.eyes = [eL, eR];
   } else if (type === 'giant_phantom') {
-    // Sky #4: Giant Phantom (Pari Udara Raksasa) — deep astral-navy manta glider with glowing sky-cyan aura spots, cyan eyes & forked whip tail
+    // Sky #4: Giant Phantom (Pari Udara Raksasa) berupa deep astral-navy manta glider with glowing sky-cyan aura spots, cyan eyes & forked whip tail
     const phmNavy = palette.getMat(0x1e293b, 'gloss');
     const phmMidnight = palette.getMat(0x0f172a, 'matte');
     const phmCyan = palette.getMat(0x38bdf8, 'emissive');
@@ -2764,7 +2764,7 @@ export function buildMonsterRig(
     rig.tailPivot = tail;
     rig.eyes = [eL, eR];
   } else if (type === 'toxic_chimera') {
-    // Sky #5: Toxic Chimera (Beast Berbisa Sungging) — olive-green lion beast, purple mane, green horns, dragon wings & venomous serpent tail
+    // Sky #5: Toxic Chimera (Beast Berbisa Sungging) berupa olive-green lion beast, purple mane, green horns, dragon wings & venomous serpent tail
     const chiOlive = palette.getMat(0x65a30d, 'matte');
     const chiDark = palette.getMat(0x3f6212, 'matte');
     const chiMane = palette.getMat(0x7e22ce, 'matte');
@@ -2827,7 +2827,7 @@ export function buildMonsterRig(
     rig.tailPivot = tail;
     rig.eyes = [eL, eR];
   } else if (type === 'guardian_sentinel') {
-    // Sky #6: Guardian Sentinel (Drone Penjaga) — ancient carved stone temple cube, glowing crimson cyclops laser lens, gold trim & 4 mech drone legs
+    // Sky #6: Guardian Sentinel (Drone Penjaga) berupa ancient carved stone temple cube, glowing crimson cyclops laser lens, gold trim & 4 mech drone legs
     const senStone = palette.getMat(0xa8a29e, 'matte');
     const senDark = palette.getMat(0x57534e, 'matte');
     const senGold = palette.getMat(0xf59e0b, 'metal');
@@ -2870,7 +2870,7 @@ export function buildMonsterRig(
     rig.legs = legs;
     rig.eyes = [eye];
   } else if (type === 'ice_shard_griffin') {
-    // Sky #7: Ice Shard Griffin (Griffin Badai Es) — warm tan beast hindquarters, glacial frost-blue feathered shoulders, eagle beak & crystalline ice wings
+    // Sky #7: Ice Shard Griffin (Griffin Badai Es) dengan warm tan beast hindquarters, glacial frost-blue feathered shoulders, eagle beak & crystalline ice wings
     const grfFur = palette.getMat(0xa16207, 'matte');
     const grfIce = palette.getMat(0x38bdf8, 'gloss');
     const grfFrost = palette.getMat(0xe0f2fe, 'matte');
@@ -2932,7 +2932,7 @@ export function buildMonsterRig(
     rig.tailPivot = tail;
     rig.eyes = [eL, eR];
   } else if (type === 'blight_hornet') {
-    // Sky #8: Blight Hornet (Tawon Raksasa Beracun) — jet-black wasp thorax, striped green-toxic glowing abdomen, giant lime compound eyes & 4 translucent veined wings
+    // Sky #8: Blight Hornet (Tawon Raksasa Beracun) dengan jet-black wasp thorax, striped green-toxic glowing abdomen, giant lime compound eyes & 4 translucent veined wings
     const hrnBlack = palette.getMat(0x0f172a, 'gloss');
     const hrnSlate = palette.getMat(0x1e293b, 'matte');
     const hrnToxic = palette.getMat(0x4ade80, 'emissive');
@@ -2993,7 +2993,7 @@ export function buildMonsterRig(
     rig.legs = legs;
     rig.eyes = [eL, eR];
   } else if (type === 'acidic_sky_wyrm') {
-    // Sky #9: Acidic Sky-Wyrm (Naga Asam Udara) — flying emerald & chartreuse Eastern sky dragon with undulating S-coil segments & glowing acid fins
+    // Sky #9: Acidic Sky-Wyrm (Naga Asam Udara) berupa flying emerald & chartreuse Eastern sky dragon with undulating S-coil segments & glowing acid fins
     const wyrmGreen = palette.getMat(0x16a34a, 'gloss');
     const wyrmDark = palette.getMat(0x14532d, 'matte');
     const wyrmAcid = palette.getMat(0x84cc16, 'emissive');
@@ -3037,7 +3037,7 @@ export function buildMonsterRig(
     rig.segments = segments;
     rig.eyes = [eL, eR];
   } else if (type === 'volcanic_giant_bat') {
-    // Sky #10: Volcanic Giant Bat (Kelelawar Lava) — dark obsidian furry bat, tall ears, molten magma eyes & wide glowing lava-veined wings
+    // Sky #10: Volcanic Giant Bat (Kelelawar Lava) berupa dark obsidian furry bat, tall ears, molten magma eyes & wide glowing lava-veined wings
     const batFur = palette.getMat(0x271915, 'matte');
     const batChar = palette.getMat(0x111827, 'matte');
     const batLava = palette.getMat(0xf97316, 'emissive');
@@ -3265,10 +3265,10 @@ export interface SkyMonsterSpawnTemplate {
   combatOnly: boolean;
 }
 
-// 20 Monster Terbang Angkasa (semua 10 jenis monster langit — masing-masing 2 ekor):
+// 20 Monster Terbang Angkasa (semua 10 jenis monster langit, masing-masing 2 ekor)
 // 14 Penyerang Tempur Langit (70%) + 6 Pembawa Tantangan Kata Langit (30%)
 export const SKY_MONSTER_SPAWNS: SkyMonsterSpawnTemplate[] = [
-  // Desa Sapaan & Langit Pesisir Luar (3: 2 combat + 1 quiz — aman dari area spawn awal desa)
+  // Desa Sapaan & Langit Pesisir Luar (3 yaitu 2 combat + 1 quiz, aman dari area spawn awal desa)
   { zoneId: 'desa_sapaan', name: 'Crimson Phoenix (Burung Api)', type: 'crimson_phoenix', x: 64, z: 168, combatOnly: true },
   { zoneId: 'desa_sapaan', name: 'Blight Hornet (Tawon Beracun)', type: 'blight_hornet', x: -74, z: 132, combatOnly: true },
   { zoneId: 'desa_sapaan', name: 'Giant Phantom Kata', type: 'giant_phantom', x: 46, z: 54, combatOnly: false },

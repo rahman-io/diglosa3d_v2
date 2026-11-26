@@ -476,12 +476,12 @@ function sampleIslandInterior(
     if (hx >= -11.0 && hx <= 15.0 && hz >= -18.0 && hz < -14.0) {
       return { y: 20.0, surface: 'road' };
     }
-    // Upper Flight (hx ∈ [-3.0, +3.0] — exact 6m wide!, hz ∈ [-36.5, -18.0], y: 20.0 -> 34.0m, 18.5m run -> <=0.46m step!)
+    // Upper Flight (hx ∈ [-3.0, +3.0], exact 6m wide!, hz ∈ [-36.5, -18.0], y: 20.0 -> 34.0m, 18.5m run -> <=0.46m step!)
     if (hx >= -3.0 && hx <= 3.0 && hz >= -36.5 && hz < -18.0) {
       const prog = THREE.MathUtils.clamp((-18.0 - hz) / 18.5, 0, 1);
       return { y: Math.min(34.0, quantizeTier(20.0 + prog * 14.0, 0.46)), surface: 'stairs' };
     }
-    // Summit Obelisk Plateau Terrace (y = 34.0m — 20m Obelisk + Plinth reaches exact T = 54.0m!)
+    // Summit Obelisk Plateau Terrace (y = 34.0m, 20m Obelisk + Plinth reaches exact T = 54.0m!)
     if (hx >= -12.0 && hx <= 12.0 && hz >= -49.5 && hz < -36.5) {
       return { y: 34.0, surface: 'land' };
     }
@@ -852,7 +852,7 @@ function sampleIslandInterior(
   }
 
   if (isl.id === 'menara_waktu') {
-    // Menara Waktu (cx=148, cz=-92, radius=65.0) — Full 130m Clock Tower Hill!
+    // Menara Waktu (cx=148, cz=-92, radius=65.0), Full 130m Clock Tower Hill!
     // Local coords lx = wx - 148, lz = wz + 92
     const lx = wx - 148.0;
     const lz = wz + 92.0;
@@ -892,7 +892,7 @@ function sampleIslandInterior(
       return { y: Math.min(32.0, quantizeTier(21.0 + prog * 11.0, 0.42)), surface: 'stairs' };
     }
 
-    // 4. Clock Tower Summit Courtyard Plateau (y=32.0m) — Menara Jam Utama (T:26m) rises from 32m -> 58m!
+    // 4. Clock Tower Summit Courtyard Plateau (y=32.0m), Menara Jam Utama (T:26m) rises from 32m -> 58m!
     if (lx >= -2.0 && lx <= 19.0 && lz >= -26.0 && lz <= -2.0) {
       const isPlazaFront = lz >= -10.5 && lx <= 14.0;
       return { y: 32.0, surface: isPlazaFront ? 'road' : 'land' };
@@ -947,7 +947,7 @@ function sampleIslandInterior(
     return { y: Math.max(0.75, Math.min(32.0, quantizeTier(h, 0.75))), surface: 'land' };
   }
 
-  // gua_portal (cx=20, cz=-174, radius=67.5) — Full 135m Crystal Canyon!
+  // gua_portal (cx=20, cz=-174, radius=67.5), Full 135m Crystal Canyon!
   // Local coords lx = wx - 20, lz = wz + 174
   const lx = wx - 20.0;
   const lz = wz + 174.0;
@@ -1366,6 +1366,7 @@ export interface DesaVisualTerrainGrid {
 export interface ArchipelagoRig {
   group: THREE.Group;
   walkableTargets: THREE.Object3D[];
+  cameraOccluders: THREE.Object3D[];
   obstacles: VillageObstacle[];
   desaVisualGrid: DesaVisualTerrainGrid;
   torchesFlame: THREE.Object3D[];
@@ -1648,7 +1649,7 @@ function createVoxelCar(
   const taillightMat = palette.getMat(0xef4444, 'emissive');
 
   if (isBus) {
-    // Full-scale Red City Bus (9.8m long x 3.2m wide x 4.85m tall — towers cleanly above the 3.43m Hero!)
+    // Full-scale Red City Bus (9.8m long x 3.2m wide x 4.85m tall, towers cleanly above the 3.43m Hero!)
     const bumper = new THREE.Mesh(new THREE.BoxGeometry(10.0, 0.65, 3.25), trimMat);
     bumper.position.y = 0.72;
     const lowerBody = new THREE.Mesh(new THREE.BoxGeometry(9.8, 1.55, 3.16), bodyMat);
@@ -1783,6 +1784,7 @@ export function createArchipelagoWorld(
 ): ArchipelagoRig {
   const group = new THREE.Group();
   const walkableTargets: THREE.Object3D[] = [];
+  const cameraOccluders: THREE.Object3D[] = [];
   const obstacles: VillageObstacle[] = [];
   const torchesFlame: THREE.Object3D[] = [];
   const gears: Array<{ mesh: THREE.Object3D; speed: number }> = [];
@@ -2772,6 +2774,7 @@ export function createArchipelagoWorld(
       const ruinWhiteMat = palette.createSurfaceMat({ color: 0xffffff, roughness: 0.9 });
       const ruinBatch = buildVoxelBatch(ruinVoxels, ruinWhiteMat, true, true);
       group.add(ruinBatch);
+      cameraOccluders.push(ruinBatch);
       disposables.push(ruinBatch.geometry, ruinWhiteMat);
     }
   }
@@ -2886,6 +2889,7 @@ export function createArchipelagoWorld(
     caveEmberMesh.position.set(30.5, 3.25, 118.0);
     lavaMeshes.push(caveEmberMesh);
     group.add(caveDarkMesh, caveEmberMesh);
+    cameraOccluders.push(caveDarkMesh);
 
     // Twin Tall Stone Torch Pedestals Flanking the Wooden Cave Deck
     [111.5, 124.5].forEach((tz) => {
@@ -3252,7 +3256,7 @@ export function createArchipelagoWorld(
       addVWall(cx + halfW, gateSide === 'east');
     };
 
-    // 3a. Gerbang Utama (Tinggi: 16m!) — Giant Stepped Fallen-Log Jungle Archway at (79, 42)
+    // 3a. Gerbang Utama (Tinggi: 16m!), Giant Stepped Fallen-Log Jungle Archway at (79, 42)
     const gateBaseY = getArchipelagoGroundY(79.0, 42.0);
     const gate = new THREE.Group();
     gate.position.set(79.0, gateBaseY, 42.0);
@@ -4422,7 +4426,7 @@ export function createArchipelagoWorld(
     minecart.position.set(33.5, 16.15, -172.0);
     group.add(minecart);
 
-    // 6e. Kristal Ungu Raksasa (T: 12m - 18m!) — Faceted Multi-Spire Amethyst Crystal Clusters
+    // 6e. Kristal Ungu Raksasa (T: 12m - 18m!), Faceted Multi-Spire Amethyst Crystal Clusters
     const crystalCoreMat = palette.createSurfaceMat({
       color: 0xc084fc,
       emissive: 0x9333ea,
@@ -4582,10 +4586,12 @@ export function createArchipelagoWorld(
   const walkableBatch = buildVoxelBatch(walkableTopBlocks, neutralVoxelMat, false, true);
   group.add(walkableBatch);
   walkableTargets.push(walkableBatch);
+  cameraOccluders.push(walkableBatch);
   disposables.push(walkableBatch.geometry);
 
   const cliffBatch = buildVoxelBatch(cliffBlocks, neutralVoxelMat, true, true);
   group.add(cliffBatch);
+  cameraOccluders.push(cliffBatch);
   disposables.push(cliffBatch.geometry);
 
   const airbaseRig = buildAirbaseIslands(palette, lowDetail);
@@ -4596,6 +4602,7 @@ export function createArchipelagoWorld(
   return {
     group,
     walkableTargets,
+    cameraOccluders,
     obstacles,
     desaVisualGrid,
     torchesFlame,

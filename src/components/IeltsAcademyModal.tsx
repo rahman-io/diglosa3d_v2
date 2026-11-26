@@ -249,14 +249,14 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
                   onClick={() => setTrack((t) => (t === 'academic' ? 'general' : 'academic'))}
                   className="rounded-md border border-[#7c3aed] bg-white px-2 py-0.5 text-[#5b21b6]"
                 >
-                  Jalur: {track === 'academic' ? 'Academic' : 'General Training'}
+                  Jalur {track === 'academic' ? 'Academic' : 'General Training'}
                 </button>
                 <button
                   type="button"
                   onClick={() => setExamMode((m) => (m === 'practice' ? 'exam' : 'practice'))}
                   className="rounded-md border border-[#7c3aed] bg-white px-2 py-0.5 text-[#5b21b6]"
                 >
-                  Mode: {examMode === 'practice' ? 'Latihan' : 'Ujian'}
+                  Mode {examMode === 'practice' ? 'Latihan' : 'Ujian'}
                 </button>
               </div>
             )}
@@ -348,7 +348,7 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
                         <div className="mt-3 space-y-1 rounded-xl bg-[#f5f3ff] p-3 text-xs">
                           {sec.dialogue.map((d, i) => (
                             <div key={i}>
-                              <strong>{d.name}:</strong> {d.line}
+                              <strong>{d.name}</strong> berkata, &ldquo;{d.line}&rdquo;
                             </div>
                           ))}
                         </div>
@@ -516,16 +516,16 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
 
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-4 py-2 text-xs font-extrabold">
                 <span>
-                  Kata: {wordCount}/{currentWritingTask.minWords}
+                  Kata {wordCount}/{currentWritingTask.minWords}
                 </span>
-                <span>Paragraf: {paragraphCount}</span>
+                <span>Paragraf {paragraphCount}</span>
                 <span>
-                  Kata Sambung ({detectedConnectors.length}): {detectedConnectors.join(', ') || '-'}
+                  Kata Sambung ({detectedConnectors.length}) · {detectedConnectors.join(', ') || '-'}
                 </span>
                 <button
                   type="button"
                   onClick={() => {
-                    const p = `Evaluasi IELTS Writing (${currentWritingTask.title}):\nPrompt: ${currentWritingTask.prompt}\nJawaban saya:\n${essayText}`;
+                    const p = `Evaluasi IELTS Writing (${currentWritingTask.title})\nTopik yaitu ${currentWritingTask.prompt}\nJawaban saya adalah\n${essayText}`;
                     navigator.clipboard?.writeText(p).catch(() => {});
                     setCopiedPrompt(true);
                     window.setTimeout(() => setCopiedPrompt(false), 1800);
@@ -634,7 +634,7 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
 
                     {showModelAns && (
                       <div className="rounded-xl bg-emerald-50 p-3 text-xs font-semibold text-emerald-950">
-                        <strong>Model Answer:</strong> {sp.modelAnswer}
+                        <strong>Model Answer</strong> · {sp.modelAnswer}
                       </div>
                     )}
                   </div>

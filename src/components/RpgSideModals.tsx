@@ -60,6 +60,7 @@ export type SideModalTab = 'bag' | 'kamus' | 'quests' | 'map' | 'options' | 'gui
 interface RpgSideModalsProps {
   tab: SideModalTab;
   hud: RpgHudSnapshot;
+  playerName?: string;
   getLiveMapSnapshot?: (kind: 'minimap' | 'full') => LiveMapSnapshot | null;
   onClose: () => void;
   onOpenGuide?: () => void;
@@ -81,6 +82,7 @@ interface RpgSideModalsProps {
 export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
   tab,
   hud,
+  playerName,
   getLiveMapSnapshot,
   onClose,
   onOpenGuide,
@@ -98,6 +100,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
   user,
   onSignOut,
 }) => {
+  const resolvedPlayerName = playerName?.trim() || 'Petualang';
   const [searchText, setSearchText] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'new' | 'learn' | 'mast'>('all');
   const [selectedCat, setSelectedCat] = useState<number | 'all'>('all');
@@ -131,7 +134,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
   if (tab === 'map') {
     const mapHeading =
       hud.worldMode === 'dungeon' && hud.dungeonState
-        ? `Peta Gua: ${hud.dungeonState.zoneName}`
+        ? `Peta Gua ${hud.dungeonState.zoneName}`
         : hud.worldMode === 'academy'
         ? 'Peta Istana IELTS 3D'
         : hud.worldMode === 'ocean'
@@ -220,7 +223,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                         Misi Gua {hud.dungeonState.zoneName}
                       </div>
                       <div className="text-[11px] font-semibold text-slate-300">
-                        Penjaga: {hud.dungeonState.guardianName} · Tawanan: {hud.dungeonState.captiveName}
+                        Penjaga {hud.dungeonState.guardianName} · Tawanan {hud.dungeonState.captiveName}
                       </div>
                     </div>
                     <span className="font-mono-nums text-xs font-black text-cyan-300">
@@ -313,7 +316,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2">
                     <div>
                       <div className="text-xs font-black text-cyan-200 sm:text-sm">
-                        Zona Saat Ini: {hud.oceanSurvival.zoneLabel}
+                        Zona Saat Ini {hud.oceanSurvival.zoneLabel}
                       </div>
                       <div className="text-[11px] font-semibold text-slate-300">
                         Kedalaman -{hud.oceanSurvival.depthMeters}m ·{' '}
@@ -330,7 +333,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold text-slate-200">
-                    <span className="text-cyan-300">Perlengkapan Selam:</span>
+                    <span className="text-cyan-300">Perlengkapan Selam</span>
                     {hud.oceanSurvival.unlimitedOxygen && hud.oceanSurvival.ownedGear.length === 0 ? (
                       <span className="rounded-lg border border-emerald-400/40 bg-emerald-950/60 px-2 py-0.5 text-[10px] font-extrabold text-emerald-200">
                         ✓ Pakaian Renang Aktif (O₂ Tak Terbatas)
@@ -569,7 +572,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                         ? 'Istana IELTS Ditutup Sementara (Segera Hadir!)'
                         : `Masuk Istana IELTS 3D ${
                             portalLocked
-                              ? `(${hud.crowns}/6 Mahkota — atau buka di Opsi)`
+                              ? `(${hud.crowns}/6 Mahkota atau buka di Opsi)`
                               : '(Terbuka!)'
                           }`}
                     </span>
@@ -612,10 +615,10 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
             {tab === 'options' && <Settings className="h-4 w-4 shrink-0 text-amber-300 sm:h-5 sm:w-5" />}
             {tab === 'guide' && <HelpCircle className="h-4 w-4 shrink-0 text-amber-300 sm:h-5 sm:w-5" />}
             <h2 className="truncate text-xs font-black uppercase tracking-wider text-amber-200 [text-shadow:0_1px_2px_rgba(0,0,0,0.92)] sm:text-sm">
-              {tab === 'bag' && 'Tas Hoot: 8 Senjata, 6 Pusaka & Mahkota'}
+              {tab === 'bag' && `Tas ${resolvedPlayerName} · 8 Senjata, 6 Pusaka & Mahkota`}
               {tab === 'kamus' && `Kamus Kata (${hud.wordsMastered}/${VOCAB_CATALOG.length} Dikuasai)`}
               {tab === 'quests' && 'Misi Wilayah & Checklist 5 Pintu'}
-              {tab === 'options' && 'Opsi, Kesulitan & Panduan Hoot'}
+              {tab === 'options' && `Opsi, Kesulitan & Panduan ${resolvedPlayerName}`}
               {tab === 'guide' && 'Petunjuk Bermain & Taktik Gua Voxel'}
             </h2>
           </div>
@@ -646,7 +649,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                       : 'Belum punya senjata! Ambil di rumput Hutan Kata'}
                   </div>
                   <div className="text-xs font-semibold text-slate-300">
-                    Berlian: {hud.diamonds} 💎 · Paket +{activeWeaponDef.packSize} peluru seharga{' '}
+                    Berlian {hud.diamonds} 💎 · Paket +{activeWeaponDef.packSize} peluru seharga{' '}
                     {AMMO_COST} 💎
                   </div>
                 </div>
@@ -745,7 +748,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                             {w.desc}
                           </div>
                           <div className="text-[10px] font-bold text-amber-200/90">
-                            Asal: {w.originLabel}
+                            Asal {w.originLabel}
                           </div>
                         </div>
                         {owned ? (
@@ -1006,7 +1009,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                           {ZONE_INFO[q.zoneId]?.conflict}
                         </p>
                         <div className="mt-1 font-mono-nums text-xs text-amber-200">
-                          Hadiah: +{q.rewardXp} XP · +{q.rewardDiamonds} 💎 · {cleared.length}/5 Pintu
+                          Hadiah +{q.rewardXp} XP · +{q.rewardDiamonds} 💎 · {cleared.length}/5 Pintu
                         </div>
                       </div>
                       <div className="flex items-center gap-1.5">
@@ -1056,7 +1059,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
             </div>
           )}
 
-          {/* TAB 5: OPSI & PANDUAN HOOT */}
+          {/* TAB 5 OPSI & PANDUAN */}
           {tab === 'options' && (
             <div className="space-y-3.5">
               {/* Aim Mode (Bidik Otomatis vs Bidik Bebas) */}
@@ -1159,7 +1162,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                     <div className="text-xs font-black">Akses Istana IELTS</div>
                     <div className="text-[11px] text-slate-300">
                       {IELTS_TEMPORARILY_LOCKED
-                        ? 'Ditutup sementara — fokus petualangan 6 pulau Nusantara Kata'
+                        ? 'Ditutup sementara untuk fokus petualangan 6 pulau Nusantara Kata'
                         : hud.settings.storyLocked
                         ? 'Mode Cerita (Butuh 6 Mahkota)'
                         : 'Mode Bebas (Langsung Masuk)'}
@@ -1182,7 +1185,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                   <div>
                     <div className="text-xs font-black">Timer Soal Pintu</div>
                     <div className="text-[11px] text-slate-300">
-                      Bilah Hoot vs Monster saat belajar
+                      Bilah {resolvedPlayerName} vs Monster saat belajar
                     </div>
                   </div>
                   <span className="rounded-lg border border-amber-300/40 bg-amber-500/25 px-2.5 py-1 text-xs font-black text-amber-200">
@@ -1270,7 +1273,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                 );
               })()}
 
-              {/* Panduan Hoot & Diglosa Credits */}
+              {/* Panduan & Diglosa Credits */}
               <div className="rounded-xl border border-white/20 bg-slate-950/30 p-3.5">
                 <button
                   type="button"
@@ -1285,11 +1288,11 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                 </button>
                 {showRpgHelp && (
                   <ul className="mt-2.5 space-y-1 text-xs font-medium text-slate-200">
-                    <li>• <strong>Gerak:</strong> WASD / Panah, Ketuk lantai 3D, atau Joystick Virtual.</li>
-                    <li>• <strong>Senjata &amp; Kekuatan:</strong> Senjata kecil (Ketapel / Kerikil) butuh <strong>3× tembakan</strong> untuk mematahkan perisai monster sebelum Kuis Duel muncul.</li>
-                    <li>• <strong>Gua Voxel (Minecraft):</strong> Slot <strong>9 (⛏️)</strong> gali balok, Slot <strong>0 (🔦)</strong> pasang obor, Slot <strong>B (🧱)</strong> pasang Blok Pelindung, serta cari <strong>Peti Senjata Gua</strong> acak!</li>
-                    <li>• <strong>Interaksi:</strong> Tekan <strong>E</strong> / klik langsung NPC, Pintu Misi (1–5), Peti Senjata, Monster, atau Portal.</li>
-                    <li>• <strong>Taktik Duel:</strong> Tekan <strong>AMBIL GILIRAN!</strong> secepatnya agar monster tidak menyerang duluan, dan manfaatkan 6 Pusaka.</li>
+                    <li>• <strong>Gerak</strong> dengan WASD / Panah, Ketuk lantai 3D, atau Joystick Virtual.</li>
+                    <li>• <strong>Senjata &amp; Kekuatan</strong> pada senjata kecil (Ketapel / Kerikil) butuh <strong>3× tembakan</strong> untuk mematahkan perisai monster sebelum Kuis Duel muncul.</li>
+                    <li>• <strong>Gua Voxel (Minecraft)</strong> memakai Slot <strong>9 (⛏️)</strong> gali balok, Slot <strong>0 (🔦)</strong> pasang obor, Slot <strong>B (🧱)</strong> pasang Blok Pelindung, serta cari <strong>Peti Senjata Gua</strong> acak!</li>
+                    <li>• <strong>Interaksi</strong> dengan tekan <strong>E</strong> / klik langsung NPC, Pintu Misi (1–5), Peti Senjata, Monster, atau Portal.</li>
+                    <li>• <strong>Taktik Duel</strong> yakni tekan <strong>AMBIL GILIRAN!</strong> secepatnya agar monster tidak menyerang duluan, dan manfaatkan 6 Pusaka.</li>
                   </ul>
                 )}
 
@@ -1305,10 +1308,10 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                 )}
 
                 <div className="mt-3 flex items-center justify-between border-t border-white/10 pt-2.5 text-[11px] font-bold text-slate-300">
-                  <span>Diglosa: Petualangan Kata 3D · Diglosa Edukasi Digital</span>
+                  <span>Diglosa Petualangan Kata 3D · Diglosa Edukasi Digital</span>
                   <span className="inline-flex items-center gap-1 text-amber-200">
                     <Crosshair className="h-3.5 w-3.5" />
-                    <span>Target Harian: {hud.dailyCount}/{hud.dailyGoal}</span>
+                    <span>Target Harian {hud.dailyCount}/{hud.dailyGoal}</span>
                   </span>
                 </div>
               </div>
@@ -1346,7 +1349,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
             </div>
           )}
 
-          {tab === 'guide' && <GuideTabContent hud={hud} />}
+          {tab === 'guide' && <GuideTabContent hud={hud} playerName={playerName} />}
         </div>
       </div>
     </div>

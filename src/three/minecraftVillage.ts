@@ -965,7 +965,7 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     x: -6.5,
     z: 111.5,
     radius: 3.4,
-    message: 'Sumur Batu Desa Sapaan: Warga berkumpul di sini mengisi air sebelum berangkat bekerja!',
+    message: 'Sumur Batu Desa Sapaan menjadi tempat warga berkumpul mengisi air sebelum berangkat bekerja!',
     mesh: well,
   });
 
@@ -1185,7 +1185,7 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
       speed: 1.45,
       variant: { shirtHex: 0x78350f, pantsHex: 0x451a03 },
       label: 'Sesepuh Gerbang Utara (Tua · Laki-laki)',
-      dialogue: 'Setiap pahlawan besar selalu mulai dari sopan santun dan sapaan sederhana.',
+      dialogue: 'Setiap petualang besar selalu mulai dari sopan santun dan sapaan sederhana.',
     },
 
     // =========================================================================
@@ -1441,7 +1441,7 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
       speed: 1.7,
       variant: { hairHex: 0x7e22ce, shirtHex: 0x3b0764 },
       label: 'Pengajar Sejarah Waktu (Dewasa · Perempuan Berhijab)',
-      dialogue: 'Ingat cara menyebut waktu: Seven o’clock, Half past eight, Quarter to ten!',
+      dialogue: 'Ingat cara menyebut waktu dalam Bahasa Inggris seperti Seven o’clock, Half past eight, dan Quarter to ten!',
     },
     {
       archetype: 'crystal_scholar',
@@ -1526,7 +1526,7 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
       speed: 1.7,
       variant: { shirtHex: 0x4338ca, hairHex: 0x4f46e5 },
       label: 'Peneliti Prasasti Portal (Dewasa · Perempuan Berhijab)',
-      dialogue: 'Who, What, Where, When, Why—kelima kunci itu membuka Portal Agung!',
+      dialogue: 'Who, What, Where, When, dan Why adalah kelima kunci yang membuka Portal Agung!',
     },
     {
       archetype: 'temple_guardian',
@@ -1577,7 +1577,7 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
       speed: 1.85,
       variant: { shirtHex: 0x0284c7, pantsHex: 0x1e3a8a },
       label: 'Petugas Patroli Citadel (Dewasa · Laki-laki)',
-      dialogue: 'Menjaga keamanan persimpangan 6 pulau agar para pahlawan bebas melintas!',
+      dialogue: 'Menjaga keamanan persimpangan 6 pulau agar para petualang bebas melintas!',
     },
     {
       archetype: 'street_vendor',
@@ -1697,7 +1697,7 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     group.add(v.root);
     clickables.push(v.root);
     const msg = cp.dialogue
-      ? `${cp.label ?? spec.displayNameId}: "${cp.dialogue}" [${spec.professionId} · HP ${spec.stats.hp} / ATK ${spec.stats.atk} / NRG ${spec.stats.nrg}]`
+      ? `${cp.label ?? spec.displayNameId} berkata, "${cp.dialogue}" [${spec.professionId} · HP ${spec.stats.hp} / ATK ${spec.stats.atk} / NRG ${spec.stats.nrg}]`
       : `${spec.socialMessageId} [${spec.professionId} · HP ${spec.stats.hp} / ATK ${spec.stats.atk} / NRG ${spec.stats.nrg}]`;
     const inter: VillageInteractable = {
       id,
@@ -1817,7 +1817,7 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     x: golem1.x,
     z: golem1.z,
     radius: 3.4,
-    message: 'Iron Golem Desa Sapaan: Penjaga setia desa yang ramah kepada lebah dan warga!',
+    message: 'Iron Golem Desa Sapaan adalah penjaga setia desa yang ramah kepada lebah dan warga!',
     mesh: golem1.root,
   };
   golem1.interactable = golem1Inter;

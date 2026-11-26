@@ -170,7 +170,7 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
           onClick={() => void handleCopyCode()}
           title={`Salin kode room ${room.code} (${
             connectedPeers > 0
-              ? `P2P langsung: ${connectedPeers}`
+              ? `${connectedPeers} koneksi P2P langsung`
               : members.length > 1
               ? 'Cloud Relay aktif'
               : 'Menunggu teman'
@@ -458,7 +458,7 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
                     <span
                       className={`font-black ${isMine ? 'text-amber-300' : 'text-cyan-300'}`}
                     >
-                      {m.senderName}:{' '}
+                      {m.senderName} ·{' '}
                     </span>
                     <span className="text-slate-100">{m.text}</span>
                   </div>

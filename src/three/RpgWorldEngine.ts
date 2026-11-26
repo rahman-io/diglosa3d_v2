@@ -19,6 +19,7 @@ import {
   getZoneNpcById,
   MAX_AMMO,
   NPC_CATALOG,
+  personalizePlayerText,
   RELICS,
   RIBBONS,
   SAVE_KEY,
@@ -621,9 +622,9 @@ const PROLOGUE_SCENES: PrologueSceneSpec[] = [
     accentColor: '#f59e0b',
     worldTimeTick: 4200,
     textId:
-      'Dahulu kala, di seberang lautan biru yang tenang, berdirilah sebuah kerajaan yang indah bernama Kerajaan Kata, tempat enam pulau hijau saling terhubung oleh jembatan cahaya dan angin pagi yang lembut. Kerajaan itu dipimpin oleh Raja Aksara yang arif lagi pemurah, sehingga seluruh penduduk di Desa Sapaan, Pasar Rasa, Hutan Satwa, Gerbang Kota, Menara Waktu, hingga Gua Portal dapat hidup rukun, saling menyapa dengan kata-kata yang hangat, serta bernyanyi riang setiap hari. Di antara rakyat yang berbahagia itu, hiduplah seorang pemuda pemberani bernama Hoot bersama adiknya yang lemah lembut bernama Lila, seorang gadis kecil berhati emas yang selalu menghiasi rambutnya dengan pita merah yang indah.',
+      'Dahulu kala, di seberang lautan biru yang tenang, berdirilah sebuah kerajaan yang indah bernama Kerajaan Kata, tempat enam pulau hijau saling terhubung oleh jembatan cahaya dan angin pagi yang lembut. Kerajaan itu dipimpin oleh Raja Aksara yang arif lagi pemurah, sehingga seluruh penduduk di Desa Sapaan, Pasar Rasa, Hutan Satwa, Gerbang Kota, Menara Waktu, hingga Gua Portal dapat hidup rukun, saling menyapa dengan kata-kata yang hangat, serta bernyanyi riang setiap hari. Di antara rakyat yang berbahagia itu, hiduplah seorang pemuda pemberani bernama {player} bersama adiknya yang lemah lembut bernama Lila, seorang gadis kecil berhati emas yang selalu menghiasi rambutnya dengan pita merah yang indah.',
     textEn:
-      'Long ago, across a tranquil blue sea, there stood a lovely kingdom named Kerajaan Kata, where six green islands were joined by bridges of light and gentle morning breezes. The realm was ruled by wise and generous Raja Aksara, so the townsfolk across Desa Sapaan, Pasar Rasa, Hutan Satwa, Gerbang Kota, Menara Waktu, and Gua Portal lived in harmony, greeting one another with warm words and singing joyfully each day. Among those happy people lived a brave young explorer named Hoot and his gentle little sister Lila, a kind-hearted girl who always adorned her hair with a bright red ribbon.',
+      'Long ago, across a tranquil blue sea, there stood a lovely kingdom named Kerajaan Kata, where six green islands were joined by bridges of light and gentle morning breezes. The realm was ruled by wise and generous Raja Aksara, so the townsfolk across Desa Sapaan, Pasar Rasa, Hutan Satwa, Gerbang Kota, Menara Waktu, and Gua Portal lived in harmony, greeting one another with warm words and singing joyfully each day. Among those happy people lived a brave young explorer named {player} and his gentle little sister Lila, a kind-hearted girl who always adorned her hair with a bright red ribbon.',
   },
   {
     sceneTitle: 'Malam Kelam Ketika Badai Bayangan Menyerbu Istana',
@@ -648,18 +649,18 @@ const PROLOGUE_SCENES: PrologueSceneSpec[] = [
     accentColor: '#e11d48',
     worldTimeTick: 18600,
     textId:
-      'Beruntunglah pada saat-saat genting di malam itu, Raja Aksara berhasil membawa Lila menyingkir jauh hingga berlindung di balik Pintu Ungu yang kokoh di pulau paling utara. Meskipun hatinya diliputi rindu kepada sang kakak, Lila yang cerdik tidak pernah menyerah, karena sepanjang perjalanan melintasi kepulauan ia sengaja menjatuhkan enam pita merah kesayangannya sebagai penunjuk jalan bagi Hoot. Sebelum gerbang istana tertutup rapat, ia pun sempat menuliskan sepucuk surat bersampul merah, lalu menyerahkannya kepada seekor burung hantu setia agar segera diterbangkan mencari kakaknya.',
+      'Beruntunglah pada saat-saat genting di malam itu, Raja Aksara berhasil membawa Lila menyingkir jauh hingga berlindung di balik Pintu Ungu yang kokoh di pulau paling utara. Meskipun hatinya diliputi rindu kepada sang kakak, Lila yang cerdik tidak pernah menyerah, karena sepanjang perjalanan melintasi kepulauan ia sengaja menjatuhkan enam pita merah kesayangannya sebagai penunjuk jalan bagi {player}. Sebelum gerbang istana tertutup rapat, ia pun sempat menuliskan sepucuk surat bersampul merah, lalu menyerahkannya kepada seekor burung hantu setia agar segera diterbangkan mencari kakaknya.',
     textEn:
-      'Fortunately in that perilous night hour, Raja Aksara managed to lead Lila safely away to shelter behind the sturdy Purple Gate on the northernmost island. Though her heart ached for her brother, clever little Lila never gave up, for along her journey across the archipelago she quietly dropped six of her beloved red ribbons to guide Hoot. Before the palace gate swung shut, she wrote a red-sealed letter and entrusted it to a faithful messenger owl to carry to her brother.',
+      'Fortunately in that perilous night hour, Raja Aksara managed to lead Lila safely away to shelter behind the sturdy Purple Gate on the northernmost island. Though her heart ached for her brother, clever little Lila never gave up, for along her journey across the archipelago she quietly dropped six of her beloved red ribbons to guide {player}. Before the palace gate swung shut, she wrote a red-sealed letter and entrusted it to a faithful messenger owl to carry to her brother.',
   },
   {
     sceneTitle: 'Terbang Menembus Kabut Malam Menuju Desa Sapaan',
     accentColor: '#10b981',
     worldTimeTick: 19600,
     textId:
-      'Kini burung hantu utusan istana itu membelah awan dan meluncur menembus kabut malam yang dingin, mengitari satu demi satu pulau yang sunyi untuk mencari jejak hingga tiba di pulau terakhir bernama Desa Sapaan. Di tengah alun-alun desa yang temaram cahaya lentera, tampaklah Hoot berdiri seorang diri dengan wajah penuh tanda tanya, menatap langit malam sambil menunggu kabar tentang nasib adiknya serta negerinya. Perlahan sang burung hantu menukik turun sambil mencengkeram surat bersampul merah itu erat-erat, karena kisah petualangan besar untuk menyelamatkan Kerajaan Kata baru saja akan dimulai.',
+      'Kini burung hantu utusan istana itu membelah awan dan meluncur menembus kabut malam yang dingin, mengitari satu demi satu pulau yang sunyi untuk mencari jejak hingga tiba di pulau terakhir bernama Desa Sapaan. Di tengah alun-alun desa yang temaram cahaya lentera, tampaklah {player} berdiri seorang diri dengan wajah penuh tanda tanya, menatap langit malam sambil menunggu kabar tentang nasib adiknya serta negerinya. Perlahan sang burung hantu menukik turun sambil mencengkeram surat bersampul merah itu erat-erat, karena kisah petualangan besar untuk menyelamatkan Kerajaan Kata baru saja akan dimulai.',
     textEn:
-      'Now the royal messenger owl parts the clouds and glides through the cold night mist, circling one quiet island after another in search of him until it reaches the final island of Desa Sapaan. In the center of the village square bathed in soft lantern light, Hoot stands alone with a puzzled gaze, looking up into the night sky as he awaits word of his sister and his homeland. Gently the owl swoops down clutching the red-sealed letter tight, for the grand adventure to save Kerajaan Kata is just about to begin.',
+      'Now the royal messenger owl parts the clouds and glides through the cold night mist, circling one quiet island after another in search of him until it reaches the final island of Desa Sapaan. In the center of the village square bathed in soft lantern light, {player} stands alone with a puzzled gaze, looking up into the night sky as he awaits word of his sister and his homeland. Gently the owl swoops down clutching the red-sealed letter tight, for the grand adventure to save Kerajaan Kata is just about to begin.',
   },
 ];
 
@@ -2520,11 +2521,15 @@ export class RpgWorldEngine {
       const nightDef = getActiveZoneNpcDef(zoneId, true);
       soundEngine.playPick();
       this.showBanner(
-        `🔑 ${nightDef.name} (Shift Malam): "Silakan, pintu ${nightDef.zoneName} kubuka untukmu malam ini!"`,
+        `🔑 ${nightDef.name} (Shift Malam) berkata, "Silakan, pintu ${nightDef.zoneName} kubuka untukmu malam ini!"`,
         4.6,
       );
       this.pushHud(true);
     }
+  }
+
+  private getPlayerDisplayName(): string {
+    return this.localPlayerName.trim() || 'Hoot';
   }
 
   private interactWithOverworldNpc(npcId: string): void {
@@ -2541,8 +2546,8 @@ export class RpgWorldEngine {
       npc.lastTalkBannerMs = Date.now();
       const msg =
         npc.shift === 'day'
-          ? `💬 ${def.name} (Lepas Piket): "Shift siangku sudah selesai, sekarang aku warga biasa. Temui ${partnerDef?.name ?? 'Penjaga Malam'} di pintu ${def.zoneName}!"`
-          : `💬 ${def.name} (Lepas Piket): "Pagi hingga sore ${partnerDef?.name ?? 'Penjaga Siang'} yang berjaga di pintu ${def.zoneName}. Nanti malam giliranku bertugas!"`;
+          ? `💬 ${def.name} (Lepas Piket) berkata, "Shift siangku sudah selesai, sekarang aku warga biasa. Temui ${partnerDef?.name ?? 'Penjaga Malam'} di pintu ${def.zoneName}!"`
+          : `💬 ${def.name} (Lepas Piket) berkata, "Pagi hingga sore ${partnerDef?.name ?? 'Penjaga Siang'} yang berjaga di pintu ${def.zoneName}. Nanti malam giliranku bertugas!"`;
       this.showBanner(msg, 5.0);
       this.pushHud(true);
       return;
@@ -2560,9 +2565,10 @@ export class RpgWorldEngine {
       this.villageAmbushState.stage = 'walking_home';
       this.villageAmbushState.resolved = true;
       this.villageAmbushState.timer = 0;
+      const pName = this.getPlayerDisplayName();
       for (const ambNpc of this.villageAmbushState.npcs) {
         if (ambNpc.role === 'survivor' && ambNpc.alive) {
-          ambNpc.shoutLive = '👋 Kami pulang ke rumah dulu ya, Pahlawan! Semoga berhasil!';
+          ambNpc.shoutLive = `👋 Kami pulang ke rumah dulu ya, ${pName}! Semoga berhasil!`;
         }
       }
     }
@@ -2595,6 +2601,16 @@ export class RpgWorldEngine {
     this.phase = 'dialogue';
     this.heldKeys.clear();
     this.applyCameraVisibilityAndControls();
+    this.updateSideAngleDialogueCamera(
+      this.heroPos.x,
+      this.heroPos.y,
+      this.heroPos.z,
+      npc.x,
+      npcGroundY,
+      npc.z,
+      1 / 60,
+      true,
+    );
     this.callbacks.onOpenNpcDialogue(npcId);
     this.pushHud(true);
   }
@@ -3224,7 +3240,7 @@ export class RpgWorldEngine {
     }
     return {
       seed: this.missionWaveSeed,
-      squadName: this.currentSquadName || `${this.localPlayerName || 'HOOT'} SQUAD`,
+      squadName: this.currentSquadName || `${this.localPlayerName || 'PETUALANG'} SQUAD`,
       total,
       defeated,
       remaining,
@@ -3244,7 +3260,7 @@ export class RpgWorldEngine {
     this.saveProgress();
     const state = this.getWaveMissionState()!;
     this.showBanner(
-      `🎯 Misi Baru: Habisi ${state.total} Monster Darat, Laut & Terbang (${state.quizTotal} Kata A1 · ${state.combatTotal} Duel)!`,
+      `🎯 Misi Baru untuk menghabisi ${state.total} Monster Darat, Laut & Terbang (${state.quizTotal} Kata A1 dan ${state.combatTotal} Duel)!`,
       4.8,
     );
     this.pushHud(true);
@@ -3896,12 +3912,21 @@ export class RpgWorldEngine {
 
     let minCamY = 0.78;
     if (this.worldMode === 'overworld') {
-      for (const frac of [0.55, 0.85, 1.0]) {
+      for (const frac of [0.25, 0.5, 0.75, 1.0]) {
         const sx = originX + dirX * safeDist * frac;
         const sz = originZ + dirZ * safeDist * frac;
         const tSamp = sampleArchipelagoTerrain(sx, sz);
         if (tSamp.isLandOrBridge) {
-          minCamY = Math.max(minCamY, tSamp.groundY + 0.85);
+          const neededY = tSamp.groundY + 0.85;
+          minCamY = Math.max(minCamY, neededY);
+          const curY = originY + dirY * safeDist * frac;
+          if (curY < neededY) {
+            if (dirY < -0.01) {
+              safeDist = Math.min(safeDist, Math.max(1.2, (neededY - originY) / (dirY * frac)));
+            } else {
+              safeDist = Math.min(safeDist, Math.max(1.2, safeDist * frac * 0.75));
+            }
+          }
         }
       }
     }
@@ -4012,10 +4037,21 @@ export class RpgWorldEngine {
           safeDist = Math.min(safeDist, Math.max(1.8, (tunnelMaxCamY - originY) / dirY));
         }
       }
+      if (this.archipelagoRig?.cameraOccluders.length) {
+        _v1.set(originX, originY, originZ);
+        _v2.set(dirX, dirY, dirZ).normalize();
+        this.camRaycaster.near = 0.15;
+        this.camRaycaster.far = safeDist + 0.55;
+        this.camRaycaster.set(_v1, _v2);
+        const hits = this.camRaycaster.intersectObjects(this.archipelagoRig.cameraOccluders, true);
+        if (hits.length > 0) {
+          safeDist = Math.min(safeDist, Math.max(1.25, hits[0].distance - 0.52));
+        }
+      }
       for (const obs of this.villageRig.obstacles) {
-        if (obs.halfW < 1.25 && obs.halfD < 1.25) continue;
-        const baseY = getArchipelagoGroundY(obs.x, obs.z);
-        const h = baseY + (obs.halfW >= 2.4 ? 7.2 : 4.2);
+        if (obs.halfW < 0.55 && obs.halfD < 0.55) continue;
+        const baseY = obs.minY ?? getArchipelagoGroundY(obs.x, obs.z);
+        const h = obs.maxY ?? baseY + (obs.halfW >= 2.4 ? 7.2 : 4.2);
         const hit = this.rayIntersectAabbDist(
           originX,
           originY,
@@ -4065,8 +4101,8 @@ export class RpgWorldEngine {
     return safeDist;
   }
 
-  private snapCameraBehindHero(): void {
-    this.cameraYaw = 0;
+  private snapCameraBehindHero(targetYaw?: number): void {
+    this.cameraYaw = targetYaw ?? this.heroYaw + Math.PI;
     this.cameraPitch = 0.22;
     const sinY = Math.sin(this.cameraYaw);
     const cosY = Math.cos(this.cameraYaw);
@@ -4161,7 +4197,7 @@ export class RpgWorldEngine {
       } else if (targetPhase === 'paused') {
         this.setPhase('paused');
       } else if (!silent) {
-        this.showBanner('Selamat datang kembali, Hoot! Lanjutkan petualanganmu di gua!', 3.6);
+        this.showBanner(`Selamat datang kembali, ${this.getPlayerDisplayName()}! Lanjutkan petualanganmu di gua!`, 3.6);
         soundEngine.playWin();
       }
       this.pushHud(true);
@@ -4176,7 +4212,7 @@ export class RpgWorldEngine {
       } else if (targetPhase === 'paused') {
         this.setPhase('paused');
       } else if (!silent) {
-        this.showBanner('Selamat datang kembali, Hoot! Lanjutkan di Istana IELTS!', 3.6);
+        this.showBanner(`Selamat datang kembali, ${this.getPlayerDisplayName()}! Lanjutkan di Istana IELTS!`, 3.6);
         soundEngine.playWin();
       }
       this.pushHud(true);
@@ -4282,8 +4318,8 @@ export class RpgWorldEngine {
     if (!silent) {
       this.showBanner(
         this.restoredWorldMode === 'academy' && IELTS_TEMPORARILY_LOCKED
-          ? '🔒 Istana IELTS ditutup sementara — selamat datang kembali di Desa Sapaan!'
-          : 'Selamat datang kembali, Hoot! Lanjutkan petualanganmu!',
+          ? '🔒 Istana IELTS ditutup sementara sehingga selamat datang kembali di Desa Sapaan!'
+          : `Selamat datang kembali, ${this.getPlayerDisplayName()}! Lanjutkan petualanganmu!`,
         3.8,
       );
       soundEngine.playWin();
@@ -6904,6 +6940,7 @@ export class RpgWorldEngine {
       this.controls.update();
     }
 
+    const pName = this.getPlayerDisplayName();
     this.storyDialog = {
       kind: 'prologue',
       step: idx,
@@ -6911,8 +6948,8 @@ export class RpgWorldEngine {
       sceneTitle: spec.sceneTitle,
       speakerName: 'Kisah Kerajaan Kata',
       speakerRole: `Adegan ${idx + 1} dari ${PROLOGUE_SCENES.length}`,
-      textEn: spec.textEn,
-      textId: spec.textId,
+      textEn: personalizePlayerText(spec.textEn, pName),
+      textId: personalizePlayerText(spec.textId, pName),
       accentColor: spec.accentColor,
     };
     this.updateOverworldDayNightAtmosphere(0, false);
@@ -6999,6 +7036,7 @@ export class RpgWorldEngine {
     );
     this.controls.update();
 
+    const pName = this.getPlayerDisplayName();
     this.storyDialog = {
       kind: 'opening',
       step: 0,
@@ -7006,8 +7044,8 @@ export class RpgWorldEngine {
       speakerRole: 'Utusan Istana · Desa Sapaan',
       speakerKind: 'owl',
       speakerSide: 'npc',
-      textEn: 'Hoot! I finally found you! Tonight, armed shadow monsters raided the Northern Palace, shattered the Royal Crown into six shards, and stole English words across the islands!',
-      textId: 'Hoot! Akhirnya aku menemukanmu! Malam ini gerombolan monster bayangan bersenjata menyerbu Istana Utara Kerajaan Kata, memecah Mahkota Kerajaan menjadi enam keping, dan merampas kata-kata Bahasa Inggris di seluruh kepulauan!',
+      textEn: `${pName}! I finally found you! Tonight, armed shadow monsters raided the Northern Palace, shattered the Royal Crown into six shards, and stole English words across the islands!`,
+      textId: `${pName}! Akhirnya aku menemukanmu! Malam ini gerombolan monster bayangan bersenjata menyerbu Istana Utara Kerajaan Kata, memecah Mahkota Kerajaan menjadi enam keping, dan merampas kata-kata Bahasa Inggris di seluruh kepulauan!`,
       accentColor: '#f59e0b',
     };
     soundEngine.playDoor();
@@ -7016,6 +7054,7 @@ export class RpgWorldEngine {
 
   public advanceStory(): void {
     if (!this.storyDialog) return;
+    const pName = this.getPlayerDisplayName();
 
     if (this.storyDialog.kind === 'prologue') {
       const nextStep = this.storyDialog.step + 1;
@@ -7056,7 +7095,7 @@ export class RpgWorldEngine {
           speakerRole: 'Menyampaikan Amanat Kerajaan',
           speakerKind: 'owl',
           speakerSide: 'npc',
-          textEn: 'Raja Aksara also asked me to tell you this: very few words remain in the palace, while six crown shards are scattered across six islands guarded by mighty bosses. Baginda asks you to free every island starting from Desa Sapaan!',
+          textEn: 'Raja Aksara also asked me to tell you that very few words remain in the palace, while six crown shards are scattered across six islands guarded by mighty bosses. Baginda asks you to free every island starting from Desa Sapaan!',
           textId: 'Raja Aksara juga memintaku menyampaikan bahwa kini hanya tersisa sedikit kata di istana, sementara enam pecahan mahkota tersebar di enam pulau dan dijaga monster bos besar, sehingga Baginda memintamu membebaskan keenam pulau dimulai dari Desa Sapaan.',
           accentColor: '#8b5cf6',
         };
@@ -7067,7 +7106,7 @@ export class RpgWorldEngine {
         this.storyDialog = {
           kind: 'opening',
           step: 3,
-          speakerName: 'Hoot',
+          speakerName: pName,
           speakerRole: 'Penjelajah Nusantara Kata',
           speakerKind: 'hero',
           speakerSide: 'hero',
@@ -7086,7 +7125,7 @@ export class RpgWorldEngine {
           speakerKind: 'owl',
           speakerSide: 'npc',
           textEn: 'You have no weapon yet! Pick up the Starter Weapon in the grass on the left side of this village square, talk to the village guardian, and collect Lila’s 6 red ribbons across the islands. Good luck!',
-          textId: 'Bagus, tapi kamu belum memegang senjata! Ambil Senjata Pemula yang terjatuh di sebelah kiri alun-alun desa ini, temui penjaga desa, lalu kumpulkan 6 pita merah milik Lila di tiap pulau. Aku terbang duluan, Hoot!',
+          textId: `Bagus, tapi kamu belum memegang senjata! Ambil Senjata Pemula yang terjatuh di sebelah kiri alun-alun desa ini, temui penjaga desa, lalu kumpulkan 6 pita merah milik Lila di tiap pulau. Aku terbang duluan, ${pName}!`,
           accentColor: '#10b981',
         };
       } else {
@@ -7110,14 +7149,13 @@ export class RpgWorldEngine {
           maxStep: 2,
           speakerName: 'Laras & Bagas (Warga Desa)',
           speakerRole: 'Petunjuk & Arah ke Penjaga Pulau',
-          speakerKind: 'captive',
-          captiveKind: 'girl',
-          captiveColor: 0xf472b6,
+          speakerKind: 'villagers',
+          villagerArchetypes: ['florist_girl', 'farmer_boy'],
           speakerSide: 'npc',
           textEn:
-            'Since the dark fog spread across the archipelago, everyone hid indoors and the village doors lost their greeting words! Come with us now—we will lead you straight to the Desa Sapaan Island Guardian!',
+            'Since the dark fog spread across the archipelago, everyone hid indoors and the village doors lost their greeting words! Come with us now so we can lead you straight to the Desa Sapaan Island Guardian!',
           textId:
-            'Sejak kabut pekat menyelimuti pulau ini, semua warga sembunyi di dalam rumah dan pintu-pintu kehilangan kata sapaannya! Ayo ikut kami sekarang—kami antar kamu langsung menemui Penjaga Pulau Desa Sapaan!',
+            'Sejak kabut pekat menyelimuti pulau ini, semua warga sembunyi di dalam rumah dan pintu-pintu kehilangan kata sapaannya! Ayo ikut kami sekarang agar kami bisa mengantarmu langsung menemui Penjaga Pulau Desa Sapaan!',
           accentColor: '#f59e0b',
         };
         soundEngine.playPick();
@@ -7127,7 +7165,7 @@ export class RpgWorldEngine {
           kind: 'village_rescue_talk',
           step: 2,
           maxStep: 2,
-          speakerName: 'Hoot',
+          speakerName: pName,
           speakerRole: 'Penjelajah Nusantara Kata',
           speakerKind: 'hero',
           speakerSide: 'hero',
@@ -7156,21 +7194,22 @@ export class RpgWorldEngine {
       const nextStep = this.storyDialog.step + 1;
       if (nextStep < story.introSteps.length) {
         const s = story.introSteps[nextStep];
+        const enText = personalizePlayerText(s.textEn, pName);
         this.storyDialog = {
           kind: 'dungeon_intro',
           step: nextStep,
           zoneId: zId,
-          speakerName: s.speakerName,
-          speakerRole: s.speakerRole,
-          textEn: s.textEn,
-          textId: s.textId,
+          speakerName: personalizePlayerText(s.speakerName, pName),
+          speakerRole: personalizePlayerText(s.speakerRole, pName),
+          textEn: enText,
+          textId: personalizePlayerText(s.textId, pName),
           accentColor: story.accentColor,
           speakerKind: 'npc',
           speakerNpcId: story.guardianId,
           speakerSide: 'npc',
         };
         if (zId !== 'gua_portal' || nextStep !== 1) {
-          soundEngine.speakEnglish(s.textEn);
+          soundEngine.speakEnglish(enText);
         }
         this.pushHud(true);
       } else {
@@ -7223,21 +7262,22 @@ export class RpgWorldEngine {
         if (this.dungeonRig) {
           this.dungeonRig.guardianAuraMat.color.setHex(0x22c55e);
         }
+        const guardianEn = personalizePlayerText(story.rescueGuardianEn, pName);
         this.storyDialog = {
           kind: 'dungeon_rescue',
           step: 1,
           zoneId: zId,
           speakerName: `${story.guardianName} (Suara Pulih!)`,
           speakerRole: `Penjaga ${ZONE_INFO[zId].name} · Reuni Keluarga`,
-          textEn: story.rescueGuardianEn,
-          textId: story.rescueGuardianId,
+          textEn: guardianEn,
+          textId: personalizePlayerText(story.rescueGuardianId, pName),
           accentColor: '#10b981',
           speakerKind: 'npc',
           speakerNpcId: story.guardianId,
           speakerSide: 'npc',
         };
         soundEngine.playWin();
-        soundEngine.speakEnglish(story.rescueGuardianEn);
+        soundEngine.speakEnglish(guardianEn);
         this.pushHud(true);
       } else if (nextStep === 2) {
         this.finalizeDungeonLiberation(zId);
@@ -7245,7 +7285,7 @@ export class RpgWorldEngine {
           kind: 'dungeon_rescue',
           step: 2,
           zoneId: zId,
-          speakerName: 'Hoot',
+          speakerName: pName,
           speakerRole: `${ZONE_INFO[zId].name} Bebas · Pecahan Mahkota ${rb.number}/6`,
           textEn: `Area liberated! Earned Crown Shard #${rb.number}/6, ${RELICS[boss.rewardRelic].name}, and ${wDef.name}!`,
           textId: `${story.captiveName} kembali bersama ${story.guardianName}! Gua kini terang benderang dan bebas dari bayangan monster.`,
@@ -7311,6 +7351,7 @@ export class RpgWorldEngine {
   private startDungeonIntroCutscene(zoneId: ZoneId): void {
     const story = ZONE_CAVE_STORIES[zoneId];
     const s0 = story.introSteps[0];
+    const pName = this.getPlayerDisplayName();
     this.phase = 'story';
     this.heldKeys.clear();
     this.applyCameraVisibilityAndControls();
@@ -7331,10 +7372,10 @@ export class RpgWorldEngine {
       kind: 'dungeon_intro',
       step: 0,
       zoneId,
-      speakerName: s0.speakerName,
-      speakerRole: s0.speakerRole,
-      textEn: s0.textEn,
-      textId: s0.textId,
+      speakerName: personalizePlayerText(s0.speakerName, pName),
+      speakerRole: personalizePlayerText(s0.speakerRole, pName),
+      textEn: personalizePlayerText(s0.textEn, pName),
+      textId: personalizePlayerText(s0.textId, pName),
       accentColor: story.accentColor,
     };
     soundEngine.playDoor();
@@ -7364,7 +7405,7 @@ export class RpgWorldEngine {
     if (zId) {
       const st = ZONE_CAVE_STORIES[zId];
       this.showBanner(
-        `Misi Gua ${ZONE_INFO[zId].name}: Buka 5 Pintu, kalahkan Bos, ambil Kunci Penjara & selamatkan ${st.captiveName}!`,
+        `Misi Gua ${ZONE_INFO[zId].name} yaitu membuka 5 Pintu, mengalahkan Bos, mengambil Kunci Penjara, dan menyelamatkan ${st.captiveName}!`,
         4.8,
       );
     }
@@ -7374,6 +7415,7 @@ export class RpgWorldEngine {
 
   private startDungeonRescueCutscene(zoneId: ZoneId): void {
     const story = ZONE_CAVE_STORIES[zoneId];
+    const pName = this.getPlayerDisplayName();
     this.phase = 'story';
     this.heldKeys.clear();
     this.applyCameraVisibilityAndControls();
@@ -7393,18 +7435,19 @@ export class RpgWorldEngine {
     this.controls.target.set(3.4, 1.7, 12.1);
     this.controls.update();
 
+    const captiveEn = personalizePlayerText(story.rescueCaptiveEn, pName);
     this.storyDialog = {
       kind: 'dungeon_rescue',
       step: 0,
       zoneId,
       speakerName: story.captiveName,
       speakerRole: `${story.captiveRole} · Terbebas dari Penjara!`,
-      textEn: story.rescueCaptiveEn,
-      textId: story.rescueCaptiveId,
+      textEn: captiveEn,
+      textId: personalizePlayerText(story.rescueCaptiveId, pName),
       accentColor: story.accentColor,
     };
     soundEngine.playFanfare();
-    soundEngine.speakEnglish(story.rescueCaptiveEn);
+    soundEngine.speakEnglish(captiveEn);
     this.pushHud(true);
   }
 
@@ -7511,7 +7554,7 @@ export class RpgWorldEngine {
       this.snapCameraBehindHero();
       this.saveProgress();
       this.showBanner(
-        '🎯 Misi Awal (Desa Sapaan): Ikuti cahaya biru di kiri desa untuk ambil Senjata Pemula!',
+        '🎯 Misi Awal di Desa Sapaan, ikuti cahaya biru di kiri desa untuk mengambil Senjata Pemula!',
         5.0,
       );
       soundEngine.playBuild();
@@ -7705,7 +7748,7 @@ export class RpgWorldEngine {
       speakerName: '⚠️ Desa Sapaan Diserang!',
       speakerRole: 'Warga Dikejar Monster',
       textEn: 'A flying monster abducted one villager into the sky! Press Mulai Main, grab the Starter Weapon on the left, and defeat the monsters chasing the two remaining villagers!',
-      textId: 'Satu warga baru saja dibawa terbang monster ke langit hingga menghilang! Dua warga lainnya masih diserang monster tepat di depanmu — tekan Mulai Main, segera ambil Senjata Pemula di sebelah kiri dan habisi monster-monster itu!',
+      textId: 'Satu warga baru saja dibawa terbang monster ke langit hingga menghilang! Dua warga lainnya masih diserang monster tepat di depanmu, jadi tekan Mulai Main, segera ambil Senjata Pemula di sebelah kiri dan habisi monster-monster itu!',
       accentColor: '#ef4444',
     };
     this.pushHud(true);
@@ -7835,6 +7878,7 @@ export class RpgWorldEngine {
     ];
     let sumX = 0;
     let sumZ = 0;
+    const pName = this.getPlayerDisplayName();
     survivors.forEach((n, idx) => {
       const [ox, oz] = npcOffsets[idx] ?? [3.15, 0];
       const pt = new THREE.Vector3(
@@ -7850,7 +7894,7 @@ export class RpgWorldEngine {
       n.yaw = Math.atan2(this.heroPos.x - n.x, this.heroPos.z - n.z);
       n.actor.root.position.set(n.x, n.y, n.z);
       n.actor.root.rotation.y = n.yaw;
-      n.shoutLive = idx === 0 ? '😭 Terima kasih, Pahlawan!' : '🙏 Kami diselamatkan!';
+      n.shoutLive = idx === 0 ? `😭 Terima kasih, ${pName}!` : '🙏 Kami diselamatkan!';
       sumX += n.x;
       sumZ += n.z;
     });
@@ -7868,6 +7912,16 @@ export class RpgWorldEngine {
     this.phase = 'story';
     this.storyTimer = 0;
     this.applyCameraVisibilityAndControls();
+    this.updateSideAngleDialogueCamera(
+      this.heroPos.x,
+      this.heroPos.y,
+      this.heroPos.z,
+      midX,
+      getArchipelagoGroundY(midX, midZ),
+      midZ,
+      1 / 60,
+      true,
+    );
 
     this.storyDialog = {
       kind: 'village_rescue_talk',
@@ -7875,14 +7929,13 @@ export class RpgWorldEngine {
       maxStep: 2,
       speakerName: 'Laras & Bagas (Warga Desa)',
       speakerRole: 'Warga Desa Sapaan · Terselamatkan',
-      speakerKind: 'captive',
-      captiveKind: 'girl',
-      captiveColor: 0xf472b6,
+      speakerKind: 'villagers',
+      villagerArchetypes: ['florist_girl', 'farmer_boy'],
       speakerSide: 'npc',
       textEn:
-        'Thank you so much, Hero! You saved our lives! It happened so fast—a giant flying monster swooped down, snatched one villager into the sky until he vanished in the mist, and those monsters chased us here!',
+        `Thank you so much, ${pName}! You saved our lives! It happened so fast when a giant flying monster swooped down, snatched one villager into the sky until he vanished in the mist, and those monsters chased us here!`,
       textId:
-        'Terima kasih banyak, Pahlawan! Kau menyelamatkan nyawa kami! Tadi mengerikan sekali—monster terbang besar tiba-tiba menyambar satu warga kami ke langit hingga lenyap ditelan kabut, lalu monster-monster darat itu mengejar kami!',
+        `Terima kasih banyak, ${pName}! Kau menyelamatkan nyawa kami! Tadi mengerikan sekali karena monster terbang besar tiba-tiba menyambar satu warga kami ke langit hingga lenyap ditelan kabut, lalu monster-monster darat itu mengejar kami!`,
       accentColor: '#10b981',
     };
 
@@ -7970,7 +8023,7 @@ export class RpgWorldEngine {
     this.applyCameraVisibilityAndControls();
     this.snapCameraBehindHero();
     this.showBanner(
-      `👆 Tutorial: Tekan tombol BICARA (atau E) untuk berbicara dengan ${activeGuardian.name}!`,
+      `👆 Tutorial, tekan tombol BICARA (atau E) untuk berbicara dengan ${activeGuardian.name}!`,
       6.0,
     );
     soundEngine.playPick();
@@ -8568,7 +8621,7 @@ export class RpgWorldEngine {
     const clearedSet = new Set(this.areaDoorsCleared[zoneId] || []);
 
     // 60% English Quiz Guardians (3 Penjaga Kata carrying 100% of remaining area vocab) +
-    // 40% Pure Real-Time Action Brawlers (2 Petarung Gua — zero quiz, fight directly in 3D!)
+    // 40% Pure Real-Time Action Brawlers (2 Petarung Gua, zero quiz, fight directly in 3D!)
     const quizWaves: string[][] = [[], [], []];
     deal.monsterWaves.forEach((wIds, idx) => {
       quizWaves[idx % 3].push(...wIds);
@@ -8894,7 +8947,7 @@ export class RpgWorldEngine {
           ? `Gua ${ZONE_INFO[zoneId].name} Bebas & Terang · ${caveStory.guardianName} & ${caveStory.captiveName} aman!`
           : bossBeaten
           ? `Bos kalah & gua terang! Ambil Kunci Penjara emas di tengah gua lalu selamatkan ${caveStory.captiveName}!`
-          : `Gua ${ZONE_INFO[zoneId].name}: Buka 5 Pintu, kalahkan Bos, lalu selamatkan ${caveStory.captiveName}!`,
+          : `Gua ${ZONE_INFO[zoneId].name} menantimu untuk membuka 5 Pintu, mengalahkan Bos, lalu menyelamatkan ${caveStory.captiveName}!`,
         4.8,
       );
     }
@@ -9040,7 +9093,7 @@ export class RpgWorldEngine {
     if (!resumeSavedPos) {
       soundEngine.playFanfare();
       this.showBanner(
-        'Epilog Istana IELTS! Keenam Pecahan Mahkota bersatu — Raja Aksara & Lila menyambutmu di aula!',
+        'Epilog Istana IELTS! Keenam Pecahan Mahkota kini bersatu saat Raja Aksara dan Lila menyambutmu di aula!',
         5.0,
       );
     }
@@ -9115,14 +9168,15 @@ export class RpgWorldEngine {
     const npc = getActiveZoneNpcDef(lastZoneId || 'desa_sapaan', this.getCurrentDayPhase() === 'malam');
     this.phase = 'story';
     this.applyCameraVisibilityAndControls();
+    const pName = this.getPlayerDisplayName();
     this.storyDialog = {
       kind: 'defeat_exit',
       step: 0,
       zoneId: lastZoneId,
       speakerName: npc?.name || 'Kakek Sapa',
       speakerRole: npc?.zoneName || 'Hutan Kata',
-      textEn: 'Rest up, Hoot! Your heart is half-recovered. Want to head right back or catch your breath first?',
-      textId: `Jangan menyerah, Hoot! Nyawamu dipulihkan (${this.hp}/${this.maxHp} ❤️). Ingin langsung kembali ke ${npc?.zoneName || 'sana'} atau istirahat dulu?`,
+      textEn: `Rest up, ${pName}! Your heart is half-recovered. Want to head right back or catch your breath first?`,
+      textId: `Jangan menyerah, ${pName}! Nyawamu dipulihkan (${this.hp}/${this.maxHp} ❤️). Ingin langsung kembali ke ${npc?.zoneName || 'sana'} atau istirahat dulu?`,
       accentColor: npc?.accentColor || '#f59e0b',
       defeatReason: this.lastDefeatReason || undefined,
     };
@@ -9200,7 +9254,7 @@ export class RpgWorldEngine {
     this.lastInputActivityMs = performance.now();
     if (this.phase !== 'playing') return;
     if (this.settings.aimMode !== 'manual') {
-      this.showBanner('Mode Bidik Otomatis aktif — ubah ke Bidik Bebas di Menu Opsi untuk Scope!', 2.5);
+      this.showBanner('Mode Bidik Otomatis sedang aktif, jadi ubah ke Bidik Bebas di Menu Opsi untuk menggunakan Scope!', 2.5);
       return;
     }
     if (this.activeHotbarSlot > 7 || !this.ownedWeapons.has(this.activeWeapon)) {
@@ -9259,10 +9313,10 @@ export class RpgWorldEngine {
       this.controls.update();
     }
     const labels: Record<CameraMode, string> = {
-      third_back: 'Sudut Pandang: Kamera Belakang (Orbit 360°)',
-      first_person: 'Sudut Pandang: Orang Pertama (FPS)',
-      third_front: 'Sudut Pandang: Kamera Depan',
-      orbit: 'Sudut Pandang: Kamera Bebas 3D',
+      third_back: 'Sudut Pandang Kamera Belakang (Orbit 360°)',
+      first_person: 'Sudut Pandang Orang Pertama (FPS)',
+      third_front: 'Sudut Pandang Kamera Depan',
+      orbit: 'Sudut Pandang Kamera Bebas 3D',
     };
     this.showBanner(labels[this.cameraMode], 2.2);
     this.pushHud(true);
@@ -9305,8 +9359,8 @@ export class RpgWorldEngine {
     this.updateSettings({ aimMode: next });
     this.showBanner(
       next === 'auto'
-        ? 'Mode Bidik: Bidik Otomatis (Kunci Target Cerdas)'
-        : 'Mode Bidik: Bidik Bebas (Crosshair & Scope)',
+        ? 'Mode Bidik Otomatis (Kunci Target Cerdas)'
+        : 'Mode Bidik Bebas (Crosshair & Scope)',
       2.2,
     );
   }
@@ -10607,7 +10661,7 @@ export class RpgWorldEngine {
           soundEngine.playNo();
           this.showBanner(
             !groundS.isLandOrBridge
-              ? '🌊 Terbang di atas laut — arahkan ke pulau/runway lalu tekan Turun untuk mendarat!'
+              ? '🌊 Terbang di atas laut, arahkan ke pulau atau runway lalu tekan Turun untuk mendarat!'
               : `🛬 Masih terlalu tinggi (${Math.round(altAboveGround)}m)! Tahan Mendarat (Ctrl) hingga mendekati pulau.`,
             2.6,
           );
@@ -11142,7 +11196,7 @@ export class RpgWorldEngine {
             this.planeResupplyCooldown = 5.5;
             soundEngine.playUpgrade();
             this.spawnBurst(pl.pos.x, pl.pos.y + 1.4, pl.pos.z, 0x22d3ee, 18);
-            this.showBanner(`🔧 Hanggar ${pad.name}: Amunisi pesawat penuh & +1 ❤️!`, 2.8);
+            this.showBanner(`🔧 Hanggar ${pad.name} mengisi penuh amunisi pesawat dan memberi +1 ❤️!`, 2.8);
             this.pushHud(true);
             break;
           }
@@ -12462,7 +12516,7 @@ export class RpgWorldEngine {
       soundEngine.playPick();
       this.showBanner(
         newlyUnlocked
-          ? `🔫 Senjata Bawah Laut Terbuka: ${wDef.name}! (+${wDef.packSize} Peluru)`
+          ? `🔫 Senjata Bawah Laut ${wDef.name} Terbuka! (+${wDef.packSize} Peluru)`
           : `🔫 Isi Ulang ${wDef.name} (+${wDef.packSize} Peluru)`,
         3.2,
       );
@@ -12511,7 +12565,7 @@ export class RpgWorldEngine {
       shell: '🐚 Cangkang +1',
       food: '🍤 Makanan Laut +1',
     };
-    this.showBanner(`✨ Panen ${entry.indoName}: ${labelMap[entry.yieldKind]}!`, 2.4);
+    this.showBanner(`✨ Panen ${entry.indoName} menghasilkan ${labelMap[entry.yieldKind]}!`, 2.4);
     this.saveProgress();
     this.pushHud(true);
   }
@@ -12558,7 +12612,7 @@ export class RpgWorldEngine {
     }
     soundEngine.playWin();
     this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.0, this.heroPos.z, 0x38bdf8, 22);
-    this.showBanner(`🤿 Perlengkapan Dibuat: ${def.name}! Max O₂ sekarang ${this.oceanOxygen}!`, 3.6);
+    this.showBanner(`🤿 Perlengkapan ${def.name} berhasil dibuat dengan Max O₂ sekarang ${this.oceanOxygen}!`, 3.6);
     this.saveProgress();
     this.pushHud(true);
   }
@@ -12702,7 +12756,7 @@ export class RpgWorldEngine {
     soundEngine.playDoor();
     this.callbacks.onStartLearning({
       mode: door.mode,
-      title: `${door.name} — ${door.modeLabel}`,
+      title: `${door.name} (${door.modeLabel})`,
       zoneId: zId,
       doorIndex,
       minPct: door.minPct,
@@ -12797,7 +12851,7 @@ export class RpgWorldEngine {
         this.emitProgressSync();
       } else {
         soundEngine.playNo();
-        this.showBanner(`Butuh minimal ${ctx.minPct}% untuk membuka pintu ini (Skor: ${pct}%).`, 3.4);
+        this.showBanner(`Butuh minimal ${ctx.minPct}% untuk membuka pintu ini sedangkan skormu ${pct}%.`, 3.4);
       }
     }
 
@@ -12979,7 +13033,7 @@ export class RpgWorldEngine {
     if (!q) return;
     if (!q.accepted) {
       q.accepted = true;
-      this.showBanner(`Misi Diterima: ${q.title}`, 3.0);
+      this.showBanner(`Misi "${q.title}" Diterima`, 3.0);
       soundEngine.playBuild();
     } else if (q.progress >= q.target && !q.claimed) {
       q.claimed = true;
@@ -13242,7 +13296,7 @@ export class RpgWorldEngine {
       this.syncDungeonMonsterStats();
       this.checkAreaTrophy(this.dungeonState.zoneId);
     } else {
-      // Overworld Surface or Sky English-Challenge Monster defeated — scale XP, Diamonds, Ammo & Survival Heart!
+      // Overworld Surface or Sky English-Challenge Monster defeated, scale XP, Diamonds, Ammo & Survival Heart!
       const m =
         this.monsters.find((item) => item.id === battle.monsterId) ??
         this.skyMonsters.find((item) => item.id === battle.monsterId);
@@ -13314,13 +13368,13 @@ export class RpgWorldEngine {
     if (nextLv.level > prevLv) {
       this.hp = this.maxHp;
       soundEngine.playFanfare();
-      this.showBanner(`NAIK LEVEL ${nextLv.level}: ${nextLv.title}! Nyawa pulih penuh!`, 3.6);
+      this.showBanner(`NAIK LEVEL ${nextLv.level} sebagai ${nextLv.title}! Nyawa pulih penuh!`, 3.6);
       this.spawnBurst(this.heroPos.x, 2.5, this.heroPos.z, 0xfacc15, 28);
     }
   }
 
   private showBanner(msg: string, duration = 2.8): void {
-    this.bannerMessage = msg;
+    this.bannerMessage = personalizePlayerText(msg, this.getPlayerDisplayName());
     this.bannerTimer = duration;
   }
 
@@ -13647,18 +13701,19 @@ export class RpgWorldEngine {
       this.heroPos.z - gPos.z,
     );
 
+    const pName = this.getPlayerDisplayName();
     if (this.dungeonState.liberated) {
       this.caveGuardianTurns = [
         {
           speakerSide: 'npc',
           speakerName: story.guardianName,
           speakerRole: `Penjaga Gua ${zoneLabel} · Bebas ✓`,
-          textId: story.rescueGuardianId,
-          textEn: story.rescueGuardianEn,
+          textId: personalizePlayerText(story.rescueGuardianId, pName),
+          textEn: personalizePlayerText(story.rescueGuardianEn, pName),
         },
         {
           speakerSide: 'hero',
-          speakerName: 'Hoot',
+          speakerName: pName,
           speakerRole: 'Penjelajah Nusantara Kata',
           textId: `Aku senang melihat kalian berkumpul lagi, ${story.guardianName}! Aku lanjutkan petualangan dulu ya.`,
           textEn: `I am glad to see you together again, ${story.guardianName}! I will keep exploring!`,
@@ -13677,7 +13732,7 @@ export class RpgWorldEngine {
         },
         {
           speakerSide: 'hero',
-          speakerName: 'Hoot',
+          speakerName: pName,
           speakerRole: 'Penjelajah Nusantara Kata',
           textId: `Siap, ${story.guardianName}! Aku segera ke sudut ${corner} sekarang juga!`,
           textEn: `Got it, ${story.guardianName}! I am heading straight there right now!`,
@@ -13694,7 +13749,7 @@ export class RpgWorldEngine {
         },
         {
           speakerSide: 'hero',
-          speakerName: 'Hoot',
+          speakerName: pName,
           speakerRole: 'Penjelajah Nusantara Kata',
           textId: `Baik! Aku ambil kuncinya di tengah arena dan segera membebaskan ${story.captiveName}!`,
           textEn: `Right away! I will grab the key in the center and rescue ${story.captiveName}!`,
@@ -13712,7 +13767,7 @@ export class RpgWorldEngine {
         },
         {
           speakerSide: 'hero',
-          speakerName: 'Hoot',
+          speakerName: pName,
           speakerRole: 'Penjelajah Nusantara Kata',
           textId: `Tenang saja, ${story.guardianName}! Aku akan membuka semua pintu dan menaklukkan Bos gua ini.`,
           textEn: `Stay strong, ${story.guardianName}! I will unlock every door and defeat the cave boss.`,
@@ -14749,7 +14804,7 @@ export class RpgWorldEngine {
     this.activeTnts.push({ x: tx, y: ty, z: tz, timer: 1.7, mesh });
 
     soundEngine.playBuild();
-    this.showBanner('🧨 TNT aktif! Menjauh — meledak dalam 1,7 detik!', 2.2);
+    this.showBanner('🧨 TNT aktif! Menjauh karena akan meledak dalam 1,7 detik!', 2.2);
     this.saveProgress();
     this.pushHud(true);
   }
@@ -16512,6 +16567,37 @@ export class RpgWorldEngine {
     this.hero.rightLeg.rotation.x = THREE.MathUtils.damp(this.hero.rightLeg.rotation.x, tRightLegX, 10, dt);
   }
 
+  private hasCameraSightline(
+    camX: number,
+    camY: number,
+    camZ: number,
+    tx: number,
+    ty: number,
+    tz: number,
+  ): boolean {
+    const occluders =
+      this.worldMode === 'overworld'
+        ? this.archipelagoRig?.cameraOccluders
+        : this.worldMode === 'dungeon'
+        ? this.dungeonRig?.cameraOccluders
+        : this.worldMode === 'academy'
+        ? this.academyRig?.cameraOccluders
+        : undefined;
+    if (!occluders || occluders.length === 0) return true;
+    const dx = tx - camX;
+    const dy = ty - camY;
+    const dz = tz - camZ;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist < 0.4) return true;
+    _v3.set(camX, camY, camZ);
+    _forward.set(dx / dist, dy / dist, dz / dist);
+    this.camRaycaster.near = 0.15;
+    this.camRaycaster.far = Math.max(0.2, dist - 0.38);
+    this.camRaycaster.set(_v3, _forward);
+    const hits = this.camRaycaster.intersectObjects(occluders, true);
+    return hits.length === 0;
+  }
+
   private updateSideAngleDialogueCamera(
     heroX: number,
     heroY: number,
@@ -16520,14 +16606,13 @@ export class RpgWorldEngine {
     partnerY: number,
     partnerZ: number,
     dt: number,
+    snap = false,
   ): void {
     const dx = partnerX - heroX;
     const dz = partnerZ - heroZ;
     const dist = Math.hypot(dx, dz) || 1;
     const toPartnerX = dx / dist;
     const toPartnerZ = dz / dist;
-    const sideX = -toPartnerZ;
-    const sideZ = toPartnerX;
     const midX = (heroX + partnerX) * 0.5;
     const midZ = (heroZ + partnerZ) * 0.5;
 
@@ -16536,41 +16621,69 @@ export class RpgWorldEngine {
     const lookZ = midZ;
 
     const offY = 1.9;
-    const posOffX = sideX * 5.6 - toPartnerX * 0.6;
-    const posOffZ = sideZ * 5.6 - toPartnerZ * 0.6;
-    const negOffX = -sideX * 5.6 - toPartnerX * 0.6;
-    const negOffZ = -sideZ * 5.6 - toPartnerZ * 0.6;
-    const desiredDist = Math.hypot(posOffX, offY, posOffZ);
+    const armHoriz = 5.4;
+    const curSideDot = (this.camera.position.x - lookX) * (-toPartnerZ) + (this.camera.position.z - lookZ) * toPartnerX;
+    // Angles > 90 deg step slightly behind-beside Hero on the open courtyard side away from cave walls behind the Guardian
+    const candidateAngles = [-2.01, 2.01, -1.75, 1.75, -2.3, 2.3, -1.4, 1.4];
 
-    const safePos = this.computeSpringArmDist(
-      lookX,
-      lookY,
-      lookZ,
-      posOffX / desiredDist,
-      offY / desiredDist,
-      posOffZ / desiredDist,
-      desiredDist,
-    );
-    const safeNeg = this.computeSpringArmDist(
-      lookX,
-      lookY,
-      lookZ,
-      negOffX / desiredDist,
-      offY / desiredDist,
-      negOffZ / desiredDist,
-      desiredDist,
-    );
-    const usePosSide = safePos >= safeNeg - 0.15;
-    const offX = usePosSide ? posOffX : negOffX;
-    const offZ = usePosSide ? posOffZ : negOffZ;
-    const safeDist = usePosSide ? safePos : safeNeg;
+    let bestScore = -Infinity;
+    let bestCamX = lookX - toPartnerZ * armHoriz - toPartnerX * 0.6;
+    let bestCamY = lookY + offY;
+    let bestCamZ = lookZ + toPartnerX * armHoriz - toPartnerZ * 0.6;
 
-    _v1.set(
-      lookX + (offX / desiredDist) * safeDist,
-      lookY + (offY / desiredDist) * safeDist,
-      lookZ + (offZ / desiredDist) * safeDist,
-    );
+    for (const ang of candidateAngles) {
+      const ca = Math.cos(ang);
+      const sa = Math.sin(ang);
+      const rx = toPartnerX * ca - toPartnerZ * sa;
+      const rz = toPartnerX * sa + toPartnerZ * ca;
+      const candOffX = rx * armHoriz;
+      const candOffZ = rz * armHoriz;
+      const desiredDist = Math.hypot(candOffX, offY, candOffZ);
+      const ux = candOffX / desiredDist;
+      const uy = offY / desiredDist;
+      const uz = candOffZ / desiredDist;
+
+      const safeDist = this.computeSpringArmDist(lookX, lookY, lookZ, ux, uy, uz, desiredDist);
+      const camX = lookX + ux * safeDist;
+      const camY = lookY + uy * safeDist;
+      const camZ = lookZ + uz * safeDist;
+
+      let terrainPenalty = 0;
+      if (this.worldMode === 'overworld') {
+        for (const frac of [0.5, 1.0]) {
+          const sx = lookX + ux * safeDist * frac;
+          const sy = lookY + uy * safeDist * frac;
+          const sz = lookZ + uz * safeDist * frac;
+          const tSamp = sampleArchipelagoTerrain(sx, sz);
+          if (tSamp.isLandOrBridge && sy < tSamp.groundY + 0.72) {
+            terrainPenalty -= 45;
+          }
+        }
+      }
+
+      const heroLos = this.hasCameraSightline(camX, camY, camZ, heroX, heroY + 1.4, heroZ);
+      const partnerLos = this.hasCameraSightline(camX, camY, camZ, partnerX, partnerY + 1.4, partnerZ);
+      const losScore = (heroLos && partnerLos ? 100 : heroLos || partnerLos ? 40 : -80);
+      const openCourtyardBonus = Math.abs(ang) >= 1.72 ? 6 : 0;
+      const sideHysteresis = !snap && ((ang > 0 ? 1 : -1) * curSideDot > 0) ? 3 : 0;
+      const score = losScore + terrainPenalty + Math.min(safeDist, desiredDist) * 12 + openCourtyardBonus + sideHysteresis;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestCamX = camX;
+        bestCamY = camY;
+        bestCamZ = camZ;
+      }
+    }
+
+    _v1.set(bestCamX, bestCamY, bestCamZ);
     _v2.set(lookX, lookY, lookZ);
+    if (snap) {
+      this.camera.position.copy(_v1);
+      this.controls.target.copy(_v2);
+      this.controls.update();
+      return;
+    }
     const camLerp = 1 - Math.exp(-5.0 * dt);
     this.camera.position.lerp(_v1, camLerp);
     this.controls.target.lerp(_v2, camLerp);
@@ -16808,7 +16921,7 @@ export class RpgWorldEngine {
     }
 
     if (step === 1) {
-      // Adegan 2: Malam Kelam Tanpa Bulan di Istana Utara —
+      // Adegan 2 tentang Malam Kelam Tanpa Bulan di Istana Utara
       // Portal langit terbuka, monster bayangan bersenjata menyerbu turun mengepung istana,
       // memecahkan Mahkota Kerajaan menjadi 6 kepingan berkilau, merampas kata Bahasa Inggris,
       // lentera istana meredup & kabut kelam turun menyelimuti langit.
@@ -18789,7 +18902,7 @@ export class RpgWorldEngine {
         continue;
       }
 
-      // Special AI 3: Combat Brawlers (70% Overworld Day & Night Combat Monsters + Cave Guardians — NO QUIZ!)
+      // Special AI 3: Combat Brawlers (70% Overworld Day & Night Combat Monsters + Cave Guardians, NO QUIZ!)
       if (
         m.combatOnly &&
         ((this.worldMode === 'dungeon' && this.dungeonRig) || this.worldMode === 'overworld')
@@ -20277,7 +20390,7 @@ export class RpgWorldEngine {
           soundEngine.playPick();
           const info = SEA_BIOTA_BY_ID[node.speciesId];
           this.showBanner(
-            `🐠 Biota Baru Ditemukan: ${info?.indoName ?? node.speciesId} (${this.discoveredBiota.size}/20)!`,
+            `🐠 Biota Baru ${info?.indoName ?? node.speciesId} ditemukan (${this.discoveredBiota.size}/20)!`,
             3.0,
           );
           this.saveProgress();
@@ -20994,7 +21107,7 @@ export class RpgWorldEngine {
             soundEngine.playPick();
             const info = SEA_BIOTA_BY_ID[node.speciesId];
             this.showBanner(
-              `🐠 Biota Baru Ditemukan: ${info?.indoName ?? node.speciesId} (${this.discoveredBiota.size}/20)!`,
+              `🐠 Biota Baru ${info?.indoName ?? node.speciesId} ditemukan (${this.discoveredBiota.size}/20)!`,
               3.0,
             );
             this.saveProgress();
@@ -21783,7 +21896,7 @@ export class RpgWorldEngine {
         this.showBanner(
           rescuePending
             ? '✨ Senjata Pemula Didapat! Cepat tembak & habisi monster yang mengejar warga di alun-alun!'
-            : '✨ Senjata Pemula Didapat! (Damage Kecil: 1 · Jelajahi Gua & kalahkan Bos untuk senjata kuat!)',
+            : '✨ Senjata Pemula Didapat! (Damage Kecil 1 · Jelajahi Gua & kalahkan Bos untuk senjata kuat!)',
           4.8,
         );
         this.saveProgress();
@@ -21804,7 +21917,7 @@ export class RpgWorldEngine {
         this.spawnBurst(ss.x, ssY + 1.5, ss.z, 0x22d3ee, 26);
         soundEngine.playPick();
         this.showBanner(
-          '🤿 Pakaian Renang Didapat! O₂ kini Tak Terbatas di bawah laut — tekan Selam untuk menjelajah!',
+          '🤿 Pakaian Renang Didapat! O₂ kini Tak Terbatas di bawah laut sehingga kamu bisa menekan Selam untuk menjelajah!',
           5.0,
         );
         this.saveProgress();
@@ -23167,7 +23280,7 @@ export class RpgWorldEngine {
                     ? 'Cepat / Hijau / Langit / Berat / Kristal'
                     : 'Hijau / Langit / Berat / Kristal';
                 this.showBanner(
-                  `🛡️ ${usedName} memantul dari kulit ${m.name}! Pakai senjata laut: ${minReq}!`,
+                  `🛡️ ${usedName} memantul dari kulit ${m.name}! Pakailah senjata laut ${minReq}!`,
                   2.6,
                 );
                 break;
@@ -23210,7 +23323,7 @@ export class RpgWorldEngine {
               }
               this.spawnBurst(m.x, mBaseY + 1.8, m.z, 0x38bdf8, 8);
               this.showBanner(
-                `Kena ${m.name}! Perisai Kata ${nextStance}/${maxStance} — bidik lagi!`,
+                `Kena ${m.name}! Perisai Kata tersisa ${nextStance}/${maxStance}, jadi bidik lagi!`,
                 1.6,
               );
             } else if (p.fromPlane) {
@@ -23499,7 +23612,7 @@ export class RpgWorldEngine {
             y: lp.y,
             title:
               t < 15.6
-                ? '🎀 Kak Hoot! Pita merahku bagus, kan?'
+                ? `🎀 Kak ${this.getPlayerDisplayName()}! Pita merahku bagus, kan?`
                 : '🌸 Kerajaan Kata damai sekali, Kak!',
             kind: 'speech',
           });
@@ -23594,15 +23707,16 @@ export class RpgWorldEngine {
         this.owlRig.root.position.z,
       );
       if (op) {
+        const pName = this.getPlayerDisplayName();
         const msg =
           t < 2.8
-            ? '🔍 Mencari Hoot melewati Gerbang Kota...'
+            ? `🔍 Mencari ${pName} melewati Gerbang Kota...`
             : t < 5.6
             ? '🌫️ Menembus kabut malam di atas Pasar Rasa...'
             : t < 9.2
             ? '🕯️ Menara Waktu & Hutan Satwa masih sunyi...'
             : t < 11.8
-            ? '✨ Pulau terakhir! Itu Hoot di Desa Sapaan!'
+            ? `✨ Pulau terakhir! Itu ${pName} di Desa Sapaan!`
             : '✉️ Membawa surat bersampul merah dari Lila!';
         labels.push({
           id: 'prologue_owl_search',
@@ -23841,7 +23955,7 @@ export class RpgWorldEngine {
             x: pos.x,
             y: pos.y,
             title: npc.name,
-            subtext: npc.speechBubble,
+            subtext: personalizePlayerText(npc.speechBubble, this.getPlayerDisplayName()),
             kind: 'zone',
           });
         }
@@ -23914,7 +24028,7 @@ export class RpgWorldEngine {
             ? 'Sedang dipakai NPC'
             : isNearThis
             ? 'Klik atau tekan Masuk Mobil'
-            : 'Kosong — bisa dikendarai!',
+            : 'Kosong dan bisa dikendarai!',
           kind: 'pickup',
         });
       }
@@ -23930,7 +24044,7 @@ export class RpgWorldEngine {
           x: plLabelPos.x,
           y: plLabelPos.y,
           title: isNearPl ? `✈️ ${pl.name} (Tekan E untuk Naik)` : `✈️ ${pl.name}`,
-          subtext: isNearPl ? 'Siap lepas landas!' : 'Pesawat Tempur — bisa diterbangkan!',
+          subtext: isNearPl ? 'Siap lepas landas!' : 'Pesawat Tempur yang bisa diterbangkan!',
           kind: 'pickup',
         });
       }
@@ -24742,8 +24856,8 @@ export class RpgWorldEngine {
       const v = pool[Math.floor(Math.random() * pool.length)];
       const styles = [
         `Ingat kata ini? "${v.word}" artinya "${v.meaningId}"!`,
-        `Latih memori: "${v.word}" (${v.phonetic}) = ${v.meaningId}`,
-        `Kosakata ${v.cefr}: "${v.word}" -> ${v.meaningId}`,
+        `Latih memori kata "${v.word}" (${v.phonetic}) yang berarti ${v.meaningId}`,
+        `Kosakata ${v.cefr} untuk "${v.word}" adalah ${v.meaningId}`,
       ];
       return styles[Math.floor(Math.random() * styles.length)];
     }
@@ -26251,7 +26365,7 @@ export class RpgWorldEngine {
     }
 
     this.equipWeapon(nextId);
-    this.showBanner(`🎙️ Senjata: ${WEAPONS[nextId].name}`, 1.8);
+    this.showBanner(`🎙️ Menggunakan senjata ${WEAPONS[nextId].name}`, 1.8);
   }
 
   public voiceSetAimMode(mode: 'auto' | 'manual'): void {

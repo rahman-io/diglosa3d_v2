@@ -63,16 +63,16 @@ export const CaveCraftingModal: React.FC<CaveCraftingModalProps> = ({
         <div className="flex flex-wrap items-center justify-between gap-2 border-b-2 border-[#d6b67c] bg-[#f5e3be] px-5 py-2.5 text-xs font-extrabold text-[#5c340f]">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-lg border border-[#c4a472] bg-white px-2.5 py-1 font-mono-nums">
-              🧱 Blok: {hud.caveShieldBlocksLeft}
+              🧱 Blok {hud.caveShieldBlocksLeft}
             </span>
             <span className="rounded-lg border border-[#c4a472] bg-white px-2.5 py-1 font-mono-nums text-cyan-800">
-              💎 Berlian: {hud.diamonds}
+              💎 Berlian {hud.diamonds}
             </span>
             <span className="rounded-lg border border-[#c4a472] bg-white px-2.5 py-1 font-mono-nums text-amber-800">
-              🔦 Obor: {hud.caveTorchesLeft}/24
+              🔦 Obor {hud.caveTorchesLeft}/24
             </span>
             <span className="rounded-lg border border-[#c4a472] bg-white px-2.5 py-1 font-mono-nums text-rose-700">
-              🧨 TNT: {hud.caveTntLeft}/16
+              🧨 TNT {hud.caveTntLeft}/16
             </span>
           </div>
           <span className="rounded-lg bg-[#78350f] px-2.5 py-1 text-[11px] text-amber-100">
@@ -98,10 +98,10 @@ export const CaveCraftingModal: React.FC<CaveCraftingModalProps> = ({
                   )}
                 </div>
                 <p className="mt-0.5 text-xs text-[#5c340f]">
-                  Kecepatan menggali <strong>2× lebih cepat</strong> — bijih &amp; batu keras hancur dalam sekejap.
+                  Kecepatan menggali <strong>2× lebih cepat</strong> sehingga bijih &amp; batu keras hancur dalam sekejap.
                 </p>
                 <div className="mt-1 text-[11px] font-extrabold text-amber-800">
-                  Bahan: 4 🧱 Blok
+                  Bahan membutuhkan 4 🧱 Blok
                 </div>
               </div>
             </div>
@@ -131,10 +131,10 @@ export const CaveCraftingModal: React.FC<CaveCraftingModalProps> = ({
                   )}
                 </div>
                 <p className="mt-0.5 text-xs text-cyan-900">
-                  Kecepatan menggali <strong>3× lebih cepat</strong> — hancurkan Bijih Berlian dalam 1× ayun!
+                  Kecepatan menggali <strong>3× lebih cepat</strong> agar kamu bisa menghancurkan Bijih Berlian dalam 1× ayun!
                 </p>
                 <div className="mt-1 text-[11px] font-extrabold text-cyan-800">
-                  Bahan: 4 🧱 Blok + 2 💎 Berlian (Perlu Tier 2 dulu)
+                  Bahan membutuhkan 4 🧱 Blok dan 2 💎 Berlian (Perlu Tier 2 dulu)
                 </div>
               </div>
             </div>
@@ -168,10 +168,10 @@ export const CaveCraftingModal: React.FC<CaveCraftingModalProps> = ({
                   TNT Tambang (+2 🧨 · Slot T)
                 </div>
                 <p className="mt-0.5 text-xs text-rose-900">
-                  Pasang di lantai lalu menjauh: meledakkan banyak batu tambang, menjatuhkan Kelelawar/Creeper &amp; memecah perisai Monster Kata sekaligus!
+                  Pasang di lantai lalu menjauh agar ledakan menghancurkan banyak batu tambang, menjatuhkan Kelelawar/Creeper &amp; memecah perisai Monster Kata sekaligus!
                 </p>
                 <div className="mt-1 text-[11px] font-extrabold text-rose-800">
-                  Bahan: 3 🧱 Blok
+                  Bahan membutuhkan 3 🧱 Blok
                 </div>
               </div>
             </div>
@@ -197,7 +197,7 @@ export const CaveCraftingModal: React.FC<CaveCraftingModalProps> = ({
                     Obor Gua Ekstra (+6 🔦)
                   </div>
                   <p className="mt-0.5 text-[11px] text-[#5c340f]">
-                    Terangi gua &amp; tenangkan monster. Bahan: <strong>2 🧱</strong>
+                    Terangi gua &amp; tenangkan monster dengan bahan <strong>2 🧱</strong>
                   </p>
                 </div>
               </div>
@@ -217,7 +217,7 @@ export const CaveCraftingModal: React.FC<CaveCraftingModalProps> = ({
                   Amunisi Tambang (+10 Peluru)
                 </div>
                 <p className="mt-0.5 text-[11px] text-indigo-900">
-                  Untuk: <strong>{activeWeaponName}</strong>. Bahan: <strong>2 🧱 + 1 💎</strong>
+                  Untuk senjata <strong>{activeWeaponName}</strong> dengan bahan <strong>2 🧱 + 1 💎</strong>
                 </p>
               </div>
               <button

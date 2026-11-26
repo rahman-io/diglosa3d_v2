@@ -905,7 +905,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             }}
             title={
               hud.ownedWeapons.length > 0
-                ? `${activeWeaponDef.name} (${activeAmmo}) — Buka Tas`
+                ? `${activeWeaponDef.name} (${activeAmmo}), Buka Tas`
                 : 'Buka Tas & Senjata'
             }
             className="relative flex h-11 w-11 items-center justify-center rounded-xl border-2 border-amber-300/50 bg-slate-950/85 p-1 text-white shadow-lg transition hover:border-amber-300"
@@ -962,13 +962,13 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               }}
               title={
                 hud.settings.aimMode === 'auto'
-                  ? 'Mode Bidik: Otomatis (Klik untuk ganti ke Bidik Bebas)'
-                  : 'Mode Bidik: Bebas / Crosshair (Klik untuk ganti ke Bidik Otomatis)'
+                  ? 'Mode Bidik Otomatis (Klik untuk ganti ke Bidik Bebas)'
+                  : 'Mode Bidik Bebas / Crosshair (Klik untuk ganti ke Bidik Otomatis)'
               }
               aria-label={
                 hud.settings.aimMode === 'auto'
-                  ? 'Ganti Mode Bidik (Aktif: Bidik Otomatis)'
-                  : 'Ganti Mode Bidik (Aktif: Bidik Bebas)'
+                  ? 'Ganti Mode Bidik (Aktif Bidik Otomatis)'
+                  : 'Ganti Mode Bidik (Aktif Bidik Bebas)'
               }
               className={`relative flex h-9 w-9 items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10 ${
                 hud.settings.aimMode === 'auto'
@@ -996,8 +996,8 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               onToggleCamera();
               completeTutorialStep('camera_view');
             }}
-            title={`Ganti Sudut Pandang: ${CAMERA_VIEW_LABELS[hud.cameraMode]} (C / F5)`}
-            aria-label={`Ganti Sudut Pandang: ${CAMERA_VIEW_LABELS[hud.cameraMode]}`}
+            title={`Ganti Sudut Pandang ${CAMERA_VIEW_LABELS[hud.cameraMode]} (C / F5)`}
+            aria-label={`Ganti Sudut Pandang ${CAMERA_VIEW_LABELS[hud.cameraMode]}`}
             className="relative flex h-9 w-9 items-center justify-center rounded-full shadow-[0_3px_8px_rgba(34,211,238,0.38)] transition-transform hover:scale-105 active:scale-90 sm:h-10 sm:w-10"
           >
             <img
@@ -1147,7 +1147,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                 </span>
               </span>
               <span className="shrink-0 rounded-full bg-white/10 px-1.5 py-0.5 font-mono-nums text-[9px] font-bold text-slate-200">
-                {Math.floor(hud.worldTime.phaseRemainingSec / 60)}:
+                {Math.floor(hud.worldTime.phaseRemainingSec / 60)}.
                 {String(hud.worldTime.phaseRemainingSec % 60).padStart(2, '0')}
               </span>
             </div>
@@ -1254,7 +1254,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                       <span className="font-black text-rose-300">⚠️ BOS AREA AKTIF!</span>
                     ) : (
                       <span>
-                        Penjaga Pintu Bos: {stats.guardiansDefeated ?? 0}/{stats.guardiansTotal ?? 5} ·
+                        Penjaga Pintu Bos {stats.guardiansDefeated ?? 0}/{stats.guardiansTotal ?? 5} ·
                         Bos Pintu 5
                       </span>
                     )}
@@ -1409,7 +1409,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                   <span className="truncate">
                     📍 {stats.areaName}
                     {(stats.zoneSurfaceTotal ?? stats.zoneNightTotal ?? 0) > 0
-                      ? ` · Pulau: ${stats.zoneSurfaceDefeated ?? stats.zoneNightDefeated ?? 0}/${stats.zoneSurfaceTotal ?? stats.zoneNightTotal}`
+                      ? ` · Pulau ${stats.zoneSurfaceDefeated ?? stats.zoneNightDefeated ?? 0}/${stats.zoneSurfaceTotal ?? stats.zoneNightTotal}`
                       : ''}
                   </span>
                   <span className="text-slate-300">
@@ -1655,7 +1655,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                     {matEntries.map((m) => (
                       <span key={m.key} className="inline-flex items-center gap-1 rounded-md bg-slate-950 px-2 py-0.5 text-cyan-100">
                         <span>{m.icon}</span>
-                        <span>{m.label}:</span>
+                        <span>{m.label}</span>
                         <span className="text-amber-300">{mats[m.key]}</span>
                       </span>
                     ))}
@@ -1717,7 +1717,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                               </div>
                               <p className="mt-1 text-[10px] leading-snug text-cyan-100/85">{def.subtitle}</p>
                               <p className="mt-1.5 font-mono-nums text-[9.5px] font-bold text-amber-200">
-                                Bahan: {costText}
+                                Bahan {costText}
                               </p>
                             </div>
                             {!owned && (
@@ -1780,17 +1780,17 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                             <div className="mt-1 flex flex-wrap gap-1 text-[8.5px] font-bold">
                               {sp.mountable && (
                                 <span className="rounded bg-emerald-900/80 px-1 py-0.5 text-emerald-200">
-                                  MOUNT: Yes
+                                  Tunggangan Ya
                                 </span>
                               )}
                               {sp.yieldKind && (
                                 <span className="rounded bg-cyan-900/80 px-1 py-0.5 text-cyan-200">
-                                  YIELD: {sp.yieldKind}
+                                  Hasil {sp.yieldKind}
                                 </span>
                               )}
                               {sp.lightRadius && (
                                 <span className="rounded bg-sky-900/80 px-1 py-0.5 text-sky-200">
-                                  LIGHT: {sp.lightRadius}m
+                                  Cahaya {sp.lightRadius}m
                                 </span>
                               )}
                               <span
@@ -2402,7 +2402,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             {hud.guardianTalkTutorial && (
               <div className="pointer-events-none absolute bottom-full right-0 mb-2.5 flex flex-col items-end sm:right-auto sm:items-center">
                 <div className="animate-bounce max-w-[235px] rounded-xl border-2 border-amber-300 bg-emerald-950/95 px-3 py-1.5 text-center text-[11px] font-black leading-snug text-amber-100 shadow-[0_6px_20px_rgba(16,185,129,0.55)] sm:max-w-none sm:whitespace-nowrap">
-                  👆 Tutorial: Tekan tombol ini (atau E) untuk bicara dengan {nearbyOverworldNpc.name}!
+                  👆 Tutorial · Tekan tombol ini (atau E) untuk bicara dengan {nearbyOverworldNpc.name}!
                 </div>
                 <div className="mr-5 h-2.5 w-2.5 -mt-1.5 rotate-45 border-b-2 border-r-2 border-amber-300 bg-emerald-950 sm:mr-0" />
               </div>
@@ -2410,7 +2410,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             <button
               type="button"
               onClick={onPrimaryAction}
-              title={`Bicara: ${nearbyOverworldNpc.name}`}
+              title={`Bicara dengan ${nearbyOverworldNpc.name}`}
               aria-label={`Bicara dengan ${nearbyOverworldNpc.name}`}
               className={`relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_14px_rgba(245,158,11,0.48)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px] ${
                 hud.guardianTalkTutorial
@@ -2436,7 +2436,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               hud.worldTime.phase === 'malam'
                 ? overworldDoorHasNightPermission
                   ? `Masuk ${nearbyOverworldDoorNpc.zoneName} (Izin Malam Diberikan)`
-                  : `Pintu ${nearbyOverworldDoorNpc.zoneName} — Minta Izin ke ${nearbyOverworldDoorNpc.name}`
+                  : `Pintu ${nearbyOverworldDoorNpc.zoneName}, minta izin ke ${nearbyOverworldDoorNpc.name}`
                 : `Bicara Penjaga & Masuk ${nearbyOverworldDoorNpc.zoneName}`
             }
             aria-label={
@@ -2480,7 +2480,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           <button
             type="button"
             onClick={onPrimaryAction}
-            title={`Bicara: ${nearbyAcademyNpc.name}`}
+            title={`Bicara dengan ${nearbyAcademyNpc.name}`}
             aria-label={`Bicara dengan ${nearbyAcademyNpc.name}`}
             className="relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_14px_rgba(168,85,247,0.48)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
           >
@@ -2658,7 +2658,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             <button
               type="button"
               onClick={onPrimaryAction}
-              title={`Bicara: ${hud.dungeonState?.guardianName || 'Penjaga'}`}
+              title={`Bicara dengan ${hud.dungeonState?.guardianName || 'Penjaga'}`}
               aria-label={hud.dungeonState?.guardianName || 'Penjaga'}
               className="relative flex h-[54px] w-[54px] items-center justify-center rounded-full shadow-[0_5px_14px_rgba(245,158,11,0.48)] transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px]"
             >

@@ -539,7 +539,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
         handleMonsterAttack(
           battle,
           question,
-          `Salah! Jawaban benar: "${question.choices[question.correctIndex]}".${growNote}`,
+          `Salah! Jawaban yang benar adalah "${question.choices[question.correctIndex]}".${growNote}`,
         );
       }
     },
@@ -782,7 +782,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
                 {question.isDifficultyFlagged && (
                   <div className="mb-1 inline-flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-black text-amber-200">
                     <AlertTriangle className="h-3 w-3 shrink-0" />
-                    <span>🧭 Kompas Tanya: Kata Sulit</span>
+                    <span>🧭 Kompas Tanya Kata Sulit</span>
                   </div>
                 )}
                 <h3 className="text-base font-extrabold leading-snug text-white sm:text-lg">
@@ -790,7 +790,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
                 </h3>
                 {question.hintWord && turnPhase !== 'grab' && (
                   <div className="mt-0.5 font-mono-nums text-xs font-semibold text-amber-300">
-                    Petunjuk: {question.hintWord}
+                    Petunjuk {question.hintWord}
                   </div>
                 )}
               </div>
@@ -896,10 +896,10 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
                 {hasPedang && (
                   <span className="inline-flex items-center gap-1 rounded-lg border border-amber-300/35 bg-amber-500/20 px-2 py-0.5 text-amber-200">
                     <Sparkles className="h-3 w-3" />
-                    <span>{battle.isZoneBoss ? 'Pedang: 4 hit=+1 ❤️' : 'Pedang: 2 Dmg'}</span>
+                    <span>{battle.isZoneBoss ? 'Pedang 4 hit = +1 ❤️' : 'Pedang 2 Dmg'}</span>
                   </span>
                 )}
-                <span>Streak Duel: x{duelHitStreak}</span>
+                <span>Streak Duel x{duelHitStreak}</span>
               </div>
 
               <RpgPillButton

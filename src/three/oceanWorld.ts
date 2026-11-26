@@ -1017,7 +1017,7 @@ export function createOceanEnvironment(
       scale: 1.05,
     }),
   );
-  // #13 Sea Turtle (RARE, MOUNT: Yes — gracefully swimming in Foreground Sanctuary!)
+  // #13 Sea Turtle (RARE, MOUNT: Yes, gracefully swimming in Foreground Sanctuary!)
   pickList([
     [-3, 18, 4.4],
     [9, 11, 4.8],
@@ -1114,7 +1114,7 @@ export function createOceanEnvironment(
   ], 3).forEach(([x, z, yOff]) =>
     placeBiota('starfish', x, z, { yOffset: yOff, scale: 1.05, yaw: x * 0.4 }),
   );
-  // #20 Glowing Jellyfish (RARE, LIGHT: 8m — floating softly across Reef & Twilight Slope)
+  // #20 Glowing Jellyfish (RARE, LIGHT: 8m, floating softly across Reef & Twilight Slope)
   pickList([
     [-16, 19, 5.2],
     [8, 9, 5.8],

@@ -394,8 +394,8 @@ export async function runOfflineSyncDownload(
       totalFiles,
       currentFile,
       statusLabel: isUpdate
-        ? `Memperbarui otomatis (${completedFiles}/${totalFiles}): ${currentFile}`
-        : `Mengunduh aset offline (${completedFiles}/${totalFiles}): ${currentFile}`,
+        ? `Memperbarui otomatis (${completedFiles}/${totalFiles}) ${currentFile}`
+        : `Mengunduh aset offline (${completedFiles}/${totalFiles}) ${currentFile}`,
       versionLabel: `v${manifest.version}`,
       isUpdate,
       manifest,

@@ -10,6 +10,7 @@ export interface HarvestDialogueBoxProps {
   speakerKind: DialogueSpeakerKind;
   characterId: CharacterPresetId;
   npcId?: string;
+  villagerArchetypes?: string[];
   captiveKind?: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
   captiveColor?: number;
   speakerSide?: 'npc' | 'hero';
@@ -28,6 +29,7 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
   speakerKind,
   characterId,
   npcId,
+  villagerArchetypes,
   captiveKind,
   captiveColor,
   speakerSide = 'npc',
@@ -57,7 +59,14 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
     }
     if (!fullText) return;
 
-    const pitchOffset = speakerKind === 'hero' ? 65 : speakerKind === 'captive' ? 110 : -45;
+    const pitchOffset =
+      speakerKind === 'hero'
+        ? 65
+        : speakerKind === 'captive'
+          ? 110
+          : speakerKind === 'villagers'
+            ? 45
+            : -45;
     let cursor = 0;
     timerRef.current = window.setInterval(() => {
       cursor += 1;
@@ -131,7 +140,11 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
 
         {/* 3D Bust-Up Portrait sitting cleanly above the left edge of the dialogue box */}
         <div
-          className="pointer-events-none relative z-10 -mb-7 ml-1 h-[126px] w-[112px] sm:-mb-9 sm:ml-2 sm:h-[164px] sm:w-[144px]"
+          className={`pointer-events-none relative z-10 -mb-7 ml-1 sm:-mb-9 sm:ml-2 ${
+            speakerKind === 'villagers'
+              ? 'h-[132px] w-[148px] sm:h-[170px] sm:w-[192px]'
+              : 'h-[126px] w-[112px] sm:h-[164px] sm:w-[144px]'
+          }`}
           style={{
             filter: 'drop-shadow(0 6px 14px rgba(15, 23, 42, 0.45))',
           }}
@@ -140,6 +153,7 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
             speakerKind={speakerKind}
             characterId={characterId}
             npcId={npcId}
+            villagerArchetypes={villagerArchetypes}
             captiveKind={captiveKind}
             captiveColor={captiveColor}
             isSpeaking={isTyping}

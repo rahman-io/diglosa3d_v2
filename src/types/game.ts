@@ -439,8 +439,9 @@ export interface StoryDialogState {
   textEn: string;
   textId: string;
   accentColor: string;
-  speakerKind?: 'hero' | 'npc' | 'captive' | 'owl';
+  speakerKind?: 'hero' | 'npc' | 'captive' | 'owl' | 'villagers';
   speakerNpcId?: string;
+  villagerArchetypes?: string[];
   captiveKind?: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
   captiveColor?: number;
   speakerSide?: 'npc' | 'hero';
