@@ -182,6 +182,8 @@ const INITIAL_HUD: RpgHudSnapshot = {
   nearbyNpcId: null,
   guardianTalkTutorial: false,
   nearbyOverworldZoneDoor: null,
+  nearIslandRibbonZone: null,
+  nearIslandRibbonLocked: false,
   nightPermittedZones: [],
   nearbyMonsterId: null,
   nearbyDoorIndex: null,

@@ -13,6 +13,8 @@ import {
   DIFF_CONFIG,
   DOOR_MINI_MONSTER,
   DOOR_RESTORED_STORY,
+  formatGuardianAddress,
+  formatOwlAddress,
   getActiveZoneNpcDef,
   getLevelInfo,
   getRankTitle,
@@ -171,6 +173,7 @@ import {
   createDungeonEnvironment,
   createFirstPersonViewRig,
   createHeroAvatar,
+  createIslandRibbonPedestal,
   createMonsterMesh,
   createOwlMessengerRig,
   createPortalArch,
@@ -185,6 +188,7 @@ import {
   getWeaponPoseClass,
   getZoneForPosition,
   HeroAvatarRig,
+  IslandRibbonPedestalRig,
   OwlMessengerRig,
   PortalArchRig,
   setFirstPersonHeldVisual,
@@ -1423,6 +1427,14 @@ export class RpgWorldEngine {
   private nearHiddenPrison = false;
   private nearPortal = false;
   private nearDungeonExit = false;
+  private islandRibbonRigs = new Map<
+    ZoneId,
+    { rig: IslandRibbonPedestalRig; x: number; y: number; z: number }
+  >();
+  private islandRibbonDisposables: Array<{ dispose: () => void }> = [];
+  private nearIslandRibbonZone: ZoneId | null = null;
+  private nearIslandRibbonLocked = false;
+  private lastLockedRibbonBannerMs = 0;
   private bannerMessage: string | null = null;
   private bannerTimer = 0;
   private lastHudPushMs = 0;
@@ -1635,6 +1647,8 @@ export class RpgWorldEngine {
     this.portalRig.root.userData.portal = true;
     this.overworldGroup.add(this.portalRig.root);
     this.overworldClickables.push(this.portalRig.root);
+
+    this.initIslandRibbonPedestals();
 
     this.areaMists = createAreaMists();
     this.areaMists.forEach((m) => this.overworldGroup.add(m));
@@ -2522,15 +2536,85 @@ export class RpgWorldEngine {
     return (shift === 'night') === isNight;
   }
 
+  private initIslandRibbonPedestals(): void {
+    const coords: Record<ZoneId, { x: number; z: number }> = {
+      desa_sapaan: { x: 23.6, z: 121.0 },
+      pasar_rasa: { x: -119.5, z: 51.5 },
+      hutan_satwa: { x: 134.5, z: 45.8 },
+      gerbang_kota: { x: -114.5, z: -91.0 },
+      menara_waktu: { x: 117.5, z: -85.0 },
+      gua_portal: { x: 14.5, z: -176.0 },
+    };
+    const zones: ZoneId[] = [
+      'desa_sapaan',
+      'pasar_rasa',
+      'hutan_satwa',
+      'gerbang_kota',
+      'menara_waktu',
+      'gua_portal',
+    ];
+    for (const zId of zones) {
+      const { x, z } = coords[zId];
+      const y = getArchipelagoGroundY(x, z);
+      const accentHex = new THREE.Color(ZONE_INFO[zId].badgeColor).getHex();
+      const rig = createIslandRibbonPedestal(
+        zId,
+        accentHex,
+        this.palette,
+        this.islandRibbonDisposables,
+      );
+      rig.root.position.set(x, y, z);
+      rig.root.rotation.y = OVERWORLD_ANCHORS.npcs[NPC_CATALOG.find((n) => n.zoneId === zId)?.id ?? '']?.rotY ?? 0;
+      this.overworldGroup.add(rig.root);
+      this.overworldClickables.push(rig.root);
+      this.islandRibbonRigs.set(zId, { rig, x, y, z });
+    }
+  }
+
+  private collectOrInspectIslandRibbon(zoneId: ZoneId, fromInteract = false): void {
+    if (this.ribbons.has(zoneId)) return;
+    const entry = this.islandRibbonRigs.get(zoneId);
+    if (!this.liberatedZones.has(zoneId)) {
+      const now = Date.now();
+      if (fromInteract || now - this.lastLockedRibbonBannerMs > 2400) {
+        this.lastLockedRibbonBannerMs = now;
+        soundEngine.playNo();
+        this.showBanner(
+          `🔒 Pita Merah 3D ${ZONE_INFO[zoneId].name} masih tersegel! Selesaikan dulu misi gua di ${ZONE_INFO[zoneId].name} untuk membukanya.`,
+          3.8,
+        );
+      }
+      return;
+    }
+
+    this.ribbons.add(zoneId);
+    if (entry) {
+      entry.rig.ribbonPivot.visible = false;
+      entry.rig.lockDome.visible = false;
+      this.spawnBurst(entry.x, entry.y + 1.9, entry.z, 0xf43f5e, 34);
+    }
+    this.addScore(350);
+    this.gainXp(60);
+    soundEngine.playFanfare();
+    const rb = RIBBONS[zoneId];
+    this.showBanner(
+      `🎀 ${rb.name} diambil (${this.ribbons.size}/6)! — "${rb.quote}"`,
+      5.5,
+    );
+    this.saveProgress();
+    this.pushHud(true);
+  }
+
   private grantNightPermissionForZone(zoneId: ZoneId, silent = false): void {
     if (this.getCurrentDayPhase() !== 'malam') return;
     const newlyPermitted = !this.nightPermittedZones.has(zoneId);
     this.nightPermittedZones.add(zoneId);
     if (!silent && newlyPermitted) {
       const nightDef = getActiveZoneNpcDef(zoneId, true);
+      const addr = formatGuardianAddress(nightDef, this.getPlayerDisplayName(), this.localCharacterId);
       soundEngine.playPick();
       this.showBanner(
-        `🔑 ${nightDef.name} (Shift Malam) berkata, "Silakan, pintu ${nightDef.zoneName} kubuka untukmu malam ini!"`,
+        `🔑 ${nightDef.name} (Shift Malam) berkata, "Silakan ${addr}, pintu ${nightDef.zoneName} kubuka untukmu malam ini!"`,
         4.6,
       );
       this.pushHud(true);
@@ -2548,6 +2632,7 @@ export class RpgWorldEngine {
 
     if (!this.isNpcOnDuty(npc.shift)) {
       const partnerDef = getZoneNpcById(npc.partnerNpcId);
+      const addr = formatGuardianAddress(def, this.getPlayerDisplayName(), this.localCharacterId);
       soundEngine.playPick();
       npc.yaw = Math.atan2(this.heroPos.x - npc.x, this.heroPos.z - npc.z);
       npc.roamPaused = true;
@@ -2555,8 +2640,8 @@ export class RpgWorldEngine {
       npc.lastTalkBannerMs = Date.now();
       const msg =
         npc.shift === 'day'
-          ? `💬 ${def.name} (Lepas Piket) berkata, "Shift siangku sudah selesai, sekarang aku warga biasa. Temui ${partnerDef?.name ?? 'Penjaga Malam'} di pintu ${def.zoneName}!"`
-          : `💬 ${def.name} (Lepas Piket) berkata, "Pagi hingga sore ${partnerDef?.name ?? 'Penjaga Siang'} yang berjaga di pintu ${def.zoneName}. Nanti malam giliranku bertugas!"`;
+          ? `💬 ${def.name} (Lepas Piket) berkata, "${addr}, shift siangku sudah selesai, sekarang aku warga biasa. Temui ${partnerDef?.name ?? 'Penjaga Malam'} di pintu ${def.zoneName}!"`
+          : `💬 ${def.name} (Lepas Piket) berkata, "${addr}, pagi hingga sore ${partnerDef?.name ?? 'Penjaga Siang'} yang berjaga di pintu ${def.zoneName}. Nanti malam giliranku bertugas!"`;
       this.showBanner(msg, 5.0);
       this.pushHud(true);
       return;
@@ -2582,7 +2667,22 @@ export class RpgWorldEngine {
       }
     }
     this.dialogueTargetNpcId = npcId;
+    this.sideCamCacheKey = '';
     const npcGroundY = getArchipelagoGroundY(npc.x, npc.z);
+    if (npcId === 'npc_tetua' || npcId === 'npc_tetua_malam') {
+      const frontX = Math.sin(npc.standRotY);
+      const frontZ = Math.cos(npc.standRotY);
+      const frontDot = (this.heroPos.x - npc.x) * frontX + (this.heroPos.z - npc.z) * frontZ;
+      if (frontDot < 1.2 || Math.abs(this.heroPos.z - npc.z) > 1.8) {
+        const nx = npc.x + frontX * 2.55;
+        const nz = npc.z + frontZ * 2.55;
+        const ny = getArchipelagoGroundY(nx, nz);
+        if (sampleArchipelagoTerrain(nx, nz).isLandOrBridge && Math.abs(ny - npcGroundY) < 1.6) {
+          this.heroPos.set(nx, ny, nz);
+          this.hero.root.position.copy(this.heroPos);
+        }
+      }
+    }
     let dx = this.heroPos.x - npc.x;
     let dz = this.heroPos.z - npc.z;
     let dist = Math.hypot(dx, dz);
@@ -4607,7 +4707,6 @@ export class RpgWorldEngine {
     for (const z of lz) {
       if (!this.liberatedZones.has(z)) {
         this.liberatedZones.add(z);
-        this.ribbons.add(z);
         const q = this.quests.find((item) => item.zoneId === z);
         if (q) {
           q.accepted = true;
@@ -5480,6 +5579,8 @@ export class RpgWorldEngine {
     this.liberatedZones.clear();
     this.nightPermittedZones.clear();
     this.nearbyOverworldZoneDoor = null;
+    this.nearIslandRibbonZone = null;
+    this.nearIslandRibbonLocked = false;
     this.areaTrophies.clear();
     this.areaDoorsCleared = {
       desa_sapaan: [],
@@ -7046,6 +7147,7 @@ export class RpgWorldEngine {
     this.controls.update();
 
     const pName = this.getPlayerDisplayName();
+    const owlAddrLila = formatOwlAddress(pName, true);
     this.storyDialog = {
       kind: 'opening',
       step: 0,
@@ -7053,8 +7155,8 @@ export class RpgWorldEngine {
       speakerRole: 'Utusan Istana · Desa Sapaan',
       speakerKind: 'owl',
       speakerSide: 'npc',
-      textEn: `${pName}! I finally found you! Tonight, armed shadow monsters raided the Northern Palace, shattered the Royal Crown into six shards, and stole English words across the islands!`,
-      textId: `${pName}! Akhirnya aku menemukanmu! Malam ini gerombolan monster bayangan bersenjata menyerbu Istana Utara Kerajaan Kata, memecah Mahkota Kerajaan menjadi enam keping, dan merampas kata-kata Bahasa Inggris di seluruh kepulauan!`,
+      textEn: `${owlAddrLila}! I finally found you! Tonight, armed shadow monsters raided the Northern Palace, shattered the Royal Crown into six shards, and stole English words across the islands!`,
+      textId: `${owlAddrLila}! Akhirnya aku menemukanmu! Malam ini gerombolan monster bayangan bersenjata menyerbu Istana Utara Kerajaan Kata, memecah Mahkota Kerajaan menjadi enam keping, dan merampas kata-kata Bahasa Inggris di seluruh kepulauan!`,
       accentColor: '#f59e0b',
     };
     soundEngine.playDoor();
@@ -7064,6 +7166,7 @@ export class RpgWorldEngine {
   public advanceStory(): void {
     if (!this.storyDialog) return;
     const pName = this.getPlayerDisplayName();
+    const owlAddr = formatOwlAddress(pName, false);
 
     if (this.storyDialog.kind === 'prologue') {
       const nextStep = this.storyDialog.step + 1;
@@ -7089,8 +7192,8 @@ export class RpgWorldEngine {
           speakerRole: 'Menyampaikan Surat Bersampul Merah',
           speakerKind: 'owl',
           speakerSide: 'npc',
-          textEn: 'I carry a red-sealed letter from your sister Lila. She wanted you to know that when the monsters attacked, she and Raja Aksara took shelter behind the Purple Gate on the northernmost island, and she is waiting for you there.',
-          textId: 'Aku membawa surat bersampul merah dari adikmu, Lila. Ia berpesan agar kamu tetap tenang, karena saat serangan terjadi ia dan Raja Aksara berhasil berlindung di balik Pintu Ungu di pulau paling utara, dan kini ia menunggumu di sana.',
+          textEn: `I carry a red-sealed letter from your sister Lila. She wanted you to know, ${owlAddr}, that when the monsters attacked, she and Raja Aksara took shelter behind the Purple Gate on the northernmost island, and she is waiting for you there.`,
+          textId: `Aku membawa surat bersampul merah dari adikmu, Lila. Ia berpesan agar ${owlAddr} tetap tenang, karena saat serangan terjadi ia dan Raja Aksara berhasil berlindung di balik Pintu Ungu di pulau paling utara, dan kini ia menunggumu di sana.`,
           accentColor: '#e11d48',
         };
         soundEngine.speakEnglish('Your sister Lila is safe behind the Purple Gate and waiting for you!');
@@ -7104,8 +7207,8 @@ export class RpgWorldEngine {
           speakerRole: 'Menyampaikan Amanat Kerajaan',
           speakerKind: 'owl',
           speakerSide: 'npc',
-          textEn: 'Raja Aksara also asked me to tell you that very few words remain in the palace, while six crown shards are scattered across six islands guarded by mighty bosses. Baginda asks you to free every island starting from Desa Sapaan!',
-          textId: 'Raja Aksara juga memintaku menyampaikan bahwa kini hanya tersisa sedikit kata di istana, sementara enam pecahan mahkota tersebar di enam pulau dan dijaga monster bos besar, sehingga Baginda memintamu membebaskan keenam pulau dimulai dari Desa Sapaan.',
+          textEn: `Raja Aksara also asked me to tell ${owlAddr} that very few words remain in the palace, while six crown shards are scattered across six islands guarded by mighty bosses. Baginda asks you to free every island starting from Desa Sapaan!`,
+          textId: `Raja Aksara juga memintaku menyampaikan bahwa kini hanya tersisa sedikit kata di istana, sementara enam pecahan mahkota tersebar di enam pulau dan dijaga monster bos besar, sehingga Baginda memohon kepada ${owlAddr} untuk membebaskan keenam pulau dimulai dari Desa Sapaan.`,
           accentColor: '#8b5cf6',
         };
         soundEngine.speakEnglish('Raja Aksara asks you to recover all six crown shards across six islands!');
@@ -7133,8 +7236,8 @@ export class RpgWorldEngine {
           speakerRole: 'Petunjuk Awal · Desa Sapaan',
           speakerKind: 'owl',
           speakerSide: 'npc',
-          textEn: 'You have no weapon yet! Pick up the Starter Weapon in the grass on the left side of this village square, talk to the village guardian, and collect Lila’s 6 red ribbons across the islands. Good luck!',
-          textId: `Bagus, tapi kamu belum memegang senjata! Ambil Senjata Pemula yang terjatuh di sebelah kiri alun-alun desa ini, temui penjaga desa, lalu kumpulkan 6 pita merah milik Lila di tiap pulau. Aku terbang duluan, ${pName}!`,
+          textEn: `You have no weapon yet, ${owlAddr}! Pick up the Starter Weapon in the grass on the left side of this village square, talk to the village guardian, and collect Lila’s 6 red ribbons across the islands. Safe travels, ${owlAddr}!`,
+          textId: `Bagus, ${owlAddr}, tapi saat ini kamu belum memegang senjata! Ambil Senjata Pemula yang terjatuh di sebelah kiri alun-alun desa ini, temui penjaga desa, lalu kumpulkan 6 pita merah 3D milik Lila di tiap pulau setelah misinya selesai. Aku terbang duluan, ${owlAddr}!`,
           accentColor: '#10b981',
         };
       } else {
@@ -7203,7 +7306,8 @@ export class RpgWorldEngine {
       const nextStep = this.storyDialog.step + 1;
       if (nextStep < story.introSteps.length) {
         const s = story.introSteps[nextStep];
-        const enText = personalizePlayerText(s.textEn, pName);
+        const gAddr = formatGuardianAddress(story.guardianId, pName, this.localCharacterId);
+        const enText = personalizePlayerText(s.textEn, gAddr);
         this.storyDialog = {
           kind: 'dungeon_intro',
           step: nextStep,
@@ -7211,7 +7315,7 @@ export class RpgWorldEngine {
           speakerName: personalizePlayerText(s.speakerName, pName),
           speakerRole: personalizePlayerText(s.speakerRole, pName),
           textEn: enText,
-          textId: personalizePlayerText(s.textId, pName),
+          textId: personalizePlayerText(s.textId, gAddr),
           accentColor: story.accentColor,
           speakerKind: 'npc',
           speakerNpcId: story.guardianId,
@@ -7271,7 +7375,8 @@ export class RpgWorldEngine {
         if (this.dungeonRig) {
           this.dungeonRig.guardianAuraMat.color.setHex(0x22c55e);
         }
-        const guardianEn = personalizePlayerText(story.rescueGuardianEn, pName);
+        const gAddr = formatGuardianAddress(story.guardianId, pName, this.localCharacterId);
+        const guardianEn = personalizePlayerText(story.rescueGuardianEn, gAddr);
         this.storyDialog = {
           kind: 'dungeon_rescue',
           step: 1,
@@ -7279,7 +7384,7 @@ export class RpgWorldEngine {
           speakerName: `${story.guardianName} (Suara Pulih!)`,
           speakerRole: `Penjaga ${ZONE_INFO[zId].name} · Reuni Keluarga`,
           textEn: guardianEn,
-          textId: personalizePlayerText(story.rescueGuardianId, pName),
+          textId: personalizePlayerText(story.rescueGuardianId, gAddr),
           accentColor: '#10b981',
           speakerKind: 'npc',
           speakerNpcId: story.guardianId,
@@ -7295,15 +7400,15 @@ export class RpgWorldEngine {
           step: 2,
           zoneId: zId,
           speakerName: pName,
-          speakerRole: `${ZONE_INFO[zId].name} Bebas · Pecahan Mahkota ${rb.number}/6`,
-          textEn: `Area liberated! Earned Crown Shard #${rb.number}/6, ${RELICS[boss.rewardRelic].name}, and ${wDef.name}!`,
-          textId: `${story.captiveName} kembali bersama ${story.guardianName}! Gua kini terang benderang dan bebas dari bayangan monster.`,
+          speakerRole: `${ZONE_INFO[zId].name} Bebas · Segel Pita #${rb.number}/6 Terbuka`,
+          textEn: `Area liberated! Earned ${RELICS[boss.rewardRelic].name} and ${wDef.name}! The 3D Red Ribbon #${rb.number}/6 seal on the island is now unlocked!`,
+          textId: `${story.captiveName} kembali bersama ${story.guardianName}! Gua kini terang benderang, dan segel Pita Merah 3D di luar gua ${ZONE_INFO[zId].name} sekarang sudah terbuka untuk diambil!`,
           accentColor: '#e11d48',
           speakerKind: 'hero',
           speakerSide: 'hero',
           ribbonName: rb.name,
           ribbonQuote: rb.quote,
-          rewardSummary: `Pecahan Mahkota #${rb.number}/6 · ${RELICS[boss.rewardRelic].name} · ${wDef.name} (+Peluru) · +5 💎 · +180 XP`,
+          rewardSummary: `Segel ${rb.name} Terbuka · ${RELICS[boss.rewardRelic].name} · ${wDef.name} (+Peluru) · +5 💎 · +180 XP`,
         };
         soundEngine.playFanfare();
         this.pushHud(true);
@@ -7361,6 +7466,7 @@ export class RpgWorldEngine {
     const story = ZONE_CAVE_STORIES[zoneId];
     const s0 = story.introSteps[0];
     const pName = this.getPlayerDisplayName();
+    const gAddr = formatGuardianAddress(story.guardianId, pName, this.localCharacterId);
     this.phase = 'story';
     this.heldKeys.clear();
     this.applyCameraVisibilityAndControls();
@@ -7383,8 +7489,8 @@ export class RpgWorldEngine {
       zoneId,
       speakerName: personalizePlayerText(s0.speakerName, pName),
       speakerRole: personalizePlayerText(s0.speakerRole, pName),
-      textEn: personalizePlayerText(s0.textEn, pName),
-      textId: personalizePlayerText(s0.textId, pName),
+      textEn: personalizePlayerText(s0.textEn, gAddr),
+      textId: personalizePlayerText(s0.textId, gAddr),
       accentColor: story.accentColor,
     };
     soundEngine.playDoor();
@@ -7469,7 +7575,6 @@ export class RpgWorldEngine {
     this.zoneCaveProgress[zoneId] = { defeated: safeTotal, remaining: 0, total: safeTotal };
     if (!this.liberatedZones.has(zoneId)) {
       this.liberatedZones.add(zoneId);
-      this.ribbons.add(zoneId);
       this.ownedRelics.add(boss.rewardRelic);
       this.ownedWeapons.add(boss.rewardWeapon);
       this.weaponAmmo[boss.rewardWeapon] = Math.min(
@@ -7535,8 +7640,8 @@ export class RpgWorldEngine {
       const boss = BOSSES[zId];
       this.spawnBurst(3.8, 2.2, 11.8, 0x34d399, 36);
       this.showBanner(
-        `🎉 ${ZONE_INFO[zId].name} Bebas! Dapat Pecahan Mahkota #${rb.number}/6, ${RELICS[boss.rewardRelic].name}, & ${WEAPONS[boss.rewardWeapon].name}!`,
-        5.0,
+        `🎉 ${ZONE_INFO[zId].name} Bebas! Segel ${rb.name} kini terbuka di luar gua (${RELICS[boss.rewardRelic].name} & ${WEAPONS[boss.rewardWeapon].name} didapat)!`,
+        5.5,
       );
     }
     this.pushHud(true);
@@ -13543,6 +13648,11 @@ export class RpgWorldEngine {
       return;
     }
 
+    if (this.worldMode === 'overworld' && this.nearIslandRibbonZone) {
+      this.collectOrInspectIslandRibbon(this.nearIslandRibbonZone, true);
+      return;
+    }
+
     if (this.worldMode === 'overworld' && this.nearbyOverworldZoneDoor && !this.nearPortal) {
       const doorZoneId = this.nearbyOverworldZoneDoor;
       const door = OVERWORLD_ZONE_DOORS[doorZoneId];
@@ -13711,14 +13821,15 @@ export class RpgWorldEngine {
     );
 
     const pName = this.getPlayerDisplayName();
+    const gAddr = formatGuardianAddress(story.guardianId, pName, this.localCharacterId);
     if (this.dungeonState.liberated) {
       this.caveGuardianTurns = [
         {
           speakerSide: 'npc',
           speakerName: story.guardianName,
           speakerRole: `Penjaga Gua ${zoneLabel} · Bebas ✓`,
-          textId: personalizePlayerText(story.rescueGuardianId, pName),
-          textEn: personalizePlayerText(story.rescueGuardianEn, pName),
+          textId: personalizePlayerText(story.rescueGuardianId, gAddr),
+          textEn: personalizePlayerText(story.rescueGuardianEn, gAddr),
         },
         {
           speakerSide: 'hero',
@@ -13736,8 +13847,8 @@ export class RpgWorldEngine {
           speakerSide: 'npc',
           speakerName: story.guardianName,
           speakerRole: `Penjaga Gua ${zoneLabel}`,
-          textId: `Kamu sudah memegang Kunci Penjara Emasnya! Cepat buka sel rahasia di sudut ${corner} untuk menyelamatkan ${story.captiveName}!`,
-          textEn: `You already have the Golden Prison Key! Hurry to the secret cell in the ${corner} corner and rescue ${story.captiveName}!`,
+          textId: `${gAddr}, kamu sudah memegang Kunci Penjara Emasnya! Cepat buka sel rahasia di sudut ${corner} untuk menyelamatkan ${story.captiveName}!`,
+          textEn: `${gAddr}, you already have the Golden Prison Key! Hurry to the secret cell in the ${corner} corner and rescue ${story.captiveName}!`,
         },
         {
           speakerSide: 'hero',
@@ -13753,8 +13864,8 @@ export class RpgWorldEngine {
           speakerSide: 'npc',
           speakerName: story.guardianName,
           speakerRole: `Penjaga Gua ${zoneLabel}`,
-          textId: `Gua sudah terang! Ambil Kunci Penjara Emas yang jatuh di tengah arena, lalu bebaskan ${story.captiveName}!`,
-          textEn: `The cave is bright again! Pick up the Golden Prison Key in the center arena and free ${story.captiveName}!`,
+          textId: `Gua sudah terang, ${gAddr}! Ambil Kunci Penjara Emas yang jatuh di tengah arena, lalu bebaskan ${story.captiveName}!`,
+          textEn: `The cave is bright again, ${gAddr}! Pick up the Golden Prison Key in the center arena and free ${story.captiveName}!`,
         },
         {
           speakerSide: 'hero',
@@ -13771,8 +13882,8 @@ export class RpgWorldEngine {
           speakerSide: 'npc',
           speakerName: story.guardianName,
           speakerRole: `Penjaga Gua ${zoneLabel} (${doorsDone}/5 Pintu)`,
-          textId: `Tolong selamatkan ${story.captiveName}! Buka 5 Pintu Misi dan kalahkan Bos agar Kunci Penjaranya jatuh!`,
-          textEn: `Please save ${story.captiveName}! Open all 5 Mission Doors and defeat the Boss to drop the Prison Key!`,
+          textId: `${gAddr}, tolong selamatkan ${story.captiveName}! Buka 5 Pintu Misi dan kalahkan Bos agar Kunci Penjaranya jatuh!`,
+          textEn: `${gAddr}, please save ${story.captiveName}! Open all 5 Mission Doors and defeat the Boss to drop the Prison Key!`,
         },
         {
           speakerSide: 'hero',
@@ -16038,6 +16149,17 @@ export class RpgWorldEngine {
           this.enterAcademy();
           return;
         }
+        if (obj.userData.islandRibbonZone && this.worldMode === 'overworld') {
+          const zId = obj.userData.islandRibbonZone as ZoneId;
+          const entry = this.islandRibbonRigs.get(zId);
+          if (entry && Math.hypot(entry.x - this.heroPos.x, entry.z - this.heroPos.z) < 6.5) {
+            this.collectOrInspectIslandRibbon(zId, true);
+          } else if (entry) {
+            this.tapMoveTarget = new THREE.Vector3(entry.x, entry.y, entry.z);
+            this.showBanner(`Menuju Pedestal Pita Merah 3D ${ZONE_INFO[zId].name}...`, 2.2);
+          }
+          return;
+        }
         if (obj.userData.starterPickup && this.worldMode === 'overworld' && !this.starterWeaponPicked) {
           const sw = OVERWORLD_ANCHORS.starterWeapon;
           this.tapMoveTarget = new THREE.Vector3(sw.x, getArchipelagoGroundY(sw.x, sw.z), sw.z);
@@ -16603,19 +16725,51 @@ export class RpgWorldEngine {
         : this.worldMode === 'academy'
         ? this.academyRig?.cameraOccluders
         : undefined;
-    if (!occluders || occluders.length === 0) return true;
     const dx = tx - camX;
     const dy = ty - camY;
     const dz = tz - camZ;
     const dist = Math.hypot(dx, dy, dz);
     if (dist < 0.4) return true;
-    _v3.set(camX, camY, camZ);
-    _forward.set(dx / dist, dy / dist, dz / dist);
-    this.camRaycaster.near = 0.15;
-    this.camRaycaster.far = Math.max(0.2, dist - 0.38);
-    this.camRaycaster.set(_v3, _forward);
-    const hits = this.camRaycaster.intersectObjects(occluders, true);
-    return hits.length === 0;
+    const ux = dx / dist;
+    const uy = dy / dist;
+    const uz = dz / dist;
+    const checkDist = Math.max(0.2, dist - 0.38);
+
+    if (occluders && occluders.length > 0) {
+      _v3.set(camX, camY, camZ);
+      _forward.set(ux, uy, uz);
+      this.camRaycaster.near = 0.15;
+      this.camRaycaster.far = checkDist;
+      this.camRaycaster.set(_v3, _forward);
+      const hits = this.camRaycaster.intersectObjects(occluders, true);
+      if (hits.length > 0) return false;
+    }
+
+    if (this.worldMode === 'overworld' && this.villageRig?.obstacles.length) {
+      for (const obs of this.villageRig.obstacles) {
+        if (obs.halfW < 0.55 && obs.halfD < 0.55) continue;
+        const baseY = obs.minY ?? getArchipelagoGroundY(obs.x, obs.z);
+        const topY = obs.maxY ?? baseY + (obs.halfW >= 2.4 ? 7.2 : 4.2);
+        const hit = this.rayIntersectAabbDist(
+          camX,
+          camY,
+          camZ,
+          ux,
+          uy,
+          uz,
+          checkDist,
+          obs.x - obs.halfW,
+          obs.x + obs.halfW,
+          baseY,
+          topY,
+          obs.z - obs.halfD,
+          obs.z + obs.halfD,
+        );
+        if (hit !== null) return false;
+      }
+    }
+
+    return true;
   }
 
   private updateSideAngleDialogueCamera(
@@ -16637,16 +16791,20 @@ export class RpgWorldEngine {
     const midZ = (heroZ + partnerZ) * 0.5;
 
     const lookX = midX;
-    const lookY = Math.min(heroY, partnerY) + 1.05;
+    const lookY = Math.min(heroY, partnerY) + 1.12;
     const lookZ = midZ;
+
+    const targetNpc = this.dialogueTargetNpcId ? this.npcs.get(this.dialogueTargetNpcId) : null;
+    const npcBackX = targetNpc ? -Math.sin(targetNpc.standRotY) : 0;
+    const npcBackZ = targetNpc ? -Math.cos(targetNpc.standRotY) : 0;
 
     const cacheKey = `${this.worldMode}|${this.dialogueTargetNpcId ?? ''}|${this.storyDialog?.kind ?? ''}|${Math.round(heroX * 4)},${Math.round(heroZ * 4)}|${Math.round(partnerX * 4)},${Math.round(partnerZ * 4)}`;
     if (snap || cacheKey !== this.sideCamCacheKey) {
-      const offY = 1.9;
-      const armHoriz = 5.4;
+      const offY = 1.55;
+      const armHoriz = 5.1;
       const curSideDot = (this.camera.position.x - lookX) * (-toPartnerZ) + (this.camera.position.z - lookZ) * toPartnerX;
-      // Angles > 90 deg step slightly behind-beside Hero on the open courtyard side away from cave walls behind the Guardian
-      const candidateAngles = [-2.01, 2.01, -1.75, 1.75, -2.3, 2.3, -1.4, 1.4];
+      // Bias strongly toward open courtyard side in front of Hero and away from Guardian's back wall
+      const candidateAngles = [-2.32, 2.32, -2.05, 2.05, -2.58, 2.58, -1.8, 1.8, -1.4, 1.4];
 
       let bestScore = -Infinity;
       let bestCamX = lookX - toPartnerZ * armHoriz - toPartnerX * 0.6;
@@ -16683,12 +16841,28 @@ export class RpgWorldEngine {
           }
         }
 
-        const heroLos = safeDist >= 2.2 && this.hasCameraSightline(camX, camY, camZ, heroX, heroY + 1.4, heroZ);
-        const partnerLos = safeDist >= 2.2 && this.hasCameraSightline(camX, camY, camZ, partnerX, partnerY + 1.4, partnerZ);
-        const losScore = heroLos && partnerLos ? 100 : heroLos || partnerLos ? 40 : -80;
-        const openCourtyardBonus = Math.abs(ang) >= 1.72 ? 6 : 0;
+        const wallDot = targetNpc ? rx * npcBackX + rz * npcBackZ : 0;
+        const wallPenalty = wallDot > 0.1 ? -95 * wallDot : 0;
+
+        const longEnough = safeDist >= desiredDist * 0.72;
+        const heroLos =
+          longEnough &&
+          this.hasCameraSightline(camX, camY, camZ, heroX, heroY + 1.35, heroZ) &&
+          this.hasCameraSightline(camX, camY, camZ, heroX, heroY + 1.75, heroZ);
+        const partnerLos =
+          longEnough &&
+          this.hasCameraSightline(camX, camY, camZ, partnerX, partnerY + 1.35, partnerZ) &&
+          this.hasCameraSightline(camX, camY, camZ, partnerX, partnerY + 1.75, partnerZ);
+        const losScore = heroLos && partnerLos ? 110 : heroLos || partnerLos ? 35 : -90;
+        const openCourtyardBonus = Math.abs(ang) >= 1.8 ? 8 : 0;
         const sideHysteresis = !snap && ((ang > 0 ? 1 : -1) * curSideDot > 0) ? 3 : 0;
-        const score = losScore + terrainPenalty + Math.min(safeDist, desiredDist) * 12 + openCourtyardBonus + sideHysteresis;
+        const score =
+          losScore +
+          terrainPenalty +
+          wallPenalty +
+          Math.min(safeDist, desiredDist) * 12 +
+          openCourtyardBonus +
+          sideHysteresis;
 
         if (score > bestScore) {
           bestScore = score;
@@ -16696,7 +16870,14 @@ export class RpgWorldEngine {
           bestCamY = camY;
           bestCamZ = camZ;
         }
-        if (heroLos && partnerLos && terrainPenalty === 0 && safeDist >= desiredDist - 0.15 && Math.abs(ang) >= 1.72) {
+        if (
+          heroLos &&
+          partnerLos &&
+          terrainPenalty === 0 &&
+          wallDot <= 0.1 &&
+          safeDist >= desiredDist - 0.15 &&
+          Math.abs(ang) >= 1.8
+        ) {
           break;
         }
       }
@@ -19557,6 +19738,29 @@ export class RpgWorldEngine {
       });
     }
 
+    for (const [zId, entry] of this.islandRibbonRigs.entries()) {
+      const collected = this.ribbons.has(zId);
+      const unlocked = this.liberatedZones.has(zId);
+      const { rig } = entry;
+      rig.ribbonPivot.visible = !collected;
+      rig.lockDome.visible = !collected && !unlocked;
+      if (!collected) {
+        rig.ribbonPivot.rotation.y += dt * (unlocked ? 1.85 : 0.45);
+        rig.ribbonPivot.position.y = 2.15 + Math.sin(this.elapsed * 2.8 + entry.x * 0.2) * 0.14;
+        if (rig.lockDome.visible) {
+          rig.lockDome.rotation.y -= dt * 0.65;
+          rig.lockCollarMat.emissiveIntensity = 0.75 + Math.sin(this.elapsed * 3.2) * 0.25;
+        }
+        rig.beaconRingMat.opacity = unlocked
+          ? 0.68 + Math.sin(this.elapsed * 4.2) * 0.22
+          : 0.28 + Math.sin(this.elapsed * 2.2) * 0.08;
+        rig.beaconRingMat.color.setHex(unlocked ? 0xf43f5e : 0xf59e0b);
+      } else {
+        rig.beaconRingMat.opacity = 0.18;
+        rig.beaconRingMat.color.setHex(0x10b981);
+      }
+    }
+
     const isNightShift = currentDayPhase === 'malam';
     let npcIdx = 0;
     for (const [npcId, npc] of this.npcs.entries()) {
@@ -22020,6 +22224,28 @@ export class RpgWorldEngine {
         }
       }
       this.nearbyOverworldZoneDoor = bestZoneDoor;
+
+      let bestRibbonZone: ZoneId | null = null;
+      let bestRibbonDist = 4.2;
+      if (this.carMode === 'none' && this.planeMode === 'none') {
+        for (const [zId, entry] of this.islandRibbonRigs.entries()) {
+          if (this.ribbons.has(zId)) continue;
+          if (Math.abs(this.heroPos.y - entry.y) > 3.5) continue;
+          const d = Math.hypot(this.heroPos.x - entry.x, this.heroPos.z - entry.z);
+          if (d < bestRibbonDist) {
+            bestRibbonDist = d;
+            bestRibbonZone = zId;
+          }
+        }
+      }
+      this.nearIslandRibbonZone = bestRibbonZone;
+      this.nearIslandRibbonLocked = Boolean(
+        bestRibbonZone && !this.liberatedZones.has(bestRibbonZone),
+      );
+      if (bestRibbonZone && bestRibbonDist < 2.1) {
+        this.collectOrInspectIslandRibbon(bestRibbonZone, false);
+      }
+
       this.nearbyDoorIndex = null;
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
@@ -22032,6 +22258,8 @@ export class RpgWorldEngine {
     } else if (this.worldMode === 'dungeon' && this.dungeonState) {
       this.nearbyNpcId = null;
       this.nearbyOverworldZoneDoor = null;
+      this.nearIslandRibbonZone = null;
+      this.nearIslandRibbonLocked = false;
       this.nearPortal = false;
       this.nearDungeonExit =
         Math.hypot(this.heroPos.x - this.dungeonExitPos.x, this.heroPos.z - this.dungeonExitPos.z) < 4.4;
@@ -22127,6 +22355,8 @@ export class RpgWorldEngine {
     } else if (this.worldMode === 'academy') {
       this.nearbyDoorIndex = null;
       this.nearbyOverworldZoneDoor = null;
+      this.nearIslandRibbonZone = null;
+      this.nearIslandRibbonLocked = false;
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
       this.nearHiddenPrison = false;
@@ -22148,6 +22378,8 @@ export class RpgWorldEngine {
     } else if (this.worldMode === 'ocean' && this.oceanRig) {
       this.nearbyNpcId = null;
       this.nearbyOverworldZoneDoor = null;
+      this.nearIslandRibbonZone = null;
+      this.nearIslandRibbonLocked = false;
       this.nearbyDoorIndex = null;
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
@@ -22162,6 +22394,8 @@ export class RpgWorldEngine {
         (this.heroPos.y > -1.75 && this.heroPos.z > 24);
     } else {
       this.nearbyOverworldZoneDoor = null;
+      this.nearIslandRibbonZone = null;
+      this.nearIslandRibbonLocked = false;
       this.nearCraftingTable = false;
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
@@ -24163,6 +24397,28 @@ export class RpgWorldEngine {
       }
     }
 
+    if (this.phase === 'playing') {
+      for (const [zId, entry] of this.islandRibbonRigs.entries()) {
+        if (this.ribbons.has(zId)) continue;
+        const dSq = (entry.x - this.heroPos.x) ** 2 + (entry.z - this.heroPos.z) ** 2;
+        if (dSq > 34 * 34) continue;
+        const rp = projectPoint(entry.x, entry.y + 3.45, entry.z);
+        if (!rp) continue;
+        const unlocked = this.liberatedZones.has(zId);
+        const rb = RIBBONS[zId];
+        labels.push({
+          id: `island_ribbon_${zId}`,
+          x: rp.x,
+          y: rp.y,
+          title: unlocked
+            ? `🎀 Ambil Pita Merah 3D (${rb.number}/6)`
+            : `🔒 Pita Merah 3D (${rb.number}/6)`,
+          subtext: unlocked ? ZONE_INFO[zId].name : 'Selesaikan misi gua untuk membuka segel',
+          kind: 'pickup',
+        });
+      }
+    }
+
     const pp = OVERWORLD_ANCHORS.portal;
     const portalPos = projectPoint(pp.x, getArchipelagoGroundY(pp.x, pp.z) + 8.8, pp.z);
     if (portalPos) {
@@ -24174,7 +24430,7 @@ export class RpgWorldEngine {
         title: IELTS_TEMPORARILY_LOCKED
           ? '🔒 Istana IELTS (Ditutup Sementara)'
           : locked
-          ? `🔒 Istana IELTS (${this.ribbons.size}/6 Mahkota)`
+          ? `🔒 Istana IELTS (${this.ribbons.size}/6 Pita)`
           : '🏰 Istana IELTS / Akademi Ujian',
         kind: 'portal',
       });
@@ -25042,6 +25298,21 @@ export class RpgWorldEngine {
           label: ZONE_INFO[zId].name,
         });
       }
+      for (const [zId, entry] of this.islandRibbonRigs.entries()) {
+        if (this.ribbons.has(zId)) continue;
+        const unlocked = this.liberatedZones.has(zId);
+        blips.push({
+          id: `ribbon_${zId}`,
+          x: entry.x,
+          z: entry.z,
+          kind: 'collectible',
+          color: unlocked ? '#fb7185' : '#f59e0b',
+          needsHelp: unlocked,
+          label: unlocked
+            ? `Pita Merah 3D ${ZONE_INFO[zId].name}`
+            : `Segel Pita ${ZONE_INFO[zId].name}`,
+        });
+      }
       blips.push({
         id: 'portal',
         x: OVERWORLD_ANCHORS.portal.x,
@@ -25686,6 +25957,8 @@ export class RpgWorldEngine {
             getActiveZoneNpcDef('desa_sapaan', this.getCurrentDayPhase() === 'malam').id,
       ),
       nearbyOverworldZoneDoor: this.nearbyOverworldZoneDoor,
+      nearIslandRibbonZone: this.nearIslandRibbonZone,
+      nearIslandRibbonLocked: this.nearIslandRibbonLocked,
       nightPermittedZones: Array.from(this.nightPermittedZones),
       nearbyMonsterId: this.nearbyMonsterId,
       nearbyDoorIndex: this.nearbyDoorIndex,
@@ -26443,6 +26716,7 @@ export class RpgWorldEngine {
     this.archipelagoUnderwaterRig?.disposables.forEach((d) => d.dispose());
     this.villageRig?.disposables.forEach((d) => d.dispose());
     this.worldObstaclesRig?.disposables.forEach((d) => d.dispose());
+    this.islandRibbonDisposables.forEach((d) => d.dispose());
     this.oceanRig?.disposables.forEach((d) => d.dispose());
     this.carRig?.disposables.forEach((d) => d.dispose());
     this.worldPlanes.forEach((p) => p.rig.disposables.forEach((d) => d.dispose()));

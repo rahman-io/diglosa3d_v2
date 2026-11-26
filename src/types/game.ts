@@ -278,6 +278,7 @@ export interface NpcDefinition {
   academySkill?: 'listening' | 'reading' | 'writing' | 'speaking' | 'full' | 'exit';
   archetypeId?: string;
   demographicLabel?: string;
+  ageYears?: number;
   habitSummary?: string;
   skillSummary?: string;
   stats?: { hp: number; atk: number; nrg: number };
@@ -596,6 +597,8 @@ export interface RpgHudSnapshot {
   nearbyDungeonGuardian: boolean;
   nearPrisonKey: boolean;
   nearHiddenPrison: boolean;
+  nearIslandRibbonZone?: ZoneId | null;
+  nearIslandRibbonLocked?: boolean;
   nearPortal: boolean;
   nearDungeonExit: boolean;
   portalUnlocked: boolean;
@@ -754,6 +757,8 @@ export interface CharacterPreset {
   name: string;
   roleTitle: string;
   ageLabel: string;
+  ageYears: number;
+  gender: 'male' | 'female';
   tagline: string;
   perkText: string;
   hpStat: number;

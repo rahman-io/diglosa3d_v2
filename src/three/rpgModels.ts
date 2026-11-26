@@ -164,6 +164,15 @@ export interface PortalArchRig {
   coreDisc: THREE.Mesh;
 }
 
+export interface IslandRibbonPedestalRig {
+  zoneId: ZoneId;
+  root: THREE.Group;
+  ribbonPivot: THREE.Group;
+  lockDome: THREE.Mesh;
+  beaconRingMat: THREE.MeshBasicMaterial;
+  lockCollarMat: THREE.MeshStandardMaterial;
+}
+
 export interface DungeonDoorRig {
   index: number;
   def: DoorDef;
@@ -2693,6 +2702,112 @@ export function createPortalArch(palette: MaterialPalette): PortalArchRig {
   return { root, ringOuter, ringInner, coreDisc };
 }
 
+export function createIslandRibbonPedestal(
+  zoneId: ZoneId,
+  accentHex: number,
+  palette: MaterialPalette,
+  disposables: Array<{ dispose: () => void }> = [],
+): IslandRibbonPedestalRig {
+  const root = new THREE.Group();
+  root.userData.islandRibbonZone = zoneId;
+
+  const stoneBaseMat = palette.getPixelMat('cobble', 0x94a3b8);
+  const stoneTrimMat = palette.getMat(0x475569, 'matte');
+  const ribbonMat = palette.getMat(0xe11d48, 'gloss');
+  const ribbonGlowMat = palette.getMat(0xfb7185, 'emissive');
+  const goldMat = palette.getMat(0xfbbf24, 'metal');
+
+  const plinthStep = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.24, 1.75), stoneTrimMat);
+  plinthStep.position.y = 0.12;
+  plinthStep.castShadow = true;
+  plinthStep.receiveShadow = true;
+
+  const plinthCol = new THREE.Mesh(new THREE.BoxGeometry(1.12, 1.08, 1.12), stoneBaseMat);
+  plinthCol.position.y = 0.78;
+  plinthCol.castShadow = true;
+  plinthCol.receiveShadow = true;
+
+  const plinthCap = new THREE.Mesh(new THREE.BoxGeometry(1.38, 0.22, 1.38), stoneTrimMat);
+  plinthCap.position.y = 1.43;
+  plinthCap.castShadow = true;
+
+  const emblemTile = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.08), goldMat);
+  emblemTile.position.set(0, 0.85, 0.58);
+  emblemTile.rotation.z = Math.PI / 4;
+
+  const beaconRingGeo = new THREE.RingGeometry(1.18, 1.54, 24);
+  const beaconRingMat = new THREE.MeshBasicMaterial({
+    color: accentHex,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: 0.72,
+    depthWrite: false,
+  });
+  const beaconRing = new THREE.Mesh(beaconRingGeo, beaconRingMat);
+  beaconRing.rotation.x = -Math.PI / 2;
+  beaconRing.position.y = 0.06;
+
+  // 3D Crimson Ribbon Bow ("Pita Merah 3D") floating above the stone pedestal
+  const ribbonPivot = new THREE.Group();
+  ribbonPivot.position.y = 2.15;
+
+  const knot = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.28, 0.26), ribbonGlowMat);
+  const loopL = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.38, 0.2), ribbonMat);
+  loopL.position.set(-0.36, 0.08, 0);
+  loopL.rotation.z = 0.34;
+  const loopR = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.38, 0.2), ribbonMat);
+  loopR.position.set(0.36, 0.08, 0);
+  loopR.rotation.z = -0.34;
+
+  const tailL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.62, 0.14), ribbonMat);
+  tailL.position.set(-0.2, -0.36, 0.02);
+  tailL.rotation.z = 0.26;
+  const tailR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.62, 0.14), ribbonMat);
+  tailR.position.set(0.2, -0.36, 0.02);
+  tailR.rotation.z = -0.26;
+
+  const goldBand = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.16, 0.3), goldMat);
+  ribbonPivot.add(knot, loopL, loopR, tailL, tailR, goldBand);
+
+  // Translucent Seal Dome + Lock Collar shown before that island's cave mission is cleared
+  const lockCollarGeo = new THREE.TorusGeometry(0.78, 0.09, 8, 20);
+  const lockCollarMat = new THREE.MeshStandardMaterial({
+    color: 0xf97316,
+    emissive: 0xea580c,
+    emissiveIntensity: 0.95,
+    roughness: 0.3,
+    metalness: 0.35,
+  });
+  const lockCollar = new THREE.Mesh(lockCollarGeo, lockCollarMat);
+  lockCollar.rotation.x = Math.PI / 2;
+  lockCollar.position.y = 1.56;
+
+  const lockDomeGeo = new THREE.IcosahedronGeometry(0.95, 1);
+  const lockDomeMat = new THREE.MeshBasicMaterial({
+    color: 0xf59e0b,
+    transparent: true,
+    opacity: 0.26,
+    wireframe: true,
+    depthWrite: false,
+  });
+  const lockDome = new THREE.Mesh(lockDomeGeo, lockDomeMat);
+  lockDome.position.y = 2.15;
+  lockDome.add(lockCollar);
+  lockCollar.position.y = -0.56;
+
+  disposables.push(beaconRingGeo, beaconRingMat, lockCollarGeo, lockCollarMat, lockDomeGeo, lockDomeMat);
+  root.add(plinthStep, plinthCol, plinthCap, emblemTile, beaconRing, ribbonPivot, lockDome);
+
+  return {
+    zoneId,
+    root,
+    ribbonPivot,
+    lockDome,
+    beaconRingMat,
+    lockCollarMat,
+  };
+}
+
 // 7. 6 Atmospheric Area Mists across Islands (lift dramatically when Zone Boss is beaten!)
 export function createAreaMists(): Map<ZoneId, THREE.Mesh> {
   const mists = new Map<ZoneId, THREE.Mesh>();
@@ -2811,6 +2926,7 @@ export function createDungeonDoorRig(
   def: DoorDef,
   palette: MaterialPalette,
   disposables: Array<{ dispose: () => void }> = [],
+  zoneId?: ZoneId,
 ): DungeonDoorRig {
   const group = new THREE.Group();
   group.position.set(def.x, 0, def.z);
@@ -2836,10 +2952,207 @@ export function createDungeonDoorRig(
   const stoneLight = palette.getMat(0x64748b, 'matte');
   const woodDark = palette.getMat(0x78350f, 'matte');
   const woodWarm = palette.getMat(0xb45309, 'matte');
+  const mossGreen = palette.getMat(0x4d7c0f, 'matte');
+  const lanternGlow = palette.getMat(0xfbbf24, 'emissive');
+  const crystalWater = palette.getMat(0x06b6d4, 'emissive');
 
   let orbBaseY = 3.6;
 
-  if (def.mode === 'cards') {
+  if (zoneId === 'desa_sapaan' && def.index === 0) {
+    // Sumur Tua (Mossy Wishing Well with pitched timber roof)
+    const wellBase = new THREE.Mesh(new THREE.CylinderGeometry(1.75, 1.95, 1.15, 10), stoneMid);
+    wellBase.position.y = 0.58;
+    wellBase.castShadow = true;
+    wellBase.receiveShadow = true;
+    const wellRim = new THREE.Mesh(new THREE.TorusGeometry(1.62, 0.24, 6, 10), stoneLight);
+    wellRim.rotation.x = Math.PI / 2;
+    wellRim.position.y = 1.16;
+    const mossPatch1 = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.35, 0.42), mossGreen);
+    mossPatch1.position.set(-1.15, 1.18, 0.9);
+    const mossPatch2 = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.32, 0.45), mossGreen);
+    mossPatch2.position.set(1.05, 1.18, -0.95);
+    const wellWater = new THREE.Mesh(new THREE.CylinderGeometry(1.42, 1.42, 0.14, 14), crystalWater);
+    wellWater.position.y = 0.88;
+    const postL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 2.15, 0.24), woodDark);
+    postL.position.set(-1.25, 2.0, 0);
+    const postR = new THREE.Mesh(new THREE.BoxGeometry(0.24, 2.15, 0.24), woodDark);
+    postR.position.set(1.25, 2.0, 0);
+    const roofL = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.2, 2.7), woodWarm);
+    roofL.position.set(-0.75, 3.25, 0);
+    roofL.rotation.z = 0.52;
+    const roofR = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.2, 2.7), woodWarm);
+    roofR.position.set(0.75, 3.25, 0);
+    roofR.rotation.z = -0.52;
+    const roofMoss = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.18, 1.45), mossGreen);
+    roofMoss.position.set(-0.55, 3.45, 0.25);
+    roofMoss.rotation.z = 0.52;
+    const crank = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 2.35, 8), woodDark);
+    crank.rotation.z = Math.PI / 2;
+    crank.position.set(0, 2.15, 0);
+    const crateBeside = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.85, 0.85), woodWarm);
+    crateBeside.position.set(-2.15, 0.43, 0.85);
+    group.add(
+      wellBase,
+      wellRim,
+      mossPatch1,
+      mossPatch2,
+      wellWater,
+      postL,
+      postR,
+      roofL,
+      roofR,
+      roofMoss,
+      crank,
+      crateBeside,
+    );
+    orbBaseY = 4.3;
+  } else if (zoneId === 'desa_sapaan' && def.index === 1) {
+    // Jembatan Batu (Stepped Cobblestone Arch & Stream Bridge with Corner Lanterns)
+    const waterBed = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.1, 2.2), crystalWater);
+    waterBed.position.y = 0.05;
+    const bridgeSlab = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.36, 3.4), stoneMid);
+    bridgeSlab.position.y = 0.38;
+    bridgeSlab.receiveShadow = true;
+    const runicArchL = new THREE.Mesh(new THREE.BoxGeometry(0.55, 3.1, 0.65), stoneLight);
+    runicArchL.position.set(-1.15, 1.65, -0.75);
+    const runicArchR = new THREE.Mesh(new THREE.BoxGeometry(0.55, 3.1, 0.65), stoneLight);
+    runicArchR.position.set(1.15, 1.65, -0.75);
+    const runicArchTop = new THREE.Mesh(new THREE.BoxGeometry(3.0, 0.6, 0.72), frameMat);
+    runicArchTop.position.set(0, 3.35, -0.75);
+    const doorWood = new THREE.Mesh(new THREE.BoxGeometry(1.7, 2.7, 0.22), woodDark);
+    doorWood.position.set(0, 1.5, -0.78);
+    const runeGlyph = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.85, 0.08), orbMat);
+    runeGlyph.position.set(0, 1.75, -0.62);
+    [
+      [-1.35, 1.35],
+      [1.35, 1.35],
+    ].forEach(([lx, lz]) => {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.32, 1.15, 0.32), stoneDark);
+      post.position.set(lx, 0.72, lz);
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.3, 0.26), lanternGlow);
+      lamp.position.set(lx, 1.44, lz);
+      group.add(post, lamp);
+    });
+    group.add(waterBed, bridgeSlab, runicArchL, runicArchR, runicArchTop, doorWood, runeGlyph);
+    orbBaseY = 4.25;
+  } else if (zoneId === 'desa_sapaan' && def.index === 2) {
+    // Lumbung (Rustic Open Timber Barn with Moss Roof, Crates & Barrels)
+    const barnFloor = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.22, 3.8), stoneDark);
+    barnFloor.position.y = 0.11;
+    barnFloor.receiveShadow = true;
+    const backWall = new THREE.Mesh(new THREE.BoxGeometry(3.8, 2.6, 0.35), woodDark);
+    backWall.position.set(0, 1.4, -1.55);
+    const sideWallL = new THREE.Mesh(new THREE.BoxGeometry(0.35, 2.6, 3.3), woodDark);
+    sideWallL.position.set(-1.75, 1.4, 0);
+    const sideWallR = new THREE.Mesh(new THREE.BoxGeometry(0.35, 2.6, 3.3), woodDark);
+    sideWallR.position.set(1.75, 1.4, 0);
+    const barnBeamF = new THREE.Mesh(new THREE.BoxGeometry(3.9, 0.35, 0.35), frameMat);
+    barnBeamF.position.set(0, 2.75, 1.55);
+    const roofSlopeL = new THREE.Mesh(new THREE.BoxGeometry(2.55, 0.24, 4.1), woodWarm);
+    roofSlopeL.position.set(-1.05, 3.25, 0);
+    roofSlopeL.rotation.z = 0.48;
+    const roofSlopeR = new THREE.Mesh(new THREE.BoxGeometry(2.55, 0.24, 4.1), woodWarm);
+    roofSlopeR.position.set(1.05, 3.25, 0);
+    roofSlopeR.rotation.z = -0.48;
+    const roofMoss = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.2, 2.2), mossGreen);
+    roofMoss.position.set(0.72, 3.45, 0.2);
+    roofMoss.rotation.z = -0.48;
+    const barrelL = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.95, 10), woodWarm);
+    barrelL.position.set(-2.2, 0.58, 1.25);
+    const barrelR = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.46, 0.95, 10), woodWarm);
+    barrelR.position.set(-2.35, 0.58, 0.25);
+    const crateR = new THREE.Mesh(new THREE.BoxGeometry(0.92, 0.9, 0.92), woodWarm);
+    crateR.position.set(2.15, 0.56, 1.15);
+    const barnLantern = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.38, 0.32), lanternGlow);
+    barnLantern.position.set(0, 2.35, 1.55);
+    group.add(
+      barnFloor,
+      backWall,
+      sideWallL,
+      sideWallR,
+      barnBeamF,
+      roofSlopeL,
+      roofSlopeR,
+      roofMoss,
+      barrelL,
+      barrelR,
+      crateR,
+      barnLantern,
+    );
+    orbBaseY = 4.35;
+  } else if (zoneId === 'desa_sapaan' && def.index === 3) {
+    // Parit (Glowing Cyan Crystal Water Moat & Arched Stone Bridge with 4 Corner Lanterns)
+    const moatBed = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.1, 2.7), crystalWater);
+    moatBed.position.set(0, 0.05, 0);
+    [
+      [-1.3, 0.28, -0.75],
+      [1.4, 0.32, 0.65],
+      [-0.2, 0.24, 0.95],
+    ].forEach(([cx, cy, cz]) => {
+      const c = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.62, 5), palette.getMat(0x67e8f9, 'emissive'));
+      c.position.set(cx, cy, cz);
+      group.add(c);
+    });
+    const bankS = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.32, 0.55), stoneLight);
+    bankS.position.set(0, 0.16, 1.55);
+    const bankN = new THREE.Mesh(new THREE.BoxGeometry(4.8, 0.32, 0.55), stoneLight);
+    bankN.position.set(0, 0.16, -1.55);
+    const rampF = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.28, 1.15), stoneMid);
+    rampF.position.set(0, 0.36, 1.1);
+    rampF.rotation.x = 0.26;
+    const crest = new THREE.Mesh(new THREE.BoxGeometry(2.55, 0.32, 1.45), stoneMid);
+    crest.position.set(0, 0.68, 0);
+    crest.castShadow = true;
+    const rampB = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.28, 1.15), stoneMid);
+    rampB.position.set(0, 0.36, -1.1);
+    rampB.rotation.x = -0.26;
+    [-1.25, 1.25].forEach((px) => {
+      const wall = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.62, 2.95), stoneLight);
+      wall.position.set(px, 0.92, 0);
+      group.add(wall);
+      [-1.35, 1.35].forEach((pz) => {
+        const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.98, 0.38), stoneDark);
+        pillar.position.set(px, 0.85, pz);
+        const lantern = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.34, 0.3), lanternGlow);
+        lantern.position.set(px, 1.5, pz);
+        group.add(pillar, lantern);
+      });
+    });
+    group.add(moatBed, bankS, bankN, rampF, crest, rampB);
+    orbBaseY = 3.15;
+  } else if (zoneId === 'desa_sapaan' && def.index === 4) {
+    // Rumah Rani (Grand Carved Stone Village Archway with Double Oak Doors & Twin Lanterns)
+    const stepBase = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.36, 2.7), stoneDark);
+    stepBase.position.y = 0.18;
+    stepBase.receiveShadow = true;
+    const pL = new THREE.Mesh(new THREE.BoxGeometry(1.05, 4.3, 1.05), stoneMid);
+    pL.position.set(-1.75, 2.25, 0);
+    pL.castShadow = true;
+    const pR = new THREE.Mesh(new THREE.BoxGeometry(1.05, 4.3, 1.05), stoneMid);
+    pR.position.set(1.75, 2.25, 0);
+    pR.castShadow = true;
+    const archCrown = new THREE.Mesh(new THREE.BoxGeometry(4.75, 1.05, 1.2), stoneLight);
+    archCrown.position.set(0, 4.65, 0);
+    const keystone = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.72, 1.32), frameMat);
+    keystone.position.set(0, 4.65, 0);
+    const doorL = new THREE.Mesh(new THREE.BoxGeometry(1.22, 3.7, 0.28), woodDark);
+    doorL.position.set(-0.62, 2.1, -0.05);
+    const doorR = new THREE.Mesh(new THREE.BoxGeometry(1.22, 3.7, 0.28), woodDark);
+    doorR.position.set(0.62, 2.1, -0.05);
+    const sealRing = new THREE.Mesh(new THREE.TorusGeometry(0.65, 0.11, 8, 20), orbMat);
+    sealRing.position.set(0, 2.25, 0.16);
+    [-2.35, 2.35].forEach((bx) => {
+      const ped = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.2, 0.55), stoneMid);
+      ped.position.set(bx, 0.75, 0.95);
+      const lamp = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.45, 0.42), lanternGlow);
+      lamp.position.set(bx, 1.56, 0.95);
+      const mossCap = new THREE.Mesh(new THREE.BoxGeometry(0.65, 0.22, 0.65), mossGreen);
+      mossCap.position.set(bx, 0.42, -0.45);
+      group.add(ped, lamp, mossCap);
+    });
+    group.add(stepBase, pL, pR, archCrown, keystone, doorL, doorR, sealRing);
+    orbBaseY = 5.65;
+  } else if (def.mode === 'cards') {
     // Landmark 1: Luminous Memory Pool / Sacred Well (Kolam Ingatan / Sumur Tua / Genangan)
     const outerRim = new THREE.Mesh(new THREE.CylinderGeometry(2.35, 2.55, 0.48, 8), stoneMid);
     outerRim.position.y = 0.24;
@@ -3965,7 +4278,184 @@ export function createDungeonEnvironment(
   });
 
   // Zone-specific ambient cave accents
-  if (zoneId === 'menara_waktu') {
+  if (zoneId === 'desa_sapaan') {
+    const mossAccentMat = palette.getMat(0x22c55e, 'matte');
+    const darkBarkMat = palette.getMat(0x5c3a1e, 'matte');
+    const iceCrystalMat = palette.getMat(0x67e8f9, 'emissive');
+    const pinkHeartMat = palette.getMat(0xf472b6, 'emissive');
+    const runicPurpleMat = palette.getMat(0xc084fc, 'emissive');
+    const goldRuneMat = palette.getMat(0xfbbf24, 'emissive');
+    const torchEmissiveMat = palette.getMat(0xf97316, 'emissive');
+    const rockShelfMat = wallMat;
+
+    // 1) Central Courtyard Glowing Golden Geometric Star Circle (flat on ground)
+    const starGroup = new THREE.Group();
+    starGroup.position.set(0, 0.04, 3.0);
+    const starOuterRing = new THREE.Mesh(new THREE.RingGeometry(2.65, 2.95, 32), goldRuneMat);
+    starOuterRing.rotation.x = -Math.PI / 2;
+    const starInnerRing = new THREE.Mesh(new THREE.RingGeometry(1.55, 1.75, 24), goldRuneMat);
+    starInnerRing.rotation.x = -Math.PI / 2;
+    const sq1 = new THREE.Mesh(new THREE.RingGeometry(2.05, 2.28, 4), goldRuneMat);
+    sq1.rotation.x = -Math.PI / 2;
+    const sq2 = new THREE.Mesh(new THREE.RingGeometry(2.05, 2.28, 4), goldRuneMat);
+    sq2.rotation.x = -Math.PI / 2;
+    sq2.rotation.z = Math.PI / 4;
+    starGroup.add(starOuterRing, starInnerRing, sq1, sq2);
+    group.add(starGroup);
+
+    // 2) Perimeter Tiered Mossy Cliff Ledges & Upper Decorative Runic Alcove Doors (matching reference art)
+    const upperAlcoves: Array<[number, number, number, number]> = [
+      [-19.8, 5.4, -12.0, Math.PI / 2],
+      [-19.8, 5.4, 2.0, Math.PI / 2],
+      [-11.5, 5.6, -19.8, 0],
+      [11.5, 5.6, -19.8, 0],
+      [19.8, 5.4, -4.0, -Math.PI / 2],
+    ];
+    upperAlcoves.forEach(([ax, ay, az, rotY]) => {
+      const shelf = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.85, 1.9), rockShelfMat);
+      shelf.position.set(ax, ay - 0.55, az);
+      shelf.rotation.y = rotY;
+      shelf.userData.isMapHidden = true;
+
+      const doorAlcove = new THREE.Group();
+      doorAlcove.position.set(ax, ay, az);
+      doorAlcove.rotation.y = rotY;
+      const dFrameL = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.5, 0.5), stoneBlockMat);
+      dFrameL.position.set(-0.95, 1.25, 0);
+      const dFrameR = new THREE.Mesh(new THREE.BoxGeometry(0.4, 2.5, 0.5), stoneBlockMat);
+      dFrameR.position.set(0.95, 1.25, 0);
+      const dTop = new THREE.Mesh(new THREE.BoxGeometry(2.3, 0.45, 0.55), stoneBlockMat);
+      dTop.position.set(0, 2.55, 0);
+      const dPanel = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.2, 0.24), palette.getMat(0x3b2008, 'matte'));
+      dPanel.position.set(0, 1.2, -0.1);
+      const dRune = new THREE.Mesh(new THREE.BoxGeometry(0.24, 1.15, 0.08), runicPurpleMat);
+      dRune.position.set(0, 1.3, 0.06);
+      const dTorch = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.55, 0.22), torchEmissiveMat);
+      dTorch.position.set(1.45, 1.2, 0.28);
+      const dMoss = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.25, 0.8), mossAccentMat);
+      dMoss.position.set(-0.6, -0.1, 0.65);
+      doorAlcove.add(dFrameL, dFrameR, dTop, dPanel, dRune, dTorch, dMoss);
+      doorAlcove.userData.isMapHidden = true;
+      group.add(shelf, doorAlcove);
+    });
+
+    // 3) Two Massive Twisted Tree Roots descending along East & West back perimeter cliffs
+    [-19.5, 19.5].forEach((rx, rIdx) => {
+      const rootCol = new THREE.Group();
+      rootCol.position.set(rx, 0, -11.5);
+      rootCol.userData.isMapHidden = true;
+      const trunk = new THREE.Mesh(new THREE.BoxGeometry(1.65, 9.6, 1.65), darkBarkMat);
+      trunk.position.y = 4.8;
+      const branchA = new THREE.Mesh(new THREE.BoxGeometry(0.9, 4.2, 0.9), darkBarkMat);
+      branchA.position.set(rIdx === 0 ? 1.1 : -1.1, 7.6, 0.5);
+      branchA.rotation.z = rIdx === 0 ? -0.35 : 0.35;
+      const branchB = new THREE.Mesh(new THREE.BoxGeometry(0.9, 3.2, 0.9), darkBarkMat);
+      branchB.position.set(rIdx === 0 ? 0.8 : -0.8, 1.4, 0.9);
+      branchB.rotation.z = rIdx === 0 ? 0.42 : -0.42;
+      rootCol.add(trunk, branchA, branchB);
+      group.add(rootCol);
+    });
+
+    // 4) Hanging Lush Green Vines & Glowing Cyan Ice Crystal Clusters from Ceiling
+    const vineCoords: Array<[number, number, number]> = [
+      [-17.5, -17.0, 4.4],
+      [-12.0, -18.5, 5.0],
+      [-5.5, -18.0, 3.8],
+      [6.5, -18.5, 4.6],
+      [14.0, -18.0, 4.2],
+      [18.2, -13.5, 4.8],
+      [-18.2, -5.0, 4.3],
+      [-18.0, 6.0, 4.0],
+      [18.0, 4.0, 4.5],
+      [18.2, 13.5, 3.9],
+      [-11.5, 17.0, 3.6],
+      [11.5, 17.0, 3.6],
+    ];
+    vineCoords.forEach(([vx, vz, vLen]) => {
+      const vine = new THREE.Mesh(new THREE.BoxGeometry(0.42, vLen, 0.42), mossAccentMat);
+      vine.position.set(vx, 9.6 - vLen * 0.5, vz);
+      vine.userData.isMapHidden = true;
+      group.add(vine);
+    });
+
+    const iceClusterCoords: Array<[number, number, number]> = [
+      [-7.5, -10.5, 2.3],
+      [-1.5, -12.0, 2.6],
+      [4.5, -11.0, 2.4],
+      [-3.5, -3.5, 2.0],
+      [4.0, -4.5, 2.1],
+      [0.5, 1.5, 1.9],
+    ];
+    iceClusterCoords.forEach(([ix, iz, len], idx) => {
+      const shard = new THREE.Mesh(new THREE.ConeGeometry(0.55, len, 5), iceCrystalMat);
+      shard.position.set(ix, 9.55 - len * 0.48, iz);
+      shard.rotation.x = Math.PI + ((idx % 3) - 1) * 0.14;
+      shard.userData.isMapHidden = true;
+      const sideShard = new THREE.Mesh(new THREE.ConeGeometry(0.32, len * 0.65, 5), iceCrystalMat);
+      sideShard.position.set(ix + 0.48, 9.55 - len * 0.3, iz - 0.25);
+      sideShard.rotation.x = Math.PI - 0.18;
+      sideShard.rotation.z = 0.22;
+      sideShard.userData.isMapHidden = true;
+      group.add(shard, sideShard);
+    });
+
+    // 5) Glowing Cyan & Pink Wall Ore Veins + Floating Glowing Pink Heart Crystals
+    const oreWallSpots: Array<[number, number, number, boolean]> = [
+      [-19.9, 2.8, -7.5, true],
+      [-19.9, 3.8, 10.5, false],
+      [19.9, 3.4, -8.5, true],
+      [19.9, 4.1, 9.5, false],
+      [-7.5, 3.8, -19.9, false],
+      [8.0, 3.5, -19.9, true],
+    ];
+    oreWallSpots.forEach(([ox, oy, oz, isCyan]) => {
+      const vein = new THREE.Mesh(
+        new THREE.BoxGeometry(1.4, 1.4, 1.4),
+        isCyan ? diamondOreMat : heartOreMat,
+      );
+      vein.position.set(ox, oy, oz);
+      vein.userData.isMapHidden = true;
+      group.add(vein);
+    });
+
+    [
+      [-15.5, 5.2, -13.5],
+      [7.5, 5.4, -15.5],
+    ].forEach(([hx, hy, hz], hi) => {
+      const heartGem = new THREE.Mesh(new THREE.OctahedronGeometry(0.52, 0), pinkHeartMat);
+      heartGem.position.set(hx, hy, hz);
+      heartGem.scale.set(1.1, 1.25, 0.72);
+      heartGem.userData.animKind = 'bob';
+      heartGem.userData.baseY = hy;
+      heartGem.userData.phase = hi * 1.6;
+      heartGem.userData.isMapHidden = true;
+      animatables.push(heartGem);
+      group.add(heartGem);
+    });
+
+    // 6) Twin Wall Torches Framing the South Cave Entrance Archway
+    [-3.1, 3.1].forEach((tx) => {
+      const wallTorch = createCaveTorchMesh(palette);
+      wallTorch.position.set(tx, 2.4, 16.5);
+      wallTorch.rotation.x = 0.25;
+      group.add(wallTorch);
+    });
+
+    // 7) Mossy Rubble & Warm Guard Torch beside NW Hidden Prison Alcove
+    const rubblePos: Array<[number, number, number]> = [
+      [-19.2, 0.45, -15.4],
+      [-15.4, 0.4, -19.2],
+    ];
+    rubblePos.forEach(([rx, ry, rz]) => {
+      const rock = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.9, 0.95), stoneBlockMat);
+      rock.position.set(rx, ry, rz);
+      rock.rotation.y = 0.35;
+      const cap = new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.22, 0.98), mossAccentMat);
+      cap.position.set(rx, ry + 0.52, rz);
+      cap.rotation.y = 0.35;
+      group.add(rock, cap);
+    });
+  } else if (zoneId === 'menara_waktu') {
     const goldMat = palette.getMat(0xfbbf24, 'metal');
     const glowMat = palette.getMat(0x38bdf8, 'emissive');
     const gearGroup = new THREE.Group();
@@ -3981,7 +4471,7 @@ export function createDungeonEnvironment(
   // Add the 5 Zone Mission Landmarks (Pool, Corridor Tunnel, Echo Shrine, Bridge, Boss Gate)!
   const doorDefs = ZONE_DOORS[zoneId];
   const doors: DungeonDoorRig[] = doorDefs.map((def) => {
-    const dRig = createDungeonDoorRig(def, palette, disposables);
+    const dRig = createDungeonDoorRig(def, palette, disposables, zoneId);
     dRig.orbMesh.userData.animKind = 'bob';
     dRig.orbMesh.userData.baseY = dRig.orbMesh.userData.baseY ?? 4.0;
     dRig.orbMesh.userData.phase = def.index * 0.9;

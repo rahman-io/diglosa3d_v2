@@ -2428,6 +2428,35 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           </div>
         )}
 
+        {hud.worldMode === 'overworld' && hud.nearIslandRibbonZone && !nearbyOverworldNpc && (
+          <button
+            type="button"
+            onClick={onPrimaryAction}
+            title={
+              hud.nearIslandRibbonLocked
+                ? 'Segel Pita Merah 3D masih terkunci — selesaikan misi gua pulau ini dahulu'
+                : 'Ambil Pita Merah 3D'
+            }
+            aria-label={hud.nearIslandRibbonLocked ? 'Segel Pita Merah 3D' : 'Ambil Pita Merah 3D'}
+            className={`relative flex h-[54px] w-[54px] items-center justify-center rounded-full border-2 transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px] ${
+              hud.nearIslandRibbonLocked
+                ? 'border-amber-300/80 bg-amber-950/90 shadow-[0_5px_14px_rgba(245,158,11,0.48)]'
+                : 'border-rose-300/90 bg-gradient-to-br from-rose-500 to-red-600 shadow-[0_5px_16px_rgba(244,63,94,0.62)] animate-pulse'
+            }`}
+          >
+            <span className="pointer-events-none select-none text-2xl leading-none">🎀</span>
+            <span
+              className={`pointer-events-none absolute -bottom-0.5 rounded-full border px-1.5 text-[9px] font-black leading-tight shadow ${
+                hud.nearIslandRibbonLocked
+                  ? 'border-amber-300/80 bg-slate-950/95 text-amber-200'
+                  : 'border-rose-200/90 bg-slate-950/95 text-rose-100'
+              }`}
+            >
+              {hud.nearIslandRibbonLocked ? '🔒 Segel' : 'Ambil Pita'}
+            </span>
+          </button>
+        )}
+
         {nearbyOverworldDoorNpc && !nearbyOverworldNpc && !hud.nearPortal && (
           <button
             type="button"

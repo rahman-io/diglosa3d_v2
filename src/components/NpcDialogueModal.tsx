@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { BookOpen, CheckCircle2, Sparkles, Volume2, X } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
-import { getZoneNpcById, personalizePlayerText, ZONE_DOORS } from '../data/diglosaCatalog';
+import {
+  formatGuardianAddress,
+  getZoneNpcById,
+  personalizePlayerText,
+  ZONE_DOORS,
+} from '../data/diglosaCatalog';
 import { getWordsForZone, getWordStatus } from '../data/vocabCatalog';
 import { CharacterPresetId, RpgQuestState, WordProgress, ZoneId } from '../types/game';
 import { HarvestDialogueBox } from './HarvestDialogueBox';
@@ -59,6 +64,7 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
   }, [npcId]);
 
   const heroDisplayName = playerName.trim() || 'Hoot';
+  const guardianAddress = npc ? formatGuardianAddress(npc, heroDisplayName, characterId) : heroDisplayName;
   const isLiberated = zoneId ? liberatedZones.includes(zoneId) : false;
   const hasNightPermission = zoneId
     ? isNightTime || nightPermittedZones.includes(zoneId)
@@ -74,8 +80,8 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
           speakerSide: 'npc',
           speakerName: npc.name,
           speakerRole: `${npc.zoneName} · Wilayah Bebas ✓`,
-          textId: personalizePlayerText(npc.thanksId, heroDisplayName),
-          textEn: `Thank you, ${heroDisplayName}! ${npc.zoneName} is safe and shining bright again!`,
+          textId: personalizePlayerText(npc.thanksId, guardianAddress),
+          textEn: `Thank you, ${guardianAddress}! ${npc.zoneName} is safe and shining bright again!`,
         },
         {
           speakerSide: 'hero',
@@ -97,8 +103,8 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
         speakerSide: 'npc',
         speakerName: npc.name,
         speakerRole: npc.zoneName,
-        textId: personalizePlayerText(npc.storyLine1Id, heroDisplayName),
-        textEn: personalizePlayerText(npc.storyLine1En, heroDisplayName),
+        textId: personalizePlayerText(npc.storyLine1Id, guardianAddress),
+        textEn: personalizePlayerText(npc.storyLine1En, guardianAddress),
       },
       {
         speakerSide: 'hero',
@@ -111,8 +117,8 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
         speakerSide: 'npc',
         speakerName: npc.name,
         speakerRole: `${npc.zoneName} · Misi Gua (${clearedDoors.length}/${doors.length} Pintu)`,
-        textId: personalizePlayerText(`${npc.storyLine2Id}${nightNote}`, heroDisplayName),
-        textEn: personalizePlayerText(npc.storyLine2En, heroDisplayName),
+        textId: personalizePlayerText(`${npc.storyLine2Id}${nightNote}`, guardianAddress),
+        textEn: personalizePlayerText(npc.storyLine2En, guardianAddress),
       },
     ];
   }, [
@@ -120,6 +126,7 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
     zoneId,
     isLiberated,
     heroDisplayName,
+    guardianAddress,
     isNightTime,
     hasNightPermission,
     clearedDoors.length,
