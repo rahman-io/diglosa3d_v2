@@ -276,13 +276,13 @@ export const NpcDialogueModal: React.FC<NpcDialogueModalProps> = ({
           setTurnIndex((prev) => Math.min(turns.length - 1, prev + 1));
         }
       }}
-      onSkip={() => {
-        if (!isFinalTurn) {
-          setTurnIndex(turns.length - 1);
-        } else {
-          onClose();
-        }
-      }}
+      onSkip={
+        !isFinalTurn
+          ? () => {
+              setTurnIndex(turns.length - 1);
+            }
+          : undefined
+      }
     />
   );
 };
