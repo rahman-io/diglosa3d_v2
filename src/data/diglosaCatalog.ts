@@ -479,32 +479,20 @@ export const ZONE_CAVE_STORIES: Record<ZoneId, ZoneCaveStoryDef> = {
     captiveRole: 'Cucu Kakek Sapa',
     captiveColor: 0xf472b6,
     captiveKind: 'girl',
-    prisonCorner: 'nw',
+    prisonCorner: 'ne',
     accentColor: '#f59e0b',
     introSteps: [
       {
-        speakerName: 'Masuk ke Gua Desa Sapaan',
-        speakerRole: 'Adegan Gua · Babak 1',
-        textEn: '{player} steps out of the cave entrance into the misty stone hall, where old Kakek Sapa waits trembling by the wall.',
-        textId: '{player} melangkah masuk dari pintu gua menuju ruang batu berkabut. Di sana, Kakek Sapa berdiri gemetar dengan suara terbata-bata.',
-      },
-      {
-        speakerName: 'Kakek Sapa (Terbata-bata)',
-        speakerRole: 'Penjaga Gua Desa Sapaan',
-        textEn: '{player}... G-good... m-morn... My words are broken! Monsters locked my granddaughter Rani inside a secret prison cell hidden behind cave rocks!',
-        textId: '{player}… s-selamat… pa-pagi… Suaraku macet karena kata sapaan desa dirampas! Cucuku Rani disekap di kurungan tersembunyi di balik bebatuan sudut gua!',
-      },
-      {
-        speakerName: 'Misi Gua Desa Sapaan',
-        speakerRole: 'Petunjuk Penjaga Gua',
-        textEn: 'Open all 5 doors to restore greetings, defeat Gumpal Salam to drop the golden Prison Key, then break the hidden rocks and rescue Rani!',
-        textId: 'Buka 5 pintu untuk memulihkan kata sapaan (Hello → Goodbye), kalahkan Bos Gumpal Salam untuk mendapat Kunci Penjara, lalu cari kurungan tersembunyi untuk menyelamatkan Rani!',
+        speakerName: 'Gua Desa Sapaan',
+        speakerRole: '5 Pintu Tantangan · Penjara Tebing Kanan',
+        textEn: '{player} descends the mossy cobblestone steps into the dark cavern. Clear all 5 challenge doors, defeat Gumpal Salam to seize the Prison Key, and free Rani from the barred rock cell on the right!',
+        textId: '{player} menuruni tangga batu berlumut ke ruang gua gelap. Selesaikan 5 pintu tantangan, kalahkan Bos Gumpal Salam untuk merebut Kunci Penjara, dan bebaskan Rani dari sel berjeruji di tebing kanan!',
       },
     ],
-    rescueCaptiveEn: '{player}! You found the secret cell and saved me! Let us run back to Grandpa right now!',
-    rescueCaptiveId: '{player}! Kamu berhasil menemukan penjara rahasia dan menyelamatkanku! Ayo kita temui Kakek Sapa!',
-    rescueGuardianEn: 'Rani! My voice is clear again! Thank you, {player}, and always greet first because that is the truest sword!',
-    rescueGuardianId: 'Rani cucuku! Suaraku sudah pulih dan jernih lagi! Terima kasih banyak, {player}! Ingatlah bahwa “Sapalah dulu, karena itulah pedang yang sebenarnya.”',
+    rescueCaptiveEn: '{player}! You found the secret rock cell and saved me! Let us hurry back outside to Grandpa Kakek Sapa!',
+    rescueCaptiveId: '{player}! Kamu berhasil menemukan sel batu rahasia dan menyelamatkanku! Ayo cepat kembali keluar menemui Kakek Sapa!',
+    rescueGuardianEn: 'Rani is safe and the village greetings are restored! Thank you, {player}, and remember: always greet first because that is the truest sword!',
+    rescueGuardianId: 'Rani selamat dan kata sapaan desa sudah pulih! Terima kasih banyak, {player}! Selalu ingat pesan Kakek Sapa: “Sapalah dulu, karena itulah pedang yang sebenarnya.”',
   },
   pasar_rasa: {
     guardianId: 'npc_koki',
@@ -766,11 +754,11 @@ const DOOR_POSITIONS: Array<[number, number]> = [
 
 export const ZONE_DOORS: Record<ZoneId, DoorDef[]> = {
   desa_sapaan: [
-    { index: 0, id: 'desa_d0', name: 'Sumur Tua', mode: 'cards', modeLabel: 'Kartu Kilat', x: -11.2, z: 5.5, minPct: 0 },
-    { index: 1, id: 'desa_d1', name: 'Jembatan Batu', mode: 'duel', modeLabel: 'Duel Rebutan (Gumpal Kecil)', x: -12.6, z: -6.5, minPct: 0 },
-    { index: 2, id: 'desa_d2', name: 'Lumbung', mode: 'listen', modeLabel: 'Telinga Tajam', x: 13.6, z: -3.5, minPct: 60 },
-    { index: 3, id: 'desa_d3', name: 'Parit', mode: 'type', modeLabel: 'Jago Ejaan', x: 8.6, z: 4.5, minPct: 60 },
-    { index: 4, id: 'desa_d4', name: 'Rumah Rani', mode: 'match', modeLabel: 'Pasang Kartu → Bos', x: 0, z: -15.5, minPct: 60 },
+    { index: 0, id: 'desa_d0', name: 'Sumur Tua', mode: 'cards', modeLabel: 'Kartu Kilat', x: -13.6, z: 4.5, minPct: 0 },
+    { index: 1, id: 'desa_d1', name: 'Jembatan Batu', mode: 'duel', modeLabel: 'Duel Rebutan (Gumpal Kecil)', x: -12.6, z: -7.5, minPct: 0 },
+    { index: 2, id: 'desa_d2', name: 'Lumbung', mode: 'listen', modeLabel: 'Telinga Tajam', x: 14.0, z: -4.2, minPct: 60 },
+    { index: 3, id: 'desa_d3', name: 'Parit', mode: 'type', modeLabel: 'Jago Ejaan', x: 9.8, z: 1.6, minPct: 60 },
+    { index: 4, id: 'desa_d4', name: 'Rumah Rani', mode: 'match', modeLabel: 'Pasang Kartu → Bos', x: 0, z: -15.6, minPct: 60 },
   ],
   pasar_rasa: [
     { index: 0, id: 'pasar_d0', name: 'Panci Bening', mode: 'cards', modeLabel: 'Kartu Kilat', x: DOOR_POSITIONS[0][0], z: DOOR_POSITIONS[0][1], minPct: 0 },
