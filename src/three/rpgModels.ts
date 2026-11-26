@@ -210,6 +210,7 @@ export interface CaveStaticCollider {
   z: number;
   halfW: number;
   halfD?: number;
+  rotY?: number;
   minY?: number;
   maxY?: number;
   blockProjectiles?: boolean;
@@ -3133,25 +3134,47 @@ export function createDungeonDoorRig(
 
   if (zoneId === 'desa_sapaan' && def.index === 0) {
     // Door 0: Sumur Tua — Open Standing Weathered Mossy Runic Stone Archway beside the Stone Well
-    const colL = new THREE.Mesh(new THREE.BoxGeometry(0.95, 4.4, 0.95), stoneMid);
-    colL.position.set(-1.55, 2.2, 0);
+    const plinth = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.24, 1.85), stoneDark);
+    plinth.position.set(0, 0.12, 0);
+    plinth.receiveShadow = true;
+    const thresholdRune = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.06, 0.45), runeMat);
+    thresholdRune.position.set(0, 0.25, 0);
+    const colL = new THREE.Mesh(new THREE.BoxGeometry(0.98, 4.4, 1.02), stoneMid);
+    colL.position.set(-1.55, 2.32, 0);
     colL.castShadow = true;
+    colL.receiveShadow = true;
     const colR = colL.clone();
     colR.position.x = 1.55;
-    const archLint = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.85, 1.05), stoneLight);
-    archLint.position.set(0, 4.6, 0);
-    const archTopStep = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.45, 1.05), stoneMid);
-    archTopStep.position.set(0, 5.2, 0);
-    const mossTop = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.22, 1.1), mossGreen);
-    mossTop.position.set(0, 5.5, 0);
+    const baseL = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.45, 1.28), stoneDark);
+    baseL.position.set(-1.55, 0.35, 0);
+    const baseR = baseL.clone();
+    baseR.position.x = 1.55;
+    const archLint = new THREE.Mesh(new THREE.BoxGeometry(4.25, 0.85, 1.12), stoneLight);
+    archLint.position.set(0, 4.72, 0);
+    const archTopStep = new THREE.Mesh(new THREE.BoxGeometry(2.65, 0.45, 1.12), stoneMid);
+    archTopStep.position.set(0, 5.32, 0);
+    const mossTop = new THREE.Mesh(new THREE.BoxGeometry(2.85, 0.24, 1.16), mossGreen);
+    mossTop.position.set(0, 5.62, 0);
     const runeL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 2.2, 0.16), runeMat);
-    runeL.position.set(-1.1, 2.3, 0.48);
+    runeL.position.set(-1.1, 2.42, 0.52);
     const runeR = new THREE.Mesh(new THREE.BoxGeometry(0.24, 2.2, 0.16), runeMat);
-    runeR.position.set(1.1, 2.3, 0.48);
-    group.add(colL, colR, archLint, archTopStep, mossTop, runeL, runeR);
-    crestY = 5.55;
+    runeR.position.set(1.1, 2.42, 0.52);
+    group.add(
+      plinth,
+      thresholdRune,
+      baseL,
+      baseR,
+      colL,
+      colR,
+      archLint,
+      archTopStep,
+      mossTop,
+      runeL,
+      runeR,
+    );
+    crestY = 5.65;
     crestZ = 0.3;
-    orbBaseY = 6.15;
+    orbBaseY = 6.25;
   } else if (zoneId === 'desa_sapaan' && def.index === 1) {
     // Door 1: Jembatan Batu — Glowing Cyan-Blue Runic Cliff Portal right across the Arched Stone Bridge
     const ledge = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.4, 2.4), stoneMid);

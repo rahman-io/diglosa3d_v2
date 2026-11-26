@@ -49,7 +49,7 @@ interface RectZone {
 // 1. EXACT 120m x 120m MULTI-TIER TOPOLOGY (100% faithful to concept layout)
 // ============================================================================
 
-const PLAYABLE_HALF_BOUND = 49.5;
+const PLAYABLE_HALF_BOUND = 47.8;
 const CAVE_CEILING_Y = 30.0;
 
 // Diagonal / axis-aligned staircases connecting every tier cleanly
@@ -157,7 +157,7 @@ const FLAT_DECKS: RectZone[] = [
   // NW Diamond Ore & Golden Weapon Chest Alcove (y = 3.5)
   { minX: -34.5, maxX: -17.5, minZ: -37.0, maxZ: -17.0, y: 3.5 },
   // Exit Portal Terrace (y = 3.5)
-  { minX: -24.5, maxX: -6.5, minZ: 20.5, maxZ: 34.5, y: 3.5 },
+  { minX: -22.6, maxX: -6.5, minZ: 20.5, maxZ: 34.5, y: 3.5 },
   // Central Rock Promontory across Bridge (y = 3.5)
   { minX: 1.5, maxX: 15.5, minZ: 2.5, maxZ: 18.5, y: 3.5 },
   // East Quadrant Labyrinth & Guardhouse Deck (y = 3.5)
@@ -167,7 +167,7 @@ const FLAT_DECKS: RectZone[] = [
   // West Quadrant Labyrinth Deck (y = 2.0)
   { minX: -41.5, maxX: -14.5, minZ: -9.5, maxZ: 20.5, y: 2.0 },
   // North-of-West-Maze Torch Arch Shelf (y = 2.0)
-  { minX: -41.5, maxX: -32.5, minZ: -18.0, maxZ: -9.0, y: 2.0 },
+  { minX: -41.5, maxX: -32.5, minZ: -16.0, maxZ: -9.0, y: 2.0 },
   // South Lower Entrance Plaza & Forge/Well Deck (y = 0)
   { minX: -14.0, maxX: 16.5, minZ: 30.0, maxZ: 49.0, y: 0.0 },
   // SE Base Shelf below East Stairs (y = 0)
@@ -270,6 +270,137 @@ function hash2(x: number, z: number): number {
   return n - Math.floor(n);
 }
 
+// Procedural seamless turquoise crystal river flow texture (repeat wrapping for UV scroll)
+function createCrystalRiverTexture(variant: 'base' | 'shimmer'): THREE.CanvasTexture {
+  const size = 256;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+
+  const grad = ctx.createLinearGradient(0, 0, size, 0);
+  if (variant === 'base') {
+    grad.addColorStop(0.0, '#0891b2');
+    grad.addColorStop(0.18, '#06b6d4');
+    grad.addColorStop(0.5, '#22d3ee');
+    grad.addColorStop(0.82, '#06b6d4');
+    grad.addColorStop(1.0, '#0891b2');
+  } else {
+    grad.addColorStop(0.0, '#0e7490');
+    grad.addColorStop(0.5, '#67e8f9');
+    grad.addColorStop(1.0, '#0e7490');
+  }
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  // Flowing longitudinal caustic current ribbons (tiled seamlessly along Y)
+  for (let i = 0; i < 26; i++) {
+    const xBase = ((i * 37) % size);
+    const width = 4 + (i % 4) * 3;
+    const amp = 6 + (i % 3) * 4;
+    const freq = (i % 2 === 0 ? 1 : 2) * Math.PI * 2;
+    ctx.strokeStyle =
+      i % 3 === 0
+        ? 'rgba(207, 250, 254, 0.42)'
+        : i % 2 === 0
+        ? 'rgba(103, 232, 249, 0.34)'
+        : 'rgba(14, 116, 144, 0.28)';
+    ctx.lineWidth = width;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let s = 0; s <= 32; s++) {
+      const t = s / 32;
+      const y = t * size;
+      const x = (xBase + Math.sin(t * freq + i) * amp + size) % size;
+      if (s === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+
+  // Crisp bright surface foam ripples
+  for (let i = 0; i < 42; i++) {
+    const px = ((i * 73 + 19) % (size - 16)) + 8;
+    const py = ((i * 53 + 11) % size);
+    const len = 10 + (i % 5) * 6;
+    ctx.fillStyle = i % 4 === 0 ? 'rgba(236, 254, 255, 0.55)' : 'rgba(165, 243, 252, 0.35)';
+    ctx.fillRect(px, py, 2 + (i % 2), len);
+    if (py + len > size) {
+      ctx.fillRect(px, py - size, 2 + (i % 2), len);
+    }
+  }
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = THREE.RepeatWrapping;
+  tex.wrapT = THREE.RepeatWrapping;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// Soft radial cavern mist texture for atmospheric floating mist planes
+function createCaveMistTexture(): THREE.CanvasTexture {
+  const size = 128;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d')!;
+  const rad = ctx.createRadialGradient(size * 0.5, size * 0.5, 4, size * 0.5, size * 0.5, size * 0.5);
+  rad.addColorStop(0, 'rgba(186, 230, 253, 0.58)');
+  rad.addColorStop(0.45, 'rgba(125, 211, 252, 0.28)');
+  rad.addColorStop(1, 'rgba(15, 23, 42, 0)');
+  ctx.fillStyle = rad;
+  ctx.fillRect(0, 0, size, size);
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.needsUpdate = true;
+  return tex;
+}
+
+// Curved smooth ribbon BufferGeometry along a 3D Catmull-Rom river spine
+function createRiverRibbonGeometry(
+  spine: THREE.Vector3[],
+  segments: number,
+  widthAtT: (t: number) => number,
+  uvRepeatV: number,
+): THREE.BufferGeometry {
+  const curve = new THREE.CatmullRomCurve3(spine);
+  const positions: number[] = [];
+  const uvs: number[] = [];
+  const indices: number[] = [];
+
+  for (let i = 0; i <= segments; i++) {
+    const t = i / segments;
+    const pt = curve.getPointAt(t);
+    const tan = curve.getTangentAt(t);
+    // Horizontal sideways normal
+    const lenXZ = Math.max(0.001, Math.hypot(tan.x, tan.z));
+    const nx = -tan.z / lenXZ;
+    const nz = tan.x / lenXZ;
+    const hw = widthAtT(t);
+
+    positions.push(pt.x - nx * hw, pt.y, pt.z - nz * hw);
+    positions.push(pt.x + nx * hw, pt.y, pt.z + nz * hw);
+    uvs.push(0, t * uvRepeatV);
+    uvs.push(1, t * uvRepeatV);
+
+    if (i < segments) {
+      const a = i * 2;
+      const b = a + 1;
+      const c = a + 2;
+      const d = a + 3;
+      indices.push(a, c, b, b, c, d);
+    }
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+
 // ============================================================================
 // 3. MAIN DESA SAPAAN GRAND CAVERN BUILDER
 // ============================================================================
@@ -335,15 +466,65 @@ export function createDesaCaveEnvironment(
     roughness: 0.22,
     metalness: 0.2,
   });
+  const riverFlowTex = createCrystalRiverTexture('base');
+  const riverShimmerTex = createCrystalRiverTexture('shimmer');
+  riverShimmerTex.repeat.set(1.4, 1.4);
+  const waterfallTex = riverShimmerTex.clone();
+  waterfallTex.repeat.set(1.2, 2.2);
+  waterfallTex.needsUpdate = true;
+  const wellWaterTex = riverShimmerTex.clone();
+  wellWaterTex.repeat.set(1, 1);
+  wellWaterTex.needsUpdate = true;
+  const caveMistTex = createCaveMistTexture();
+  disposables.push(riverFlowTex, riverShimmerTex, waterfallTex, wellWaterTex, caveMistTex);
+
   const riverWaterMat = palette.createSurfaceMat({
-    color: 0x06b6d4,
-    emissive: 0x22d3ee,
-    emissiveIntensity: 0.72,
-    roughness: 0.12,
+    color: 0x38bdf8,
+    map: riverFlowTex,
+    emissive: 0x06b6d4,
+    emissiveIntensity: 0.78,
+    roughness: 0.14,
     metalness: 0.18,
     transparent: true,
-    opacity: 0.82,
+    opacity: 0.88,
   });
+  riverWaterMat.emissiveMap = riverFlowTex;
+
+  const riverShimmerMat = palette.createSurfaceMat({
+    color: 0xbae6fd,
+    map: riverShimmerTex,
+    emissive: 0x67e8f9,
+    emissiveIntensity: 0.65,
+    roughness: 0.08,
+    metalness: 0.1,
+    transparent: true,
+    opacity: 0.36,
+  });
+  riverShimmerMat.emissiveMap = riverShimmerTex;
+  riverShimmerMat.depthWrite = false;
+
+  const waterfallMat = palette.createSurfaceMat({
+    color: 0x67e8f9,
+    map: waterfallTex,
+    emissive: 0x22d3ee,
+    emissiveIntensity: 0.92,
+    roughness: 0.12,
+    transparent: true,
+    opacity: 0.86,
+    side: THREE.DoubleSide,
+  });
+  waterfallMat.emissiveMap = waterfallTex;
+
+  const wellWaterMat = palette.createSurfaceMat({
+    color: 0x22d3ee,
+    map: wellWaterTex,
+    emissive: 0x06b6d4,
+    emissiveIntensity: 0.72,
+    roughness: 0.12,
+    transparent: true,
+    opacity: 0.9,
+  });
+  wellWaterMat.emissiveMap = wellWaterTex;
   const brazierGlowMat = palette.getMat(0xfbbf24, 'emissive');
   const goldSigilMat = palette.createSurfaceMat({
     color: 0xfde047,
@@ -374,6 +555,9 @@ export function createDesaCaveEnvironment(
     crystalCyanMat,
     crystalPurpleMat,
     riverWaterMat,
+    riverShimmerMat,
+    waterfallMat,
+    wellWaterMat,
     goldSigilMat,
     emeraldSigilMat,
     bluePortalMat,
@@ -456,12 +640,12 @@ export function createDesaCaveEnvironment(
   group.add(northWallMesh, westWallMesh, eastWallMesh, southWallMesh);
   cameraOccluders.push(northWallMesh, westWallMesh, eastWallMesh);
 
-  // Perimeter rocky relief ledges & ore specks embedded along cutaway walls (matches concept frame!)
+  // Perimeter rocky relief ledges & ore specks embedded along cutaway walls (solid airtight colliders!)
   for (let i = -48; i <= 48; i += 4) {
-    // North & West/East rocky pilasters
-    addWallBox(i, 16, -49.5, 3.8, 22, 2.5, pickShade(DARK_SHADES, i, -49), false);
-    addWallBox(-49.5, 16, i, 2.5, 22, 3.8, pickShade(DARK_SHADES, -49, i), false);
-    addWallBox(49.5, 16, i, 2.5, 22, 3.8, pickShade(DARK_SHADES, 49, i), false);
+    // North & West/East rocky pilasters (solid physics!)
+    addWallBox(i, 16, -49.5, 4.0, 26, 2.5, pickShade(DARK_SHADES, i, -49), true);
+    addWallBox(-49.5, 16, i, 2.5, 26, 4.0, pickShade(DARK_SHADES, -49, i), true);
+    addWallBox(49.5, 16, i, 2.5, 26, 4.0, pickShade(DARK_SHADES, 49, i), true);
     // Upper brown earth soil band near rim (y = 26..29)
     addWallBox(i, 27.5, -50.2, 4, 2.6, 2.8, pickShade(DIRT_SHADES, i, 1), false);
     addWallBox(-50.2, 27.5, i, 2.8, 2.6, 4, pickShade(DIRT_SHADES, i, 2), false);
@@ -563,18 +747,58 @@ export function createDesaCaveEnvironment(
   addTierBlock(-14, 16.5, 30, 49, 0.0, -3.5, STONE_SHADES, DARK_SHADES, true);
   addTierBlock(23, 46, 32, 47, 0.0, -3.5, STONE_SHADES, DARK_SHADES, true);
 
-  // Exit Portal Terrace (y = 3.5)
-  addTierBlock(-24.5, -6.5, 20.5, 34.5, 3.5, -2.5, STONE_SHADES, DARK_SHADES, true);
+  // Exit Portal Terrace (y = 3.5) & Solid West Rocky Cliff Bastion behind Door 3 (-22.2, 3.5, 25.5)
+  addTierBlock(-22.6, -6.5, 20.5, 34.5, 3.5, -2.5, STONE_SHADES, DARK_SHADES, true);
+  // Solid Rocky Cliff Bastion flush behind Door 3 (leaves Stair 2 at Z<=21.5 wide open!)
+  addWallBox(-25.8, 3.8, 27.3, 6.4, 12.2, 9.4, 0x262d3b, true);
+  addWallBox(-25.8, 10.2, 27.3, 5.8, 1.0, 8.6, 0x4d7c0f, false);
+  // Flanking stone cliff cheeks wrapping Door 3 edges cleanly
+  addWallBox(-22.55, 6.4, 22.8, 1.4, 6.0, 1.2, 0x374151, true);
+  addWallBox(-22.55, 6.4, 28.2, 1.4, 6.0, 1.2, 0x374151, true);
 
   // Central Rock Promontory across Bridge (y = 3.5)
   addTierBlock(1.5, 15.5, 2.5, 18.5, 3.5, -2.5, STONE_SHADES, DARK_SHADES, true);
-  // Decorative rocky cliff cap rising behind Door 1 on Central Promontory (X=7..14, Z=4..12)
-  addWallBox(10.8, 7.2, 8.2, 5.4, 7.6, 6.2, 0x374151, true);
-  addWallBox(11.5, 11.4, 7.8, 3.8, 1.4, 4.2, 0x4d7c0f, false);
+  // Decorative rocky cliff outcrop rising solidly behind Door 1 (7.4, 3.5, 12.2, rotY=-0.82)
+  addWallBox(11.1, 7.2, 8.3, 6.2, 7.8, 6.6, 0x374151, true);
+  addWallBox(11.6, 11.4, 7.9, 4.4, 1.4, 4.8, 0x4d7c0f, false);
+  {
+    const d1Rot = -0.82;
+    const d1Cos = Math.cos(d1Rot);
+    const d1Sin = Math.sin(d1Rot);
+    const addD1RockBlock = (lx: number, ly: number, lz: number, sx: number, sy: number, sz: number, col: number, colSolid = true) => {
+      const wx = 7.4 + lx * d1Cos + lz * d1Sin;
+      const wz = 12.2 - lx * d1Sin + lz * d1Cos;
+      const m = new THREE.Mesh(new THREE.BoxGeometry(sx, sy, sz), palette.getMat(col, 'matte'));
+      m.position.set(wx, ly, wz);
+      m.rotation.y = d1Rot;
+      m.castShadow = true;
+      m.receiveShadow = true;
+      group.add(m);
+      cameraOccluders.push(m);
+      if (colSolid) {
+        caveColliders.push({
+          x: wx,
+          z: wz,
+          halfW: sx * 0.5,
+          halfD: sz * 0.5,
+          rotY: d1Rot,
+          minY: ly - sy * 0.5,
+          maxY: ly + sy * 0.5,
+        });
+      }
+    };
+    // Solid cliff cheek walls + deep backing mass directly flush against Door 1's sides & back
+    addD1RockBlock(0, 6.8, -2.05, 6.6, 6.6, 2.2, 0x262d3b, true);
+    addD1RockBlock(-2.85, 6.5, -0.75, 1.4, 6.0, 1.8, 0x374151, true);
+    addD1RockBlock(2.85, 6.5, -0.75, 1.4, 6.0, 1.8, 0x374151, true);
+    addD1RockBlock(0, 10.3, -1.9, 6.0, 0.9, 2.0, 0x4d7c0f, false);
+  }
 
-  // West Labyrinth Deck (y = 2.0) + North Torch Shelf (y = 2.0)
+  // West Labyrinth Deck (y = 2.0) + North Torch Shelf (y = 2.0) + Cliff backing behind Decor Cliff Door
   addTierBlock(-41.5, -14.5, -9.5, 20.5, 2.0, -2.5, STONE_SHADES, DARK_SHADES, true);
-  addTierBlock(-41.5, -32.5, -18.0, -9.0, 2.0, -2.5, STONE_SHADES, DARK_SHADES, true);
+  addTierBlock(-41.5, -32.5, -16.0, -9.0, 2.0, -2.5, STONE_SHADES, DARK_SHADES, true);
+  addWallBox(-37.0, 6.2, -18.3, 10.4, 9.0, 4.6, 0x262d3b, true);
+  addWallBox(-37.0, 11.0, -18.5, 9.6, 0.9, 4.0, 0x4d7c0f, false);
 
   // Mossy Red Ribbon Grotto Shelf (y = 4.0)
   addTierBlock(-48.5, -40.5, -8.5, 2.5, 4.0, -2.5, GRASS_SHADES, DIRT_SHADES, false);
@@ -596,6 +820,14 @@ export function createDesaCaveEnvironment(
   addTierBlock(-16.5, 28.5, -49.0, -22.0, 9.5, 0.0, STONE_SHADES, DARK_SHADES, true);
   addTierBlock(-20.5, -11.5, -49.0, -39.0, 9.5, 0.0, STONE_SHADES, DARK_SHADES, true);
 
+  // Massive Solid Carved Cliff & Buttresses Framing Colossal Door 4 (2.0, 9.5, -47.2)
+  addWallBox(2.0, 16.0, -49.6, 11.8, 13.5, 3.2, 0x262d3b, true);
+  addWallBox(-2.95, 15.6, -47.9, 3.2, 12.8, 3.0, 0x374151, true);
+  addWallBox(6.95, 15.6, -47.9, 3.2, 12.8, 3.0, 0x374151, true);
+  addWallBox(2.0, 21.2, -48.1, 11.8, 3.2, 3.4, 0x282f3c, true);
+  // Solid rock cliff wall flush behind Upper NW Decor Door (-16.0, 9.5, -48.0)
+  addWallBox(-16.0, 12.8, -49.4, 5.2, 6.8, 2.8, 0x262d3b, true);
+
   // NE Hanging Cliff Prison Shelf (y = 9.5) with jagged crystal-studded rock cliff underside!
   addTierBlock(24.0, 41.5, -37.0, -23.0, 9.5, 4.2, STONE_SHADES, DARK_SHADES, false);
   addWallBox(35.0, 1.5, -31.0, 9.5, 6.2, 8.5, 0x262d3b, true);
@@ -612,9 +844,9 @@ export function createDesaCaveEnvironment(
   );
 
   // --------------------------------------------------------------------------
-  // C. Deep Cyan Crystal River Gorge, Subterranean Arch & Voxel Stone Bridge
+  // C. Deep Cyan Crystal River Gorge, Animated Flowing Water & Waterfall, Stone Bridge
   // --------------------------------------------------------------------------
-  // Riverbed dark stone floor + Glowing Cyan Water Slab
+  // Riverbed dark stone floor
   const riverFloor = new THREE.Mesh(
     new THREE.BoxGeometry(46, 0.6, 58),
     palette.getMat(0x0f172a, 'matte'),
@@ -623,22 +855,78 @@ export function createDesaCaveEnvironment(
   riverFloor.receiveShadow = true;
   group.add(riverFloor);
 
-  // Glowing turquoise-cyan river slabs curving seamlessly from West overhang arch to SE cutaway
-  const riverSegments: Array<[number, number, number, number, number]> = [
-    [-6.0, 7.0, 8.8, 22.0, 0],
-    [1.0, 22.0, 12.0, 18.0, -0.74],
-    [13.5, 34.5, 12.5, 22.0, -0.74],
-    [20.5, 43.5, 11.5, 15.0, -0.58],
-  ];
-  riverSegments.forEach(([rx, rz, rw, rd, rot]) => {
-    const wMesh = new THREE.Mesh(new THREE.BoxGeometry(rw, 0.45, rd), riverWaterMat);
-    wMesh.position.set(rx, -1.65, rz);
-    wMesh.rotation.y = rot;
-    group.add(wMesh);
-  });
+  // Smooth Continuous Curved Crystal River Ribbon + Animated Shimmer Layer (UV-scrolled!)
+  {
+    const riverSpine = [
+      new THREE.Vector3(-6.0, -1.56, -4.5),
+      new THREE.Vector3(-6.0, -1.56, 5.5),
+      new THREE.Vector3(-5.0, -1.56, 15.0),
+      new THREE.Vector3(-0.2, -1.56, 22.8),
+      new THREE.Vector3(8.5, -1.56, 30.2),
+      new THREE.Vector3(17.8, -1.56, 38.6),
+      new THREE.Vector3(24.0, -1.56, 49.0),
+    ];
+    const widthFn = (t: number) => 4.6 + Math.sin(t * Math.PI * 0.85) * 2.1 + t * 0.8;
+    const riverGeo = createRiverRibbonGeometry(riverSpine, 44, widthFn, 6.2);
+    const riverMesh = new THREE.Mesh(riverGeo, riverWaterMat);
+    riverMesh.receiveShadow = true;
+    riverMesh.userData.animKind = 'uvScroll';
+    riverMesh.userData.scrollU = 0.04;
+    riverMesh.userData.scrollV = -0.34;
+    animatables.push(riverMesh);
+    disposables.push(riverGeo);
+    group.add(riverMesh);
 
-  // Subterranean Water Arch Overhang at (-6, Z=-4..0) where the glowing river pours out
-  addWallBox(-6.0, 4.8, -4.5, 10.5, 4.4, 5.0, 0x334155, false);
+    const shimmerSpine = riverSpine.map((v) => new THREE.Vector3(v.x, v.y + 0.06, v.z));
+    const shimmerGeo = createRiverRibbonGeometry(shimmerSpine, 44, (t) => widthFn(t) * 0.92, 7.5);
+    const shimmerMesh = new THREE.Mesh(shimmerGeo, riverShimmerMat);
+    shimmerMesh.userData.animKind = 'uvScroll';
+    shimmerMesh.userData.scrollU = -0.05;
+    shimmerMesh.userData.scrollV = -0.52;
+    animatables.push(shimmerMesh);
+    disposables.push(shimmerGeo);
+    group.add(shimmerMesh);
+
+    // Subterranean Waterfall Cascade pouring out of Arch (-6.0, -3.5) into the Crystal River
+    const wfGeo = new THREE.PlaneGeometry(6.8, 4.8, 1, 8);
+    const posAttr = wfGeo.attributes.position as THREE.BufferAttribute;
+    for (let i = 0; i < posAttr.count; i++) {
+      const py = posAttr.getY(i);
+      const fracDown = (2.4 - py) / 4.8; // 0 at top -> 1 at river surface
+      posAttr.setZ(i, fracDown * fracDown * 1.45);
+    }
+    wfGeo.computeVertexNormals();
+    const waterfallMesh = new THREE.Mesh(wfGeo, waterfallMat);
+    waterfallMesh.position.set(-6.0, 0.65, -3.55);
+    waterfallMesh.userData.animKind = 'uvScroll';
+    waterfallMesh.userData.scrollU = 0.0;
+    waterfallMesh.userData.scrollV = 1.15;
+    animatables.push(waterfallMesh);
+    disposables.push(wfGeo);
+    group.add(waterfallMesh);
+
+    // Animated Splash Foam Ring at the Waterfall Plunge Base
+    const splashGeo = new THREE.RingGeometry(1.1, 3.5, 24);
+    const splashMat = palette.createSurfaceMat({
+      color: 0xe0f2fe,
+      emissive: 0x67e8f9,
+      emissiveIntensity: 0.9,
+      transparent: true,
+      opacity: 0.52,
+      side: THREE.DoubleSide,
+    });
+    splashMat.depthWrite = false;
+    const splashMesh = new THREE.Mesh(splashGeo, splashMat);
+    splashMesh.rotation.x = -Math.PI / 2;
+    splashMesh.position.set(-6.0, -1.46, -1.85);
+    splashMesh.userData.animKind = 'waterfallSplash';
+    animatables.push(splashMesh);
+    disposables.push(splashGeo, splashMat);
+    group.add(splashMesh);
+  }
+
+  // Subterranean Water Arch Overhang at (-6, Z=-4..0) where the glowing river pours out (solid colliders!)
+  addWallBox(-6.0, 4.8, -4.5, 10.5, 4.4, 5.0, 0x334155, true);
   addWallBox(-10.2, 1.5, -4.5, 2.2, 4.5, 5.2, 0x1e293b, true);
   addWallBox(-1.6, 1.5, -4.5, 2.2, 4.5, 5.2, 0x1e293b, true);
 
@@ -646,7 +934,7 @@ export function createDesaCaveEnvironment(
   addWallBox(-10.8, 1.0, 7.5, 2.4, 6.2, 17.5, 0x262d3b, true);
   addWallBox(-0.6, 1.0, 7.5, 2.2, 6.2, 17.5, 0x262d3b, true);
 
-  // Jagged Glowing Cyan Crystal Spires emerging from the river water (100% concept match!)
+  // Jagged Glowing Cyan Crystal Spires emerging from the river water (with solid colliders!)
   const spireClusters: Array<[number, number, number]> = [
     [-6.5, 4.0, 1.3],
     [-4.8, 9.5, 1.6],
@@ -677,6 +965,14 @@ export function createDesaCaveEnvironment(
       sy: hMain * 0.52,
       sz: 0.65 * sc,
       color: 0x06b6d4,
+    });
+    caveColliders.push({
+      x: cx,
+      z: cz,
+      halfW: 0.9 * sc,
+      halfD: 0.9 * sc,
+      minY: -2.3,
+      maxY: -1.2 + hMain,
     });
   });
 
@@ -721,24 +1017,31 @@ export function createDesaCaveEnvironment(
           pMesh.rotation.y = Math.atan2(dx, dz) - Math.PI / 2;
           pMesh.castShadow = true;
           group.add(pMesh);
-          caveColliders.push({
-            x: cx,
-            z: cz,
-            halfW: 0.42,
-            halfD: 0.42,
-            minY: deckY - 0.2,
-            maxY: deckY + curbH + 0.4,
-          });
         });
       }
     }
-    // Bridge masonry arch abutments on both banks
-    addWallBox(-7.2, 1.5, 22.3, 2.2, 4.2, 4.5, 0x374151, false);
-    addWallBox(4.2, 1.5, 15.7, 2.2, 4.2, 4.5, 0x374151, false);
+    // Continuous airtight rotated OBB railings on both sides of the bridge
+    const bridgeYaw = Math.atan2(dx, dz) - Math.PI / 2;
+    const midX = (BRIDGE_START.x + BRIDGE_END.x) * 0.5;
+    const midZ = (BRIDGE_START.z + BRIDGE_END.z) * 0.5;
+    [-BRIDGE_HALF_W + 0.24, BRIDGE_HALF_W - 0.24].forEach((side) => {
+      caveColliders.push({
+        x: midX + px * side,
+        z: midZ + pz * side,
+        halfW: len * 0.48,
+        halfD: 0.34,
+        rotY: bridgeYaw,
+        minY: 3.3,
+        maxY: 6.2,
+      });
+    });
+    // Bridge masonry arch abutments on both banks (solid pier below bridge deck!)
+    addWallBox(-7.2, 1.3, 22.3, 2.2, 4.0, 4.5, 0x374151, true);
+    addWallBox(4.2, 1.3, 15.7, 2.2, 4.0, 4.5, 0x374151, true);
   }
 
   // --------------------------------------------------------------------------
-  // D. Visual Voxel Steps for ALL 11 DESA_STAIRS (exact visual-to-physics match!)
+  // D. Visual Voxel Steps & Curb Colliders for ALL 11 DESA_STAIRS
   // --------------------------------------------------------------------------
   for (const st of DESA_STAIRS) {
     const dx = st.x1 - st.x0;
@@ -780,6 +1083,21 @@ export function createDesaCaveEnvironment(
           group.add(curb);
         });
       }
+    }
+    if (st.curbHeight) {
+      const midX = (st.x0 + st.x1) * 0.5;
+      const midZ = (st.z0 + st.z1) * 0.5;
+      [-st.halfW - 0.25, st.halfW + 0.25].forEach((side) => {
+        caveColliders.push({
+          x: midX + px * side,
+          z: midZ + pz * side,
+          halfW: 0.28,
+          halfD: len * 0.45,
+          rotY: yaw,
+          minY: Math.min(st.y0, st.y1) - 0.4,
+          maxY: Math.max(st.y0, st.y1) + st.curbHeight! + 0.4,
+        });
+      });
     }
   }
 
@@ -833,11 +1151,16 @@ export function createDesaCaveEnvironment(
   addMazeWall(21, 19, 34, 19, 3.5);
   addMazeWall(27, 2, 36, 2, 3.5);
   addMazeWall(33, 13, 33, 19, 3.5);
-  // Stone Guardhouse Walls framing Door 2: Lumbung at (40.5, 3.5, 10.5)
+  // Enclosed Stone Guardhouse Building framing Door 2: Lumbung at (37.0, 3.5, 10.5, rotY=-Math.PI/2)
   addMazeWall(37, 6, 45, 6, 3.5, 4.6);
   addMazeWall(37, 15, 45, 15, 3.5, 4.6);
-  // Guardhouse Roof Slab over Door 2
-  stoneSpecs.push({ x: 41.0, y: 8.4, z: 10.5, sx: 8.5, sy: 0.7, sz: 9.8, color: 0x374151 });
+  addMazeWall(45, 6, 45, 15, 3.5, 4.6);
+  addMazeWall(37, 6, 37, 7.9, 3.5, 4.6);
+  addMazeWall(37, 13.1, 37, 15, 3.5, 4.6);
+  // Header wall above Door 2 lintel connecting front wings to roof
+  addWallBox(37.0, 7.75, 10.5, 1.2, 1.3, 5.4, 0x475569, true);
+  // Solid Guardhouse Roof Slab over Door 2 room
+  addWallBox(41.0, 8.45, 10.5, 9.2, 0.75, 10.2, 0x374151, true);
 
   // --------------------------------------------------------------------------
   // F. Iconic Plaza Landmarks: Gold Sigil, Bench, Forge, Well, Teleport Pad, 3 Boss Sigils
@@ -909,11 +1232,15 @@ export function createDesaCaveEnvironment(
     const topRing = new THREE.Mesh(new THREE.TorusGeometry(1.52, 0.25, 6, 12), palette.getMat(0x3f6212, 'matte'));
     topRing.rotation.x = Math.PI / 2;
     topRing.position.y = 1.16;
-    const wellWater = new THREE.Mesh(new THREE.CylinderGeometry(1.38, 1.38, 0.14, 12), riverWaterMat);
+    const wellWater = new THREE.Mesh(new THREE.CylinderGeometry(1.38, 1.38, 0.14, 12), wellWaterMat);
     wellWater.position.y = 0.55;
+    wellWater.userData.animKind = 'uvScroll';
+    wellWater.userData.scrollU = 0.12;
+    wellWater.userData.scrollV = 0.08;
+    animatables.push(wellWater);
     well.add(rim, topRing, wellWater);
     group.add(well);
-    caveColliders.push({ x: 9.5, z: 41.5, halfW: 1.55, halfD: 1.55, minY: 0, maxY: 1.6 });
+    caveColliders.push({ x: 9.5, z: 41.5, halfW: 1.65, halfD: 1.65, minY: 0, maxY: 1.65 });
   }
 
   // 5. Glowing Cyan Square Exit Teleport Pad on Exit Terrace (-14.5, 3.5, 29.0)
@@ -945,17 +1272,22 @@ export function createDesaCaveEnvironment(
     exitGate.add(frameBase, padCore, auraBeam);
     group.add(exitGate);
 
-    // Stacked wooden crates beside Exit Pad & Door 3
+    // Stacked wooden crates beside Exit Pad & Door 3 (with solid colliders!)
     const crate1 = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.15, 1.15), palette.getMat(0x854d0e, 'matte'));
     crate1.position.set(-20.8, 3.5 + 0.575, 29.5);
+    crate1.castShadow = true;
     const crate2 = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.95, 0.95), palette.getMat(0x713f12, 'matte'));
     crate2.position.set(-20.9, 3.5 + 1.15 + 0.475, 29.5);
+    crate2.castShadow = true;
     const crate3 = new THREE.Mesh(new THREE.BoxGeometry(1.05, 1.05, 1.05), palette.getMat(0x92400e, 'matte'));
     crate3.position.set(-19.6, 3.5 + 0.525, 30.2);
+    crate3.castShadow = true;
     group.add(crate1, crate2, crate3);
+    caveColliders.push({ x: -20.85, z: 29.5, halfW: 0.62, halfD: 0.62, minY: 3.5, maxY: 5.7 });
+    caveColliders.push({ x: -19.6, z: 30.2, halfW: 0.56, halfD: 0.56, minY: 3.5, maxY: 4.7 });
   }
 
-  // 6. NW Mossy Arched Grotto (Red Ribbon) at (-44.5, 4.0, -4.0)
+  // 6. NW Mossy Arched Grotto (Red Ribbon) at (-44.5, 4.0, -4.0) with solid vault walls
   {
     const grottoArch = new THREE.Group();
     grottoArch.position.set(-45.5, 4.0, -4.0);
@@ -969,9 +1301,14 @@ export function createDesaCaveEnvironment(
       grottoArch.add(mossV);
     }
     group.add(grottoArch);
+    // Solid grotto back & side walls + vault ceiling so player/monsters cannot clip out
+    addWallBox(-48.2, 6.4, -4.0, 1.6, 5.4, 8.8, 0x262d3b, true);
+    addWallBox(-45.5, 6.2, -7.8, 4.2, 5.0, 1.4, 0x3f6212, true);
+    addWallBox(-45.5, 6.2, -0.2, 4.2, 5.0, 1.4, 0x3f6212, true);
+    caveColliders.push({ x: -45.5, z: -4.0, halfW: 2.0, halfD: 4.0, minY: 7.7, maxY: 9.8 });
   }
 
-  // 7. NW Diamond Ore & Crates Framing Weapon Chest at (-25.5, 3.5, -31.5)
+  // 7. NW Diamond Ore & Crates Framing Weapon Chest at (-25.5, 3.5, -31.5) (all solid!)
   const chestX = -25.5;
   const chestY = 3.5;
   const chestZ = -31.5;
@@ -985,6 +1322,13 @@ export function createDesaCaveEnvironment(
     stoneSpecs.push(
       { x: -22.5, y: 4.1, z: -30.5, sx: 1.2, sy: 1.2, sz: 1.2, color: pickShade(WOOD_SHADES, 1, 2) },
       { x: -21.8, y: 4.1, z: -32.2, sx: 1.1, sy: 1.1, sz: 1.1, color: pickShade(WOOD_SHADES, 2, 3) },
+    );
+    caveColliders.push(
+      { x: -29.1, z: -31.9, halfW: 0.95, halfD: 0.95, minY: 3.5, maxY: 7.2 },
+      { x: -27.4, z: -34.2, halfW: 0.9, halfD: 0.9, minY: 3.5, maxY: 5.5 },
+      { x: -23.0, z: -33.2, halfW: 0.8, halfD: 0.8, minY: 3.5, maxY: 5.2 },
+      { x: -22.5, z: -30.5, halfW: 0.65, halfD: 0.65, minY: 3.5, maxY: 4.8 },
+      { x: -21.8, z: -32.2, halfW: 0.6, halfD: 0.6, minY: 3.5, maxY: 4.8 },
     );
   }
 
@@ -1061,9 +1405,13 @@ export function createDesaCaveEnvironment(
     dg.add(fL, fR, fTop, wood, rune);
     group.add(dg);
   };
-  // North-of-West-Maze cliff door & Upper NW back wall door
+  // North-of-West-Maze cliff door & Upper NW back wall door (both embedded flush into rock + solid OBB!)
   buildDecorCliffDoor(-37.0, 2.0, -15.5, 0.25);
-  buildDecorCliffDoor(-16.0, 9.5, -47.5, 0);
+  buildDecorCliffDoor(-16.0, 9.5, -48.0, 0);
+  caveColliders.push(
+    { x: -37.0, z: -15.5, halfW: 1.78, halfD: 0.68, rotY: 0.25, minY: 2.0, maxY: 6.5 },
+    { x: -16.0, z: -48.0, halfW: 1.78, halfD: 0.68, rotY: 0, minY: 9.5, maxY: 14.0 },
+  );
 
   // Flush Instanced Voxel Batches
   const stoneBatch = buildVoxelBatch(stoneSpecs, voxelMat, true, true);
@@ -1083,12 +1431,119 @@ export function createDesaCaveEnvironment(
   }
 
   // --------------------------------------------------------------------------
-  // G. Attach 5 Mission Doors & Build Cave Lighting
+  // G. Attach 5 Mission Doors, Solid Door OBB Colliders, Mist Layers & Cave Lighting
   // --------------------------------------------------------------------------
   doors.forEach((d) => {
     group.add(d.group);
     cameraOccluders.push(d.group);
   });
+
+  // Solid physical colliders for all 5 mission doors + props so neither players nor monsters pass/trap inside!
+  {
+    // Door 0: Sumur Tua open stone ruin arch at (12.8, 0, 44.5, rotY=-0.78) — side pillars + overhead lintel solid, center walkable
+    const d0Rot = -0.78;
+    const d0Cos = Math.cos(d0Rot);
+    const d0Sin = Math.sin(d0Rot);
+    caveColliders.push(
+      {
+        x: 12.8 - 1.55 * d0Cos,
+        z: 44.5 + 1.55 * d0Sin,
+        halfW: 0.6,
+        halfD: 0.62,
+        rotY: d0Rot,
+        minY: 0,
+        maxY: 6.0,
+      },
+      {
+        x: 12.8 + 1.55 * d0Cos,
+        z: 44.5 - 1.55 * d0Sin,
+        halfW: 0.6,
+        halfD: 0.62,
+        rotY: d0Rot,
+        minY: 0,
+        maxY: 6.0,
+      },
+      {
+        x: 12.8,
+        z: 44.5,
+        halfW: 2.2,
+        halfD: 0.65,
+        rotY: d0Rot,
+        minY: 4.15,
+        maxY: 6.1,
+      },
+    );
+
+    // Door 1: Jembatan Batu at (7.4, 3.5, 12.2, rotY=-0.82) — solid door frame & closed leaves
+    const d1Rot = -0.82;
+    const d1Cos = Math.cos(d1Rot);
+    const d1Sin = Math.sin(d1Rot);
+    caveColliders.push({
+      x: 7.4 - 0.55 * d1Sin,
+      z: 12.2 - 0.55 * d1Cos,
+      halfW: 2.45,
+      halfD: 0.92,
+      rotY: d1Rot,
+      minY: 3.5,
+      maxY: 9.6,
+    });
+
+    // Door 2: Lumbung Guardhouse at (37.0, 3.5, 10.5, rotY=-Math.PI/2) — solid leaves + flanking crate & barrel
+    caveColliders.push(
+      { x: 37.45, z: 10.5, halfW: 0.9, halfD: 2.4, minY: 3.5, maxY: 9.2 },
+      { x: 36.55, z: 12.8, halfW: 0.52, halfD: 0.52, minY: 3.5, maxY: 5.0 },
+      { x: 36.55, z: 8.15, halfW: 0.5, halfD: 0.5, minY: 3.5, maxY: 5.0 },
+    );
+
+    // Door 3: Parit at (-22.2, 3.5, 25.5, rotY=Math.PI/2) — solid leaves embedded into West cliff
+    caveColliders.push({ x: -22.7, z: 25.5, halfW: 0.92, halfD: 2.4, minY: 3.5, maxY: 9.6 });
+
+    // Door 4: Sel Tebing Rani colossal double gate at (2.0, 9.5, -47.2, rotY=0) + flanking lamp pedestals
+    caveColliders.push(
+      { x: 2.0, z: -47.95, halfW: 3.6, halfD: 1.0, minY: 9.5, maxY: 20.5 },
+      { x: -2.3, z: -45.95, halfW: 0.54, halfD: 0.54, minY: 9.5, maxY: 13.0 },
+      { x: 6.3, z: -45.95, halfW: 0.54, halfD: 0.54, minY: 9.5, maxY: 13.0 },
+    );
+  }
+
+  // Atmospheric Drifting Cavern Mist Planes (hidden on minimap snapshots)
+  {
+    const mistGroup = new THREE.Group();
+    mistGroup.userData.isMapHidden = true;
+    const mistSpecs: Array<[number, number, number, number, number, number]> = [
+      [-6.0, 0.25, 3.0, 14, 14, 0.26],
+      [-2.0, 0.15, 19.0, 16, 16, 0.24],
+      [11.0, 0.1, 31.0, 18, 18, 0.25],
+      [20.0, 0.2, 42.0, 16, 16, 0.22],
+      [-25.0, 5.2, -31.0, 15, 15, 0.16],
+      [2.0, 11.4, -36.0, 22, 16, 0.14],
+      [34.0, 6.2, -26.0, 14, 14, 0.18],
+    ];
+    mistSpecs.forEach(([mx, my, mz, mw, mh, op], idx) => {
+      const mGeo = new THREE.PlaneGeometry(mw, mh);
+      const mMat = new THREE.MeshBasicMaterial({
+        map: caveMistTex,
+        color: idx < 4 ? 0x67e8f9 : 0xa5b4fc,
+        transparent: true,
+        opacity: op,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const mPlane = new THREE.Mesh(mGeo, mMat);
+      mPlane.rotation.x = -Math.PI / 2;
+      mPlane.position.set(mx, my, mz);
+      mPlane.userData.isMapHidden = true;
+      mPlane.userData.animKind = 'mist';
+      mPlane.userData.baseX = mx;
+      mPlane.userData.baseZ = mz;
+      mPlane.userData.baseOpacity = op;
+      mPlane.userData.phase = idx * 1.15;
+      animatables.push(mPlane);
+      disposables.push(mGeo, mMat);
+      mistGroup.add(mPlane);
+    });
+    group.add(mistGroup);
+  }
 
   // Warm ambient point lights across the key visual landmarks (capped gently for FPS)
   const keyLights: Array<[number, number, number, number, number, number]> = [
@@ -1118,7 +1573,7 @@ export function createDesaCaveEnvironment(
   };
   const blockCoords: Array<[number, number, CaveBlockKind]> = [
     [-18.0, 31.5, 'stone'],
-    [-22.0, 22.0, 'diamond_ore'],
+    [-17.8, 22.5, 'diamond_ore'],
     [-32.0, 17.5, 'moss_dirt'],
     [-38.5, 12.5, 'stone'],
     [-30.0, -2.5, 'heart_ore'],
@@ -1228,6 +1683,7 @@ export function createDesaCaveEnvironment(
   caveColliders.push({ x: 39.4, z: -31.5, halfW: 0.4, halfD: 2.1, minY: 9.5, maxY: 14.0 });
   caveColliders.push({ x: 37.5, z: -33.4, halfW: 2.1, halfD: 0.35, minY: 9.5, maxY: 14.0 });
   caveColliders.push({ x: 37.5, z: -29.6, halfW: 2.1, halfD: 0.35, minY: 9.5, maxY: 14.0 });
+  caveColliders.push({ x: 37.5, z: -31.5, halfW: 2.2, halfD: 2.2, minY: 12.8, maxY: 14.4 });
 
   // Boss Spawn & Prison Key Drop Position right in center of High Boss Courtyard (y = 9.5)
   const bossSpawnPos = new THREE.Vector3(2.0, 9.5, -33.5);
@@ -1294,11 +1750,11 @@ export function createDesaCaveEnvironment(
       ],
       brawlerCoords: [
         [-31.5, 3.0],
-        [32.5, 16.0],
+        [29.5, 15.5],
       ],
       creeperSpots: [
         [-25.5, -20.5],
-        [6.0, 10.5],
+        [4.2, 10.8],
       ],
       batSpots: [
         [-2.0, 12.0],

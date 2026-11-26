@@ -4132,6 +4132,64 @@ export class RpgWorldEngine {
     return tMin <= maxDist ? tMin : null;
   }
 
+  private rayIntersectObbDist(
+    ox: number,
+    oy: number,
+    oz: number,
+    dx: number,
+    dy: number,
+    dz: number,
+    maxDist: number,
+    cx: number,
+    cz: number,
+    halfW: number,
+    halfD: number,
+    minY: number,
+    maxY: number,
+    rotY = 0,
+  ): number | null {
+    if (!rotY) {
+      return this.rayIntersectAabbDist(
+        ox,
+        oy,
+        oz,
+        dx,
+        dy,
+        dz,
+        maxDist,
+        cx - halfW,
+        cx + halfW,
+        minY,
+        maxY,
+        cz - halfD,
+        cz + halfD,
+      );
+    }
+    const cos = Math.cos(rotY);
+    const sin = Math.sin(rotY);
+    const rx = ox - cx;
+    const rz = oz - cz;
+    const lox = rx * cos - rz * sin;
+    const loz = rx * sin + rz * cos;
+    const ldx = dx * cos - dz * sin;
+    const ldz = dx * sin + dz * cos;
+    return this.rayIntersectAabbDist(
+      lox,
+      oy,
+      loz,
+      ldx,
+      dy,
+      ldz,
+      maxDist,
+      -halfW,
+      halfW,
+      minY,
+      maxY,
+      -halfD,
+      halfD,
+    );
+  }
+
   private computeSpringArmDist(
     originX: number,
     originY: number,
@@ -8637,12 +8695,12 @@ export class RpgWorldEngine {
             : zoneId === 'pasar_rasa'
             ? 0x4a2c1d
             : zoneId === 'desa_sapaan'
-            ? 0x2d284d
+            ? 0x1e2540
             : 0x334155;
         (this.scene.background as THREE.Color).setHex(brightHex);
         if (this.scene.fog instanceof THREE.FogExp2) {
           this.scene.fog.color.setHex(brightHex);
-          this.scene.fog.density = zoneId === 'desa_sapaan' ? 0.0036 : 0.0065;
+          this.scene.fog.density = zoneId === 'desa_sapaan' ? 0.011 : 0.0065;
         }
         this.hemiLight.color.setHex(0xe0f2fe);
         this.hemiLight.groundColor.setHex(0x5c913b);
@@ -8656,10 +8714,10 @@ export class RpgWorldEngine {
         if (!this.preferLiteShader) this.scene.environmentIntensity = 0.92;
         this.playerCaveLight.intensity = 1.25;
       } else if (zoneId === 'desa_sapaan') {
-        (this.scene.background as THREE.Color).setHex(0x141024);
+        (this.scene.background as THREE.Color).setHex(0x12182b);
         if (this.scene.fog instanceof THREE.FogExp2) {
-          this.scene.fog.color.setHex(0x141024);
-          this.scene.fog.density = 0.0048;
+          this.scene.fog.color.setHex(0x12182b);
+          this.scene.fog.density = 0.0165;
         }
         this.hemiLight.color.setHex(0xc7d2fe);
         this.hemiLight.groundColor.setHex(0x293522);
@@ -15892,7 +15950,7 @@ export class RpgWorldEngine {
       for (const col of this.dungeonRig.caveColliders) {
         if (col.blockProjectiles === false) continue;
         const hd = col.halfD ?? col.halfW;
-        const tWall = this.rayIntersectAabbDist(
+        const tWall = this.rayIntersectObbDist(
           ro.x,
           ro.y,
           ro.z,
@@ -15900,12 +15958,13 @@ export class RpgWorldEngine {
           rd.y,
           rd.z,
           bestT,
-          col.x - col.halfW,
-          col.x + col.halfW,
+          col.x,
+          col.z,
+          col.halfW,
+          hd,
           col.minY ?? 0,
           col.maxY ?? 6.5,
-          col.z - hd,
-          col.z + hd,
+          col.rotY ?? 0,
         );
         if (tWall !== null && tWall > heroDepth + 0.35 && tWall < bestT) {
           bestT = tWall;
@@ -19649,13 +19708,44 @@ export class RpgWorldEngine {
 
     if (this.worldMode !== 'overworld') {
       for (const obj of this.dungeonAnimatables) {
-        if (obj.userData.animKind === 'spinZ') {
+        const kind = obj.userData.animKind;
+        if (kind === 'spinZ') {
           obj.rotation.z += dt * 1.4;
-        } else if (obj.userData.animKind === 'bob') {
+        } else if (kind === 'spin') {
+          obj.rotation.y += dt * 1.8;
+        } else if (kind === 'bob') {
           const base = Number(obj.userData.baseY || 3.5);
           const ph = Number(obj.userData.phase || 0);
           obj.position.y = base + Math.sin(this.elapsed * 2.8 + ph) * 0.35;
           obj.rotation.y += dt * 1.6;
+        } else if (kind === 'uvScroll') {
+          const mesh = obj as THREE.Mesh;
+          const mat = mesh.material as THREE.MeshStandardMaterial | undefined;
+          const map = mat?.map;
+          if (map) {
+            const su = Number(obj.userData.scrollU ?? 0);
+            const sv = Number(obj.userData.scrollV ?? -0.35);
+            map.offset.x = (map.offset.x + su * dt) % 1;
+            map.offset.y = (map.offset.y + sv * dt) % 1;
+          }
+        } else if (kind === 'waterfallSplash') {
+          const pulse = 0.92 + Math.sin(this.elapsed * 6.5) * 0.14;
+          obj.scale.set(pulse, pulse, 1);
+          const mat = (obj as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
+          if (mat) {
+            mat.opacity = 0.42 + Math.sin(this.elapsed * 5.2) * 0.16;
+          }
+        } else if (kind === 'mist') {
+          const ph = Number(obj.userData.phase || 0);
+          const bx = Number(obj.userData.baseX || 0);
+          const bz = Number(obj.userData.baseZ || 0);
+          const baseOp = Number(obj.userData.baseOpacity || 0.2);
+          obj.position.x = bx + Math.sin(this.elapsed * 0.38 + ph) * 1.6;
+          obj.position.z = bz + Math.cos(this.elapsed * 0.31 + ph) * 1.2;
+          const mat = (obj as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined;
+          if (mat) {
+            mat.opacity = baseOp * (0.78 + Math.sin(this.elapsed * 0.9 + ph) * 0.22);
+          }
         }
       }
 
@@ -20084,10 +20174,12 @@ export class RpgWorldEngine {
           m.mesh.rotation.y = Math.atan2(-Math.sin(p), Math.cos(p * 0.8));
         }
 
-        const cPt = { x: nextMx, z: nextMz };
-        this.resolveDungeonCircleColliders(cPt, 0.9, m.y ?? 0, 1.6, this.getDungeonHalfBound() - 0.5);
+        const cPt = this._desaColScratch;
+        cPt.x = nextMx;
+        cPt.z = nextMz;
         const prevCx = m.x;
         const prevCz = m.z;
+        this.resolveDungeonGroundEntityMotion(cPt, prevCx, prevCz, m.y ?? 0, 0.9, 1.6);
         m.x = cPt.x;
         m.z = cPt.z;
         const cGroundY = this.getDungeonSupportHeight(m.x, m.z, m.y ?? 0);
@@ -20132,8 +20224,17 @@ export class RpgWorldEngine {
 
         m.y = THREE.MathUtils.lerp(m.y ?? flyFloorY + 3.4, targetY, 1 - Math.exp(-5 * dt));
         if (this.dungeonRig) {
-          const fPt = { x: nextFx, z: nextFz };
-          this.resolveDungeonCircleColliders(fPt, 0.72, m.y, 1.1, this.getDungeonHalfBound() - 0.5, {
+          const fPt = this._desaColScratch;
+          fPt.x = nextFx;
+          fPt.z = nextFz;
+          if (this.dungeonRig.customGroundHeight) {
+            const gh = this.dungeonRig.customGroundHeight(fPt.x, fPt.z, m.y);
+            if (gh > m.y + 0.3) {
+              fPt.x = m.x;
+              fPt.z = m.z;
+            }
+          }
+          this.resolveDungeonCircleColliders(fPt, 0.78, m.y, 1.2, this.getDungeonHalfBound() - 0.5, {
             skipPlatforms: true,
             skipGuardian: true,
           });
@@ -20449,8 +20550,10 @@ export class RpgWorldEngine {
         const prevBx = m.x;
         const prevBz = m.z;
         if (this.worldMode === 'dungeon' && this.dungeonRig) {
-          const bPt = { x: nextMx, z: nextMz };
-          this.resolveDungeonCircleColliders(bPt, mRad, m.y ?? 0, 2.0, this.getDungeonHalfBound() - 0.5);
+          const bPt = this._desaColScratch;
+          bPt.x = nextMx;
+          bPt.z = nextMz;
+          this.resolveDungeonGroundEntityMotion(bPt, prevBx, prevBz, m.y ?? 0, mRad, 2.0);
           m.x = bPt.x;
           m.z = bPt.z;
         } else {
@@ -20599,8 +20702,10 @@ export class RpgWorldEngine {
       }
       if (this.worldMode === 'dungeon' && this.dungeonRig) {
         const mRad = m.isBoss ? 1.25 : 0.95;
-        const qPt = { x: nextMx, z: nextMz };
-        this.resolveDungeonCircleColliders(qPt, mRad, m.y ?? 0, 2.2, this.getDungeonHalfBound() - 0.5);
+        const qPt = this._desaColScratch;
+        qPt.x = nextMx;
+        qPt.z = nextMz;
+        this.resolveDungeonGroundEntityMotion(qPt, m.x, m.z, m.y ?? 0, mRad, 2.2);
         nextMx = qPt.x;
         nextMz = qPt.z;
       }
@@ -21789,7 +21894,10 @@ export class RpgWorldEngine {
       this.heroPos.z = THREE.MathUtils.clamp(this.heroPos.z, -roomBound, roomBound);
       if (this.worldMode === 'dungeon' && this.dungeonRig) {
         if (this.dungeonRig.customGroundHeight) {
-          const climbLimit = prevHeroY + 0.98;
+          // Strict step-up when grounded; prevent mid-jump wall clipping or snapping into tall cliffs!
+          const climbLimit = this.heroOnGround
+            ? prevHeroY + 0.95
+            : Math.max(prevHeroY, this.heroPos.y) + 0.25;
           const tryH = this.dungeonRig.customGroundHeight(this.heroPos.x, this.heroPos.z, prevHeroY);
           if (tryH > climbLimit) {
             const hX = this.dungeonRig.customGroundHeight(this.heroPos.x, prevHeroZ, prevHeroY);
@@ -21809,42 +21917,54 @@ export class RpgWorldEngine {
               this.heroVel.z = 0;
             }
           }
-          const rWallCave = 0.56;
-          for (let iter = 0; iter < 2; iter++) {
-            let pushX = 0;
-            let pushZ = 0;
-            let blocked = 0;
-            for (let i = 0; i < 8; i++) {
-              const ang = (i / 8) * Math.PI * 2;
-              const dx = Math.cos(ang);
-              const dz = Math.sin(ang);
-              const gh = this.dungeonRig.customGroundHeight(
-                this.heroPos.x + dx * rWallCave,
-                this.heroPos.z + dz * rWallCave,
-                prevHeroY,
-              );
-              if (gh > climbLimit) {
-                pushX -= dx;
-                pushZ -= dz;
-                blocked++;
+          const rWallCave = 0.58;
+          for (let pass = 0; pass < 3; pass++) {
+            for (let iter = 0; iter < 2; iter++) {
+              let pushX = 0;
+              let pushZ = 0;
+              let blocked = 0;
+              for (let i = 0; i < 8; i++) {
+                const ang = (i / 8) * Math.PI * 2;
+                const dx = Math.cos(ang);
+                const dz = Math.sin(ang);
+                const gh = this.dungeonRig.customGroundHeight(
+                  THREE.MathUtils.clamp(this.heroPos.x + dx * rWallCave, -roomBound, roomBound),
+                  THREE.MathUtils.clamp(this.heroPos.z + dz * rWallCave, -roomBound, roomBound),
+                  prevHeroY,
+                );
+                if (gh > climbLimit) {
+                  pushX -= dx;
+                  pushZ -= dz;
+                  blocked++;
+                }
+              }
+              if (blocked === 0) break;
+              const len = Math.hypot(pushX, pushZ);
+              if (len > 0.001) {
+                const nx = pushX / len;
+                const nz = pushZ / len;
+                this.heroPos.x += nx * 0.24;
+                this.heroPos.z += nz * 0.24;
+                const dot = this.heroVel.x * nx + this.heroVel.z * nz;
+                if (dot < 0) {
+                  this.heroVel.x -= nx * dot;
+                  this.heroVel.z -= nz * dot;
+                }
               }
             }
-            if (blocked === 0) break;
-            const len = Math.hypot(pushX, pushZ);
-            if (len > 0.001) {
-              const nx = pushX / len;
-              const nz = pushZ / len;
-              this.heroPos.x += nx * 0.22;
-              this.heroPos.z += nz * 0.22;
-              const dot = this.heroVel.x * nx + this.heroVel.z * nz;
-              if (dot < 0) {
-                this.heroVel.x -= nx * dot;
-                this.heroVel.z -= nz * dot;
-              }
-            }
+            this.resolveCaveBlockCollisions();
           }
+          // Final corner safety guard: never end step embedded inside a cliff face
+          if (this.dungeonRig.customGroundHeight(this.heroPos.x, this.heroPos.z, prevHeroY) > climbLimit) {
+            this.heroPos.x = prevHeroX;
+            this.heroPos.z = prevHeroZ;
+            this.heroVel.x = 0;
+            this.heroVel.z = 0;
+            this.resolveCaveBlockCollisions();
+          }
+        } else {
+          this.resolveCaveBlockCollisions();
         }
-        this.resolveCaveBlockCollisions();
         for (const m of this.dungeonMonsters) {
           if (!m.alive) continue;
           if (!m.isCaveMob && !m.combatOnly && this.encounterGraceTimer <= 0) continue;
@@ -23508,7 +23628,7 @@ export class RpgWorldEngine {
       }
 
       let bestDoor: number | null = null;
-      let bestDoorDist = 4.6;
+      let bestDoorDist = this.dungeonState.zoneId === 'desa_sapaan' ? 5.2 : 4.6;
       for (const door of ZONE_DOORS[this.dungeonState.zoneId]) {
         if (Math.abs(this.heroPos.y - (door.y ?? 0)) > 3.4) continue;
         const d = Math.hypot(this.heroPos.x - door.x, this.heroPos.z - door.z);
@@ -23970,75 +24090,184 @@ export class RpgWorldEngine {
     options?: { skipBlocks?: boolean; skipPlatforms?: boolean; skipGuardian?: boolean },
   ): void {
     if (!this.dungeonRig) return;
-    const pushBox = (bx: number, bz: number, hw: number, hd = hw) => {
-      const cx = THREE.MathUtils.clamp(pt.x, bx - hw, bx + hw);
-      const cz = THREE.MathUtils.clamp(pt.z, bz - hd, bz + hd);
-      const dx = pt.x - cx;
-      const dz = pt.z - cz;
-      const distSq = dx * dx + dz * dz;
+    const pushBox = (bx: number, bz: number, hw: number, hd = hw, rotY = 0) => {
+      if (!rotY) {
+        const cx = THREE.MathUtils.clamp(pt.x, bx - hw, bx + hw);
+        const cz = THREE.MathUtils.clamp(pt.z, bz - hd, bz + hd);
+        const dx = pt.x - cx;
+        const dz = pt.z - cz;
+        const distSq = dx * dx + dz * dz;
+        if (distSq < rad * rad) {
+          if (distSq > 0.0001) {
+            const dist = Math.sqrt(distSq);
+            const overlap = rad - dist;
+            pt.x += (dx / dist) * overlap;
+            pt.z += (dz / dist) * overlap;
+          } else {
+            const penX = hw + rad - Math.abs(pt.x - bx);
+            const penZ = hd + rad - Math.abs(pt.z - bz);
+            if (penX < penZ) {
+              pt.x += pt.x >= bx ? penX : -penX;
+            } else {
+              pt.z += pt.z >= bz ? penZ : -penZ;
+            }
+          }
+        }
+        return;
+      }
+
+      const cos = Math.cos(rotY);
+      const sin = Math.sin(rotY);
+      const rx = pt.x - bx;
+      const rz = pt.z - bz;
+      const lx = rx * cos - rz * sin;
+      const lz = rx * sin + rz * cos;
+      const cx = THREE.MathUtils.clamp(lx, -hw, hw);
+      const cz = THREE.MathUtils.clamp(lz, -hd, hd);
+      const dlx = lx - cx;
+      const dlz = lz - cz;
+      const distSq = dlx * dlx + dlz * dlz;
       if (distSq < rad * rad) {
+        let plx = 0;
+        let plz = 0;
         if (distSq > 0.0001) {
           const dist = Math.sqrt(distSq);
           const overlap = rad - dist;
-          pt.x += (dx / dist) * overlap;
-          pt.z += (dz / dist) * overlap;
+          plx = (dlx / dist) * overlap;
+          plz = (dlz / dist) * overlap;
         } else {
-          const penX = hw + rad - Math.abs(pt.x - bx);
-          const penZ = hd + rad - Math.abs(pt.z - bz);
+          const penX = hw + rad - Math.abs(lx);
+          const penZ = hd + rad - Math.abs(lz);
           if (penX < penZ) {
-            pt.x += pt.x >= bx ? penX : -penX;
+            plx = lx >= 0 ? penX : -penX;
           } else {
-            pt.z += pt.z >= bz ? penZ : -penZ;
+            plz = lz >= 0 ? penZ : -penZ;
           }
         }
+        pt.x += plx * cos + plz * sin;
+        pt.z += -plx * sin + plz * cos;
       }
     };
 
-    for (const col of this.dungeonRig.caveColliders) {
-      const minY = col.minY ?? 0;
-      const maxY = col.maxY ?? 10;
-      if (entityY >= maxY - 0.12 || entityY + entityHeight <= minY + 0.05) continue;
-      pushBox(col.x, col.z, col.halfW, col.halfD ?? col.halfW);
-    }
-
-    if (!options?.skipGuardian && this.dungeonRig.hasInsideGuardian && entityY < 2.2) {
-      pushBox(this.dungeonRig.guardianPos.x, this.dungeonRig.guardianPos.z, 0.7, 0.7);
-    }
-
-    const prisonY = this.dungeonRig.prisonPos.y ?? 0;
-    if (
-      !this.dungeonState?.prisonUnlocked &&
-      entityY >= prisonY - 1.2 &&
-      entityY < prisonY + 4.5
-    ) {
-      if (this.dungeonState?.zoneId === 'desa_sapaan') {
-        pushBox(this.dungeonRig.prisonPos.x - 1.75, this.dungeonRig.prisonPos.z, 0.35, 2.0);
-      } else {
-        pushBox(this.dungeonRig.prisonPos.x, this.dungeonRig.prisonPos.z, 1.8, 1.8);
+    const passes = 2;
+    for (let pass = 0; pass < passes; pass++) {
+      for (const col of this.dungeonRig.caveColliders) {
+        const minY = col.minY ?? 0;
+        const maxY = col.maxY ?? 10;
+        if (entityY >= maxY - 0.12 || entityY + entityHeight <= minY + 0.05) continue;
+        pushBox(col.x, col.z, col.halfW, col.halfD ?? col.halfW, col.rotY ?? 0);
       }
-    }
 
-    if (!options?.skipPlatforms) {
-      for (const p of this.dungeonRig.platforms) {
-        if (entityY < p.topY - 0.55) {
-          pushBox(p.x, p.z, p.halfW, p.halfD);
+      if (!options?.skipGuardian && this.dungeonRig.hasInsideGuardian && entityY < 2.2) {
+        pushBox(this.dungeonRig.guardianPos.x, this.dungeonRig.guardianPos.z, 0.7, 0.7);
+      }
+
+      const prisonY = this.dungeonRig.prisonPos.y ?? 0;
+      if (
+        !this.dungeonState?.prisonUnlocked &&
+        entityY >= prisonY - 1.2 &&
+        entityY < prisonY + 4.5
+      ) {
+        if (this.dungeonState?.zoneId === 'desa_sapaan') {
+          pushBox(this.dungeonRig.prisonPos.x - 1.75, this.dungeonRig.prisonPos.z, 0.35, 2.0);
+        } else {
+          pushBox(this.dungeonRig.prisonPos.x, this.dungeonRig.prisonPos.z, 1.8, 1.8);
         }
       }
-    }
 
-    if (!options?.skipBlocks) {
-      for (const blk of this.dungeonRig.caveBlocks) {
-        if (!blk.alive) continue;
-        const topY = blk.y + 1.1;
-        const botY = blk.y - 1.1;
-        if (entityY < topY - 0.55 && entityY + entityHeight > botY) {
-          pushBox(blk.x, blk.z, blk.halfW, blk.halfW);
+      if (!options?.skipPlatforms) {
+        for (const p of this.dungeonRig.platforms) {
+          if (entityY < p.topY - 0.55) {
+            pushBox(p.x, p.z, p.halfW, p.halfD);
+          }
         }
       }
-    }
 
-    pt.x = THREE.MathUtils.clamp(pt.x, -clampBound, clampBound);
-    pt.z = THREE.MathUtils.clamp(pt.z, -clampBound, clampBound);
+      if (!options?.skipBlocks) {
+        for (const blk of this.dungeonRig.caveBlocks) {
+          if (!blk.alive) continue;
+          const topY = blk.y + 1.1;
+          const botY = blk.y - 1.1;
+          if (entityY < topY - 0.55 && entityY + entityHeight > botY) {
+            pushBox(blk.x, blk.z, blk.halfW, blk.halfW);
+          }
+        }
+      }
+
+      pt.x = THREE.MathUtils.clamp(pt.x, -clampBound, clampBound);
+      pt.z = THREE.MathUtils.clamp(pt.z, -clampBound, clampBound);
+    }
+  }
+
+  private resolveDungeonGroundEntityMotion(
+    pt: { x: number; z: number },
+    prevX: number,
+    prevZ: number,
+    prevY: number,
+    rad: number,
+    entityHeight = 2.0,
+  ): void {
+    const rig = this.dungeonRig;
+    if (!rig) return;
+    const bound = this.getDungeonHalfBound() - 0.5;
+    pt.x = THREE.MathUtils.clamp(pt.x, -bound, bound);
+    pt.z = THREE.MathUtils.clamp(pt.z, -bound, bound);
+
+    if (rig.customGroundHeight) {
+      const maxClimb = prevY + 0.92;
+      const maxDrop = prevY - 1.85;
+      const isBadGround = (gx: number, gz: number): boolean => {
+        const gh = rig.customGroundHeight!(
+          THREE.MathUtils.clamp(gx, -bound, bound),
+          THREE.MathUtils.clamp(gz, -bound, bound),
+          prevY,
+        );
+        return gh > maxClimb || gh < maxDrop;
+      };
+      if (isBadGround(pt.x, pt.z)) {
+        const canX = !isBadGround(pt.x, prevZ);
+        const canZ = !isBadGround(prevX, pt.z);
+        if (canX && (!canZ || Math.abs(pt.x - prevX) >= Math.abs(pt.z - prevZ))) {
+          pt.z = prevZ;
+        } else if (canZ) {
+          pt.x = prevX;
+        } else {
+          pt.x = prevX;
+          pt.z = prevZ;
+        }
+      }
+      const probeR = Math.max(0.55, rad * 0.72);
+      for (let pass = 0; pass < 2; pass++) {
+        let pushX = 0;
+        let pushZ = 0;
+        let hits = 0;
+        for (let i = 0; i < 8; i++) {
+          const ang = (i / 8) * Math.PI * 2;
+          const dx = Math.cos(ang);
+          const dz = Math.sin(ang);
+          if (isBadGround(pt.x + dx * probeR, pt.z + dz * probeR)) {
+            pushX -= dx;
+            pushZ -= dz;
+            hits++;
+          }
+        }
+        if (hits > 0) {
+          const len = Math.hypot(pushX, pushZ);
+          if (len > 0.001) {
+            pt.x += (pushX / len) * 0.22;
+            pt.z += (pushZ / len) * 0.22;
+          }
+        }
+        this.resolveDungeonCircleColliders(pt, rad, prevY, entityHeight, bound);
+      }
+      if (isBadGround(pt.x, pt.z)) {
+        pt.x = prevX;
+        pt.z = prevZ;
+        this.resolveDungeonCircleColliders(pt, rad, prevY, entityHeight, bound);
+      }
+    } else {
+      this.resolveDungeonCircleColliders(pt, rad, prevY, entityHeight, bound);
+    }
   }
 
   private resolveCaveBlockCollisions(): void {
@@ -24292,8 +24521,10 @@ export class RpgWorldEngine {
         nextSx = sClamp.x;
         nextSz = sClamp.z;
       } else if (this.worldMode === 'dungeon' && this.dungeonRig) {
-        const sPt = { x: nextSx, z: nextSz };
-        this.resolveDungeonCircleColliders(sPt, sRad, s.mesh.position.y, 2.0, this.getDungeonHalfBound() - 0.5);
+        const sPt = this._desaColScratch;
+        sPt.x = nextSx;
+        sPt.z = nextSz;
+        this.resolveDungeonGroundEntityMotion(sPt, s.x, s.z, s.mesh.position.y, sRad, 2.0);
         nextSx = sPt.x;
         nextSz = sPt.z;
       }
@@ -24526,12 +24757,21 @@ export class RpgWorldEngine {
           const hd = col.halfD ?? col.halfW;
           const minY = col.minY ?? 0;
           const maxY = col.maxY ?? 6.5;
-          if (
-            Math.abs(p.x - col.x) < col.halfW + 0.25 &&
-            Math.abs(p.z - col.z) < hd + 0.25 &&
-            (p.y ?? 1.35) >= minY - 0.15 &&
-            (p.y ?? 1.35) <= maxY + 0.15
-          ) {
+          const py = p.y ?? 1.35;
+          if (py < minY - 0.15 || py > maxY + 0.15) continue;
+          let insideCol = false;
+          if (col.rotY) {
+            const cos = Math.cos(col.rotY);
+            const sin = Math.sin(col.rotY);
+            const rx = p.x - col.x;
+            const rz = p.z - col.z;
+            const lx = rx * cos - rz * sin;
+            const lz = rx * sin + rz * cos;
+            insideCol = Math.abs(lx) < col.halfW + 0.25 && Math.abs(lz) < hd + 0.25;
+          } else {
+            insideCol = Math.abs(p.x - col.x) < col.halfW + 0.25 && Math.abs(p.z - col.z) < hd + 0.25;
+          }
+          if (insideCol) {
             hitWall = true;
             break;
           }
