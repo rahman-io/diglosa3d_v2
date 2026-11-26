@@ -2900,12 +2900,20 @@ export class RpgWorldEngine {
   }
 
   private clearOverworldNightMonsters(): void {
+    const keepAmbushTargets = Boolean(
+      this.villageAmbushState?.active && !this.villageAmbushState.resolved,
+    );
+    const preserved: RoamingMonster[] = [];
     for (const m of this.monsters) {
+      if (keepAmbushTargets && m.alive && m.isVillageAmbushTarget) {
+        preserved.push(m);
+        continue;
+      }
       if (m.mesh.parent) m.mesh.parent.remove(m.mesh);
       const clickIdx = this.overworldClickables.indexOf(m.mesh);
       if (clickIdx >= 0) this.overworldClickables.splice(clickIdx, 1);
     }
-    this.monsters = [];
+    this.monsters = preserved;
     this.nightWaveTotal = 0;
     this.nightZoneTotals = {};
     this.nightShooterSaved = [];
@@ -6451,7 +6459,7 @@ export class RpgWorldEngine {
     const spec = PROLOGUE_SCENES[idx];
     this.storyTimer = 0;
     this.worldTimeTick = spec.worldTimeTick;
-    soundEngine.setPrologueSceneMusic(idx);
+    soundEngine.setPrologueSceneMusic(idx >= 3 ? 3 : idx);
 
     const istanaRig = this.archipelagoRig.istanaRig;
     if (this.prologueRig) {
@@ -6964,10 +6972,12 @@ export class RpgWorldEngine {
   public skipStory(): void {
     if (!this.storyDialog) return;
     if (this.storyDialog.kind === 'prologue') {
-      this.cleanupPrologueStage();
-      this.finishOpeningStory(true);
+      this.startOpeningStory();
     } else if (this.storyDialog.kind === 'opening') {
-      this.finishOpeningStory(true);
+      this.cleanupPrologueStage(true);
+      this.hero.root.visible = true;
+      this.introDone = true;
+      this.startVillageAmbushCutscene();
     } else if (this.storyDialog.kind === 'owl_depart') {
       this.startVillageAmbushCutscene();
     } else if (this.storyDialog.kind === 'village_ambush') {
@@ -7205,7 +7215,7 @@ export class RpgWorldEngine {
       return;
     }
 
-    // Burung Hantu terbang kembali setelah percakapan penyampaian surat, sambil BGM scene_5.mp3 tetap mengalun
+    // Burung Hantu terbang kembali setelah percakapan penyampaian surat, sambil BGM scene_4.mp3 tetap mengalun
     this.cleanupPrologueStage(true);
     this.hero.root.visible = true;
     this.introDone = true;
@@ -17219,7 +17229,7 @@ export class RpgWorldEngine {
       this.owlRig.root.position.y += dt * 10.5;
       this.owlRig.root.position.x += dt * 7.5;
       this.owlRig.root.position.z -= dt * 6.5;
-      if (this.storyTimer >= 1.35) {
+      if (this.storyTimer >= 1.15) {
         this.startVillageAmbushCutscene();
       }
       return;

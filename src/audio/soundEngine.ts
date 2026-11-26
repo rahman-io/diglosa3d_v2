@@ -52,7 +52,6 @@ const PROLOGUE_SCENE_AUDIO_PATHS: Record<number, { path: string; volume: number 
   1: { path: './assets/aistudio/scene_2_7f364184.mp3', volume: 0.42 },
   2: { path: './assets/aistudio/scene_3_e9f4fb5b.mp3', volume: 0.42 },
   3: { path: './assets/aistudio/scene_4_f344cecb.mp3', volume: 0.44 },
-  4: { path: './assets/aistudio/scene_5_690c6905.mp3', volume: 0.42 },
 };
 const WALK_AUDIO_PATH = './assets/aistudio/walk_adce5e54.mp3';
 const SWIM_AUDIO_PATH = './assets/aistudio/swimming_1e6d979c.mp3';
