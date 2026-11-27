@@ -159,7 +159,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
   const pickNextQuestion = useCallback(
     (
       b: BattleContext,
-      nextPhase: number,
+      nextBossHp: number,
       nextTurnCount: number,
       lastQ: QuizQuestion | null,
       isFrozen: boolean,
@@ -168,7 +168,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
       if (
         b.isZoneBoss &&
         mechanic === 'rewind' &&
-        nextPhase >= 2 &&
+        nextBossHp <= 10 &&
         nextTurnCount > 0 &&
         nextTurnCount % 2 === 0 &&
         lastQ &&
@@ -196,12 +196,13 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
   );
 
   const setupTurnModifiers = useCallback(
-    (b: BattleContext, q: QuizQuestion, phaseNum: number, tCount: number) => {
+    (b: BattleContext, q: QuizQuestion, curMonsterHp: number, tCount: number) => {
       const mechanic = b.isZoneBoss ? BOSSES[b.zoneId].mechanic : 'none';
+      const enraged = Boolean(b.isZoneBoss && curMonsterHp <= 10);
 
       // Base grab time + Sepatu Angin (+1s) - Close boss mechanic (-1s unless Sepatu counters)
       let gSec = diffCfg.grabSec + (hasSepatu ? 1 : 0);
-      if (b.isZoneBoss && mechanic === 'close' && phaseNum >= 2 && !hasSepatu) {
+      if (enraged && mechanic === 'close' && !hasSepatu) {
         gSec = Math.max(1.8, gSec - 1);
       }
       grabTimerRef.current = gSec;
@@ -212,15 +213,15 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
 
       const wrongIndices = [0, 1, 2, 3].filter((i) => i !== q.correctIndex);
 
-      // Slime mechanic: Phase 2-3 has 55% chance to obscure 1 wrong option
-      if (b.isZoneBoss && mechanic === 'slime' && phaseNum >= 2 && Math.random() < 0.55) {
+      // Slime mechanic: Boss HP <= 10 has 55% chance to obscure 1 wrong option
+      if (enraged && mechanic === 'slime' && Math.random() < 0.55) {
         setSlimedChoiceIdx(wrongIndices[Math.floor(Math.random() * wrongIndices.length)]);
       } else {
         setSlimedChoiceIdx(null);
       }
 
-      // Close mechanic: Phase 2-3 locks 1 wrong option every 2nd turn
-      if (b.isZoneBoss && mechanic === 'close' && phaseNum >= 2 && tCount % 2 === 1) {
+      // Close mechanic: Boss HP <= 10 locks 1 wrong option every 2nd turn
+      if (enraged && mechanic === 'close' && tCount % 2 === 1) {
         setLockedChoiceIdx(wrongIndices[Math.floor(Math.random() * wrongIndices.length)]);
       } else {
         setLockedChoiceIdx(null);
@@ -259,10 +260,10 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
     setAnimEvent('idle');
     setAnimTick(0);
 
-    const firstQ = pickNextQuestion(battle, 1, 0, null, false);
+    const firstQ = pickNextQuestion(battle, startHp, 0, null, false);
     setQuestion(firstQ);
     setPrevQuestion(null);
-    setupTurnModifiers(battle, firstQ, 1, 0);
+    setupTurnModifiers(battle, firstQ, startHp, 0);
 
     return () => clearPendingTimeout();
   }, [battle]);
@@ -270,20 +271,20 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
   const scheduleNextTurn = useCallback(
     (
       b: BattleContext,
-      nextPhase: number,
+      curMonsterHp: number,
       nextTurnCount: number,
       currentQ: QuizQuestion | null,
       delayMs: number,
     ) => {
       clearPendingTimeout();
       timeoutRef.current = window.setTimeout(() => {
-        const nextQ = pickNextQuestion(b, nextPhase, nextTurnCount, currentQ, false);
+        const nextQ = pickNextQuestion(b, curMonsterHp, nextTurnCount, currentQ, false);
         setPrevQuestion(currentQ);
         setQuestion(nextQ);
         setTurnCount(nextTurnCount);
         setTurnPhase('grab');
         setAnimEvent('idle');
-        setupTurnModifiers(b, nextQ, nextPhase, nextTurnCount);
+        setupTurnModifiers(b, nextQ, curMonsterHp, nextTurnCount);
       }, delayMs);
     },
     [pickNextQuestion, setupTurnModifiers],
@@ -304,7 +305,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
         setFeedbackMsg(`🛡️ Perisai Panci menangkis serangan! (${reasonMsg}) Nyawamu aman!`);
         soundEngine.playPick();
         triggerAnim('monster_attack');
-        scheduleNextTurn(b, bossPhase, turnCount + 1, q, 1300);
+        scheduleNextTurn(b, monsterHp, turnCount + 1, q, 1300);
         return;
       }
 
@@ -329,13 +330,13 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
         if (isDefeatKo) {
           onBattleEnd('defeat', b);
         } else {
-          const nextQ = pickNextQuestion(b, bossPhase, turnCount + 1, q, false);
+          const nextQ = pickNextQuestion(b, monsterHp, turnCount + 1, q, false);
           setPrevQuestion(q);
           setQuestion(nextQ);
           setTurnCount(turnCount + 1);
           setTurnPhase('grab');
           setAnimEvent('idle');
-          setupTurnModifiers(b, nextQ, bossPhase, turnCount + 1);
+          setupTurnModifiers(b, nextQ, monsterHp, turnCount + 1);
         }
       }, isDefeatKo ? 1850 : 1350);
     },
@@ -345,7 +346,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
       onAnswerResult,
       localPlayerHp,
       onBattleEnd,
-      bossPhase,
+      monsterHp,
       turnCount,
       pickNextQuestion,
       setupTurnModifiers,
@@ -382,7 +383,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
             `${battle.monsterName} merebut giliran, tapi tebakannya meleset! Giliran baru siap!`,
           );
           soundEngine.playFlip();
-          scheduleNextTurn(battle, bossPhase, turnCount + 1, question, 1150);
+          scheduleNextTurn(battle, monsterHp, turnCount + 1, question, 1150);
         }
       }
     }, 50);
@@ -395,7 +396,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
     handleMonsterAttack,
     question,
     scheduleNextTurn,
-    bossPhase,
+    monsterHp,
     turnCount,
   ]);
 
@@ -473,10 +474,11 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
           setDuelAmmoGained((g) => g + res.ammoAwarded);
         }
 
-        // Pedang Kata: +1 dmg (2 dmg) in normal duel; in Boss fight every 4 hit streak heals +1 ❤️
-        const dmg = !battle.isZoneBoss && hasPedang ? 2 : 1;
+        // Pedang Kata: +1 dmg (2 dmg) on normal monsters; Boss & Boss Minions take 1 dmg per challenge & heal +1 ❤️ every 4 hits
+        const isBossSquad = Boolean(battle.isZoneBoss || battle.isBossMinion);
+        const dmg = !isBossSquad && hasPedang ? 2 : 1;
         let healNote = '';
-        if (battle.isZoneBoss && hasPedang && nextStreak % 4 === 0 && localPlayerHp < playerMaxHp) {
+        if (isBossSquad && hasPedang && nextStreak % 4 === 0 && localPlayerHp < playerMaxHp) {
           setLocalPlayerHp((hp) => Math.min(playerMaxHp, hp + 1));
           onUseHealHeart();
           healNote = ' · 🗡️ Pedang Kata pulihkan +1 ❤️!';
@@ -491,6 +493,13 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
         );
 
         const bossDef = battle.isZoneBoss ? BOSSES[battle.zoneId] : null;
+        if (bossDef) {
+          if (nextMonsterHp <= 5 && bossDef.taunts[2]) {
+            setBossTaunt(bossDef.taunts[2]);
+          } else if (nextMonsterHp <= 10 && bossDef.taunts[1]) {
+            setBossTaunt(bossDef.taunts[1]);
+          }
+        }
         const isTerminalVictory =
           nextMonsterHp <= 0 && (!bossDef || bossPhase >= bossDef.phases);
         triggerAnim(isTerminalVictory ? 'monster_ko' : 'hero_attack');
@@ -498,7 +507,6 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
         clearPendingTimeout();
         timeoutRef.current = window.setTimeout(() => {
           if (nextMonsterHp <= 0) {
-            // Check 3-Phase Zone Boss transition
             if (bossDef && bossPhase < bossDef.phases) {
               const nextPhase = bossPhase + 1;
               setBossPhase(nextPhase);
@@ -507,32 +515,34 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
               setGrowHealsInPhase(0);
               setBossTaunt(bossDef.taunts[nextPhase - 1] || null);
               soundEngine.playBoss();
-              const nextQ = pickNextQuestion(battle, nextPhase, turnCount + 1, question, turnFrozen);
+              const nextQ = pickNextQuestion(battle, bossDef.hpPerPhase, turnCount + 1, question, turnFrozen);
               setPrevQuestion(question);
               setQuestion(nextQ);
               setTurnCount(turnCount + 1);
               setTurnPhase('grab');
               setAnimEvent('idle');
-              setupTurnModifiers(battle, nextQ, nextPhase, turnCount + 1);
+              setupTurnModifiers(battle, nextQ, bossDef.hpPerPhase, turnCount + 1);
             } else {
               onBattleEnd('victory', { ...battle, monsterHp: 0 });
             }
           } else {
-            const nextQ = pickNextQuestion(battle, bossPhase, turnCount + 1, question, turnFrozen);
+            const nextQ = pickNextQuestion(battle, nextMonsterHp, turnCount + 1, question, turnFrozen);
             setPrevQuestion(question);
             setQuestion(nextQ);
             setTurnCount(turnCount + 1);
             setTurnPhase('grab');
             setAnimEvent('idle');
-            setupTurnModifiers(battle, nextQ, bossPhase, turnCount + 1);
+            setupTurnModifiers(battle, nextQ, nextMonsterHp, turnCount + 1);
           }
         }, isTerminalVictory ? 1850 : 1050);
       } else {
-        // Boss Grow mechanic: Phase 2-3 heals boss +1 HP up to 2x per phase
+        // Boss Grow mechanic: HP <= 10 heals boss +1 HP up to 2x
         const bossDef = battle.isZoneBoss ? BOSSES[battle.zoneId] : null;
         let growNote = '';
-        if (bossDef && bossDef.mechanic === 'grow' && bossPhase >= 2 && growHealsInPhase < 2) {
-          setMonsterHp((hp) => Math.min(monsterMaxHp, hp + 1));
+        let nextBossHpAfterHeal = monsterHp;
+        if (bossDef && bossDef.mechanic === 'grow' && monsterHp <= 10 && growHealsInPhase < 2) {
+          nextBossHpAfterHeal = Math.min(monsterMaxHp, monsterHp + 1);
+          setMonsterHp(nextBossHpAfterHeal);
           setGrowHealsInPhase((c) => c + 1);
           growNote = ' (🌿 Akar Bos tumbuh +1 HP!)';
         }
@@ -636,11 +646,15 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
                 className="h-11 w-auto select-none object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.7)] sm:h-14"
                 draggable={false}
               />
-              {bossDef && (
+              {bossDef ? (
                 <div className="-mt-1 rounded-full border border-purple-400/50 bg-purple-950/90 px-2 py-0.5 font-mono-nums text-[9px] font-black tracking-wider text-amber-200 shadow sm:text-[10px]">
-                  FASE {bossPhase}/{bossDef.phases}
+                  BOS ZONA · {monsterMaxHp} TANTANGAN
                 </div>
-              )}
+              ) : battle.isBossMinion ? (
+                <div className="-mt-1 rounded-full border border-amber-400/50 bg-amber-950/90 px-2 py-0.5 font-mono-nums text-[9px] font-black tracking-wider text-amber-200 shadow sm:text-[10px]">
+                  PENGAWAL BOS · {monsterMaxHp} SOAL
+                </div>
+              ) : null}
             </div>
 
             {/* Monster Side HUD Box */}
@@ -896,7 +910,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
                 {hasPedang && (
                   <span className="inline-flex items-center gap-1 rounded-lg border border-amber-300/35 bg-amber-500/20 px-2 py-0.5 text-amber-200">
                     <Sparkles className="h-3 w-3" />
-                    <span>{battle.isZoneBoss ? 'Pedang 4 hit = +1 ❤️' : 'Pedang 2 Dmg'}</span>
+                    <span>{battle.isZoneBoss || battle.isBossMinion ? 'Pedang 4 hit = +1 ❤️' : 'Pedang 2 Dmg'}</span>
                   </span>
                 )}
                 <span>Streak Duel x{duelHitStreak}</span>

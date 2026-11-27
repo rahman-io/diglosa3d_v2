@@ -1282,7 +1282,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                       <span className="font-black text-rose-300">⚠️ BOS AREA AKTIF!</span>
                     ) : (
                       <span>
-                        Penjaga Pintu Bos {stats.guardiansDefeated ?? 0}/{stats.guardiansTotal ?? 5} ·
+                        Monster Kata {stats.guardiansDefeated ?? 0}/{stats.guardiansTotal ?? 3} ·
                         Bos Pintu 5
                       </span>
                     )}

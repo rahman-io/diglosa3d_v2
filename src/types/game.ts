@@ -231,8 +231,8 @@ export interface BossDef {
   name: string;
   monsterType: MonsterType;
   zoneId: ZoneId;
-  phases: number; // 3
-  hpPerPhase: number; // 10 (total 30 HP across 3 phases)
+  phases: number; // 1
+  hpPerPhase: number; // 15 tantangan dalam 1 ronde bos
   mechanic: BossSpecialMechanic;
   mechanicDesc: string;
   taunts: [string, string, string];
@@ -329,6 +329,7 @@ export interface BattleContext {
   zoneId: ZoneId;
   isIeltsBoss: boolean;
   isZoneBoss?: boolean;
+  isBossMinion?: boolean;
   isAcademyShadow?: boolean;
   academySkill?: 'listening' | 'reading' | 'writing' | 'speaking';
   isMixedChallenge?: boolean;

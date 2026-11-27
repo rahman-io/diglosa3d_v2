@@ -8,6 +8,8 @@ import {
   ACADEMY_SHADOWS,
   ALL_OVERWORLD_NPCS,
   AMMO_COST,
+  BOSS_MINION_HP,
+  BOSS_MINION_TYPES,
   BOSSES,
   DAILY_GOAL,
   DIFF_CONFIG,
@@ -263,6 +265,7 @@ interface RoamingMonster {
   rewardDiamonds: number;
   rewardScore: number;
   isBoss?: boolean;
+  isBossMinion?: boolean;
   isAmbush?: boolean;
   isVillageAmbushTarget?: boolean;
   isCaveMob?: boolean;
@@ -1417,7 +1420,7 @@ export class RpgWorldEngine {
     bossPortalCloud: DarkCloudPortalRig | null;
     bossMesh: THREE.Group;
     bossBaseScale: number;
-    guards: Array<{ id: string; mesh: THREE.Group; finalPos: THREE.Vector3 }>;
+    guards: Array<{ id: string; mesh: THREE.Group; finalPos: THREE.Vector3; baseScale: number }>;
     bossFinalPos: THREE.Vector3;
     heroStandPos: THREE.Vector3;
     summonClouds: DarkCloudPortalRig[];
@@ -7973,17 +7976,71 @@ export class RpgWorldEngine {
     if (bossMob) {
       this.spawnBurst(bossMob.x, (bossMob.y ?? 0) + 1.8, bossMob.z, 0xf43f5e, 26);
     }
-    for (const s of this.shooters) {
-      if (s.alive && s.id.startsWith('boss_guard_')) {
-        this.spawnBurst(s.x, this.getShooterBaseY(s) + 1.5, s.z, 0xf59e0b, 16);
+    for (const gm of this.dungeonMonsters) {
+      if (gm.alive && gm.isBossMinion) {
+        this.spawnBurst(gm.x, (gm.y ?? 0) + 1.5, gm.z, 0xf59e0b, 18);
       }
     }
     soundEngine.playBoss();
     soundEngine.playWin();
     this.showBanner(
-      'Kedelapan monster bayangan sudah kalah, sekarang kamu bisa menyerang Bos dan kedua pengawalnya.',
+      'Kedelapan monster bayangan sudah kalah, sekarang kamu bisa menyerang Bos dan kedua anak buahnya satu per satu.',
       4.2,
     );
+  }
+
+  private isDoor5WordGuardian(m: RoamingMonster): boolean {
+    return (
+      !m.isCaveMob &&
+      !m.combatOnly &&
+      !m.isBoss &&
+      !m.isBossMinion &&
+      !m.isAmbush &&
+      !this.bossSummonedWaveIds.has(m.id)
+    );
+  }
+
+  private getDoor5GateStatus(
+    zoneId: ZoneId,
+    cleared: Set<number>,
+  ): { ready: boolean; bannerMsg: string; labelSubtext: string } {
+    const missingDoors = [0, 1, 2, 3].filter((idx) => !cleared.has(idx));
+    const remGuardians = this.dungeonMonsters.filter(
+      (m) => m.alive && this.isDoor5WordGuardian(m),
+    ).length;
+
+    if (this.dungeonState) {
+      this.dungeonState.monstersRemaining = remGuardians;
+    }
+
+    if (missingDoors.length === 0 && remGuardians === 0) {
+      return {
+        ready: true,
+        bannerMsg: '',
+        labelSubtext: ZONE_DOORS[zoneId]?.[4]?.modeLabel || 'Pintu Bos',
+      };
+    }
+
+    const missingNums = missingDoors.map((idx) => idx + 1).join(', ');
+    if (missingDoors.length > 0 && remGuardians > 0) {
+      return {
+        ready: false,
+        bannerMsg: `Selesaikan Pintu ${missingNums} dan ${remGuardians} Monster Kata dulu sebelum membuka Pintu Bos!`,
+        labelSubtext: `Sisa Pintu ${missingNums} & ${remGuardians} Monster`,
+      };
+    }
+    if (missingDoors.length > 0) {
+      return {
+        ready: false,
+        bannerMsg: `Pintu ${missingNums} belum lulus! Selesaikan pintu tersebut dulu sebelum membuka Pintu Bos.`,
+        labelSubtext: `Selesaikan Pintu ${missingNums} dulu`,
+      };
+    }
+    return {
+      ready: false,
+      bannerMsg: `Pintu 1–4 sudah beres! Tinggal kalahkan ${remGuardians} Monster Kata lagi di gua sebelum membuka Pintu Bos.`,
+      labelSubtext: `Kalahkan ${remGuardians} Monster Kata dulu`,
+    };
   }
 
   private clearDungeonBossSummonCutscene(): void {
@@ -8147,7 +8204,7 @@ export class RpgWorldEngine {
       bossMesh: THREE.Group;
       bossBaseScale: number;
       bossFinalPos: THREE.Vector3;
-      guards: Array<{ id: string; mesh: THREE.Group; finalPos: THREE.Vector3 }>;
+      guards: Array<{ id: string; mesh: THREE.Group; finalPos: THREE.Vector3; baseScale: number }>;
       heroStandPos: THREE.Vector3;
       summonClouds: DarkCloudPortalRig[];
       summonedMonsters: RoamingMonster[];
@@ -8167,14 +8224,12 @@ export class RpgWorldEngine {
     const summonSet = new Set(opts.summonedMonsters.map((m) => m.id));
     const bossId = BOSSES[zoneId].id;
     for (const m of this.dungeonMonsters) {
-      if (m.id !== bossId && !summonSet.has(m.id)) {
+      if (m.id !== bossId && !m.isBossMinion && !summonSet.has(m.id)) {
         m.mesh.visible = false;
       }
     }
     for (const s of this.shooters) {
-      if (!s.id.startsWith('boss_guard_')) {
-        s.mesh.visible = false;
-      }
+      s.mesh.visible = false;
     }
 
     const portalCloud = createDarkCloudPortalRig(this.palette);
@@ -8247,7 +8302,7 @@ export class RpgWorldEngine {
       cs.bossMesh.visible = true;
       cs.guards.forEach((g) => {
         g.mesh.position.copy(g.finalPos);
-        g.mesh.scale.setScalar(1.0);
+        g.mesh.scale.setScalar(g.baseScale);
         g.mesh.visible = true;
       });
       cs.summonedMonsters.forEach((sm, idx) => {
@@ -10034,7 +10089,7 @@ export class RpgWorldEngine {
     });
 
     const caveStory = ZONE_CAVE_STORIES[zoneId];
-    const wordMobs = this.dungeonMonsters.filter((m) => !m.isCaveMob);
+    const wordMobs = this.dungeonMonsters.filter((m) => this.isDoor5WordGuardian(m));
     const aliveCount = wordMobs.filter((m) => m.alive).length;
     const keyCollected = rescued || (bossBeaten && Boolean(detail.prisonKeyCollected));
     this.dungeonState = {
@@ -10192,12 +10247,7 @@ export class RpgWorldEngine {
   private updateDungeonDoorVisuals(): void {
     if (!this.dungeonRig || !this.dungeonState) return;
     const cleared = new Set(this.dungeonState.doorsCleared);
-    const readyForDoor4 =
-      cleared.has(0) &&
-      cleared.has(1) &&
-      cleared.has(2) &&
-      cleared.has(3) &&
-      this.dungeonState.monstersRemaining === 0;
+    const readyForDoor4 = this.getDoor5GateStatus(this.dungeonState.zoneId, cleared).ready;
 
     for (const d of this.dungeonRig.doors) {
       if (cleared.has(d.index)) {
@@ -14450,18 +14500,10 @@ export class RpgWorldEngine {
 
     const cleared = new Set(this.dungeonState.doorsCleared);
     if (doorIndex === 4) {
-      const ready =
-        cleared.has(0) &&
-        cleared.has(1) &&
-        cleared.has(2) &&
-        cleared.has(3) &&
-        this.dungeonState.monstersRemaining === 0;
-      if (!ready) {
+      const gate = this.getDoor5GateStatus(zId, cleared);
+      if (!gate.ready) {
         soundEngine.playNo();
-        this.showBanner(
-          'Selesaikan Pintu 1 sampai 4 dan semua Monster Kata area ini dulu sebelum membuka Pintu Bos!',
-          3.4,
-        );
+        this.showBanner(gate.bannerMsg, 4.0);
         return;
       }
     }
@@ -14608,6 +14650,7 @@ export class RpgWorldEngine {
     this.bossGuardWaitPositions.clear();
 
     const boss = BOSSES[zoneId];
+    const defeatedSet = new Set(this.zoneCaveDetails[zoneId]?.defeatedEnemyIds || []);
     this.dungeonState.bossSpawned = true;
     const isDesa = zoneId === 'desa_sapaan';
     const doorBossPos = isDesa
@@ -14626,10 +14669,12 @@ export class RpgWorldEngine {
       ? new THREE.Vector3(2.0, 9.5, -36.5)
       : new THREE.Vector3(0, 0, -6.8);
 
+    const isBossAlive = !defeatedSet.has(boss.id);
     const mesh = createMonsterMesh(boss.monsterType, this.palette, 1.65);
     attachBossCutsceneTraits(mesh, boss.monsterType, this.palette);
     mesh.position.copy(doorBossPos);
-    mesh.scale.setScalar(playCutscene ? 0.14 : 1.65);
+    mesh.visible = isBossAlive;
+    mesh.scale.setScalar(isBossAlive && playCutscene ? 0.14 : 1.65);
     mesh.userData.monsterId = boss.id;
     this.dungeonRig.group.add(mesh);
     this.dungeonClickables.push(mesh);
@@ -14655,57 +14700,89 @@ export class RpgWorldEngine {
       rewardDiamonds: 5,
       rewardScore: 950,
       isBoss: true,
+      wordIds: getWordsForZone(zoneId).map((v) => v.id),
       mesh,
-      alive: true,
+      alive: isBossAlive,
       respawnTimer: 0,
       patrolPhase: 0,
       angryTimer: 0,
     });
 
     this.bossBoulderTimer = 1.6;
-    const defeatedSet = new Set(this.zoneCaveDetails[zoneId]?.defeatedEnemyIds || []);
     const guardCount = 2;
-    const guardsForCutscene: Array<{ id: string; mesh: THREE.Group; finalPos: THREE.Vector3 }> = [];
-    const shieldTargets: THREE.Object3D[] = [mesh];
+    const minionTypes = BOSS_MINION_TYPES[zoneId];
+    const guardsForCutscene: Array<{
+      id: string;
+      mesh: THREE.Group;
+      finalPos: THREE.Vector3;
+      baseScale: number;
+    }> = [];
+    const shieldTargets: THREE.Object3D[] = isBossAlive ? [mesh] : [];
 
     for (let i = 0; i < guardCount; i++) {
       const guardId = `boss_guard_${i}`;
       const isGuardAlive = !defeatedSet.has(guardId);
       const [gx, gz] = doorGuardCoords[i];
       const gy = this.getDungeonSupportHeight(gx, gz, doorBossPos.y + 2);
-      const gMesh = createShooterMesh(this.palette);
+      const mType = minionTypes[i % minionTypes.length];
+      const spec = MONSTER_SPECS[mType];
+      const minionScale = Math.min(1.15, Math.max(0.85, spec.baseScale));
+      const gMesh = createMonsterMesh(mType, this.palette, minionScale);
       gMesh.position.set(gx, gy, gz);
+      gMesh.userData.monsterId = guardId;
+
+      const guardRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.95, 1.28, 18),
+        new THREE.MeshBasicMaterial({
+          color: 0xf59e0b,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.85,
+        }),
+      );
+      guardRing.rotation.x = -Math.PI / 2;
+      guardRing.position.y = 0.08;
+      gMesh.add(guardRing);
+      gMesh.userData.combatRing = guardRing;
+
       gMesh.visible = isGuardAlive;
       if (isGuardAlive && playCutscene) {
         gMesh.scale.setScalar(0.14);
       }
       this.dungeonRig.group.add(gMesh);
+      this.dungeonClickables.push(gMesh);
       this.bossGuardWaitPositions.set(guardId, { x: gx, y: gy, z: gz });
       if (isGuardAlive) {
         guardsForCutscene.push({
           id: guardId,
           mesh: gMesh,
           finalPos: new THREE.Vector3(gx, gy, gz),
+          baseScale: minionScale,
         });
         shieldTargets.push(gMesh);
       }
-      this.shooters.push({
+      this.dungeonMonsters.push({
         id: guardId,
-        x: gx,
-        z: gz,
+        type: mType,
+        name: `Anak Buah ${boss.name} #${i + 1}`,
+        zoneId,
         homeX: gx,
         homeZ: gz,
-        hp: 3,
-        cooldown: 1.3 + i * 0.6,
-        phase: i * 1.9,
-        walkPhase: i * 1.9,
-        recoilTimer: 0,
-        hitSquashTimer: 0,
-        prevX: gx,
-        prevZ: gz,
+        x: gx,
+        y: gy,
+        z: gz,
+        maxHp: BOSS_MINION_HP,
+        stanceHp: spec.stanceHp,
+        rewardXp: 70,
+        rewardDiamonds: 1,
+        rewardScore: 400,
+        isBossMinion: true,
+        wordIds: getWordsForZone(zoneId).map((v) => v.id),
         mesh: gMesh,
         alive: isGuardAlive,
         respawnTimer: 0,
+        patrolPhase: i * 1.9,
+        angryTimer: 0,
       });
     }
 
@@ -15132,48 +15209,72 @@ export class RpgWorldEngine {
         this.spawnBurst(m.x, 2.0, m.z, 0xfacc15, 28);
       }
 
-      if (battle.isZoneBoss) {
+      if (battle.isZoneBoss || m?.isBossMinion) {
         const zId = this.dungeonState.zoneId;
         const boss = BOSSES[zId];
         const caveStory = ZONE_CAVE_STORIES[zId];
-        this.defeatedBossZones.add(zId);
-        this.emitProgressSync();
-        this.dungeonState.bossDefeated = true;
-        this.dungeonState.prisonKeySpawned = true;
-        this.dungeonState.monstersRemaining = 0;
-        this.bossSummonShieldActive = false;
-        this.bossSummonedWaveIds.clear();
-        this.clearBossGuardShields();
-        this.clearCaveBoulders();
-        this.shooters.forEach((s) => {
-          s.alive = false;
-          s.mesh.visible = false;
-          s.respawnTimer = 0;
-          this.markDungeonEnemyDefeated(zId, s.id);
-        });
-        this.dungeonMonsters.forEach((dm) => {
-          dm.alive = false;
-          dm.mesh.visible = false;
-          dm.respawnTimer = 0;
-          this.markDungeonEnemyDefeated(zId, dm.id);
-        });
-        this.applyAtmosphere('dungeon', zId, true);
-        if (this.dungeonRig) {
-          this.dungeonRig.prisonKeyGroup.visible = true;
-        }
-        this.hp = Math.min(this.maxHp, this.hp + 2);
-        this.gainXp(80);
-        this.addScore(500);
-        const keySpot = this.dungeonRig?.bossSpawnPos ?? new THREE.Vector3(0, 0, -9);
-        this.spawnBurst(keySpot.x, keySpot.y + 2.0, keySpot.z, 0xfacc15, 42);
-        this.spawnBurst(this.heroPos.x, this.heroPos.y + 2.4, this.heroPos.z, 0xfef08a, 24);
-        soundEngine.playFanfare();
-        const cornerHint =
-          caveStory.prisonCorner === 'nw' ? 'Kiri Atas (Barat Laut)' : 'Kanan Atas (Timur Laut)';
-        this.showBanner(
-          `✨ Bos ${boss.name} kalah! Gua menjadi terang! Ambil Kunci Penjara Emas di tengah gua lalu gali sudut ${cornerHint} untuk menyelamatkan ${caveStory.captiveName}!`,
-          6.0,
+        const bossStillAlive = this.dungeonMonsters.some(
+          (dm) => dm.alive && dm.isBoss && dm.zoneId === zId,
         );
+        const guardsRemaining = this.dungeonMonsters.filter(
+          (dm) => dm.alive && dm.isBossMinion,
+        ).length;
+
+        if (!bossStillAlive && guardsRemaining === 0) {
+          this.defeatedBossZones.add(zId);
+          this.emitProgressSync();
+          this.dungeonState.bossDefeated = true;
+          this.dungeonState.prisonKeySpawned = true;
+          this.dungeonState.monstersRemaining = 0;
+          this.bossSummonShieldActive = false;
+          this.bossSummonedWaveIds.clear();
+          this.clearBossGuardShields();
+          this.clearCaveBoulders();
+          this.shooters.forEach((s) => {
+            s.alive = false;
+            s.mesh.visible = false;
+            s.respawnTimer = 0;
+            this.markDungeonEnemyDefeated(zId, s.id);
+          });
+          this.dungeonMonsters.forEach((dm) => {
+            dm.alive = false;
+            dm.mesh.visible = false;
+            dm.respawnTimer = 0;
+            this.markDungeonEnemyDefeated(zId, dm.id);
+          });
+          this.applyAtmosphere('dungeon', zId, true);
+          if (this.dungeonRig) {
+            this.dungeonRig.prisonKeyGroup.visible = true;
+          }
+          this.hp = Math.min(this.maxHp, this.hp + 2);
+          this.gainXp(80);
+          this.addScore(500);
+          const keySpot = this.dungeonRig?.bossSpawnPos ?? new THREE.Vector3(0, 0, -9);
+          this.spawnBurst(keySpot.x, keySpot.y + 2.0, keySpot.z, 0xfacc15, 42);
+          this.spawnBurst(this.heroPos.x, this.heroPos.y + 2.4, this.heroPos.z, 0xfef08a, 24);
+          soundEngine.playFanfare();
+          const cornerHint =
+            caveStory.prisonCorner === 'nw' ? 'Kiri Atas (Barat Laut)' : 'Kanan Atas (Timur Laut)';
+          this.showBanner(
+            `✨ Bos ${boss.name} dan kedua anak buahnya kalah! Gua terang! Ambil Kunci Penjara Emas di tengah gua lalu gali sudut ${cornerHint} untuk menyelamatkan ${caveStory.captiveName}!`,
+            6.0,
+          );
+        } else {
+          if (m?.isBossMinion) {
+            this.diamonds += m.rewardDiamonds;
+          }
+          const squadRemaining = (bossStillAlive ? 1 : 0) + guardsRemaining;
+          const nextHint = bossStillAlive && guardsRemaining > 0
+            ? `Sisa Bos ${boss.name} & ${guardsRemaining} anak buah — tembak target berikutnya secara terpisah!`
+            : bossStillAlive
+            ? `Semua anak buah tumbang! Sekarang tembak Bos ${boss.name} (15 Tantangan) untuk merebut Kunci Penjara!`
+            : `Bos ${boss.name} sudah tumbang! Tembak & kalahkan ${guardsRemaining} anak buah tersisa untuk membuka Kunci Penjara!`;
+          soundEngine.playWin();
+          this.showBanner(
+            `⚔️ ${battle.monsterName} kalah! (${squadRemaining} lawan tersisa) ${nextHint}`,
+            4.2,
+          );
+        }
       } else if (m?.isAmbush) {
         this.diamonds += 1;
         if (this.ownedWeapons.size > 0) {
@@ -15189,15 +15290,15 @@ export class RpgWorldEngine {
         );
       } else {
         const remainingNonBoss = this.dungeonMonsters.filter(
-          (item) => item.alive && !item.isBoss && !item.isAmbush && !item.isCaveMob,
+          (item) => item.alive && this.isDoor5WordGuardian(item),
         ).length;
         this.dungeonState.monstersRemaining = remainingNonBoss;
         this.updateDungeonDoorVisuals();
         soundEngine.playWin();
         this.showBanner(
           remainingNonBoss > 0
-            ? `${battle.monsterName} kalah! Sisa ${remainingNonBoss} kelompok monster kata.`
-            : 'Semua monster kata kalah! Buka Pintu ke-5 untuk memanggil Bos!',
+            ? `${battle.monsterName} kalah! Sisa ${remainingNonBoss} Monster Kata.`
+            : 'Semua Monster Kata kalah! Jika Pintu 1–4 sudah lulus, buka Pintu ke-5 untuk memanggil Bos!',
           3.4,
         );
       }
@@ -16251,21 +16352,16 @@ export class RpgWorldEngine {
         );
       }
       this.checkBossSummonWaveCleared();
-    } else if (this.dungeonState && !m.isAmbush) {
+    } else if (this.dungeonState && this.isDoor5WordGuardian(m)) {
       const remainingNonBoss = this.dungeonMonsters.filter(
-        (item) =>
-          item.alive &&
-          !item.isBoss &&
-          !item.isAmbush &&
-          !item.isCaveMob &&
-          !this.bossSummonedWaveIds.has(item.id),
+        (item) => item.alive && this.isDoor5WordGuardian(item),
       ).length;
       this.dungeonState.monstersRemaining = remainingNonBoss;
       this.updateDungeonDoorVisuals();
       this.showBanner(
         remainingNonBoss > 0
-          ? `⚔️ ${m.name} kalah dalam duel aksi! +${m.rewardXp} XP · +${diamondDrop} 💎 · +${ammoDrop} Peluru (Sisa ${remainingNonBoss} penjaga)`
-          : '⚔️ Semua Penjaga Gua kalah! Buka Pintu ke-5 untuk memanggil Bos!',
+          ? `⚔️ ${m.name} kalah dalam duel aksi! +${m.rewardXp} XP · +${diamondDrop} 💎 · +${ammoDrop} Peluru (Sisa ${remainingNonBoss} Monster Kata)`
+          : '⚔️ Semua Monster Kata kalah! Jika Pintu 1–4 sudah lulus, buka Pintu ke-5 untuk memanggil Bos!',
         3.4,
       );
     } else {
@@ -17536,6 +17632,7 @@ export class RpgWorldEngine {
     this.tapMoveTarget = null;
     soundEngine.playBoss();
     const isZoneBoss = Boolean(m.isBoss && this.worldMode === 'dungeon');
+    const isBossMinion = Boolean(m.isBossMinion && this.worldMode === 'dungeon');
     const boss = isZoneBoss ? BOSSES[m.zoneId] : undefined;
     this.callbacks.onStartBattle({
       monsterId: m.id,
@@ -17544,6 +17641,7 @@ export class RpgWorldEngine {
       zoneId: m.zoneId,
       isIeltsBoss: false,
       isZoneBoss,
+      isBossMinion,
       isAcademyShadow: m.isAcademyShadow,
       academySkill: m.academySkill,
       bossMechanic: boss?.mechanic,
@@ -20564,17 +20662,13 @@ export class RpgWorldEngine {
 
       cs.guards.forEach((g, idx) => {
         g.mesh.position.copy(g.finalPos);
-        g.mesh.scale.setScalar(THREE.MathUtils.lerp(0.16, 1.0, easeOut));
+        g.mesh.scale.setScalar(THREE.MathUtils.lerp(0.16, g.baseScale, easeOut));
         g.mesh.rotation.y = Math.atan2(
           cs.heroStandPos.x - g.finalPos.x,
           cs.heroStandPos.z - g.finalPos.z,
         );
-        animateShooterRig(g.mesh, {
-          speed: 0,
-          walkPhase: idx * 1.3,
-          aimAlpha: shockedNow ? 0.98 : 0.4,
-          recoil: shockedNow ? 0.45 : 0,
-          hitSquash: shockedNow ? 0.25 : 0,
+        animateMonsterRig(g.mesh, {
+          mode: shockedNow ? 'windup' : 'menace',
           elapsed: this.elapsed,
           phase: idx * 1.8,
           dt,
@@ -20606,17 +20700,13 @@ export class RpgWorldEngine {
 
       cs.guards.forEach((g, idx) => {
         g.mesh.position.copy(g.finalPos);
-        g.mesh.scale.setScalar(1.0);
+        g.mesh.scale.setScalar(g.baseScale);
         g.mesh.rotation.y = Math.atan2(
           cs.heroStandPos.x - g.finalPos.x,
           cs.heroStandPos.z - g.finalPos.z,
         );
-        animateShooterRig(g.mesh, {
-          speed: 0,
-          walkPhase: idx * 1.4,
-          aimAlpha: 0.92,
-          recoil: 0,
-          hitSquash: 0,
+        animateMonsterRig(g.mesh, {
+          mode: beat === 'boss_shock_talk' ? 'shock' : 'angry',
           elapsed: this.elapsed,
           phase: idx * 1.8,
           dt,
@@ -20642,17 +20732,13 @@ export class RpgWorldEngine {
 
       cs.guards.forEach((g, idx) => {
         g.mesh.position.copy(g.finalPos);
-        g.mesh.scale.setScalar(1.0);
+        g.mesh.scale.setScalar(g.baseScale);
         g.mesh.rotation.y = Math.atan2(
           cs.heroStandPos.x - g.finalPos.x,
           cs.heroStandPos.z - g.finalPos.z,
         );
-        animateShooterRig(g.mesh, {
-          speed: 0,
-          walkPhase: idx * 1.4,
-          aimAlpha: 0.85,
-          recoil: 0,
-          hitSquash: 0,
+        animateMonsterRig(g.mesh, {
+          mode: 'angry',
           elapsed: this.elapsed,
           phase: idx * 1.8,
           dt,
@@ -21777,7 +21863,8 @@ export class RpgWorldEngine {
 
       if (m.angryTimer > 0) {
         m.angryTimer -= dt;
-        m.mesh.scale.setScalar(m.isBoss ? 1.65 : spec.baseScale);
+        const minionScale = Math.min(1.15, Math.max(0.85, spec.baseScale));
+        m.mesh.scale.setScalar(m.isBoss ? 1.65 : m.isBossMinion ? minionScale : spec.baseScale);
         animateMonsterRig(m.mesh, {
           mode: 'windup',
           elapsed: this.elapsed,
@@ -22376,7 +22463,8 @@ export class RpgWorldEngine {
           m.z = waitPos.z;
           m.mesh.position.set(m.x, m.y, m.z);
         }
-        m.mesh.scale.setScalar(m.isBoss ? 1.65 : spec.baseScale);
+        const minionScale = Math.min(1.15, Math.max(0.85, spec.baseScale));
+        m.mesh.scale.setScalar(m.isBoss ? 1.65 : m.isBossMinion ? minionScale : spec.baseScale);
         m.mesh.rotation.y = Math.atan2(this.heroPos.x - m.x, this.heroPos.z - m.z);
         animateMonsterRig(m.mesh, {
           mode: 'menace',
@@ -25456,6 +25544,7 @@ export class RpgWorldEngine {
     let bestMonsterDist = 5.0;
     for (const m of this.getActiveMonsters()) {
       if (!m.alive || m.angryTimer > 0 || m.isCaveMob || m.combatOnly || this.isBossSquadProtectedEnemy(m.id)) continue;
+      if (this.worldMode === 'dungeon' && Math.abs((m.y ?? 0) - this.heroPos.y) > 3.5) continue;
       if (m.isSkyMonster && Math.abs((m.y ?? 12) - (this.heroPos.y + 1.4)) > 3.4) continue;
       const d = Math.hypot(this.heroPos.x - m.x, this.heroPos.z - m.z);
       if (d < bestMonsterDist) {
@@ -26872,6 +26961,20 @@ export class RpgWorldEngine {
                 constrainToWalkableArchipelago(kbPt, 0.95);
                 m.x = kbPt.x;
                 m.z = kbPt.z;
+              } else if (this.worldMode === 'dungeon' && this.dungeonRig) {
+                const kbPt = this._desaColScratch;
+                kbPt.x = kbX;
+                kbPt.z = kbZ;
+                this.resolveDungeonGroundEntityMotion(
+                  kbPt,
+                  m.x,
+                  m.z,
+                  m.y ?? 0,
+                  m.isBoss ? 1.25 : 0.95,
+                  2.2,
+                );
+                m.x = kbPt.x;
+                m.z = kbPt.z;
               } else {
                 m.x = THREE.MathUtils.clamp(kbX, -18, 18);
                 m.z = THREE.MathUtils.clamp(kbZ, -18, 18);
@@ -27569,12 +27672,8 @@ export class RpgWorldEngine {
     if (this.worldMode === 'dungeon') {
       if (this.dungeonRig && this.dungeonState) {
         const cleared = new Set(this.dungeonState.doorsCleared);
-        const readyForDoor4 =
-          cleared.has(0) &&
-          cleared.has(1) &&
-          cleared.has(2) &&
-          cleared.has(3) &&
-          this.dungeonState.monstersRemaining === 0;
+        const gate = this.getDoor5GateStatus(this.dungeonState.zoneId, cleared);
+        const readyForDoor4 = gate.ready;
         for (const door of ZONE_DOORS[this.dungeonState.zoneId]) {
           const isCleared = cleared.has(door.index);
           const isLocked = door.index === 4 && !readyForDoor4 && !isCleared;
@@ -27594,7 +27693,7 @@ export class RpgWorldEngine {
               subtext: isCleared
                 ? 'Sudah Dijawab ✓'
                 : isLocked
-                ? 'Selesaikan 4 Pintu & Monster'
+                ? gate.labelSubtext
                 : door.modeLabel,
               kind: 'door',
             });
