@@ -293,6 +293,7 @@ interface RoamingMonster {
   patrolPhase: number;
   angryTimer: number;
   stanceHp?: number;
+  maxStanceHp?: number;
   walkPhase?: number;
   attackAnimTimer?: number;
   patrolClock?: number;
@@ -10045,9 +10046,26 @@ export class RpgWorldEngine {
       const mesh = createMonsterMesh(mType, this.palette, desaScale);
       mesh.position.set(mx, my, mz);
       mesh.userData.monsterId = id;
+      mesh.userData.caveScale = desaScale;
+
+      const wordRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.92, 1.26, 18),
+        new THREE.MeshBasicMaterial({
+          color: 0xa855f7,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.85,
+        }),
+      );
+      wordRing.rotation.x = -Math.PI / 2;
+      wordRing.position.y = 0.08;
+      mesh.add(wordRing);
+      mesh.userData.combatRing = wordRing;
+
       rig.group.add(mesh);
       this.dungeonClickables.push(mesh);
 
+      const mStance = Math.max(3, MONSTER_SPECS[mType].stanceHp);
       const isAlive = !bossBeaten && !defeatedSet.has(id);
       this.dungeonMonsters.push({
         id,
@@ -10060,6 +10078,13 @@ export class RpgWorldEngine {
         y: my,
         z: mz,
         maxHp: Math.min(5, Math.max(2, Math.ceil(wordIds.length / 8))),
+        stanceHp: mStance,
+        maxStanceHp: mStance,
+        aggroActive: false,
+        attackCooldown: 0.75 + idx * 0.25,
+        windupTimer: -1,
+        lungeTimer: 0,
+        hitFlashTimer: 0,
         rewardXp: 35,
         rewardDiamonds: 0, // Bab 8: noGems in dungeon monster drops
         rewardScore: 220,
@@ -13150,14 +13175,18 @@ export class RpgWorldEngine {
           this.damageRealTimeMonster(m, damage, m.x - x, m.z - z);
           if (wasAlive && !m.alive) killedAny = true;
         } else {
-          const maxStance = spec.stanceHp;
+          const maxStance = m.maxStanceHp ?? spec.stanceHp;
           const nextStance = Math.max(0, (m.stanceHp ?? maxStance) - shieldDamage);
           m.stanceHp = nextStance;
           if (nextStance <= 0) {
             killedAny = true;
             this.handleRealTimeMonsterDefeated(m);
           } else {
-            this.spawnBurst(m.x, my, m.z, 0x38bdf8, 8);
+            m.aggroActive = true;
+            m.hitFlashTimer = 0.26;
+            m.idleRestTimer = 0;
+            m.attackCooldown = Math.min(m.attackCooldown ?? 0.2, 0.2);
+            this.spawnBurst(m.x, my, m.z, 0xc084fc, 10);
           }
         }
       }
@@ -15069,6 +15098,7 @@ export class RpgWorldEngine {
       z: doorBossPos.z,
     });
 
+    const bossStance = Math.max(4, MONSTER_SPECS[boss.monsterType].stanceHp);
     this.dungeonMonsters.push({
       id: boss.id,
       type: boss.monsterType,
@@ -15080,6 +15110,13 @@ export class RpgWorldEngine {
       y: doorBossPos.y,
       z: doorBossPos.z,
       maxHp: boss.hpPerPhase * boss.phases,
+      stanceHp: bossStance,
+      maxStanceHp: bossStance,
+      aggroActive: false,
+      attackCooldown: 0.65,
+      windupTimer: -1,
+      lungeTimer: 0,
+      hitFlashTimer: 0,
       rewardXp: 250,
       rewardDiamonds: 5,
       rewardScore: 950,
@@ -15114,6 +15151,7 @@ export class RpgWorldEngine {
       const gMesh = createMonsterMesh(mType, this.palette, minionScale);
       gMesh.position.set(gx, gy, gz);
       gMesh.userData.monsterId = guardId;
+      gMesh.userData.caveScale = minionScale;
 
       const guardRing = new THREE.Mesh(
         new THREE.RingGeometry(0.95, 1.28, 18),
@@ -15145,6 +15183,7 @@ export class RpgWorldEngine {
         });
         shieldTargets.push(gMesh);
       }
+      const guardStance = Math.max(3, spec.stanceHp);
       this.dungeonMonsters.push({
         id: guardId,
         type: mType,
@@ -15156,7 +15195,13 @@ export class RpgWorldEngine {
         y: gy,
         z: gz,
         maxHp: BOSS_MINION_HP,
-        stanceHp: spec.stanceHp,
+        stanceHp: guardStance,
+        maxStanceHp: guardStance,
+        aggroActive: false,
+        attackCooldown: 0.7 + i * 0.3,
+        windupTimer: -1,
+        lungeTimer: 0,
+        hitFlashTimer: 0,
         rewardXp: 70,
         rewardDiamonds: 1,
         rewardScore: 400,
@@ -15497,7 +15542,11 @@ export class RpgWorldEngine {
 
     if (outcome === 'fled') {
       const fledMonster = this.getActiveMonsters().find((item) => item.id === battle.monsterId);
-      if (fledMonster) fledMonster.stanceHp = 3;
+      if (fledMonster) {
+        fledMonster.stanceHp = fledMonster.maxStanceHp ?? Math.max(3, MONSTER_SPECS[fledMonster.type].stanceHp);
+        fledMonster.aggroActive = true;
+        fledMonster.attackCooldown = 0.45;
+      }
       this.hp = Math.max(0, this.hp - 1);
       this.streak = 0;
       _forward.set(Math.sin(this.heroYaw), 0, Math.cos(this.heroYaw));
@@ -23015,14 +23064,68 @@ export class RpgWorldEngine {
       if (m.angryTimer > 0) {
         m.angryTimer -= dt;
         const minionScale = Math.min(1.15, Math.max(0.85, spec.baseScale));
-        m.mesh.scale.setScalar(m.isBoss ? 1.65 : m.isBossMinion ? minionScale : spec.baseScale);
+        const angryScale = m.isBoss
+          ? 1.65
+          : m.isBossMinion
+          ? minionScale
+          : (m.mesh.userData.caveScale as number | undefined) ?? spec.baseScale;
+        m.mesh.scale.setScalar(angryScale * (1 + Math.sin(this.elapsed * 28) * 0.05));
+        const adx = this.heroPos.x - m.x;
+        const adz = this.heroPos.z - m.z;
+        const adist = Math.hypot(adx, adz);
+        if (adist > 0.25) {
+          m.mesh.rotation.y = Math.atan2(adx, adz);
+          if (!m.isSkyMonster && !m.isSeaMonster && this.phase === 'playing' && adist > 1.75) {
+            const chargeSpd = 5.4 * spec.speedMult * baseSpeedMult * dt;
+            const cx = m.x + (adx / adist) * chargeSpd;
+            const cz = m.z + (adz / adist) * chargeSpd;
+            if (this.worldMode === 'dungeon' && this.dungeonRig) {
+              const cPt = this._desaColScratch;
+              cPt.x = cx;
+              cPt.z = cz;
+              this.resolveDungeonGroundEntityMotion(
+                cPt,
+                m.x,
+                m.z,
+                m.y ?? 0,
+                m.isBoss ? 1.25 : 0.95,
+                2.2,
+              );
+              m.x = cPt.x;
+              m.z = cPt.z;
+              m.y = this.getDungeonSupportHeight(m.x, m.z, m.y ?? 0) + spec.hoverY;
+            } else if (this.worldMode === 'overworld') {
+              const cPt = this._desaColScratch;
+              cPt.x = cx;
+              cPt.z = cz;
+              constrainToWalkableArchipelago(cPt, 0.95);
+              m.x = cPt.x;
+              m.z = cPt.z;
+              m.y = getArchipelagoGroundY(m.x, m.z) + spec.hoverY;
+            } else {
+              m.x = THREE.MathUtils.clamp(cx, -18, 18);
+              m.z = THREE.MathUtils.clamp(cz, -18, 18);
+            }
+            m.mesh.position.set(m.x, m.y ?? 0, m.z);
+          }
+        }
+        if (Math.random() < dt * 11) {
+          this.spawnBurst(
+            m.x + (Math.random() - 0.5) * 0.8,
+            (m.y ?? 0) + 1.4,
+            m.z + (Math.random() - 0.5) * 0.8,
+            m.isBoss ? 0xef4444 : 0xf97316,
+            3,
+          );
+        }
         animateMonsterRig(m.mesh, {
-          mode: 'windup',
+          mode: 'angry',
           elapsed: this.elapsed,
           phase: m.patrolPhase,
           dt,
         });
         if (m.angryTimer <= 0) {
+          m.mesh.scale.setScalar(angryScale);
           this.engageMonster(m);
         }
         continue;
@@ -23723,78 +23826,309 @@ export class RpgWorldEngine {
         continue;
       }
 
-      // 30% English Quiz Monsters (Overworld Day/Night & Dungeon Guardians & Academy)
-      if (m.patrolClock === undefined) {
-        m.patrolClock = m.patrolPhase;
-        m.idleRoamTimer = 4.0 + (m.patrolPhase % 3.5);
-        m.idleRestTimer = 0;
+      // Vocabulary-Challenge Guardians (30% Overworld Quiz, Penjaga Kata Gua, Anak Buah/Bos Terbuka, Academy)
+      // — MOST AGGRESSIVE AI: wide detection, relentless pursuit, fierce lunges, and rapid arcane/fire projectiles!
+      const distH = nearestBrawlerTgt.dist;
+      const maxStance = m.maxStanceHp ?? spec.stanceHp;
+      const isEnraged = (m.stanceHp ?? maxStance) < maxStance || Boolean(m.isBoss || m.isBossMinion);
+
+      if (m.hitFlashTimer && m.hitFlashTimer > 0) {
+        m.hitFlashTimer = Math.max(0, m.hitFlashTimer - dt);
       }
+      if (m.attackCooldown && m.attackCooldown > 0) {
+        m.attackCooldown = Math.max(0, m.attackCooldown - dt);
+      }
+      if (m.attackAnimTimer && m.attackAnimTimer > 0) {
+        m.attackAnimTimer = Math.max(0, m.attackAnimTimer - dt);
+      }
+
       const qRing = m.mesh.userData.combatRing as THREE.Object3D | undefined;
       if (qRing) {
-        qRing.rotation.z -= dt * 1.8;
+        qRing.rotation.z -= dt * (m.aggroActive ? 4.2 : 1.8);
       }
-      let normalMonMode: 'idle' | 'patrol' = 'patrol';
+
+      const quizAggroRange =
+        this.worldMode === 'overworld'
+          ? Math.max(20.5, spec.aggroRange * 1.32)
+          : this.worldMode === 'dungeon'
+          ? calmMult < 0.7
+            ? 11.5
+            : 18.5
+          : 16.5;
+
+      if (this.phase === 'playing' && distH < quizAggroRange) {
+        if (!m.aggroActive) {
+          soundEngine.playMonster();
+          m.idleRestTimer = 0;
+          m.attackCooldown = Math.min(m.attackCooldown ?? 0.45, 0.45);
+        }
+        m.aggroActive = true;
+      } else if (
+        this.worldMode === 'overworld' &&
+        !isEnraged &&
+        distH > quizAggroRange + 14.0
+      ) {
+        m.aggroActive = false;
+        m.windupTimer = -1;
+        m.lungeTimer = 0;
+      }
+
+      const minionScale = Math.min(1.15, Math.max(0.85, spec.baseScale));
+      const quizBaseScale = m.isBoss
+        ? 1.65
+        : m.isBossMinion
+        ? minionScale
+        : (m.mesh.userData.caveScale as number | undefined) ?? spec.baseScale;
+      m.mesh.scale.setScalar(quizBaseScale);
+
+      let normalMonMode: 'idle' | 'patrol' | 'windup' | 'attack' | 'shoot' | 'hit' | 'angry' = 'patrol';
+      let quizAttackProg = 0;
       let nextMx = m.x;
       let nextMz = m.z;
-      if ((m.idleRestTimer ?? 0) > 0) {
-        m.idleRestTimer = Math.max(0, (m.idleRestTimer ?? 0) - dt);
-        normalMonMode = 'idle';
-        if ((m.idleRestTimer ?? 0) <= 0) {
-          m.idleRoamTimer = 4.5 + Math.random() * 3.8;
+      const meleeReach = (m.isBoss ? 2.55 : 2.05) + spec.baseScale * 0.45;
+
+      if (m.lungeTimer && m.lungeTimer > 0) {
+        m.lungeTimer = Math.max(0, m.lungeTimer - dt);
+        if (this.phase === 'playing' && distH > 0.2) {
+          const lungeSpd = 10.8 * spec.speedMult * baseSpeedMult * dt;
+          nextMx += (dxHero / distH) * lungeSpd;
+          nextMz += (dzHero / distH) * lungeSpd;
+        }
+        m.mesh.rotation.y = Math.atan2(dxHero, dzHero);
+        normalMonMode = 'attack';
+        quizAttackProg = 1 - m.lungeTimer / 0.28;
+
+        const jumpedOver = this.heroPos.y > 1.25;
+        let shieldBlocked = false;
+        if (this.worldMode === 'dungeon' && this.dungeonRig && distH < 2.35) {
+          for (const blk of this.dungeonRig.caveBlocks) {
+            if (
+              blk.alive &&
+              blk.kind === 'player_shield' &&
+              Math.hypot(blk.x - (m.x + dxHero * 0.5), blk.z - (m.z + dzHero * 0.5)) < 1.9
+            ) {
+              shieldBlocked = true;
+              blk.hp -= 1;
+              if (blk.hp <= 0) this.shatterCaveBlock(blk, false);
+              else this.updateBlockCrackVisual(blk);
+              m.lungeTimer = 0;
+              this.showBanner(`🧱 Blok Pelindung menahan serbuan ${m.name}!`, 1.8);
+              break;
+            }
+          }
+        }
+
+        if (
+          !shieldBlocked &&
+          !jumpedOver &&
+          this.carMode === 'none' &&
+          this.planeMode === 'none' &&
+          nearestBrawlerTgt.isLocal &&
+          this.phase === 'playing' &&
+          this.encounterGraceTimer <= 0 &&
+          distH < meleeReach
+        ) {
+          const dmg = m.isBoss || m.isBossMinion ? spec.atkDamageHearts : 1;
+          this.hp = Math.max(0, this.hp - dmg);
+          this.encounterGraceTimer = 1.45;
+          m.lungeTimer = 0;
+          soundEngine.playHurt();
+          const len = Math.max(0.2, distH);
+          this.heroVel.set((dxHero / len) * 15.5, 0, (dzHero / len) * 15.5);
+          this.heroVelY = 4.8;
+          this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.2, this.heroPos.z, 0xc084fc, 16);
+          this.showBanner(
+            `💢 Diterjang ${m.name}! Tembak pecahkan Perisai Katanya! (-${dmg} ❤️)`,
+            2.2,
+          );
+          this.triggerDamageFlash(dmg, `Serbuan ${m.name}`, { x: m.x, z: m.z });
+          if (this.hp <= 0) {
+            if (this.worldMode !== 'overworld') {
+              this.triggerDefeatExit(this.dungeonState?.zoneId);
+            } else {
+              this.phase = 'gameover';
+              soundEngine.playLose();
+              this.pushHud(true);
+            }
+            return;
+          }
+        }
+      } else if (m.windupTimer !== undefined && m.windupTimer > 0) {
+        m.windupTimer -= dt;
+        m.mesh.rotation.y = Math.atan2(dxHero, dzHero);
+        normalMonMode = 'windup';
+        if (m.windupTimer <= 0) {
+          m.windupTimer = -1;
+          m.lungeTimer = 0.28;
+          soundEngine.playHit();
+        }
+      } else if (this.phase === 'playing' && m.aggroActive && distH > 0.2) {
+        m.mesh.rotation.y = Math.atan2(dxHero, dzHero);
+
+        if (distH < meleeReach + 0.8 && (m.attackCooldown ?? 0) <= 0) {
+          m.windupTimer = 0.36;
+          m.attackCooldown = this.settings.difficulty === 'pendekar' ? 1.45 : 1.9;
+          soundEngine.playMonster();
+        } else {
+          const chaseMult = isEnraged ? 4.95 : 4.25;
+          const spd = chaseMult * spec.speedMult * baseSpeedMult * calmMult;
+          if (distH > 1.8) {
+            nextMx += (dxHero / distH) * spd * dt;
+            nextMz += (dzHero / distH) * spd * dt;
+          }
+
+          if (distH >= 2.8 && distH < 21.5 && (m.attackCooldown ?? 0) <= 0) {
+            const pSpeed =
+              (this.settings.difficulty === 'pendekar' ? 12.6 : 10.2) +
+              (m.isBoss ? 1.4 : isEnraged ? 0.8 : 0);
+            const mGround =
+              this.worldMode === 'overworld'
+                ? getArchipelagoGroundY(m.x, m.z)
+                : this.worldMode === 'dungeon'
+                ? this.getDungeonSupportHeight(m.x, m.z, m.y ?? 0)
+                : 0;
+            const mFireY = mGround + spec.hoverY + (m.isBoss ? 1.95 : spec.hitCenterY);
+            const aimY = nearestBrawlerTgt.y + 1.3 - mFireY;
+            const dist3D = Math.max(0.5, Math.hypot(dxHero, aimY, dzHero));
+            const boltColor = m.isBoss
+              ? 0xef4444
+              : m.isBossMinion
+              ? 0xf59e0b
+              : 0xc084fc;
+            const spreadOffsets = m.isBoss ? [-0.24, 0, 0.24] : [0];
+            const baseYaw = Math.atan2(dxHero, dzHero);
+            const horizSpeed = (Math.hypot(dxHero, dzHero) / dist3D) * pSpeed;
+            const vyBolt = (aimY / dist3D) * pSpeed;
+
+            for (const angOff of spreadOffsets) {
+              const yaw = baseYaw + angOff;
+              const px = m.x + Math.sin(yaw) * (0.95 * quizBaseScale);
+              const pz = m.z + Math.cos(yaw) * (0.95 * quizBaseScale);
+              const pvx = Math.sin(yaw) * horizSpeed;
+              const pvz = Math.cos(yaw) * horizSpeed;
+              this.spawnProjectile({
+                fromPlayer: false,
+                x: px,
+                y: mFireY,
+                z: pz,
+                vx: pvx,
+                vy: vyBolt,
+                vz: pvz,
+                damage: 1,
+                shieldDamage: 1,
+                pierceLeft: 0,
+                colorHex: boltColor,
+              });
+              if (
+                angOff === 0 &&
+                this.worldMode === 'overworld' &&
+                this.multiplayerActive &&
+                this.hasConnectedPeers &&
+                this.isWorldAuthority()
+              ) {
+                this.emitMultiplayerPacket({
+                  t: 'shot',
+                  fp: false,
+                  x: Math.round(px * 100) / 100,
+                  y: Math.round(mFireY * 100) / 100,
+                  z: Math.round(pz * 100) / 100,
+                  vx: Math.round(pvx * 100) / 100,
+                  vy: Math.round(vyBolt * 100) / 100,
+                  vz: Math.round(pvz * 100) / 100,
+                  col: boltColor,
+                  dmg: 1,
+                  md: 'overworld',
+                });
+              }
+            }
+            m.attackCooldown = m.isBoss
+              ? this.settings.difficulty === 'pendekar'
+                ? 1.35
+                : 1.75
+              : isEnraged
+              ? this.settings.difficulty === 'pendekar'
+                ? 1.55
+                : 2.0
+              : this.settings.difficulty === 'pendekar'
+              ? 1.8
+              : 2.35;
+            m.attackAnimTimer = 0.34;
+            soundEngine.playShoot('emas');
+          }
         }
       } else {
-        m.patrolClock += dt * 0.85 * spec.speedMult * baseSpeedMult * calmMult;
-        m.idleRoamTimer = (m.idleRoamTimer ?? 4.5) - dt;
-        if ((m.idleRoamTimer ?? 0) <= 0) {
-          m.idleRestTimer = 2.8 + Math.random() * 2.8;
+        if (m.patrolClock === undefined) {
+          m.patrolClock = m.patrolPhase;
+          m.idleRoamTimer = 4.0 + (m.patrolPhase % 3.5);
+          m.idleRestTimer = 0;
         }
-        const p = m.patrolClock;
-        const radius = m.isBoss ? 1.8 : 2.6;
-        nextMx = m.homeX + Math.cos(p) * radius;
-        nextMz = m.homeZ + Math.sin(p * 0.8) * (radius * 0.8);
-        if (this.worldMode === 'overworld') {
-          const mRad = 0.85 * spec.baseScale;
-          const mobClamp = this._desaColScratch;
-          mobClamp.x = nextMx;
-          mobClamp.z = nextMz;
-          const qPreY = getArchipelagoGroundY(m.x, m.z);
-          resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles, qPreY, 2.2);
-          this.resolveActiveDesaPickupBoxes(mobClamp, mRad);
-          resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
-          this.resolveWorldVehiclesCollision(mobClamp, mRad, 2.2);
-          if (this.worldObstaclesRig) {
-            resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
+        if ((m.idleRestTimer ?? 0) > 0) {
+          m.idleRestTimer = Math.max(0, (m.idleRestTimer ?? 0) - dt);
+          normalMonMode = 'idle';
+          if ((m.idleRestTimer ?? 0) <= 0) {
+            m.idleRoamTimer = 4.5 + Math.random() * 3.8;
           }
-          if (this.isInDesaSapaanArea(mobClamp.x, mobClamp.z)) {
-            resolveCircleDesaVisualTerrain(this.archipelagoRig, mobClamp, mRad, qPreY + 0.95);
-            const qGroundY = getArchipelagoGroundY(mobClamp.x, mobClamp.z);
-            const heroMinD = Math.min(2.05, 0.68 + spec.hitRadius * 0.65);
-            this.resolveDesaLivingSeparation(
-              mobClamp,
-              mRad,
-              qGroundY,
-              m,
-              undefined,
-              undefined,
-              false,
-              heroMinD,
-            );
-            resolveObstacleBoxes(mobClamp, mRad, this.villageRig.obstacles, qGroundY, 2.2);
-            this.resolveActiveDesaPickupBoxes(mobClamp, mRad);
-            resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, mRad, 2.2);
-            this.resolveWorldVehiclesCollision(mobClamp, mRad, 2.2);
-            if (this.worldObstaclesRig) {
-              resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, mRad, 2.2);
-            }
-            resolveCircleDesaVisualTerrain(this.archipelagoRig, mobClamp, mRad, qPreY + 0.95);
+        } else {
+          m.patrolClock += dt * 0.95 * spec.speedMult * baseSpeedMult * calmMult;
+          m.idleRoamTimer = (m.idleRoamTimer ?? 4.5) - dt;
+          if ((m.idleRoamTimer ?? 0) <= 0) {
+            m.idleRestTimer = 2.4 + Math.random() * 2.4;
           }
-          constrainToWalkableArchipelago(mobClamp, 0.95);
-          nextMx = mobClamp.x;
-          nextMz = mobClamp.z;
+          const p = m.patrolClock;
+          const radius = m.isBoss ? 1.8 : 2.8;
+          nextMx = m.homeX + Math.cos(p) * radius;
+          nextMz = m.homeZ + Math.sin(p * 0.8) * (radius * 0.8);
+          m.mesh.rotation.y = Math.atan2(-Math.sin(p), Math.cos(p * 0.8));
         }
-        m.mesh.rotation.y = Math.atan2(-Math.sin(p), Math.cos(p * 0.8));
       }
-      if (this.worldMode === 'dungeon' && this.dungeonRig) {
+
+      if (m.hitFlashTimer && m.hitFlashTimer > 0) {
+        normalMonMode = 'hit';
+      } else if ((m.attackAnimTimer ?? 0) > 0 && normalMonMode === 'patrol') {
+        normalMonMode = 'shoot';
+        quizAttackProg = 1 - (m.attackAnimTimer ?? 0) / 0.34;
+      }
+
+      const qRad = (m.isBoss ? 1.25 : 0.9) * quizBaseScale;
+      if (this.worldMode === 'overworld') {
+        const mobClamp = this._desaColScratch;
+        mobClamp.x = nextMx;
+        mobClamp.z = nextMz;
+        const qPreY = getArchipelagoGroundY(m.x, m.z);
+        resolveObstacleBoxes(mobClamp, qRad, this.villageRig.obstacles, qPreY, 2.2);
+        this.resolveActiveDesaPickupBoxes(mobClamp, qRad);
+        resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, qRad, 2.2);
+        this.resolveWorldVehiclesCollision(mobClamp, qRad, 2.2);
+        if (this.worldObstaclesRig) {
+          resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, qRad, 2.2);
+        }
+        if (this.isInDesaSapaanArea(mobClamp.x, mobClamp.z)) {
+          resolveCircleDesaVisualTerrain(this.archipelagoRig, mobClamp, qRad, qPreY + 0.95);
+          const qGroundY = getArchipelagoGroundY(mobClamp.x, mobClamp.z);
+          const heroMinD = Math.min(2.05, 0.68 + spec.hitRadius * 0.65);
+          this.resolveDesaLivingSeparation(
+            mobClamp,
+            qRad,
+            qGroundY,
+            m,
+            undefined,
+            undefined,
+            false,
+            heroMinD,
+          );
+          resolveObstacleBoxes(mobClamp, qRad, this.villageRig.obstacles, qGroundY, 2.2);
+          this.resolveActiveDesaPickupBoxes(mobClamp, qRad);
+          resolveArchipelagoVehicleCollisions(this.archipelagoRig, mobClamp, qRad, 2.2);
+          this.resolveWorldVehiclesCollision(mobClamp, qRad, 2.2);
+          if (this.worldObstaclesRig) {
+            resolveSolidObstacleCollisions(this.worldObstaclesRig, mobClamp, qRad, 2.2);
+          }
+          resolveCircleDesaVisualTerrain(this.archipelagoRig, mobClamp, qRad, qPreY + 0.95);
+        }
+        constrainToWalkableArchipelago(mobClamp, 0.95);
+        nextMx = mobClamp.x;
+        nextMz = mobClamp.z;
+      } else if (this.worldMode === 'dungeon' && this.dungeonRig) {
         const mRad = m.isBoss ? 1.25 : 0.95;
         const qPt = this._desaColScratch;
         qPt.x = nextMx;
@@ -23802,17 +24136,25 @@ export class RpgWorldEngine {
         this.resolveDungeonGroundEntityMotion(qPt, m.x, m.z, m.y ?? 0, mRad, 2.2);
         nextMx = qPt.x;
         nextMz = qPt.z;
+      } else if (this.worldMode === 'academy') {
+        const acBound = 18.2;
+        nextMx = THREE.MathUtils.clamp(nextMx, -acBound, acBound);
+        nextMz = THREE.MathUtils.clamp(nextMz, -acBound, acBound);
       }
+
       const prevOx = m.x;
       const prevOz = m.z;
       m.x = nextMx;
       m.z = nextMz;
       const mSpd = Math.hypot(m.x - prevOx, m.z - prevOz) / Math.max(0.001, dt);
       if (mSpd > 0.2) {
-        m.walkPhase = (m.walkPhase ?? m.patrolPhase) + dt * (3.0 + mSpd * 1.4);
-      } else {
+        m.walkPhase = (m.walkPhase ?? m.patrolPhase) + dt * (3.5 + mSpd * 1.45);
+      } else if (normalMonMode === 'patrol' && !m.aggroActive) {
         normalMonMode = 'idle';
+      } else if (normalMonMode === 'patrol' && isEnraged) {
+        normalMonMode = 'angry';
       }
+
       const nGroundY =
         this.worldMode === 'overworld'
           ? getArchipelagoGroundY(m.x, m.z)
@@ -23823,10 +24165,11 @@ export class RpgWorldEngine {
         spec.hoverY > 0
           ? spec.hoverY + Math.sin(this.elapsed * 3.0 + m.patrolPhase) * 0.24
           : mSpd > 0.2
-          ? Math.abs(Math.sin(m.walkPhase ?? 0)) * 0.06
+          ? Math.abs(Math.sin(m.walkPhase ?? 0)) * 0.08
           : 0;
       m.y = nGroundY + nHover;
       m.mesh.position.set(m.x, m.y, m.z);
+
       const soloBossRage = Boolean(
         m.isBoss && this.worldMode === 'dungeon' && this.getBossRageTier(m.zoneId) >= 3,
       );
@@ -23843,14 +24186,24 @@ export class RpgWorldEngine {
             6,
           );
         }
+      } else if (m.aggroActive && isEnraged && Math.random() < dt * 3.5) {
+        this.spawnBurst(
+          m.x + (Math.random() - 0.5) * 0.8,
+          (m.y ?? 0) + 1.35,
+          m.z + (Math.random() - 0.5) * 0.8,
+          m.isBossMinion ? 0xf59e0b : 0xc084fc,
+          3,
+        );
       }
+
       if (distSqHero <= 42 * 42) {
         animateMonsterRig(m.mesh, {
-          mode: soloBossRage ? 'angry' : normalMonMode,
+          mode: soloBossRage && normalMonMode === 'idle' ? 'angry' : normalMonMode,
           speed: mSpd,
           walkPhase: m.walkPhase,
           elapsed: this.elapsed,
           phase: m.patrolPhase,
+          attackProgress: quizAttackProg,
           dt,
         });
         if (soloBossRage) {
@@ -27175,9 +27528,11 @@ export class RpgWorldEngine {
               }
             } else {
               m.stanceHp = 0;
+              m.aggroActive = true;
+              m.hitFlashTimer = 0.28;
               m.angryTimer = 0.55;
               shieldsCracked += 1;
-              this.spawnBurst(m.x, 1.8, m.z, 0xf59e0b, 14);
+              this.spawnBurst(m.x, (m.y ?? 0) + 1.8, m.z, 0xf59e0b, 16);
             }
           }
         }
@@ -27843,6 +28198,8 @@ export class RpgWorldEngine {
       const projFloor =
         this.worldMode === 'overworld'
           ? getArchipelagoGroundY(p.x, p.z)
+          : this.worldMode === 'dungeon'
+          ? this.getDungeonSupportHeight(p.x, p.z, prevPy)
           : this.worldMode === 'ocean'
           ? getOceanFloorY(p.x, p.z)
           : 0;
@@ -28230,17 +28587,23 @@ export class RpgWorldEngine {
               break;
             }
 
-            const maxStance = spec.stanceHp;
+            const maxStance = m.maxStanceHp ?? spec.stanceHp;
             const curStance = m.stanceHp ?? maxStance;
             const nextStance = Math.max(0, curStance - p.shieldDamage);
             m.stanceHp = nextStance;
+            m.aggroActive = true;
+            m.idleRestTimer = 0;
+            m.hitFlashTimer = 0.28;
+            m.mesh.rotation.y = Math.atan2(this.heroPos.x - m.x, this.heroPos.z - m.z);
             soundEngine.playHit();
             this.triggerHitMarker(nextStance <= 0);
 
             if (nextStance > 0) {
+              m.attackCooldown = Math.min(m.attackCooldown ?? 0.15, 0.15);
+              soundEngine.playMonster();
               const spd = Math.max(1, Math.hypot(p.vx, p.vz));
-              const kbX = m.x + (p.vx / spd) * 0.7;
-              const kbZ = m.z + (p.vz / spd) * 0.7;
+              const kbX = m.x + (p.vx / spd) * 0.55;
+              const kbZ = m.z + (p.vz / spd) * 0.55;
               if (m.isSkyMonster) {
                 const rLimit = WORLD_OCEAN_LIMIT - 20;
                 const dOut = Math.hypot(kbX, kbZ);
@@ -28274,20 +28637,22 @@ export class RpgWorldEngine {
                 m.x = THREE.MathUtils.clamp(kbX, -18, 18);
                 m.z = THREE.MathUtils.clamp(kbZ, -18, 18);
               }
-              this.spawnBurst(m.x, mBaseY + 1.8, m.z, 0x38bdf8, 8);
+              this.spawnBurst(m.x, mBaseY + 1.8, m.z, 0xc084fc, 12);
+              this.spawnBurst(m.x, mBaseY + 1.9, m.z, 0xf97316, 8);
               this.showBanner(
-                `Kena ${m.name}! Perisai Kata tersisa ${nextStance}/${maxStance}, jadi bidik lagi!`,
-                1.6,
+                `💢 ${m.name} MURKA & Membalas! Perisai Kata ${nextStance}/${maxStance}!`,
+                1.8,
               );
             } else if (p.fromPlane) {
               this.handleRealTimeMonsterDefeated(m);
             } else {
               m.stanceHp = maxStance;
               m.angryTimer = 0.65;
-              this.spawnBurst(m.x, mBaseY + 1.8, m.z, 0xf59e0b, 14);
+              soundEngine.playMonster();
+              this.spawnBurst(m.x, mBaseY + 1.8, m.z, 0xef4444, 16);
               this.showBanner(
-                `Perisai ${m.name} pecah! Bersiap Duel Rebutan!`,
-                1.6,
+                `💢 ${m.name} MURKA & Menyerbu! Perisai pecah — bersiap Duel Rebutan!`,
+                1.8,
               );
             }
             break;
@@ -29848,12 +30213,19 @@ export class RpgWorldEngine {
     const groundY = getArchipelagoGroundY(m.x, m.z);
     const cruiseY = Math.max(groundY + spec.hoverY, spec.hoverY);
 
-    if (this.phase === 'playing' && distH < spec.aggroRange) {
+    const isQuizSky = !m.combatOnly;
+    const skyAggroRange = isQuizSky ? Math.max(22.0, spec.aggroRange * 1.32) : spec.aggroRange;
+    const isQuizSkyEnraged = isQuizSky && (m.stanceHp ?? spec.stanceHp) < spec.stanceHp;
+
+    if (this.phase === 'playing' && distH < skyAggroRange) {
       if (!m.aggroActive) {
         soundEngine.playMonster();
+        if (isQuizSky) {
+          m.attackCooldown = Math.min(m.attackCooldown ?? 0.5, 0.5);
+        }
       }
       m.aggroActive = true;
-    } else if (distH > spec.aggroRange + 14) {
+    } else if (!isQuizSkyEnraged && distH > skyAggroRange + 14) {
       m.aggroActive = false;
       m.windupTimer = -1;
       m.lungeTimer = 0;
@@ -29871,7 +30243,7 @@ export class RpgWorldEngine {
       const swoopArc = Math.sin((m.lungeTimer / 0.58) * Math.PI);
       desiredDive = swoopArc * Math.max(2.5, cruiseY - (this.heroPos.y + 1.55));
       if (this.phase === 'playing' && distH > 0.35) {
-        const spd = 13.5 * spec.speedMult * dt;
+        const spd = (isQuizSky ? 15.2 : 13.5) * spec.speedMult * dt;
         nextMx += (dxHero / distH) * spd;
         nextMz += (dzHero / distH) * spd;
       }
@@ -29921,42 +30293,49 @@ export class RpgWorldEngine {
       }
     } else if (this.phase === 'playing' && m.aggroActive && distH > 0.25) {
       targetYaw = Math.atan2(dxHero, dzHero);
-      if (spec.ranged) {
+      if (spec.ranged || isQuizSky) {
         const orbitDir = m.patrolPhase % 2 < 1 ? 1 : -1;
         const nx = dxHero / distH;
         const nz = dzHero / distH;
-        const strafeSpd = 3.8 * spec.speedMult * baseSpeedMult;
+        const strafeSpd = (isQuizSky ? 4.4 : 3.8) * spec.speedMult * baseSpeedMult;
         nextMx += (-nz * orbitDir) * strafeSpd * dt;
         nextMz += (nx * orbitDir) * strafeSpd * dt;
-        if (distH > 19) {
-          const chaseSpd = 5.4 * spec.speedMult * baseSpeedMult;
+        const chaseThreshold = isQuizSky ? 12.0 : 19.0;
+        if (distH > chaseThreshold) {
+          const chaseSpd = (isQuizSky ? 6.8 : 5.4) * spec.speedMult * baseSpeedMult;
           nextMx += nx * chaseSpd * dt;
           nextMz += nz * chaseSpd * dt;
-        } else if (distH < 10.5) {
+        } else if (!isQuizSky && distH < 10.5) {
           const backSpd = 3.2 * spec.speedMult * baseSpeedMult;
           nextMx -= nx * backSpd * dt;
           nextMz -= nz * backSpd * dt;
         }
 
-        if (distH >= 4.5 && distH < 30 && (m.attackCooldown ?? 0) <= 0) {
-          const pSpeed = this.settings.difficulty === 'pendekar' ? 13.4 : 10.8;
+        if (isQuizSky && !spec.ranged && distH < 9.5 && (m.attackCooldown ?? 0) <= 0 && Math.random() < 0.45) {
+          m.windupTimer = 0.38;
+          m.attackCooldown = this.settings.difficulty === 'pendekar' ? 1.8 : 2.3;
+          soundEngine.playMonster();
+        } else if (distH >= 4.0 && distH < 30 && (m.attackCooldown ?? 0) <= 0) {
+          const pSpeed =
+            (this.settings.difficulty === 'pendekar' ? 13.4 : 10.8) + (isQuizSky ? 1.2 : 0);
           const mFireY = (m.y ?? cruiseY) + spec.hitCenterY * 0.6;
           const aimY = nearestSkyTgt.y + 1.35 - mFireY;
           const dist3D = Math.max(0.5, Math.hypot(dxHero, aimY, dzHero));
-          const skyShotColor =
-            m.type === 'crimson_phoenix'
-              ? 0xfef08a
-              : m.type === 'giant_phantom'
-              ? 0x38bdf8
-              : m.type === 'toxic_chimera'
-              ? 0x4ade80
-              : m.type === 'guardian_sentinel'
-              ? 0xef4444
-              : m.type === 'ice_shard_griffin'
-              ? 0x7dd3fc
-              : m.type === 'acidic_sky_wyrm'
-              ? 0x84cc16
-              : 0xf97316;
+          const skyShotColor = isQuizSky
+            ? 0xc084fc
+            : m.type === 'crimson_phoenix'
+            ? 0xfef08a
+            : m.type === 'giant_phantom'
+            ? 0x38bdf8
+            : m.type === 'toxic_chimera'
+            ? 0x4ade80
+            : m.type === 'guardian_sentinel'
+            ? 0xef4444
+            : m.type === 'ice_shard_griffin'
+            ? 0x7dd3fc
+            : m.type === 'acidic_sky_wyrm'
+            ? 0x84cc16
+            : 0xf97316;
           const px = m.x + nx * (0.95 * spec.baseScale);
           const pz = m.z + nz * (0.95 * spec.baseScale);
           const pvx = (dxHero / dist3D) * pSpeed;
@@ -29990,7 +30369,13 @@ export class RpgWorldEngine {
               md: 'overworld',
             });
           }
-          m.attackCooldown = this.settings.difficulty === 'pendekar' ? 2.2 : 2.9;
+          m.attackCooldown = isQuizSky
+            ? this.settings.difficulty === 'pendekar'
+              ? 1.75
+              : 2.3
+            : this.settings.difficulty === 'pendekar'
+            ? 2.2
+            : 2.9;
           m.attackAnimTimer = 0.34;
         }
       } else {
