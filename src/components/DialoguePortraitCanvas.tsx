@@ -37,6 +37,7 @@ interface DialoguePortraitCanvasProps {
   captiveColor?: number;
   monsterType?: MonsterType;
   heroExpression?: 'neutral' | 'fierce';
+  bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry';
   isSpeaking?: boolean;
   className?: string;
 }
@@ -296,6 +297,7 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
   captiveColor = 0xf472b6,
   monsterType,
   heroExpression = 'neutral',
+  bossExpression,
   isSpeaking = false,
   className = '',
 }) => {
@@ -304,6 +306,8 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
   speakingRef.current = isSpeaking;
   const heroExprRef = useRef<'neutral' | 'fierce'>(heroExpression);
   heroExprRef.current = heroExpression;
+  const bossExprRef = useRef<'laugh' | 'taunt' | 'menace' | 'shock' | 'angry' | undefined>(bossExpression);
+  bossExprRef.current = bossExpression;
   const villagerKey = villagerArchetypes?.join(',') ?? '';
   const entryKey = `${speakerKind}|${characterId}|${npcId}|${villagerKey}|${captiveKind}|${captiveColor}|${monsterType ?? ''}`;
   const elapsedRef = useRef(0);
@@ -370,7 +374,7 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
             ? -0.05
             : 0;
       } else if (entry.kind === 'boss' && entry.bossMesh) {
-        const bMode = talking ? 'laugh' : 'menace';
+        const bMode = bossExprRef.current ?? (talking ? 'laugh' : 'menace');
         animateMonsterRig(entry.bossMesh, {
           mode: bMode,
           elapsed,
@@ -449,6 +453,7 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
     captiveColor,
     monsterType,
     heroExpression,
+    bossExpression,
   ]);
 
   return (

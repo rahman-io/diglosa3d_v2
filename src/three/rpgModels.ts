@@ -2335,7 +2335,9 @@ export interface MonsterAnimInput {
     | 'celebrate'
     | 'laugh'
     | 'taunt'
-    | 'menace';
+    | 'menace'
+    | 'shock'
+    | 'angry';
   speed?: number;
   walkPhase?: number;
   elapsed: number;
@@ -2468,6 +2470,28 @@ export function animateMonsterRig(mesh: THREE.Object3D, input: MonsterAnimInput)
     targetLeftArmX = -0.94 - Math.sin(elapsed * 3.4) * 0.1;
     targetRightArmZ = -0.24;
     targetLeftArmZ = 0.24;
+  } else if (mode === 'shock') {
+    targetScaleY = 1.13 + Math.sin(elapsed * 18 + phase) * 0.035;
+    targetBodyX = -0.24;
+    targetUpperX = -0.3;
+    targetHeadX = -0.26;
+    targetHeadY = Math.sin(elapsed * 16 + phase) * 0.14;
+    targetRightArmX = -2.02 + Math.sin(elapsed * 15) * 0.08;
+    targetLeftArmX = -2.02 - Math.sin(elapsed * 15) * 0.08;
+    targetRightArmZ = -0.56;
+    targetLeftArmZ = 0.56;
+  } else if (mode === 'angry') {
+    const rageTremble = Math.sin(elapsed * 28 + phase);
+    targetScaleY = 0.94 + Math.abs(Math.sin(elapsed * 13 + phase)) * 0.09;
+    targetBodyX = 0.14 + rageTremble * 0.03;
+    targetBodyZ = rageTremble * 0.035;
+    targetUpperX = 0.22;
+    targetHeadX = 0.14;
+    targetHeadY = Math.sin(elapsed * 15 + phase) * 0.11;
+    targetRightArmX = -1.68 + Math.sin(elapsed * 18) * 0.26;
+    targetLeftArmX = -1.68 - Math.sin(elapsed * 18) * 0.26;
+    targetRightArmZ = -0.32;
+    targetLeftArmZ = 0.32;
   }
 
   const curSy = THREE.MathUtils.damp(rig.bodyPivot.scale.y, targetScaleY, damp, dt);
@@ -2547,6 +2571,10 @@ export function animateMonsterRig(mesh: THREE.Object3D, input: MonsterAnimInput)
         ? 0.38 + Math.abs(Math.sin(elapsed * 15)) * 0.44
         : mode === 'taunt'
         ? 0.22 + Math.abs(Math.sin(elapsed * 9.5)) * 0.3
+        : mode === 'shock'
+        ? 0.62 + Math.sin(elapsed * 18) * 0.06
+        : mode === 'angry'
+        ? 0.36 + Math.abs(Math.sin(elapsed * 16)) * 0.34
         : mode === 'windup' || mode === 'menace'
         ? 0.42 + Math.sin(elapsed * 14) * 0.08
         : 0.16 + Math.sin(elapsed * 3.2 + phase) * 0.11;
@@ -2579,7 +2607,14 @@ export function animateMonsterRig(mesh: THREE.Object3D, input: MonsterAnimInput)
     rig.extraSpin.rotation.y += dt * 2.4;
   }
   if (rig.eyes) {
-    const blinkY = mode === 'ko' ? 0.14 : computeBlinkScale(elapsed, phase + 1.4);
+    const blinkY =
+      mode === 'ko'
+        ? 0.14
+        : mode === 'shock'
+        ? 1.48
+        : mode === 'angry'
+        ? 0.72
+        : computeBlinkScale(elapsed, phase + 1.4);
     for (let i = 0; i < rig.eyes.length; i++) {
       rig.eyes[i].scale.y = blinkY;
     }
@@ -2694,15 +2729,26 @@ export function attachBossCutsceneTraits(
 
 export function animateBossCutsceneTraits(
   mesh: THREE.Object3D,
-  mode: 'laugh' | 'menace' | 'taunt' | 'idle',
+  mode: 'laugh' | 'menace' | 'taunt' | 'shock' | 'angry' | 'idle',
   elapsed: number,
   isSpeaking: boolean,
 ): void {
   const traits = mesh.userData.bossCutsceneTraits as BossCutsceneTraits | undefined;
   if (!traits) return;
 
+  if (mode === 'shock') {
+    const jiggle = Math.sin(elapsed * 22) * 0.05;
+    traits.rightBrow.rotation.z = 0.24 + jiggle;
+    traits.leftBrow.rotation.z = -0.24 - jiggle;
+    traits.mouthGroup.scale.set(0.88, isSpeaking ? 1.55 + Math.abs(Math.sin(elapsed * 14)) * 0.5 : 1.75, 1);
+    traits.crownGroup.scale.setScalar(1.06 + Math.sin(elapsed * 18) * 0.04);
+    return;
+  }
+
   const browFurrow =
-    mode === 'laugh'
+    mode === 'angry'
+      ? 0.54 + Math.sin(elapsed * 20) * 0.05
+      : mode === 'laugh'
       ? 0.26 + Math.sin(elapsed * 12) * 0.06
       : mode === 'taunt' || mode === 'menace'
       ? 0.38
@@ -2713,6 +2759,9 @@ export function animateBossCutsceneTraits(
   if (mode === 'laugh') {
     const sy = 1.15 + Math.abs(Math.sin(elapsed * 14.5)) * 1.15;
     traits.mouthGroup.scale.set(1.18, sy, 1);
+  } else if (mode === 'angry') {
+    const sy = isSpeaking ? 0.88 + Math.abs(Math.sin(elapsed * 16)) * 1.1 : 0.72 + Math.sin(elapsed * 14) * 0.14;
+    traits.mouthGroup.scale.set(1.24, sy, 1);
   } else if (isSpeaking) {
     const sy = 0.72 + Math.abs(Math.sin(elapsed * 14)) * 1.1;
     traits.mouthGroup.scale.set(1.06, sy, 1);

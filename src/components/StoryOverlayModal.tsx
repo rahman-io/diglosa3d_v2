@@ -397,9 +397,20 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
   const resolvedPlayerName = playerName.trim() || 'Hoot';
 
   if (
-    story.kind === 'dungeon_intro' &&
-    (story.dungeonIntroBeat === 'emerge' || story.dungeonIntroBeat === 'retreat')
+    (story.kind === 'dungeon_intro' &&
+      (story.dungeonIntroBeat === 'emerge' || story.dungeonIntroBeat === 'retreat')) ||
+    (story.kind === 'dungeon_boss_summon' &&
+      (story.dungeonBossSummonBeat === 'emerge_shock' ||
+        story.dungeonBossSummonBeat === 'boss_furious_summon'))
   ) {
+    const cinemaBadge =
+      story.kind === 'dungeon_boss_summon'
+        ? story.dungeonBossSummonBeat === 'emerge_shock'
+          ? 'Pintu Terakhir Terbuka'
+          : 'Panggilan Delapan Awan Hitam'
+        : story.dungeonIntroBeat === 'emerge'
+          ? 'Pusaran Kabut Hitam'
+          : 'Kembalinya Sang Bos';
     return (
       <>
         {projectedLabels && projectedLabels.length > 0 && (
@@ -423,7 +434,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
         <div className="pointer-events-none fixed inset-x-0 top-0 z-40 flex items-center justify-between bg-gradient-to-b from-black/95 via-black/80 to-transparent px-4 py-2.5 sm:px-6 sm:py-3">
           <div className="flex min-w-0 items-center gap-2">
             <span className="inline-flex shrink-0 items-center rounded-full border border-rose-400/70 bg-rose-950/90 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-rose-200 sm:text-xs">
-              {story.dungeonIntroBeat === 'emerge' ? 'Pusaran Kabut Hitam' : 'Kembalinya Sang Bos'}
+              {cinemaBadge}
             </span>
             <span className="truncate text-xs font-extrabold text-amber-100 drop-shadow sm:text-sm">
               {personalizePlayerText(story.speakerName, resolvedPlayerName)}
@@ -473,6 +484,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     story.kind === 'opening' ||
     story.kind === 'village_rescue_talk' ||
     story.kind === 'dungeon_intro' ||
+    story.kind === 'dungeon_boss_summon' ||
     story.kind === 'cave_guardian' ||
     story.kind === 'dungeon_rescue' ||
     story.kind === 'dungeon_reunion_exit';
@@ -576,7 +588,9 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
 
   return (
     <>
-      {story.kind === 'dungeon_intro' && projectedLabels && projectedLabels.length > 0 && (
+      {(story.kind === 'dungeon_intro' || story.kind === 'dungeon_boss_summon') &&
+        projectedLabels &&
+        projectedLabels.length > 0 && (
         <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden">
           {projectedLabels.map((lbl) => (
             <div
@@ -604,6 +618,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
         captiveColor={captiveColor}
         monsterType={story.speakerMonsterType}
         heroExpression={story.heroExpression}
+        bossExpression={story.bossExpression}
         speakerSide={speakerSide}
         textId={personalizePlayerText(story.textId, resolvedPlayerName)}
         textEn={story.textEn ? personalizePlayerText(story.textEn, resolvedPlayerName) : undefined}

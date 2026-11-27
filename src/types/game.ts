@@ -435,6 +435,7 @@ export interface StoryDialogState {
     | 'area_cleared'
     | 'defeat_exit'
     | 'dungeon_intro'
+    | 'dungeon_boss_summon'
     | 'dungeon_rescue'
     | 'dungeon_reunion_exit'
     | 'cave_guardian';
@@ -451,6 +452,12 @@ export interface StoryDialogState {
   speakerNpcId?: string;
   speakerMonsterType?: MonsterType;
   dungeonIntroBeat?: 'emerge' | 'boss_taunt' | 'hero_reply' | 'boss_farewell' | 'retreat' | 'guardian';
+  dungeonBossSummonBeat?:
+    | 'emerge_shock'
+    | 'boss_shock_talk'
+    | 'guard_angry_talk'
+    | 'boss_furious_summon';
+  bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry';
   heroExpression?: 'neutral' | 'fierce';
   villagerArchetypes?: string[];
   captiveKind?: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
