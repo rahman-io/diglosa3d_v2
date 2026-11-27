@@ -204,9 +204,12 @@ export function sampleDesaCaveGroundY(x: number, z: number, refY = 0): number {
     return bestStairY;
   }
 
-  // 3. Check Elevated Decks & Terraces (highest deck reachable below or near refY + 2.2m)
+  const inRiver = isInCrystalRiverChannel(x, z);
+
+  // 3. Check Elevated Decks & Terraces (skip y<=0 flat courtyard decks inside carved river gorge)
   let bestDeckY: number | null = null;
   for (const d of FLAT_DECKS) {
+    if (d.y <= 0.1 && inRiver) continue;
     if (x >= d.minX && x <= d.maxX && z >= d.minZ && z <= d.maxZ) {
       if (bestDeckY === null || d.y > bestDeckY) {
         bestDeckY = d.y;
@@ -225,7 +228,7 @@ export function sampleDesaCaveGroundY(x: number, z: number, refY = 0): number {
   }
 
   // 4. Deep Crystal River Gorge floor
-  if (isInCrystalRiverChannel(x, z)) {
+  if (inRiver) {
     return -2.1;
   }
 
@@ -389,7 +392,7 @@ function createRiverRibbonGeometry(
       const b = a + 1;
       const c = a + 2;
       const d = a + 3;
-      indices.push(a, c, b, b, c, d);
+      indices.push(a, b, c, b, d, c);
     }
   }
 
@@ -482,23 +485,25 @@ export function createDesaCaveEnvironment(
     color: 0x38bdf8,
     map: riverFlowTex,
     emissive: 0x06b6d4,
-    emissiveIntensity: 0.78,
-    roughness: 0.14,
-    metalness: 0.18,
+    emissiveIntensity: 0.92,
+    roughness: 0.12,
+    metalness: 0.15,
     transparent: true,
-    opacity: 0.88,
+    opacity: 0.86,
+    side: THREE.DoubleSide,
   });
   riverWaterMat.emissiveMap = riverFlowTex;
 
   const riverShimmerMat = palette.createSurfaceMat({
-    color: 0xbae6fd,
+    color: 0xe0f2fe,
     map: riverShimmerTex,
     emissive: 0x67e8f9,
-    emissiveIntensity: 0.65,
+    emissiveIntensity: 0.85,
     roughness: 0.08,
     metalness: 0.1,
     transparent: true,
-    opacity: 0.36,
+    opacity: 0.48,
+    side: THREE.DoubleSide,
   });
   riverShimmerMat.emissiveMap = riverShimmerTex;
   riverShimmerMat.depthWrite = false;
@@ -707,13 +712,14 @@ export function createDesaCaveEnvironment(
     topPalette: number[],
     sidePalette: number[],
     addMossTrim = false,
+    carveRiver = false,
   ) => {
     const cx = (minX + maxX) * 0.5;
     const cz = (minZ + maxZ) * 0.5;
     const sx = maxX - minX;
     const sz = maxZ - minZ;
     const bodyH = Math.max(0.4, topY - bottomY - 0.45);
-    if (bodyH > 0.4) {
+    if (!carveRiver && bodyH > 0.4) {
       stoneSpecs.push({
         x: cx,
         y: bottomY + bodyH * 0.5,
@@ -729,11 +735,27 @@ export function createDesaCaveEnvironment(
       const w = Math.min(2, maxX - tx);
       for (let tz = minZ; tz < maxZ; tz += 2) {
         const d = Math.min(2, maxZ - tz);
+        const colX = tx + w * 0.5;
+        const colZ = tz + d * 0.5;
+        if (carveRiver && isInCrystalRiverChannel(colX, colZ)) {
+          continue;
+        }
+        if (carveRiver && bodyH > 0.4) {
+          stoneSpecs.push({
+            x: colX,
+            y: bottomY + bodyH * 0.5,
+            z: colZ,
+            sx: w,
+            sy: bodyH,
+            sz: d,
+            color: pickShade(sidePalette, colX, colZ),
+          });
+        }
         const hEdge = addMossTrim && hash2(tx * 2, tz * 2) > 0.78 ? GRASS_SHADES : topPalette;
         stoneSpecs.push({
-          x: tx + w * 0.5,
+          x: colX,
           y: topY - 0.25,
-          z: tz + d * 0.5,
+          z: colZ,
           sx: w,
           sy: 0.5,
           sz: d,
@@ -743,9 +765,9 @@ export function createDesaCaveEnvironment(
     }
   };
 
-  // Lower Courtyard & SE Base (y = 0)
-  addTierBlock(-14, 16.5, 30, 49, 0.0, -3.5, STONE_SHADES, DARK_SHADES, true);
-  addTierBlock(23, 46, 32, 47, 0.0, -3.5, STONE_SHADES, DARK_SHADES, true);
+  // Lower Courtyard & SE Base (y = 0) — carve out the sunken Crystal River gorge cleanly!
+  addTierBlock(-14, 16.5, 30, 49, 0.0, -3.5, STONE_SHADES, DARK_SHADES, true, true);
+  addTierBlock(23, 46, 32, 47, 0.0, -3.5, STONE_SHADES, DARK_SHADES, true, true);
 
   // Exit Portal Terrace (y = 3.5) & Solid West Rocky Cliff Bastion behind Door 3 (-22.2, 3.5, 25.5)
   addTierBlock(-22.6, -6.5, 20.5, 34.5, 3.5, -2.5, STONE_SHADES, DARK_SHADES, true);
@@ -846,79 +868,104 @@ export function createDesaCaveEnvironment(
   // --------------------------------------------------------------------------
   // C. Deep Cyan Crystal River Gorge, Animated Flowing Water & Waterfall, Stone Bridge
   // --------------------------------------------------------------------------
-  // Riverbed dark stone floor
+  // Riverbed deep turquoise-slate floor
   const riverFloor = new THREE.Mesh(
     new THREE.BoxGeometry(46, 0.6, 58),
-    palette.getMat(0x0f172a, 'matte'),
+    palette.getMat(0x0c2d48, 'matte'),
   );
   riverFloor.position.set(5, -2.5, 22);
   riverFloor.receiveShadow = true;
   group.add(riverFloor);
 
-  // Smooth Continuous Curved Crystal River Ribbon + Animated Shimmer Layer (UV-scrolled!)
+  // Smooth Continuous Curved Crystal River Ribbon + Animated Shimmer Layer + Flowing Current Streaks
   {
+    const waterY = -0.88;
     const riverSpine = [
-      new THREE.Vector3(-6.0, -1.56, -4.5),
-      new THREE.Vector3(-6.0, -1.56, 5.5),
-      new THREE.Vector3(-5.0, -1.56, 15.0),
-      new THREE.Vector3(-0.2, -1.56, 22.8),
-      new THREE.Vector3(8.5, -1.56, 30.2),
-      new THREE.Vector3(17.8, -1.56, 38.6),
-      new THREE.Vector3(24.0, -1.56, 49.0),
+      new THREE.Vector3(-6.0, waterY, -4.5),
+      new THREE.Vector3(-6.0, waterY, 5.5),
+      new THREE.Vector3(-5.0, waterY, 15.0),
+      new THREE.Vector3(-0.2, waterY, 22.8),
+      new THREE.Vector3(8.5, waterY, 30.2),
+      new THREE.Vector3(17.8, waterY, 38.6),
+      new THREE.Vector3(24.0, waterY, 49.0),
     ];
-    const widthFn = (t: number) => 4.6 + Math.sin(t * Math.PI * 0.85) * 2.1 + t * 0.8;
-    const riverGeo = createRiverRibbonGeometry(riverSpine, 44, widthFn, 6.2);
+    const riverCurve = new THREE.CatmullRomCurve3(riverSpine);
+    const widthFn = (t: number) => 4.8 + Math.sin(t * Math.PI * 0.85) * 2.2 + t * 0.85;
+    const riverGeo = createRiverRibbonGeometry(riverSpine, 48, widthFn, 7.2);
     const riverMesh = new THREE.Mesh(riverGeo, riverWaterMat);
     riverMesh.receiveShadow = true;
     riverMesh.userData.animKind = 'uvScroll';
     riverMesh.userData.scrollU = 0.04;
-    riverMesh.userData.scrollV = -0.34;
+    riverMesh.userData.scrollV = -0.48;
     animatables.push(riverMesh);
     disposables.push(riverGeo);
     group.add(riverMesh);
 
-    const shimmerSpine = riverSpine.map((v) => new THREE.Vector3(v.x, v.y + 0.06, v.z));
-    const shimmerGeo = createRiverRibbonGeometry(shimmerSpine, 44, (t) => widthFn(t) * 0.92, 7.5);
+    const shimmerSpine = riverSpine.map((v) => new THREE.Vector3(v.x, v.y + 0.05, v.z));
+    const shimmerGeo = createRiverRibbonGeometry(shimmerSpine, 48, (t) => widthFn(t) * 0.94, 8.6);
     const shimmerMesh = new THREE.Mesh(shimmerGeo, riverShimmerMat);
     shimmerMesh.userData.animKind = 'uvScroll';
-    shimmerMesh.userData.scrollU = -0.05;
-    shimmerMesh.userData.scrollV = -0.52;
+    shimmerMesh.userData.scrollU = -0.06;
+    shimmerMesh.userData.scrollV = -0.78;
     animatables.push(shimmerMesh);
     disposables.push(shimmerGeo);
     group.add(shimmerMesh);
 
+    // Animated drifting water-current foam streaks physically flowing downstream along the river
+    const streakGeo = new THREE.PlaneGeometry(0.42, 2.25);
+    streakGeo.rotateX(-Math.PI / 2);
+    const streakMat = new THREE.MeshBasicMaterial({
+      color: 0xe0f2fe,
+      transparent: true,
+      opacity: 0.58,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    disposables.push(streakGeo, streakMat);
+    for (let i = 0; i < 18; i++) {
+      const foam = new THREE.Mesh(streakGeo, streakMat);
+      foam.userData.animKind = 'riverCurrent';
+      foam.userData.riverCurve = riverCurve;
+      foam.userData.flowT = i / 18;
+      foam.userData.flowSpeed = 0.052 + (i % 3) * 0.012;
+      foam.userData.lateralOffset = ((i % 5) - 2) * 1.15;
+      foam.userData.waterY = waterY + 0.08;
+      animatables.push(foam);
+      group.add(foam);
+    }
+
     // Subterranean Waterfall Cascade pouring out of Arch (-6.0, -3.5) into the Crystal River
-    const wfGeo = new THREE.PlaneGeometry(6.8, 4.8, 1, 8);
+    const wfGeo = new THREE.PlaneGeometry(6.8, 4.2, 1, 8);
     const posAttr = wfGeo.attributes.position as THREE.BufferAttribute;
     for (let i = 0; i < posAttr.count; i++) {
       const py = posAttr.getY(i);
-      const fracDown = (2.4 - py) / 4.8; // 0 at top -> 1 at river surface
+      const fracDown = (2.1 - py) / 4.2; // 0 at top -> 1 at river surface
       posAttr.setZ(i, fracDown * fracDown * 1.45);
     }
     wfGeo.computeVertexNormals();
     const waterfallMesh = new THREE.Mesh(wfGeo, waterfallMat);
-    waterfallMesh.position.set(-6.0, 0.65, -3.55);
+    waterfallMesh.position.set(-6.0, 1.05, -3.55);
     waterfallMesh.userData.animKind = 'uvScroll';
     waterfallMesh.userData.scrollU = 0.0;
-    waterfallMesh.userData.scrollV = 1.15;
+    waterfallMesh.userData.scrollV = 1.25;
     animatables.push(waterfallMesh);
     disposables.push(wfGeo);
     group.add(waterfallMesh);
 
     // Animated Splash Foam Ring at the Waterfall Plunge Base
-    const splashGeo = new THREE.RingGeometry(1.1, 3.5, 24);
+    const splashGeo = new THREE.RingGeometry(1.1, 3.6, 24);
     const splashMat = palette.createSurfaceMat({
       color: 0xe0f2fe,
       emissive: 0x67e8f9,
-      emissiveIntensity: 0.9,
+      emissiveIntensity: 0.95,
       transparent: true,
-      opacity: 0.52,
+      opacity: 0.62,
       side: THREE.DoubleSide,
     });
     splashMat.depthWrite = false;
     const splashMesh = new THREE.Mesh(splashGeo, splashMat);
     splashMesh.rotation.x = -Math.PI / 2;
-    splashMesh.position.set(-6.0, -1.46, -1.85);
+    splashMesh.position.set(-6.0, waterY + 0.08, -1.85);
     splashMesh.userData.animKind = 'waterfallSplash';
     animatables.push(splashMesh);
     disposables.push(splashGeo, splashMat);
@@ -1763,6 +1810,37 @@ export function createDesaCaveEnvironment(
       shooterCoords: [
         [-20.5, -8.5],
         [34.5, -2.5],
+      ],
+      riverSpots: [
+        [-4.2, 1.5],
+        [-7.5, 8.2],
+        [-4.0, 13.2],
+        [-1.2, 20.8],
+        [1.8, 25.5],
+        [7.8, 28.5],
+        [14.2, 35.5],
+        [18.8, 39.2],
+        [22.8, 45.2],
+      ],
+      extraSkySpots: [
+        [-11.0, 32.0],
+        [11.0, 22.0],
+        [-26.0, 11.0],
+        [28.0, 12.0],
+        [2.0, -8.0],
+        [-22.0, -24.0],
+        [14.0, -18.0],
+        [32.0, 34.0],
+      ],
+      extraGroundSpots: [
+        [-10.5, 39.0],
+        [28.5, 39.5],
+        [-37.5, 15.5],
+        [24.5, 8.5],
+        [-11.5, 26.0],
+        [-24.5, -21.5],
+        [14.5, -17.0],
+        [-5.5, -27.5],
       ],
     },
     customGroundHeight: sampleDesaCaveGroundY,

@@ -306,6 +306,10 @@ export interface DungeonArenaRig {
     creeperSpots: Array<[number, number]>;
     batSpots: Array<[number, number]>;
     shooterCoords: Array<[number, number]>;
+    riverSpots?: Array<[number, number]>;
+    extraSkySpots?: Array<[number, number]>;
+    extraGroundSpots?: Array<[number, number]>;
+    waterPoolCenters?: Array<{ x: number; z: number; radius: number }>;
   };
   customGroundHeight?: (x: number, z: number, refY: number) => number;
 }
@@ -5086,6 +5090,41 @@ export function createDungeonEnvironment(
     centerRune.rotation.x = -Math.PI / 2;
     centerRune.position.y = 0.03;
     group.add(centerRune);
+
+    // Sunken glowing subterranean crystal water pool (habitat for cave aquatic monsters)
+    const poolRadius = 2.65;
+    const poolX = 0;
+    const poolZ = 7.4;
+    const poolGroup = new THREE.Group();
+    poolGroup.position.set(poolX, 0.02, poolZ);
+    const poolRimGeo = new THREE.RingGeometry(poolRadius - 0.1, poolRadius + 0.35, 24);
+    const poolRimMat = palette.getMat(0x334155, 'matte');
+    const poolRim = new THREE.Mesh(poolRimGeo, poolRimMat);
+    poolRim.rotation.x = -Math.PI / 2;
+    poolRim.position.y = 0.02;
+    const poolBedGeo = new THREE.CircleGeometry(poolRadius, 24);
+    const poolBedMat = palette.getMat(0x0c4a6e, 'matte');
+    const poolBed = new THREE.Mesh(poolBedGeo, poolBedMat);
+    poolBed.rotation.x = -Math.PI / 2;
+    poolBed.position.y = 0.015;
+    const poolWaterGeo = new THREE.CircleGeometry(poolRadius - 0.05, 24);
+    const poolWaterMat = palette.createSurfaceMat({
+      color: 0x22d3ee,
+      emissive: 0x06b6d4,
+      emissiveIntensity: 0.9,
+      roughness: 0.12,
+      transparent: true,
+      opacity: 0.82,
+      side: THREE.DoubleSide,
+    });
+    const poolWater = new THREE.Mesh(poolWaterGeo, poolWaterMat);
+    poolWater.rotation.x = -Math.PI / 2;
+    poolWater.position.y = 0.05;
+    poolWater.userData.animKind = 'waterfallSplash';
+    animatables.push(poolWater);
+    poolGroup.add(poolBed, poolWater, poolRim);
+    group.add(poolGroup);
+    disposables.push(poolRimGeo, poolBedGeo, poolWaterGeo, poolWaterMat);
   }
 
   // Tall Voxel Cave Perimeter Walls (enclosed 20m dark cobblestone cavern in Desa Sapaan!)
@@ -5889,6 +5928,54 @@ export function createDungeonEnvironment(
       [-12, -8],
       [12, -8],
     ],
+    monsterSpawns: {
+      quizCoords: [
+        [-9, -1],
+        [0, -11],
+        [9, -1],
+      ],
+      brawlerCoords: [
+        [-7, -9],
+        [7, -9],
+      ],
+      creeperSpots: [
+        [-11, 2],
+        [11, -3],
+      ],
+      batSpots: [
+        [-6, -5],
+        [6, 3],
+      ],
+      shooterCoords: [
+        [-10, -10],
+        [10, -10],
+      ],
+      riverSpots: [
+        [0.0, 7.4],
+        [-1.1, 7.0],
+        [1.1, 7.8],
+        [0.0, 8.6],
+        [-1.2, 8.2],
+        [1.2, 6.6],
+      ],
+      extraSkySpots: [
+        [-13, -1],
+        [13, -1],
+        [-9, 11],
+        [9, 11],
+        [-4, -14],
+        [4, -14],
+      ],
+      extraGroundSpots: [
+        [-15, 3],
+        [15, 3],
+        [-13, -12],
+        [13, -12],
+        [-8, 14],
+        [8, 14],
+      ],
+      waterPoolCenters: [{ x: 0, z: 7.4, radius: 2.35 }],
+    },
   };
 }
 

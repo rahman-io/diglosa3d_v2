@@ -202,6 +202,7 @@ import {
   updateDarkCloudPortal,
   updateDoorRigVisual,
 } from './rpgModels';
+import { isInCrystalRiverChannel } from './desaCaveWorld';
 import {
   createDriveableCarRig,
   DriveableCarRig,
@@ -1040,6 +1041,8 @@ export class RpgWorldEngine {
   private heroOnIce = false;
   private extraVillageColliders: VillageObstacle[] = [];
   private _desaColScratch = { x: 0, z: 0 };
+  private _riverPtScratch = new THREE.Vector3();
+  private _riverTanScratch = new THREE.Vector3();
   private _desaPickupBoxes: VillageObstacle[] = [
     { x: OVERWORLD_ANCHORS.starterWeapon.x, z: OVERWORLD_ANCHORS.starterWeapon.z, halfW: 0.78, halfD: 0.78 },
     { x: OVERWORLD_ANCHORS.swimSuit.x, z: OVERWORLD_ANCHORS.swimSuit.z, halfW: 0.78, halfD: 0.78 },
@@ -8798,7 +8801,8 @@ export class RpgWorldEngine {
     const wDef = WEAPONS[boss.rewardWeapon];
     this.defeatedBossZones.add(zoneId);
     const prevProg = this.zoneCaveProgress[zoneId];
-    const safeTotal = prevProg ? prevProg.total : 9 + DIFF_CONFIG[this.settings.difficulty].maxShooters;
+    const diffCfg = DIFF_CONFIG[this.settings.difficulty];
+    const safeTotal = prevProg ? prevProg.total : 9 + diffCfg.maxShooters + diffCfg.caveExtraMobs;
     this.zoneCaveProgress[zoneId] = { defeated: safeTotal, remaining: 0, total: safeTotal };
 
     if (!this.captiveRescuedZones.has(zoneId)) {
@@ -10148,20 +10152,26 @@ export class RpgWorldEngine {
       }
     });
 
-    // Spawn Cave-Exclusive Mobs: 2 Cave Spiders (volatile ambushers) & 2 Flying Shadow/Lava Swoopers
-    const creeperSpots: Array<[number, number]> =
+    // Spawn Cave-Exclusive Mobs across 3 domains (Ground, Flying, River/Aquatic):
+    // Base pre-boss = 9 (3 Penjaga Kata + 2 Petarung Gua + 1 Cave Spider + 2 Flying + 1 River/Pool)
+    const creeperSpots: Array<[number, number]> = (
       rig.monsterSpawns?.creeperSpots ?? [
         [-11, 2],
         [11, -3],
-      ];
+      ]
+    ).slice(0, 1);
     creeperSpots.forEach(([cx, cz], idx) => {
       const cy = this.getDungeonSupportHeight(cx, cz, 20);
       const cid = `creeper_${zoneId}_${idx}`;
       const isAlive = !bossBeaten && !defeatedSet.has(cid);
-      const cMesh = createMonsterMesh('cave_spider', this.palette, isDesaCave ? 1.05 : 1.0);
+      const cScale = isDesaCave ? 1.05 : 1.0;
+      const cMesh = createMonsterMesh('cave_spider', this.palette, cScale);
       cMesh.position.set(cx, cy, cz);
+      cMesh.userData.caveScale = cScale;
+      cMesh.userData.monsterId = cid;
       cMesh.visible = isAlive;
       rig.group.add(cMesh);
+      this.dungeonClickables.push(cMesh);
       this.dungeonMonsters.push({
         id: cid,
         type: 'cave_spider',
@@ -10198,14 +10208,18 @@ export class RpgWorldEngine {
       const by = baseY + (isDesaCave ? 3.2 : 3.4);
       const bid = `bat_${zoneId}_${idx}`;
       const isAlive = !bossBeaten && !defeatedSet.has(bid);
-      const bMesh = createMonsterMesh(flyerType, this.palette, isDesaCave ? 0.72 : 1.0);
+      const flyScale = isDesaCave ? 0.72 : 1.0;
+      const bMesh = createMonsterMesh(flyerType, this.palette, flyScale);
       bMesh.position.set(bx, by, bz);
+      bMesh.userData.caveScale = flyScale;
+      bMesh.userData.monsterId = bid;
       bMesh.visible = isAlive;
       rig.group.add(bMesh);
+      this.dungeonClickables.push(bMesh);
       this.dungeonMonsters.push({
         id: bid,
         type: flyerType,
-        name: isDesaCave ? 'Shadow Monster' : 'Lava Imp',
+        name: isDesaCave ? 'Shadow Harpy Gua' : 'Lava Imp',
         zoneId,
         homeX: bx,
         homeZ: bz,
@@ -10218,6 +10232,7 @@ export class RpgWorldEngine {
         rewardDiamonds: 0,
         rewardScore: 140,
         isCaveMob: true,
+        isSkyMonster: true,
         mesh: bMesh,
         alive: isAlive,
         respawnTimer: 0,
@@ -10225,6 +10240,237 @@ export class RpgWorldEngine {
         angryTimer: 0,
       });
     });
+
+    // Helper to spawn a cave aquatic monster inside the Desa Crystal River (or Crystal Pool in other caves)
+    const riverSpots: Array<[number, number]> = rig.monsterSpawns?.riverSpots ?? [
+      [0, 7.4],
+    ];
+    const riverSpecies: MonsterType[] = [
+      'goring_shark',
+      'venomous_box_jelly',
+      'electric_eel_drakon',
+      'giant_bone_jaw',
+      'shadow_angler',
+      'spiny_mega_stingray',
+    ];
+    const spawnCaveRiverMonster = (id: string, spotIdx: number, speciesIdx: number, hp: number) => {
+      const [rx, rz] = riverSpots[spotIdx % riverSpots.length];
+      const mType = riverSpecies[speciesIdx % riverSpecies.length];
+      const spec = MONSTER_SPECS[mType];
+      const rScale = isDesaCave
+        ? Math.min(0.84, Math.max(0.68, spec.baseScale * 0.62))
+        : Math.min(0.62, Math.max(0.46, spec.baseScale * 0.44));
+      const ry = isDesaCave
+        ? mType === 'venomous_box_jelly'
+          ? -1.48
+          : -1.25
+        : mType === 'venomous_box_jelly'
+        ? 0.05
+        : 0.14;
+      const isAlive = !bossBeaten && !defeatedSet.has(id);
+      const rMesh = createMonsterMesh(mType, this.palette, rScale);
+      rMesh.position.set(rx, ry, rz);
+      rMesh.userData.caveScale = rScale;
+      rMesh.userData.monsterId = id;
+      const waterRing = new THREE.Mesh(
+        new THREE.RingGeometry(0.8, 1.12, 16),
+        new THREE.MeshBasicMaterial({
+          color: 0x22d3ee,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.78,
+        }),
+      );
+      waterRing.rotation.x = -Math.PI / 2;
+      waterRing.position.y = 0.08;
+      rMesh.add(waterRing);
+      rMesh.userData.combatRing = waterRing;
+      rMesh.visible = isAlive;
+      rig.group.add(rMesh);
+      this.dungeonClickables.push(rMesh);
+      this.dungeonMonsters.push({
+        id,
+        type: mType,
+        name: spec.name,
+        zoneId,
+        homeX: rx,
+        homeZ: rz,
+        x: rx,
+        y: ry,
+        z: rz,
+        maxHp: hp,
+        mobHp: hp,
+        maxMobHp: hp,
+        combatOnly: true,
+        isSeaMonster: true,
+        aggroActive: false,
+        attackCooldown: 1.5 + (spotIdx % 3) * 0.4,
+        windupTimer: -1,
+        lungeTimer: 0,
+        hitFlashTimer: 0,
+        rewardXp: 25,
+        rewardDiamonds: spotIdx % 2 === 0 ? 1 : 0,
+        rewardScore: 220,
+        mesh: rMesh,
+        alive: isAlive,
+        respawnTimer: 0,
+        patrolPhase: spotIdx * 1.65 + 0.5,
+        angryTimer: 0,
+      });
+    };
+
+    // 1 Base River/Pool Monster even in Santai -> Total Santai = 20 (Ground + Flying + River!)
+    const extraMobCount = DIFF_CONFIG[this.settings.difficulty].caveExtraMobs;
+    const combatMobHp = this.settings.difficulty === 'pendekar' ? 4 : 3;
+    spawnCaveRiverMonster(`river_${zoneId}_0`, 0, 0, Math.min(3, combatMobHp));
+
+    // Difficulty-scaled Extra Monsters (Petualang: +9 -> 30 total; Pendekar: +18 -> 40 total)
+    // Balanced evenly across Flying (1/3), Ground (1/3), and Aquatic/River (1/3)!
+    if (extraMobCount > 0) {
+      const domainCount = Math.floor(extraMobCount / 3);
+      const skyPool: MonsterType[] = [
+        'blight_hornet',
+        'shadow_harpy',
+        'volcanic_giant_bat',
+        'crimson_phoenix',
+        'lava_imp',
+        'stone_gargoyle',
+      ];
+      const groundPool: MonsterType[] = [
+        'thorn_goblin',
+        'dire_wolf',
+        'wild_boar',
+        'poison_beetle',
+        'skeleton_warrior',
+        'forest_slime',
+      ];
+      const skySpots = rig.monsterSpawns?.extraSkySpots ?? batSpots;
+      const groundSpots = rig.monsterSpawns?.extraGroundSpots ?? brawlerCoords;
+
+      for (let i = 0; i < domainCount; i++) {
+        // 1. Extra Flying Monsters
+        const [sx, sz] = skySpots[i % skySpots.length];
+        const sType = skyPool[i % skyPool.length];
+        const sSpec = MONSTER_SPECS[sType];
+        const sBaseY = this.getDungeonSupportHeight(sx, sz, 20);
+        const sy = sBaseY + (isDesaCave ? 3.5 : 3.4) + (i % 2) * 0.55;
+        const sId = `extra_sky_${zoneId}_${i}`;
+        const sAlive = !bossBeaten && !defeatedSet.has(sId);
+        const sScale = Math.min(0.84, Math.max(0.64, sSpec.baseScale * 0.68));
+        const sMesh = createMonsterMesh(sType, this.palette, sScale);
+        sMesh.position.set(sx, sy, sz);
+        sMesh.userData.caveScale = sScale;
+        sMesh.userData.monsterId = sId;
+        const skyRing = new THREE.Mesh(
+          new THREE.RingGeometry(0.82, 1.14, 16),
+          new THREE.MeshBasicMaterial({
+            color: 0xf97316,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.78,
+          }),
+        );
+        skyRing.rotation.x = -Math.PI / 2;
+        skyRing.position.y = 0.08;
+        sMesh.add(skyRing);
+        sMesh.userData.combatRing = skyRing;
+        sMesh.visible = sAlive;
+        rig.group.add(sMesh);
+        this.dungeonClickables.push(sMesh);
+        this.dungeonMonsters.push({
+          id: sId,
+          type: sType,
+          name: sSpec.name,
+          zoneId,
+          homeX: sx,
+          homeZ: sz,
+          x: sx,
+          y: sy,
+          z: sz,
+          maxHp: combatMobHp,
+          mobHp: combatMobHp,
+          maxMobHp: combatMobHp,
+          combatOnly: true,
+          isSkyMonster: true,
+          aggroActive: false,
+          attackCooldown: 1.6 + (i % 3) * 0.45,
+          windupTimer: -1,
+          lungeTimer: 0,
+          hitFlashTimer: 0,
+          rewardXp: 24,
+          rewardDiamonds: i % 2 === 0 ? 1 : 0,
+          rewardScore: 210,
+          mesh: sMesh,
+          alive: sAlive,
+          respawnTimer: 0,
+          patrolPhase: i * 1.45 + 0.3,
+          angryTimer: 0,
+        });
+
+        // 2. Extra Ground Monsters
+        const [gx, gz] = groundSpots[i % groundSpots.length];
+        const gType = groundPool[i % groundPool.length];
+        const gSpec = MONSTER_SPECS[gType];
+        const gy = this.getDungeonSupportHeight(gx, gz, 20);
+        const gId = `extra_ground_${zoneId}_${i}`;
+        const gAlive = !bossBeaten && !defeatedSet.has(gId);
+        const gScale =
+          isDesaCave && gType === 'forest_slime'
+            ? 0.66
+            : Math.min(1.08, Math.max(0.75, gSpec.baseScale * 0.88));
+        const gMesh = createMonsterMesh(gType, this.palette, gScale);
+        gMesh.position.set(gx, gy, gz);
+        gMesh.userData.caveScale = gScale;
+        gMesh.userData.monsterId = gId;
+        const gRing = new THREE.Mesh(
+          new THREE.RingGeometry(0.88, 1.2, 16),
+          new THREE.MeshBasicMaterial({
+            color: 0xef4444,
+            side: THREE.DoubleSide,
+            transparent: true,
+            opacity: 0.8,
+          }),
+        );
+        gRing.rotation.x = -Math.PI / 2;
+        gRing.position.y = 0.08;
+        gMesh.add(gRing);
+        gMesh.userData.combatRing = gRing;
+        gMesh.visible = gAlive;
+        rig.group.add(gMesh);
+        this.dungeonClickables.push(gMesh);
+        this.dungeonMonsters.push({
+          id: gId,
+          type: gType,
+          name: gSpec.name,
+          zoneId,
+          homeX: gx,
+          homeZ: gz,
+          x: gx,
+          y: gy,
+          z: gz,
+          maxHp: combatMobHp,
+          mobHp: combatMobHp,
+          maxMobHp: combatMobHp,
+          combatOnly: true,
+          aggroActive: false,
+          attackCooldown: 1.5 + (i % 3) * 0.4,
+          windupTimer: -1,
+          lungeTimer: 0,
+          hitFlashTimer: 0,
+          rewardXp: 24,
+          rewardDiamonds: i % 2 === 1 ? 1 : 0,
+          rewardScore: 210,
+          mesh: gMesh,
+          alive: gAlive,
+          respawnTimer: 0,
+          patrolPhase: i * 1.85 + 0.6,
+          angryTimer: 0,
+        });
+
+        // 3. Extra Aquatic / River Monsters
+        spawnCaveRiverMonster(`extra_river_${zoneId}_${i}`, i + 1, i + 1, combatMobHp);
+      }
+    }
 
     const caveStory = ZONE_CAVE_STORIES[zoneId];
     const wordMobs = this.dungeonMonsters.filter((m) => this.isDoor5WordGuardian(m));
@@ -16378,13 +16624,26 @@ export class RpgWorldEngine {
       m.x = knockPt.x;
       m.z = knockPt.z;
     } else if (this.worldMode === 'dungeon' && this.dungeonRig) {
-      const knockPt = {
-        x: m.x + (dirX / len) * 1.15,
-        z: m.z + (dirZ / len) * 1.15,
-      };
-      this.resolveDungeonCircleColliders(knockPt, 0.9, m.y ?? 0, 2.0, 18);
-      m.x = knockPt.x;
-      m.z = knockPt.z;
+      if (m.isSeaMonster) {
+        const nextRx = m.x + (dirX / len) * 0.85;
+        const nextRz = m.z + (dirZ / len) * 0.85;
+        if (this.constrainDungeonRiverPos(m.zoneId, nextRx, nextRz)) {
+          m.x = nextRx;
+          m.z = nextRz;
+        }
+      } else if (m.isSkyMonster) {
+        const hb = this.getDungeonHalfBound() - 1.2;
+        m.x = THREE.MathUtils.clamp(m.x + (dirX / len) * 1.15, -hb, hb);
+        m.z = THREE.MathUtils.clamp(m.z + (dirZ / len) * 1.15, -hb, hb);
+      } else {
+        const knockPt = {
+          x: m.x + (dirX / len) * 1.15,
+          z: m.z + (dirZ / len) * 1.15,
+        };
+        this.resolveDungeonGroundEntityMotion(knockPt, m.x, m.z, m.y ?? 0, 0.9, 2.0);
+        m.x = knockPt.x;
+        m.z = knockPt.z;
+      }
     } else {
       m.x = THREE.MathUtils.clamp(m.x + (dirX / len) * 1.15, -18, 18);
       m.z = THREE.MathUtils.clamp(m.z + (dirZ / len) * 1.15, -18, 18);
@@ -16414,7 +16673,9 @@ export class RpgWorldEngine {
   private handleRealTimeMonsterDefeated(m: RoamingMonster): void {
     m.alive = false;
     m.respawnTimer =
-      this.worldMode === 'ocean' || this.isOverworldChallengeNoRespawn()
+      this.worldMode === 'dungeon' ||
+      this.worldMode === 'ocean' ||
+      this.isOverworldChallengeNoRespawn()
         ? 0
         : m.isSeaMonster
         ? 45
@@ -17546,16 +17807,17 @@ export class RpgWorldEngine {
         const dy = tY - heroEyeY;
         const d3d = Math.hypot(d2d, dy);
         if (d3d > maxRange + 8) continue;
-        const clearLos = m.isSkyMonster
-          ? true
-          : this.hasClearCombatLineOfSight(
-              this.heroPos.x,
-              heroEyeY,
-              this.heroPos.z,
-              m.x,
-              tY,
-              m.z,
-            );
+        const clearLos =
+          m.isSkyMonster && this.worldMode === 'overworld'
+            ? true
+            : this.hasClearCombatLineOfSight(
+                this.heroPos.x,
+                heroEyeY,
+                this.heroPos.z,
+                m.x,
+                tY,
+                m.z,
+              );
         const elevPenalty = !m.isSkyMonster && Math.abs(dy) > 3.8 ? Math.abs(dy) * 1.8 : 0;
         const isActiveAttacker = Boolean(m.combatOnly || m.isCaveMob || m.aggroActive);
         const activeThreatBonus = isActiveAttacker && d3d < 14 ? -0.5 : 0;
@@ -22365,6 +22627,26 @@ export class RpgWorldEngine {
           if (mat) {
             mat.opacity = 0.42 + Math.sin(this.elapsed * 5.2) * 0.16;
           }
+        } else if (kind === 'riverCurrent') {
+          const curve = obj.userData.riverCurve as THREE.CatmullRomCurve3 | undefined;
+          if (curve) {
+            const spd = Number(obj.userData.flowSpeed ?? 0.055);
+            const tNext = (Number(obj.userData.flowT ?? 0) + spd * dt) % 1;
+            obj.userData.flowT = tNext;
+            curve.getPointAt(tNext, this._riverPtScratch);
+            curve.getTangentAt(tNext, this._riverTanScratch);
+            const tan = this._riverTanScratch;
+            const lenXZ = Math.max(0.001, Math.hypot(tan.x, tan.z));
+            const nx = -tan.z / lenXZ;
+            const nz = tan.x / lenXZ;
+            const lat = Number(obj.userData.lateralOffset ?? 0);
+            obj.position.set(
+              this._riverPtScratch.x + nx * lat,
+              Number(obj.userData.waterY ?? -0.8),
+              this._riverPtScratch.z + nz * lat,
+            );
+            obj.rotation.y = Math.atan2(tan.x, tan.z);
+          }
         } else if (kind === 'mist') {
           const ph = Number(obj.userData.phase || 0);
           const bx = Number(obj.userData.baseX || 0);
@@ -22702,6 +22984,10 @@ export class RpgWorldEngine {
         this.updateSeaMonster(m, dt, baseSpeedMult);
         continue;
       }
+      if (m.isSeaMonster && this.worldMode === 'dungeon') {
+        this.updateDungeonSeaMonster(m, dt, baseSpeedMult);
+        continue;
+      }
       if (m.sunburnTimer !== undefined) {
         m.sunburnTimer -= dt;
         const jx = Math.sin(this.elapsed * 52 + m.patrolPhase) * 0.14;
@@ -22888,23 +23174,86 @@ export class RpgWorldEngine {
         continue;
       }
 
-      // Special AI 2: Cave Flying Imp (flies near ceiling, flaps wings, swoops down at Hoot!)
-      if (m.isCaveMob && FLYING_MONSTER_TYPES.has(m.type) && this.worldMode === 'dungeon') {
+      // Special AI 2: Cave Flying Monsters (hover, patrol, ranged fire if ranged, or swoop down at Hoot!)
+      if (
+        (m.isCaveMob || m.combatOnly) &&
+        !m.isBoss &&
+        !m.isBossMinion &&
+        !this.bossSummonedWaveIds.has(m.id) &&
+        FLYING_MONSTER_TYPES.has(m.type) &&
+        this.worldMode === 'dungeon'
+      ) {
+        if (m.hitFlashTimer && m.hitFlashTimer > 0) {
+          m.hitFlashTimer = Math.max(0, m.hitFlashTimer - dt);
+        }
+        if (m.attackCooldown && m.attackCooldown > 0) {
+          m.attackCooldown = Math.max(0, m.attackCooldown - dt);
+        }
+        if (m.attackAnimTimer && m.attackAnimTimer > 0) {
+          m.attackAnimTimer = Math.max(0, m.attackAnimTimer - dt);
+        }
+        const flyRing = m.mesh.userData.combatRing as THREE.Object3D | undefined;
+        if (flyRing) {
+          flyRing.rotation.z += dt * 2.2;
+        }
+        const flyScale = (m.mesh.userData.caveScale as number | undefined) ?? spec.baseScale;
+        m.mesh.scale.setScalar(flyScale);
+
         const dxH = this.heroPos.x - m.x;
         const dzH = this.heroPos.z - m.z;
         const distH = Math.hypot(dxH, dzH);
         const flyFloorY = this.getDungeonSupportHeight(m.x, m.z, m.y ?? 3.4);
-        let targetY = flyFloorY + 3.5 + Math.sin(this.elapsed * 2.6 + m.patrolPhase) * 0.55;
+        const ceilCap = (this.dungeonRig?.ceilingY ?? 12) - 2.2;
+        let targetY = Math.min(
+          ceilCap,
+          flyFloorY + 3.4 + Math.sin(this.elapsed * 2.6 + m.patrolPhase) * 0.55,
+        );
         let nextFx = m.x;
         let nextFz = m.z;
 
-        if (this.phase === 'playing' && distH < 9.5 && calmMult > 0.6) {
-          const spd = 3.4 * baseSpeedMult * dt;
-          const len = Math.max(0.2, distH);
-          nextFx = m.x + (dxH / len) * spd;
-          nextFz = m.z + (dzH / len) * spd;
-          targetY = Math.max(flyFloorY + 1.55, this.heroPos.y + 1.55);
-          m.mesh.rotation.y = Math.atan2(dxH, dzH);
+        if (this.phase === 'playing' && distH < 12.5 && calmMult > 0.6) {
+          if (spec.ranged) {
+            const orbitDir = m.patrolPhase % 2 < 1 ? 1 : -1;
+            const len = Math.max(0.25, distH);
+            const nx = dxH / len;
+            const nz = dzH / len;
+            const strafeSpd = 3.0 * baseSpeedMult * dt;
+            nextFx = m.x + -nz * orbitDir * strafeSpd;
+            nextFz = m.z + nx * orbitDir * strafeSpd;
+            if (distH > 9.5) {
+              nextFx += nx * 2.8 * dt;
+              nextFz += nz * 2.8 * dt;
+            }
+            m.mesh.rotation.y = Math.atan2(dxH, dzH);
+            if (distH >= 4.2 && distH < 14.5 && (m.attackCooldown ?? 0) <= 0) {
+              const pSpeed = this.settings.difficulty === 'pendekar' ? 11.0 : 8.8;
+              const mFireY = (m.y ?? targetY) + 0.5;
+              const aimY = this.heroPos.y + 1.3 - mFireY;
+              const dist3D = Math.max(0.5, Math.hypot(dxH, aimY, dzH));
+              this.spawnProjectile({
+                fromPlayer: false,
+                x: m.x + nx * 0.85,
+                y: mFireY,
+                z: m.z + nz * 0.85,
+                vx: (dxH / dist3D) * pSpeed,
+                vy: (aimY / dist3D) * pSpeed,
+                vz: (dzH / dist3D) * pSpeed,
+                damage: 1,
+                shieldDamage: 1,
+                pierceLeft: 0,
+                colorHex: 0xf97316,
+              });
+              m.attackCooldown = this.settings.difficulty === 'pendekar' ? 2.4 : 3.2;
+              m.attackAnimTimer = 0.3;
+            }
+          } else {
+            const spd = 3.4 * baseSpeedMult * dt;
+            const len = Math.max(0.2, distH);
+            nextFx = m.x + (dxH / len) * spd;
+            nextFz = m.z + (dzH / len) * spd;
+            targetY = Math.min(ceilCap, Math.max(flyFloorY + 1.55, this.heroPos.y + 1.55));
+            m.mesh.rotation.y = Math.atan2(dxH, dzH);
+          }
         } else {
           const p = this.elapsed * 1.15 * baseSpeedMult * calmMult + m.patrolPhase;
           nextFx = m.homeX + Math.cos(p) * 3.8;
@@ -22934,8 +23283,16 @@ export class RpgWorldEngine {
         m.x = nextFx;
         m.z = nextFz;
         m.mesh.position.set(m.x, m.y, m.z);
+        const flyMode =
+          m.hitFlashTimer && m.hitFlashTimer > 0
+            ? 'hit'
+            : (m.attackAnimTimer ?? 0) > 0
+            ? 'shoot'
+            : this.phase === 'playing' && distH < 10.5
+            ? 'attack'
+            : 'patrol';
         animateMonsterRig(m.mesh, {
-          mode: this.phase === 'playing' && distH < 9.5 ? 'attack' : 'patrol',
+          mode: flyMode,
           speed: 3.2,
           walkPhase: this.elapsed * 6,
           elapsed: this.elapsed,
@@ -22954,7 +23311,7 @@ export class RpgWorldEngine {
           this.encounterGraceTimer = 1.6;
           soundEngine.playHurt();
           this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.3, this.heroPos.z, 0xf97316, 14);
-          m.y = flyFloorY + 4.0;
+          m.y = Math.min(ceilCap, flyFloorY + 4.0);
           const len = Math.max(0.2, distH);
           const flyBound = this.getDungeonHalfBound() - 1.0;
           m.x = THREE.MathUtils.clamp(m.x - (dxH / len) * 2.8, -flyBound, flyBound);
@@ -23055,13 +23412,14 @@ export class RpgWorldEngine {
         let nextMz = m.z;
         const baseScale = m.isBoss
           ? 1.65
-          : this.worldMode === 'dungeon' && m.zoneId === 'desa_sapaan'
-          ? m.type === 'forest_slime'
-            ? 0.64
-            : m.type === 'cave_spider'
-            ? 1.05
-            : spec.baseScale
-          : spec.baseScale;
+          : (m.mesh.userData.caveScale as number | undefined) ??
+            (this.worldMode === 'dungeon' && m.zoneId === 'desa_sapaan'
+              ? m.type === 'forest_slime'
+                ? 0.64
+                : m.type === 'cave_spider'
+                ? 1.05
+                : spec.baseScale
+              : spec.baseScale);
         m.mesh.scale.setScalar(baseScale);
         m.mesh.rotation.x = 0;
 
@@ -24794,6 +25152,19 @@ export class RpgWorldEngine {
         this.heroOnGround = true;
       } else {
         this.heroOnGround = false;
+      }
+      if (
+        this.worldMode === 'dungeon' &&
+        this.dungeonState?.zoneId === 'desa_sapaan' &&
+        isInCrystalRiverChannel(this.heroPos.x, this.heroPos.z) &&
+        this.heroPos.y < -0.5 &&
+        Math.hypot(this.heroVel.x, this.heroVel.z) > 1.2
+      ) {
+        this.swimFxTimer -= dt;
+        if (this.swimFxTimer <= 0) {
+          this.swimFxTimer = 0.16;
+          this.spawnBurst(this.heroPos.x, -0.82, this.heroPos.z, 0x67e8f9, 4);
+        }
       }
     } else {
       constrainHeroToWorldBounds(this.heroPos, 0.85);
@@ -29695,6 +30066,196 @@ export class RpgWorldEngine {
     }
   }
 
+  private constrainDungeonRiverPos(zoneId: ZoneId | undefined, x: number, z: number): boolean {
+    if (zoneId === 'desa_sapaan') {
+      if (!isInCrystalRiverChannel(x, z)) return false;
+      if (this.dungeonRig) {
+        for (const col of this.dungeonRig.caveColliders) {
+          if (col.minY !== undefined && col.minY > 0.2) continue;
+          const hd = col.halfD ?? col.halfW;
+          if (Math.abs(x - col.x) < col.halfW + 0.65 && Math.abs(z - col.z) < hd + 0.65) {
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+    const pools = this.dungeonRig?.monsterSpawns?.waterPoolCenters;
+    if (pools && pools.length > 0) {
+      for (const p of pools) {
+        if (Math.hypot(x - p.x, z - p.z) <= p.radius) return true;
+      }
+      return false;
+    }
+    return false;
+  }
+
+  private updateDungeonSeaMonster(m: RoamingMonster, dt: number, baseSpeedMult: number): void {
+    const spec = MONSTER_SPECS[m.type];
+    const riverScale = (m.mesh.userData.caveScale as number | undefined) ?? spec.baseScale;
+    const isDesa = m.zoneId === 'desa_sapaan';
+
+    if (m.hitFlashTimer && m.hitFlashTimer > 0) {
+      m.hitFlashTimer = Math.max(0, m.hitFlashTimer - dt);
+    }
+    if (m.attackCooldown && m.attackCooldown > 0) {
+      m.attackCooldown = Math.max(0, m.attackCooldown - dt);
+    }
+    if (m.attackAnimTimer && m.attackAnimTimer > 0) {
+      m.attackAnimTimer = Math.max(0, m.attackAnimTimer - dt);
+    }
+
+    const ring = m.mesh.userData.combatRing as THREE.Object3D | undefined;
+    if (ring) {
+      ring.rotation.z += dt * 1.9;
+    }
+
+    const dxHero = this.heroPos.x - m.x;
+    const dzHero = this.heroPos.z - m.z;
+    const distH = Math.hypot(dxHero, dzHero);
+    const inRiverNow = isDesa
+      ? isInCrystalRiverChannel(this.heroPos.x, this.heroPos.z) && this.heroPos.y < -0.5
+      : false;
+    const aggroRange = inRiverNow ? 18.0 : 14.0;
+
+    if (this.phase === 'playing' && distH < aggroRange) {
+      m.aggroActive = true;
+    } else if (distH > aggroRange + 6.0) {
+      m.aggroActive = false;
+    }
+
+    let nextMx = m.x;
+    let nextMz = m.z;
+    let monMode: 'idle' | 'patrol' | 'windup' | 'attack' | 'shoot' | 'hit' = 'patrol';
+    let monAttackProg = 0;
+    const meleeReach = 2.0 + spec.hitRadius * 0.42;
+
+    if (m.lungeTimer && m.lungeTimer > 0) {
+      m.lungeTimer = Math.max(0, m.lungeTimer - dt);
+      if (this.phase === 'playing' && distH > 0.25) {
+        const spd = 7.2 * spec.speedMult * dt;
+        nextMx += (dxHero / distH) * spd;
+        nextMz += (dzHero / distH) * spd;
+      }
+      m.mesh.rotation.y = Math.atan2(dxHero, dzHero);
+      monMode = 'attack';
+      monAttackProg = 1 - m.lungeTimer / 0.3;
+
+      if (
+        this.phase === 'playing' &&
+        this.encounterGraceTimer <= 0 &&
+        distH < meleeReach &&
+        Math.abs((m.y ?? -1.2) - this.heroPos.y) < 2.2
+      ) {
+        const dmg = spec.atkDamageHearts;
+        this.hp = Math.max(0, this.hp - dmg);
+        this.encounterGraceTimer = 1.5;
+        soundEngine.playHurt();
+        const len = Math.max(0.2, distH);
+        this.heroVel.set((dxHero / len) * 14, 0, (dzHero / len) * 14);
+        this.heroVelY = 4.5;
+        this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.0, this.heroPos.z, 0x22d3ee, 14);
+        this.showBanner(`🌊 Diserang ${m.name} di sungai gua! (-${dmg} ❤️)`, 2.4);
+        this.triggerDamageFlash(dmg, `Serangan ${m.name}`, { x: m.x, z: m.z });
+        if (this.hp <= 0) {
+          this.triggerDefeatExit(this.dungeonState?.zoneId);
+          return;
+        }
+      }
+    } else if (m.windupTimer !== undefined && m.windupTimer > 0) {
+      m.windupTimer -= dt;
+      m.mesh.rotation.y = Math.atan2(dxHero, dzHero);
+      monMode = 'windup';
+      if (m.windupTimer <= 0) {
+        m.windupTimer = -1;
+        m.lungeTimer = 0.3;
+        soundEngine.playHit();
+      }
+    } else if (this.phase === 'playing' && m.aggroActive && distH > 0.2) {
+      m.mesh.rotation.y = Math.atan2(dxHero, dzHero);
+      if (distH < meleeReach + 0.45 && (m.attackCooldown ?? 0) <= 0 && Math.abs((m.y ?? -1.2) - this.heroPos.y) < 2.4) {
+        m.windupTimer = 0.46;
+        m.attackCooldown = this.settings.difficulty === 'pendekar' ? 1.8 : 2.3;
+        soundEngine.playMonster();
+      } else {
+        if (distH > 2.2) {
+          const spd = 2.6 * spec.speedMult * baseSpeedMult;
+          nextMx += (dxHero / distH) * spd * dt;
+          nextMz += (dzHero / distH) * spd * dt;
+        }
+        if (spec.ranged && distH >= 3.8 && distH < 15.5 && (m.attackCooldown ?? 0) <= 0) {
+          const pSpeed = this.settings.difficulty === 'pendekar' ? 10.6 : 8.6;
+          const mFireY = (m.y ?? -1.1) + 0.9;
+          const aimY = this.heroPos.y + 1.25 - mFireY;
+          const dist3D = Math.max(0.5, Math.hypot(dxHero, aimY, dzHero));
+          this.spawnProjectile({
+            fromPlayer: false,
+            x: m.x + (dxHero / distH) * 0.85,
+            y: mFireY,
+            z: m.z + (dzHero / distH) * 0.85,
+            vx: (dxHero / dist3D) * pSpeed,
+            vy: (aimY / dist3D) * pSpeed,
+            vz: (dzHero / dist3D) * pSpeed,
+            damage: 1,
+            shieldDamage: 1,
+            pierceLeft: 0,
+            colorHex: 0x22d3ee,
+          });
+          m.attackCooldown = this.settings.difficulty === 'pendekar' ? 2.4 : 3.2;
+          m.attackAnimTimer = 0.32;
+        }
+      }
+    } else {
+      m.patrolClock = (m.patrolClock ?? m.patrolPhase) + dt * 0.72 * spec.speedMult * baseSpeedMult;
+      const p = m.patrolClock;
+      const rad = isDesa ? 2.6 : 1.35;
+      nextMx = m.homeX + Math.cos(p) * rad;
+      nextMz = m.homeZ + Math.sin(p * 0.82) * rad;
+      m.mesh.rotation.y = Math.atan2(-Math.sin(p), Math.cos(p * 0.82));
+    }
+
+    if (m.hitFlashTimer && m.hitFlashTimer > 0) {
+      monMode = 'hit';
+    } else if ((m.attackAnimTimer ?? 0) > 0 && monMode === 'patrol') {
+      monMode = 'shoot';
+      monAttackProg = 1 - (m.attackAnimTimer ?? 0) / 0.32;
+    }
+
+    const prevX = m.x;
+    const prevZ = m.z;
+    if (this.constrainDungeonRiverPos(m.zoneId, nextMx, nextMz)) {
+      m.x = nextMx;
+      m.z = nextMz;
+    } else if (this.constrainDungeonRiverPos(m.zoneId, nextMx, m.z)) {
+      m.x = nextMx;
+    } else if (this.constrainDungeonRiverPos(m.zoneId, m.x, nextMz)) {
+      m.z = nextMz;
+    }
+
+    const seaSpd = Math.hypot(m.x - prevX, m.z - prevZ) / Math.max(0.001, dt);
+    m.walkPhase = (m.walkPhase ?? m.patrolPhase) + dt * (2.8 + seaSpd * 0.9);
+    const baseSwimY = isDesa
+      ? m.type === 'venomous_box_jelly'
+        ? -1.48
+        : -1.25
+      : m.type === 'venomous_box_jelly'
+      ? 0.05
+      : 0.14;
+    m.y = baseSwimY + Math.sin(this.elapsed * 2.5 + m.patrolPhase) * 0.12;
+    m.mesh.position.set(m.x, m.y, m.z);
+    m.mesh.scale.setScalar(riverScale);
+
+    animateMonsterRig(m.mesh, {
+      mode: monMode,
+      speed: seaSpd,
+      walkPhase: m.walkPhase,
+      elapsed: this.elapsed,
+      phase: m.patrolPhase,
+      attackProgress: monAttackProg,
+      dt,
+    });
+  }
+
   private pickHeroIdleThought(): string {
     let nearestName = '';
     let nearestDist = Infinity;
@@ -30732,7 +31293,8 @@ export class RpgWorldEngine {
       };
     }
 
-    const baseCaveTotal = 9 + DIFF_CONFIG[this.settings.difficulty].maxShooters;
+    const diffCfg = DIFF_CONFIG[this.settings.difficulty];
+    const baseCaveTotal = 9 + diffCfg.maxShooters + diffCfg.caveExtraMobs;
     const zoneCaptiveRescued =
       this.captiveRescuedZones.has(zoneId) ||
       this.liberatedZones.has(zoneId) ||
@@ -31206,9 +31768,10 @@ export class RpgWorldEngine {
         const tY = mBaseY + (m.isBoss ? 2.1 : spec.hitCenterY);
         const dy = tY - heroEyeY;
         const d3d = Math.hypot(d, dy);
-        const clearLos = m.isSkyMonster
-          ? true
-          : this.hasClearCombatLineOfSight(this.heroPos.x, heroEyeY, this.heroPos.z, m.x, tY, m.z);
+        const clearLos =
+          m.isSkyMonster && this.worldMode === 'overworld'
+            ? true
+            : this.hasClearCombatLineOfSight(this.heroPos.x, heroEyeY, this.heroPos.z, m.x, tY, m.z);
         const elevPenalty = !m.isSkyMonster && Math.abs(dy) > 3.8 ? Math.abs(dy) * 1.8 : 0;
         const score = d3d + elevPenalty + (clearLos ? 0 : wallBlockPenalty);
         if (!bestTarget || score < bestTarget.score) {

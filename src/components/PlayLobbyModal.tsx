@@ -107,7 +107,7 @@ const DIFFICULTY_CARDS: DifficultyCardSpec[] = [
     iconBgClass: 'border-emerald-300/60 bg-emerald-500/25 text-emerald-200',
     highlights: [
       '6 ❤️ awal · Regen cepat 55 dtk',
-      '4–6 monster malam · 0 penembak',
+      '20 monster gua · 0 penembak',
       'Timer kuis 20 dtk · Duel bebas waktu',
     ],
     Icon: Heart,
@@ -126,7 +126,7 @@ const DIFFICULTY_CARDS: DifficultyCardSpec[] = [
     iconBgClass: 'border-sky-300/60 bg-sky-500/25 text-sky-100',
     highlights: [
       '5 ❤️ awal · 1 monster penembak',
-      '6–10 monster malam · 2 penjaga gua',
+      '30 monster gua (darat, terbang, air)',
       'Timer kuis 12 dtk · Bonus Skor 1.25x',
     ],
     Icon: Compass,
@@ -145,7 +145,7 @@ const DIFFICULTY_CARDS: DifficultyCardSpec[] = [
     iconBgClass: 'border-orange-300/60 bg-orange-500/25 text-amber-200',
     highlights: [
       '4 ❤️ awal · 2 penembak cepat',
-      '9–13 monster malam · Gerak 1.3x',
+      '40 monster gua · Gerak 1.3x cepat',
       'Kuis 8 dtk · Duel 12 dtk · Skor & XP 1.5x',
     ],
     Icon: Flame,

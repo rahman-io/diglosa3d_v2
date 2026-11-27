@@ -88,6 +88,7 @@ export interface DifficultyConfig {
   monsterSpeed: number;
   duelAnswerSec: number; // 0 = no limit
   maxShooters: number;
+  caveExtraMobs: number;
   shooterCooldown: number;
   shooterBulletSpeed: number;
   grabSec: number;
@@ -99,7 +100,7 @@ export interface DifficultyConfig {
 export const DIFF_CONFIG: Record<DifficultyMode, DifficultyConfig> = {
   santai: {
     label: 'Santai',
-    desc: '6 ❤️ awal · Regen cepat (55 dtk) · Tanpa penembak · Timer lembut (20 dtk)',
+    desc: '6 ❤️ awal · Regen cepat (55 dtk) · 20 Monster Gua · Tanpa penembak · Timer lembut (20 dtk)',
     startHp: 6,
     regenSec: 55,
     scoreMult: 1,
@@ -108,6 +109,7 @@ export const DIFF_CONFIG: Record<DifficultyMode, DifficultyConfig> = {
     monsterSpeed: 0,
     duelAnswerSec: 0,
     maxShooters: 0,
+    caveExtraMobs: 0,
     shooterCooldown: 99,
     shooterBulletSpeed: 0,
     grabSec: 5,
@@ -117,7 +119,7 @@ export const DIFF_CONFIG: Record<DifficultyMode, DifficultyConfig> = {
   },
   petualang: {
     label: 'Petualang',
-    desc: '5 ❤️ awal · 1 penembak · Timer seimbang (12 dtk) · Skor 1.25x',
+    desc: '5 ❤️ awal · 30 Monster Gua (Darat, Terbang, Air) · 1 penembak · Timer 12 dtk · Skor 1.25x',
     startHp: 5,
     regenSec: 90,
     scoreMult: 1.25,
@@ -126,6 +128,7 @@ export const DIFF_CONFIG: Record<DifficultyMode, DifficultyConfig> = {
     monsterSpeed: 4.8,
     duelAnswerSec: 0,
     maxShooters: 1,
+    caveExtraMobs: 9,
     shooterCooldown: 2.4,
     shooterBulletSpeed: 14,
     grabSec: 3,
@@ -135,7 +138,7 @@ export const DIFF_CONFIG: Record<DifficultyMode, DifficultyConfig> = {
   },
   pendekar: {
     label: 'Pendekar',
-    desc: '4 ❤️ awal · 2 penembak · Monster 1.3x cepat · Duel 12 dtk · Skor & XP 1.5x',
+    desc: '4 ❤️ awal · 40 Monster Gua (Darat, Terbang, Air) · 2 penembak · Monster 1.3x cepat · Skor & XP 1.5x',
     startHp: 4,
     regenSec: 120,
     scoreMult: 1.5,
@@ -144,6 +147,7 @@ export const DIFF_CONFIG: Record<DifficultyMode, DifficultyConfig> = {
     monsterSpeed: 6.6,
     duelAnswerSec: 12,
     maxShooters: 2,
+    caveExtraMobs: 18,
     shooterCooldown: 1.5,
     shooterBulletSpeed: 20,
     grabSec: 3,
