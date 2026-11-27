@@ -447,8 +447,11 @@ export interface StoryDialogState {
   textEn: string;
   textId: string;
   accentColor: string;
-  speakerKind?: 'hero' | 'npc' | 'captive' | 'owl' | 'villagers';
+  speakerKind?: 'hero' | 'npc' | 'captive' | 'owl' | 'villagers' | 'boss';
   speakerNpcId?: string;
+  speakerMonsterType?: MonsterType;
+  dungeonIntroBeat?: 'emerge' | 'boss_taunt' | 'hero_reply' | 'boss_farewell' | 'retreat' | 'guardian';
+  heroExpression?: 'neutral' | 'fierce';
   villagerArchetypes?: string[];
   captiveKind?: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
   captiveColor?: number;

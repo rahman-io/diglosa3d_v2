@@ -8,20 +8,25 @@ import {
 } from '../three/diverseNpcs';
 import { createMaterialPalette } from '../three/materials';
 import {
+  animateBossCutsceneTraits,
   animateCaptiveMesh,
+  animateMonsterRig,
   animateZoneNpc,
   applyHeroAppearance,
   applyHeroWeaponPose,
+  attachBossCutsceneTraits,
   createCaptiveMesh,
   createHeroAvatar,
+  createMonsterMesh,
   createOwlMessengerRig,
   createZoneNpc,
   HeroAvatarRig,
   OwlMessengerRig,
+  setHeroFacialExpression,
 } from '../three/rpgModels';
-import { CharacterPresetId } from '../types/game';
+import { CharacterPresetId, MonsterType } from '../types/game';
 
-export type DialogueSpeakerKind = 'hero' | 'npc' | 'captive' | 'owl' | 'villagers';
+export type DialogueSpeakerKind = 'hero' | 'npc' | 'captive' | 'owl' | 'villagers' | 'boss';
 
 interface DialoguePortraitCanvasProps {
   speakerKind: DialogueSpeakerKind;
@@ -30,6 +35,8 @@ interface DialoguePortraitCanvasProps {
   villagerArchetypes?: string[];
   captiveKind?: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
   captiveColor?: number;
+  monsterType?: MonsterType;
+  heroExpression?: 'neutral' | 'fierce';
   isSpeaking?: boolean;
   className?: string;
 }
@@ -43,6 +50,8 @@ interface CachedPortraitEntry {
   villagerRigs: DiverseNpcRigResult[];
   captiveMesh: THREE.Group | null;
   owlRig: OwlMessengerRig | null;
+  bossMesh: THREE.Group | null;
+  bossType?: MonsterType;
   camX: number;
   camY: number;
   camZ: number;
@@ -131,6 +140,7 @@ function getOrBuildPortraitEntry(
     villagerArchetypes?: string[];
     captiveKind: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
     captiveColor: number;
+    monsterType?: MonsterType;
   },
 ): CachedPortraitEntry {
   const existing = studio.cache.get(opts.key);
@@ -145,6 +155,8 @@ function getOrBuildPortraitEntry(
   const villagerRigs: DiverseNpcRigResult[] = [];
   let captiveMesh: THREE.Group | null = null;
   let owlRig: OwlMessengerRig | null = null;
+  let bossMesh: THREE.Group | null = null;
+  const bossType: MonsterType | undefined = opts.monsterType;
   let targetRoot: THREE.Object3D;
 
   if (opts.speakerKind === 'hero') {
@@ -192,6 +204,17 @@ function getOrBuildPortraitEntry(
     owl.envelope.visible = false;
     owlRig = owl;
     targetRoot = owl.root;
+  } else if (opts.speakerKind === 'boss') {
+    const mType = opts.monsterType ?? 'forest_slime';
+    const mesh = createMonsterMesh(mType, studio.palette, 1.0);
+    mesh.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && obj.geometry instanceof THREE.CircleGeometry) {
+        obj.visible = false;
+      }
+    });
+    attachBossCutsceneTraits(mesh, mType, studio.palette);
+    bossMesh = mesh;
+    targetRoot = mesh;
   } else {
     const mesh = createZoneNpc(opts.npcId, studio.palette);
     mesh.traverse((obj) => {
@@ -211,16 +234,26 @@ function getOrBuildPortraitEntry(
   box.getCenter(center);
 
   const safeH = Math.max(0.8, size.y);
+  const isBossLowCenter =
+    opts.speakerKind === 'boss' &&
+    (opts.monsterType === 'forest_slime' || opts.monsterType === 'sand_scorpion');
   const bustFocusY =
-    opts.speakerKind === 'owl' || opts.captiveKind === 'fox_kit' || opts.captiveKind === 'spirit'
-      ? center.y + safeH * 0.04
-      : box.max.y - safeH * 0.34;
+    opts.speakerKind === 'owl' ||
+    opts.captiveKind === 'fox_kit' ||
+    opts.captiveKind === 'spirit' ||
+    isBossLowCenter
+      ? center.y + safeH * 0.06
+      : opts.speakerKind === 'boss'
+        ? box.max.y - safeH * 0.36
+        : box.max.y - safeH * 0.34;
   const dist =
     opts.speakerKind === 'villagers'
       ? Math.max(3.15, safeH * 1.48, size.x * 2.18)
-      : opts.speakerKind === 'owl' || opts.captiveKind === 'fox_kit' || opts.captiveKind === 'spirit'
-        ? Math.max(2.35, safeH * 2.15)
-        : Math.max(2.55, safeH * 1.38);
+      : opts.speakerKind === 'boss'
+        ? Math.max(2.75, safeH * 1.5, size.x * 1.48)
+        : opts.speakerKind === 'owl' || opts.captiveKind === 'fox_kit' || opts.captiveKind === 'spirit'
+          ? Math.max(2.35, safeH * 2.15)
+          : Math.max(2.55, safeH * 1.38);
 
   const entry: CachedPortraitEntry = {
     key: opts.key,
@@ -231,7 +264,9 @@ function getOrBuildPortraitEntry(
     villagerRigs,
     captiveMesh,
     owlRig,
-    camX: opts.speakerKind === 'villagers' ? 0.0 : 0.08,
+    bossMesh,
+    bossType,
+    camX: opts.speakerKind === 'villagers' ? 0.0 : opts.speakerKind === 'boss' ? 0.16 : 0.08,
     camY: bustFocusY + safeH * 0.04,
     camZ: dist,
     lookX: center.x,
@@ -259,14 +294,18 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
   villagerArchetypes,
   captiveKind = 'girl',
   captiveColor = 0xf472b6,
+  monsterType,
+  heroExpression = 'neutral',
   isSpeaking = false,
   className = '',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const speakingRef = useRef<boolean>(isSpeaking);
   speakingRef.current = isSpeaking;
+  const heroExprRef = useRef<'neutral' | 'fierce'>(heroExpression);
+  heroExprRef.current = heroExpression;
   const villagerKey = villagerArchetypes?.join(',') ?? '';
-  const entryKey = `${speakerKind}|${characterId}|${npcId}|${villagerKey}|${captiveKind}|${captiveColor}`;
+  const entryKey = `${speakerKind}|${characterId}|${npcId}|${villagerKey}|${captiveKind}|${captiveColor}|${monsterType ?? ''}`;
   const elapsedRef = useRef(0);
 
   useEffect(() => {
@@ -283,6 +322,7 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
       villagerArchetypes,
       captiveKind,
       captiveColor,
+      monsterType,
     });
 
     const renderPortraitFrame = (dt: number, talking: boolean) => {
@@ -317,8 +357,27 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
           dt,
           elapsed,
         });
-        entry.heroRig.headGroup.rotation.y = talking ? Math.sin(elapsed * 5.2) * 0.08 : 0.06;
-        entry.heroRig.headGroup.rotation.x = talking ? Math.sin(elapsed * 8.5) * 0.06 : 0;
+        const expr = heroExprRef.current;
+        setHeroFacialExpression(entry.heroRig, expr, elapsed, talking);
+        entry.heroRig.headGroup.rotation.y = talking
+          ? Math.sin(elapsed * 5.2) * 0.08
+          : expr === 'fierce'
+            ? -0.05
+            : 0.06;
+        entry.heroRig.headGroup.rotation.x = talking
+          ? (expr === 'fierce' ? -0.04 : 0) + Math.sin(elapsed * 8.5) * 0.06
+          : expr === 'fierce'
+            ? -0.05
+            : 0;
+      } else if (entry.kind === 'boss' && entry.bossMesh) {
+        const bMode = talking ? 'laugh' : 'menace';
+        animateMonsterRig(entry.bossMesh, {
+          mode: bMode,
+          elapsed,
+          phase: 0.4,
+          dt,
+        });
+        animateBossCutsceneTraits(entry.bossMesh, bMode, elapsed, talking);
       } else if (entry.kind === 'npc' && entry.npcMesh) {
         animateZoneNpc(entry.npcMesh, elapsed, 0.3, talking, dt, 'stand');
         const rig = entry.npcMesh.userData.npcRig as { headGroup?: THREE.Group } | undefined;
@@ -344,7 +403,8 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
       }
 
       studio.pivot.rotation.y =
-        (entry.kind === 'villagers' ? 0.12 : 0.34) + Math.sin(elapsed * 1.1) * 0.03;
+        (entry.kind === 'villagers' ? 0.12 : entry.kind === 'boss' ? 0.24 : 0.34) +
+        Math.sin(elapsed * 1.1) * 0.03;
       studio.camera.position.set(entry.camX, entry.camY, entry.camZ);
       studio.camera.lookAt(entry.lookX, entry.lookY, 0);
       studio.renderer.render(studio.scene, studio.camera);
@@ -378,7 +438,18 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
         window.clearInterval(timerId);
       }
     };
-  }, [entryKey, isSpeaking, speakerKind, characterId, npcId, villagerArchetypes, captiveKind, captiveColor]);
+  }, [
+    entryKey,
+    isSpeaking,
+    speakerKind,
+    characterId,
+    npcId,
+    villagerArchetypes,
+    captiveKind,
+    captiveColor,
+    monsterType,
+    heroExpression,
+  ]);
 
   return (
     <canvas

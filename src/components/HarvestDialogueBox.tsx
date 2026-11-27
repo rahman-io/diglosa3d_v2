@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Languages, Volume2 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
-import { CharacterPresetId } from '../types/game';
+import { CharacterPresetId, MonsterType } from '../types/game';
 import { DialoguePortraitCanvas, DialogueSpeakerKind } from './DialoguePortraitCanvas';
 
 export interface HarvestDialogueBoxProps {
@@ -13,6 +13,8 @@ export interface HarvestDialogueBoxProps {
   villagerArchetypes?: string[];
   captiveKind?: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
   captiveColor?: number;
+  monsterType?: MonsterType;
+  heroExpression?: 'neutral' | 'fierce';
   speakerSide?: 'npc' | 'hero';
   textId: string;
   textEn?: string;
@@ -32,6 +34,8 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
   villagerArchetypes,
   captiveKind,
   captiveColor,
+  monsterType,
+  heroExpression = 'neutral',
   speakerSide = 'npc',
   textId,
   textEn,
@@ -60,13 +64,15 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
     if (!fullText) return;
 
     const pitchOffset =
-      speakerKind === 'hero'
-        ? 65
-        : speakerKind === 'captive'
-          ? 110
-          : speakerKind === 'villagers'
-            ? 45
-            : -45;
+      speakerKind === 'boss'
+        ? -85
+        : speakerKind === 'hero'
+          ? 65
+          : speakerKind === 'captive'
+            ? 110
+            : speakerKind === 'villagers'
+              ? 45
+              : -45;
     let cursor = 0;
     timerRef.current = window.setInterval(() => {
       cursor = Math.min(fullText.length, cursor + 2);
@@ -153,6 +159,8 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
             villagerArchetypes={villagerArchetypes}
             captiveKind={captiveKind}
             captiveColor={captiveColor}
+            monsterType={monsterType}
+            heroExpression={heroExpression}
             isSpeaking={isTyping}
             className="h-full w-full"
           />

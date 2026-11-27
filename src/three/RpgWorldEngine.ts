@@ -158,12 +158,14 @@ import {
 } from './archipelagoWorld';
 import {
   AcademyHallRig,
+  animateBossCutsceneTraits,
   animateCaptiveMesh,
   animateMonsterRig,
   animateShooterRig,
   animateZoneNpc,
   applyHeroAppearance,
   applyHeroWeaponPose,
+  attachBossCutsceneTraits,
   CaveBlockDef,
   computeBlinkScale,
   createAcademyHallEnvironment,
@@ -171,6 +173,7 @@ import {
   createCaptiveMesh,
   createCaveTntMesh,
   createCaveTorchMesh,
+  createDarkCloudPortalRig,
   createDungeonEnvironment,
   createFirstPersonViewRig,
   createHeroAvatar,
@@ -183,6 +186,7 @@ import {
   createVoxelClouds,
   createZoneLandmarks,
   createZoneNpc,
+  DarkCloudPortalRig,
   DungeonArenaRig,
   FirstPersonViewRig,
   getWeaponPoseClass,
@@ -191,7 +195,9 @@ import {
   OwlMessengerRig,
   PortalArchRig,
   setFirstPersonHeldVisual,
+  setHeroFacialExpression,
   setHeroWeaponVisual,
+  updateDarkCloudPortal,
   updateDoorRigVisual,
 } from './rpgModels';
 import {
@@ -1375,6 +1381,30 @@ export class RpgWorldEngine {
     ZoneId,
     { mesh: THREE.Group; x: number; y: number; z: number; yaw: number; phase: number }
   >();
+  private dungeonBossIntro: {
+    zoneId: ZoneId;
+    beat: 'emerge' | 'boss_taunt' | 'hero_reply' | 'boss_farewell' | 'retreat' | 'guardian';
+    timer: number;
+    cloudRig: DarkCloudPortalRig;
+    bossMesh: THREE.Group;
+    bossScale: number;
+    guards: THREE.Group[];
+    heroStart: THREE.Vector3;
+    heroStand: THREE.Vector3;
+    cloudPos: THREE.Vector3;
+    bossStand: THREE.Vector3;
+    guardTargets: THREE.Vector3[];
+    vanishSoundFired: boolean;
+    laughPlayed: boolean;
+  } | null = null;
+  private dungeonBossSpawnCloud: {
+    rig: DarkCloudPortalRig;
+    timer: number;
+    duration: number;
+    pos: THREE.Vector3;
+    emergeMeshes: THREE.Object3D[];
+    baseScales: number[];
+  } | null = null;
   private reunionCutscene: {
     zoneId: ZoneId;
     captiveMesh: THREE.Group;
@@ -7495,6 +7525,99 @@ export class RpgWorldEngine {
     if (this.storyDialog.kind === 'dungeon_intro') {
       const zId = this.storyDialog.zoneId!;
       const story = ZONE_CAVE_STORIES[zId];
+      const boss = BOSSES[zId];
+      const beat = this.storyDialog.dungeonIntroBeat;
+
+      if (beat === 'emerge') {
+        this.transitionDungeonBossIntroToTaunt();
+        return;
+      }
+
+      if (beat === 'boss_taunt' && this.dungeonBossIntro) {
+        this.dungeonBossIntro.beat = 'hero_reply';
+        this.dungeonBossIntro.timer = 0;
+        const replyEn =
+          'I am not afraid of you! No matter how many minions you have, I will defeat every monster and unlock every door in this cave!';
+        const replyId =
+          'Saya tidak takut! Sebanyak apa pun anak buahmu, akan kuhadapi dan kukalahkan semua monster serta kubuka seluruh pintu di gua ini!';
+        this.storyDialog = {
+          kind: 'dungeon_intro',
+          step: 2,
+          maxStep: 4,
+          zoneId: zId,
+          dungeonIntroBeat: 'hero_reply',
+          speakerName: pName,
+          speakerRole: 'Sikap Tegas · Pantang Mundur',
+          speakerKind: 'hero',
+          speakerSide: 'hero',
+          heroExpression: 'fierce',
+          textEn: replyEn,
+          textId: replyId,
+          accentColor: '#10b981',
+        };
+        soundEngine.playHeroDefiance();
+        soundEngine.speakEnglish('I am not afraid! I will defeat all of your minions!');
+        this.pushHud(true);
+        return;
+      }
+
+      if (beat === 'hero_reply' && this.dungeonBossIntro) {
+        this.dungeonBossIntro.beat = 'boss_farewell';
+        this.dungeonBossIntro.timer = 0;
+        const warnEn =
+          'Tch, bold words! Defeat all my minions and open the fifth door first—when you do, this dark cloud will bring me back to crush you!';
+        const warnId =
+          'Cih, besar juga nyalimu! Habisi dulu semua anak buahku dan buka pintu terakhir—saat itu tiba, awan hitam ini akan membawaku kembali untuk menghabisi kamu!';
+        this.storyDialog = {
+          kind: 'dungeon_intro',
+          step: 3,
+          maxStep: 4,
+          zoneId: zId,
+          dungeonIntroBeat: 'boss_farewell',
+          speakerName: boss.name,
+          speakerRole: 'Ancaman Sang Bos · Sebelum Menghilang',
+          speakerKind: 'boss',
+          speakerMonsterType: boss.monsterType,
+          speakerSide: 'npc',
+          heroExpression: 'fierce',
+          textEn: warnEn,
+          textId: warnId,
+          accentColor: '#dc2626',
+        };
+        soundEngine.playVillainLaugh(true);
+        soundEngine.speakEnglish('Defeat all my minions and open the final door, then I will return!');
+        this.pushHud(true);
+        return;
+      }
+
+      if (beat === 'boss_farewell' && this.dungeonBossIntro) {
+        this.dungeonBossIntro.beat = 'retreat';
+        this.dungeonBossIntro.timer = 0;
+        this.dungeonBossIntro.vanishSoundFired = false;
+        this.storyDialog = {
+          kind: 'dungeon_intro',
+          step: 4,
+          maxStep: 4,
+          zoneId: zId,
+          dungeonIntroBeat: 'retreat',
+          speakerName: boss.name,
+          speakerRole: 'Kembali ke Pusaran Hitam',
+          speakerKind: 'boss',
+          speakerMonsterType: boss.monsterType,
+          speakerSide: 'npc',
+          textEn: `${boss.name} and his guards turn back into the swirling black cloud and vanish into the shadows...`,
+          textId: `${boss.name} dan kedua pengawalnya berbalik masuk kembali ke gumpalan awan hitam hingga lenyap...`,
+          accentColor: '#7c3aed',
+        };
+        this.pushHud(true);
+        return;
+      }
+
+      if (beat === 'retreat') {
+        this.finishDungeonIntroBossPhase(zId);
+        return;
+      }
+
       const nextStep = this.storyDialog.step + 1;
       if (nextStep < story.introSteps.length) {
         const s = story.introSteps[nextStep];
@@ -7504,6 +7627,7 @@ export class RpgWorldEngine {
           kind: 'dungeon_intro',
           step: nextStep,
           zoneId: zId,
+          dungeonIntroBeat: 'guardian',
           speakerName: personalizePlayerText(s.speakerName, pName),
           speakerRole: personalizePlayerText(s.speakerRole, pName),
           textEn: enText,
@@ -7657,75 +7781,223 @@ export class RpgWorldEngine {
     this.skipStory();
   }
 
-  private startDungeonIntroCutscene(zoneId: ZoneId): void {
+  private clearDungeonBossIntro(): void {
+    const intro = this.dungeonBossIntro;
+    if (!intro) return;
+    if (intro.cloudRig.root.parent) intro.cloudRig.root.parent.remove(intro.cloudRig.root);
+    intro.cloudRig.disposables.forEach((d) => d.dispose());
+    if (intro.bossMesh.parent) intro.bossMesh.parent.remove(intro.bossMesh);
+    intro.bossMesh.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+    });
+    for (const g of intro.guards) {
+      if (g.parent) g.parent.remove(g);
+      g.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+      });
+    }
+    this.dungeonBossIntro = null;
+  }
+
+  private clearDungeonBossSpawnCloud(): void {
+    const sc = this.dungeonBossSpawnCloud;
+    if (!sc) return;
+    if (sc.rig.root.parent) sc.rig.root.parent.remove(sc.rig.root);
+    sc.rig.disposables.forEach((d) => d.dispose());
+    this.dungeonBossSpawnCloud = null;
+  }
+
+  private transitionDungeonBossIntroToTaunt(): void {
+    const intro = this.dungeonBossIntro;
+    if (!intro || intro.beat !== 'emerge') return;
+    const boss = BOSSES[intro.zoneId];
+    intro.beat = 'boss_taunt';
+    intro.timer = 0;
+    intro.laughPlayed = true;
+    const tauntEn =
+      'Hahaha! We will crush you right here—my minions are everywhere across this cave! Step forward if you dare!';
+    const tauntId =
+      'Hahaha! Kamu akan kami habisi di sini—anak buahku banyak tersebar di seluruh gua! Ayo maju jika kamu berani!';
+    this.storyDialog = {
+      kind: 'dungeon_intro',
+      step: 1,
+      maxStep: 4,
+      zoneId: intro.zoneId,
+      dungeonIntroBeat: 'boss_taunt',
+      speakerName: boss.name,
+      speakerRole: `Bos Penguasa ${ZONE_INFO[intro.zoneId].name} · Tertawa Angkuh`,
+      speakerKind: 'boss',
+      speakerMonsterType: boss.monsterType,
+      speakerSide: 'npc',
+      heroExpression: 'fierce',
+      textEn: tauntEn,
+      textId: tauntId,
+      accentColor: '#e11d48',
+    };
+    soundEngine.playVillainLaugh(false);
+    soundEngine.speakEnglish(tauntEn);
+    this.pushHud(true);
+  }
+
+  private finishDungeonIntroBossPhase(zoneId: ZoneId): void {
+    this.clearDungeonBossIntro();
+    // Restore regular cave monsters now that the dark cloud boss squad has retreated
+    for (const m of this.dungeonMonsters) {
+      m.mesh.visible = m.alive;
+    }
+    for (const s of this.shooters) {
+      s.mesh.visible = s.alive;
+    }
+    const hasInsideGuardian = this.dungeonRig?.hasInsideGuardian !== false;
+    if (!hasInsideGuardian) {
+      this.finishDungeonIntroCutscene();
+      return;
+    }
     const story = ZONE_CAVE_STORIES[zoneId];
     const s0 = story.introSteps[0];
     const pName = this.getPlayerDisplayName();
     const gAddr = formatGuardianAddress(story.guardianId, pName, this.localCharacterId);
+    const enText = personalizePlayerText(s0.textEn, gAddr);
+    this.storyTimer = 0;
+    this.cutsceneStartPos.copy(this.heroPos);
+    this.cutsceneTargetPos.set(2.4, 0, 12.6);
+    this.storyDialog = {
+      kind: 'dungeon_intro',
+      step: 0,
+      zoneId,
+      dungeonIntroBeat: 'guardian',
+      speakerName: personalizePlayerText(s0.speakerName, pName),
+      speakerRole: personalizePlayerText(s0.speakerRole, pName),
+      textEn: enText,
+      textId: personalizePlayerText(s0.textId, gAddr),
+      accentColor: story.accentColor,
+      speakerKind: 'npc',
+      speakerNpcId: story.guardianId,
+      speakerSide: 'npc',
+      heroExpression: 'neutral',
+    };
+    setHeroFacialExpression(this.hero, 'neutral', this.elapsed, false);
+    soundEngine.speakEnglish(enText);
+    this.pushHud(true);
+  }
+
+  private startDungeonIntroCutscene(zoneId: ZoneId): void {
+    this.clearDungeonBossIntro();
+    const boss = BOSSES[zoneId];
     const hasInsideGuardian = this.dungeonRig?.hasInsideGuardian !== false;
     this.phase = 'story';
     this.heldKeys.clear();
     this.applyCameraVisibilityAndControls();
     this.storyTimer = 0;
 
-    if (!hasInsideGuardian) {
-      const sp = this.dungeonRig?.spawnPos ?? new THREE.Vector3(0, 0, 13);
-      this.heroPos.set(sp.x, sp.y, sp.z + 3.4);
-      this.cutsceneStartPos.set(sp.x, sp.y, sp.z + 3.4);
-      this.cutsceneTargetPos.set(sp.x, sp.y, sp.z);
-      this.heroYaw = Math.PI;
-      this.hero.root.position.copy(this.heroPos);
-      this.hero.body.rotation.y = this.heroYaw;
-
-      this.camera.position.set(sp.x - 4.2, sp.y + 5.2, sp.z + 7.2);
-      this.controls.target.set(sp.x - 1.0, sp.y + 2.8, sp.z - 16.0);
-      this.controls.update();
-
-      this.storyDialog = {
-        kind: 'dungeon_intro',
-        step: 0,
-        zoneId,
-        speakerName: personalizePlayerText(s0.speakerName, pName),
-        speakerRole: personalizePlayerText(s0.speakerRole, pName),
-        textEn: personalizePlayerText(s0.textEn, gAddr),
-        textId: personalizePlayerText(s0.textId, gAddr),
-        accentColor: story.accentColor,
-        speakerKind: 'hero',
-        speakerSide: 'hero',
-      };
-      soundEngine.playDoor();
-      this.pushHud(true);
-      return;
+    // Hide regular cave monsters/shooters so only the dark-cloud Boss & 2 Guards appear
+    for (const m of this.dungeonMonsters) {
+      m.mesh.visible = false;
+    }
+    for (const s of this.shooters) {
+      s.mesh.visible = false;
     }
 
-    this.heroPos.set(0, 0, 16.2);
-    this.cutsceneStartPos.set(0, 0, 16.2);
-    this.cutsceneTargetPos.set(2.4, 0, 12.6);
-    this.heroYaw = Math.atan2(2.4, 12.6 - 16.2);
+    const isDesaSapaan = !hasInsideGuardian;
+    const heroStart = isDesaSapaan
+      ? new THREE.Vector3(0.8, 0, 44.0)
+      : new THREE.Vector3(0, 0, 14.2);
+    const heroStand = isDesaSapaan
+      ? new THREE.Vector3(0.8, 0, 42.0)
+      : new THREE.Vector3(0, 0, 12.2);
+    const cloudPos = isDesaSapaan
+      ? new THREE.Vector3(1.6, 0, 33.8)
+      : new THREE.Vector3(0, 0, 3.6);
+    const bossStand = isDesaSapaan
+      ? new THREE.Vector3(1.6, 0, 37.8)
+      : new THREE.Vector3(0, 0, 7.6);
+    const guardTargets = isDesaSapaan
+      ? [new THREE.Vector3(-0.5, 0, 37.0), new THREE.Vector3(3.7, 0, 37.0)]
+      : [new THREE.Vector3(-2.1, 0, 6.8), new THREE.Vector3(2.1, 0, 6.8)];
+
+    const cloudRig = createDarkCloudPortalRig(this.palette);
+    cloudRig.root.position.copy(cloudPos);
+    cloudRig.root.scale.setScalar(0.05);
+    this.dungeonRig?.group.add(cloudRig.root);
+
+    const bossScale = 1.48;
+    const bossMesh = createMonsterMesh(boss.monsterType, this.palette, bossScale);
+    attachBossCutsceneTraits(bossMesh, boss.monsterType, this.palette);
+    bossMesh.position.copy(cloudPos);
+    bossMesh.scale.setScalar(0.12);
+    bossMesh.rotation.y = Math.atan2(heroStand.x - bossStand.x, heroStand.z - bossStand.z);
+    this.dungeonRig?.group.add(bossMesh);
+
+    const guards = [createShooterMesh(this.palette), createShooterMesh(this.palette)];
+    guards.forEach((g, idx) => {
+      const gt = guardTargets[idx];
+      g.position.copy(cloudPos);
+      g.scale.setScalar(0.12);
+      g.rotation.y = Math.atan2(heroStand.x - gt.x, heroStand.z - gt.z);
+      this.dungeonRig?.group.add(g);
+    });
+
+    this.dungeonBossIntro = {
+      zoneId,
+      beat: 'emerge',
+      timer: 0,
+      cloudRig,
+      bossMesh,
+      bossScale,
+      guards,
+      heroStart,
+      heroStand,
+      cloudPos,
+      bossStand,
+      guardTargets,
+      vanishSoundFired: false,
+      laughPlayed: false,
+    };
+
+    this.heroPos.copy(heroStart);
+    this.heroYaw = Math.atan2(bossStand.x - heroStart.x, bossStand.z - heroStart.z);
     this.hero.root.position.copy(this.heroPos);
     this.hero.body.rotation.y = this.heroYaw;
+    this.playerCaveLight.position.set(this.heroPos.x, 2.8, this.heroPos.z);
 
-    this.camera.position.set(-2.2, 4.0, 18.2);
-    this.controls.target.set(2.8, 1.8, 12.4);
+    this.camera.position.set(heroStart.x - 2.4, 3.0, heroStart.z + 2.8);
+    this.controls.target.set(cloudPos.x, 2.3, cloudPos.z);
     this.controls.update();
 
     this.storyDialog = {
       kind: 'dungeon_intro',
       step: 0,
+      maxStep: 4,
       zoneId,
-      speakerName: personalizePlayerText(s0.speakerName, pName),
-      speakerRole: personalizePlayerText(s0.speakerRole, pName),
-      textEn: personalizePlayerText(s0.textEn, gAddr),
-      textId: personalizePlayerText(s0.textId, gAddr),
-      accentColor: story.accentColor,
+      dungeonIntroBeat: 'emerge',
+      speakerName: `${boss.name} & Pasukan Bayangan`,
+      speakerRole: 'Kemunculan dari Awan Hitam',
+      speakerKind: 'boss',
+      speakerMonsterType: boss.monsterType,
+      speakerSide: 'npc',
+      heroExpression: 'fierce',
+      textEn: 'A swirling black cloud erupts right ahead—the Cave Boss and his guards emerge to confront you!',
+      textId: 'Gumpalan awan hitam pekat tiba-tiba meledak di depanmu—Bos Gua dan dua anak buahnya melangkah keluar menghadang!',
+      accentColor: '#9333ea',
     };
-    soundEngine.playDoor();
+
+    soundEngine.playDarkCloudErupt();
+    this.spawnBurst(cloudPos.x, cloudPos.y + 2.1, cloudPos.z, 0x4c1d95, 24);
+    this.spawnBurst(cloudPos.x, cloudPos.y + 1.8, cloudPos.z, 0xf43f5e, 14);
     this.pushHud(true);
   }
 
   private finishDungeonIntroCutscene(): void {
     const zId = this.storyDialog?.zoneId || this.dungeonState?.zoneId;
     if (zId) this.caveIntrosSeen.add(zId);
+    this.clearDungeonBossIntro();
+    for (const m of this.dungeonMonsters) {
+      m.mesh.visible = m.alive;
+    }
+    for (const s of this.shooters) {
+      s.mesh.visible = s.alive;
+    }
+    setHeroFacialExpression(this.hero, 'neutral', this.elapsed, false);
     this.storyDialog = null;
     this.phase = 'playing';
     if (this.dungeonRig && !this.dungeonRig.hasInsideGuardian) {
@@ -8895,6 +9167,8 @@ export class RpgWorldEngine {
     this.nearPrisonKey = false;
     this.nearHiddenPrison = false;
     this.tapMoveTarget = null;
+    this.clearDungeonBossIntro();
+    this.clearDungeonBossSpawnCloud();
     this.clearReunionCutscene();
     this.clearProjectiles();
     this.applyAtmosphere('overworld');
@@ -13827,14 +14101,20 @@ export class RpgWorldEngine {
 
   private spawnDungeonBoss(zoneId: ZoneId): void {
     if (!this.dungeonRig || !this.dungeonState) return;
+    this.clearDungeonBossSpawnCloud();
     const boss = BOSSES[zoneId];
     this.dungeonState.bossSpawned = true;
     const bPos = this.dungeonRig.bossSpawnPos;
     const mesh = createMonsterMesh(boss.monsterType, this.palette, 1.65);
+    attachBossCutsceneTraits(mesh, boss.monsterType, this.palette);
     mesh.position.copy(bPos);
+    mesh.scale.setScalar(0.28);
     mesh.userData.monsterId = boss.id;
     this.dungeonRig.group.add(mesh);
     this.dungeonClickables.push(mesh);
+
+    const emergeMeshes: THREE.Object3D[] = [mesh];
+    const baseScales: number[] = [1.65];
 
     this.dungeonMonsters.push({
       id: boss.id,
@@ -13870,6 +14150,11 @@ export class RpgWorldEngine {
       const gMesh = createShooterMesh(this.palette);
       gMesh.position.set(gx, gy, gz);
       gMesh.visible = isGuardAlive;
+      if (isGuardAlive) {
+        gMesh.scale.setScalar(0.25);
+        emergeMeshes.push(gMesh);
+        baseScales.push(1.0);
+      }
       this.dungeonRig.group.add(gMesh);
       this.shooters.push({
         id: guardId,
@@ -13891,14 +14176,30 @@ export class RpgWorldEngine {
       });
     }
 
+    // Erupt swirling black cloud at the Boss return point (mirroring entrance cutscene!)
+    const cloudRig = createDarkCloudPortalRig(this.palette);
+    cloudRig.root.position.copy(bPos);
+    cloudRig.root.scale.setScalar(0.2);
+    this.dungeonRig.group.add(cloudRig.root);
+    this.dungeonBossSpawnCloud = {
+      rig: cloudRig,
+      timer: 0,
+      duration: 3.0,
+      pos: bPos.clone(),
+      emergeMeshes,
+      baseScales,
+    };
+
     this.dungeonTotalSpawned += 1 + guardCount;
     this.syncDungeonMonsterStats();
 
+    soundEngine.playDarkCloudErupt();
     soundEngine.playBoss();
-    this.spawnBurst(bPos.x, bPos.y + 2.5, bPos.z, 0xef4444, 34);
+    this.spawnBurst(bPos.x, bPos.y + 2.5, bPos.z, 0x4c1d95, 28);
+    this.spawnBurst(bPos.x, bPos.y + 2.5, bPos.z, 0xef4444, 24);
     this.showBanner(
-      `AWAS! BOS ${boss.name.toUpperCase()} + BATU RUNTUH & PENGAWAL MUNCUL!`,
-      4.8,
+      `AWAS! AWAN HITAM MUNCUL LAGI — BOS ${boss.name.toUpperCase()} & PENGAWAL KEMBALI!`,
+      5.0,
     );
   }
 
@@ -19242,6 +19543,282 @@ export class RpgWorldEngine {
     }
   }
 
+  private updateDungeonBossIntro(dt: number): void {
+    const intro = this.dungeonBossIntro;
+    if (!intro) return;
+    intro.timer += dt;
+    const t = intro.timer;
+    const beat = intro.beat;
+
+    // 1. Update Dark Cloud Portal
+    let cloudScale = 1.02 + Math.sin(this.elapsed * 3.4) * 0.06;
+    let cloudSurge = 0.35;
+    if (beat === 'emerge') {
+      cloudScale =
+        t < 0.7
+          ? THREE.MathUtils.lerp(0.08, 1.18, t / 0.7)
+          : 1.05 + Math.sin(this.elapsed * 4.5) * 0.07;
+      cloudSurge = t < 1.1 ? 1.0 : 0.45;
+    } else if (beat === 'retreat') {
+      if (t < 1.9) {
+        cloudScale = 1.08 + Math.sin(this.elapsed * 8) * 0.08;
+        cloudSurge = 0.95;
+      } else {
+        const collapse = THREE.MathUtils.clamp((t - 1.9) / 0.8, 0, 1);
+        cloudScale = 1.08 * (1 - collapse * collapse);
+        cloudSurge = 1.15 * (1 - collapse);
+      }
+    }
+    updateDarkCloudPortal(intro.cloudRig, this.elapsed, dt, cloudScale, cloudSurge);
+
+    // 2. Hero Position, Stance & Fierce Facial Expression
+    const hBlink = computeBlinkScale(this.elapsed, 0.25);
+    this.hero.leftEye.scale.y = hBlink;
+    this.hero.rightEye.scale.y = hBlink;
+    const heroBreath = 1 + Math.sin(this.elapsed * 3.2) * 0.04;
+    this.hero.body.scale.set(1 / Math.sqrt(heroBreath), heroBreath, 1 / Math.sqrt(heroBreath));
+
+    if (beat === 'emerge') {
+      const walkP = THREE.MathUtils.clamp((t - 0.15) / 1.1, 0, 1);
+      this.heroPos.lerpVectors(intro.heroStart, intro.heroStand, walkP);
+      if (walkP > 0 && walkP < 1) {
+        this.walkCycle += dt * 11;
+        const sw = Math.sin(this.walkCycle) * 0.52;
+        this.hero.leftLeg.rotation.x = sw;
+        this.hero.rightLeg.rotation.x = -sw;
+        this.hero.body.position.y = Math.abs(Math.sin(this.walkCycle)) * 0.08;
+      } else {
+        this.hero.leftLeg.rotation.x = THREE.MathUtils.damp(this.hero.leftLeg.rotation.x, 0.16, 14, dt);
+        this.hero.rightLeg.rotation.x = THREE.MathUtils.damp(this.hero.rightLeg.rotation.x, -0.18, 14, dt);
+        this.hero.body.position.y = 0;
+      }
+      this.hero.leftArm.rotation.set(-1.12, 0, -0.34);
+      this.hero.rightArm.rotation.set(-0.98, 0, 0.22);
+      setHeroFacialExpression(this.hero, 'fierce', this.elapsed, false);
+    } else if (beat === 'hero_reply') {
+      this.heroPos.copy(intro.heroStand);
+      this.heroPos.z -= 0.35 * Math.min(1, t / 0.35);
+      this.hero.leftLeg.rotation.x = 0.2;
+      this.hero.rightLeg.rotation.x = -0.22;
+      this.hero.body.position.y = 0;
+      this.hero.leftArm.rotation.set(-1.38 + Math.sin(this.elapsed * 7.5) * 0.14, 0, -0.28);
+      this.hero.rightArm.rotation.set(-1.26 + Math.cos(this.elapsed * 5.2) * 0.08, 0, 0.18);
+      this.hero.upperBody.rotation.x = 0.09;
+      this.hero.headGroup.rotation.set(
+        -0.06 + Math.sin(this.elapsed * 8.5) * 0.05,
+        Math.sin(this.elapsed * 4.0) * 0.06,
+        0,
+      );
+      setHeroFacialExpression(this.hero, 'fierce', this.elapsed, true);
+    } else {
+      this.heroPos.copy(intro.heroStand);
+      this.hero.leftLeg.rotation.x = 0.16;
+      this.hero.rightLeg.rotation.x = -0.18;
+      this.hero.body.position.y = 0;
+      this.hero.leftArm.rotation.set(-1.14, 0, -0.34);
+      this.hero.rightArm.rotation.set(-1.02, 0, 0.2);
+      this.hero.upperBody.rotation.x = 0.06;
+      this.hero.headGroup.rotation.set(-0.05, 0, 0);
+      setHeroFacialExpression(this.hero, 'fierce', this.elapsed, false);
+    }
+
+    this.heroYaw = Math.atan2(
+      intro.bossStand.x - this.heroPos.x,
+      intro.bossStand.z - this.heroPos.z,
+    );
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.body.rotation.y = this.heroYaw;
+    this.playerCaveLight.position.set(this.heroPos.x, 2.8, this.heroPos.z);
+
+    // 3. Boss & 2 Guards Position + Expressions + Gestures
+    const faceHeroBossYaw = Math.atan2(
+      intro.heroStand.x - intro.bossStand.x,
+      intro.heroStand.z - intro.bossStand.z,
+    );
+    const backToCloudBossYaw = Math.atan2(
+      intro.cloudPos.x - intro.bossStand.x,
+      intro.cloudPos.z - intro.bossStand.z,
+    );
+
+    if (beat === 'emerge') {
+      const stepP = THREE.MathUtils.clamp((t - 0.55) / 1.45, 0, 1);
+      const easeOut = 1 - Math.pow(1 - stepP, 2);
+      intro.bossMesh.position.lerpVectors(intro.cloudPos, intro.bossStand, easeOut);
+      intro.bossMesh.scale.setScalar(THREE.MathUtils.lerp(0.16, intro.bossScale, easeOut));
+      intro.bossMesh.rotation.y = faceHeroBossYaw;
+
+      const bossMode = stepP < 0.92 ? 'patrol' : 'menace';
+      animateMonsterRig(intro.bossMesh, {
+        mode: bossMode,
+        speed: stepP < 0.92 ? 3.2 : 0,
+        walkPhase: this.elapsed * 8.5,
+        elapsed: this.elapsed,
+        phase: 0.4,
+        dt,
+      });
+      animateBossCutsceneTraits(intro.bossMesh, 'menace', this.elapsed, false);
+
+      intro.guards.forEach((g, idx) => {
+        const gt = intro.guardTargets[idx];
+        const gP = THREE.MathUtils.clamp((t - (0.7 + idx * 0.14)) / 1.2, 0, 1);
+        const gEase = 1 - Math.pow(1 - gP, 2);
+        g.position.lerpVectors(intro.cloudPos, gt, gEase);
+        g.scale.setScalar(THREE.MathUtils.lerp(0.16, 1.0, gEase));
+        g.rotation.y = Math.atan2(intro.heroStand.x - gt.x, intro.heroStand.z - gt.z);
+        animateShooterRig(g, {
+          speed: gP < 0.92 ? 3.5 : 0,
+          walkPhase: this.elapsed * 10 + idx * 1.4,
+          aimAlpha: THREE.MathUtils.lerp(0.15, 0.92, gEase),
+          recoil: 0,
+          hitSquash: 0,
+          elapsed: this.elapsed,
+          phase: idx * 1.8,
+          dt,
+        });
+      });
+
+      if (t >= 2.4) {
+        this.transitionDungeonBossIntroToTaunt();
+        return;
+      }
+    } else if (beat === 'boss_taunt' || beat === 'hero_reply' || beat === 'boss_farewell') {
+      intro.bossMesh.position.copy(intro.bossStand);
+      intro.bossMesh.scale.setScalar(intro.bossScale);
+      intro.bossMesh.rotation.y = faceHeroBossYaw;
+      const bAnimMode =
+        beat === 'boss_taunt' ? 'laugh' : beat === 'boss_farewell' ? 'taunt' : 'menace';
+      const bSpeaking = beat === 'boss_taunt' || beat === 'boss_farewell';
+      animateMonsterRig(intro.bossMesh, {
+        mode: bAnimMode,
+        elapsed: this.elapsed,
+        phase: 0.4,
+        dt,
+      });
+      animateBossCutsceneTraits(intro.bossMesh, bAnimMode, this.elapsed, bSpeaking);
+
+      intro.guards.forEach((g, idx) => {
+        const gt = intro.guardTargets[idx];
+        g.position.copy(gt);
+        g.scale.setScalar(1.0);
+        g.rotation.y = Math.atan2(intro.heroStand.x - gt.x, intro.heroStand.z - gt.z);
+        animateShooterRig(g, {
+          speed: 0,
+          walkPhase: idx * 1.4,
+          aimAlpha: 0.94,
+          recoil: 0,
+          hitSquash: 0,
+          elapsed: this.elapsed,
+          phase: idx * 1.8,
+          dt,
+        });
+      });
+    } else if (beat === 'retreat') {
+      const turnP = THREE.MathUtils.clamp(t / 0.45, 0, 1);
+      const walkBackP = THREE.MathUtils.clamp((t - 0.42) / 1.4, 0, 1);
+      const easeIn = walkBackP * walkBackP;
+      const shrinkP = THREE.MathUtils.clamp((t - 1.28) / 0.56, 0, 1);
+
+      let deltaYaw = backToCloudBossYaw - faceHeroBossYaw;
+      while (deltaYaw > Math.PI) deltaYaw -= Math.PI * 2;
+      while (deltaYaw < -Math.PI) deltaYaw += Math.PI * 2;
+      intro.bossMesh.rotation.y = faceHeroBossYaw + deltaYaw * turnP;
+      intro.bossMesh.position.lerpVectors(intro.bossStand, intro.cloudPos, easeIn);
+      const bScale = Math.max(0.02, intro.bossScale * (1 - shrinkP));
+      intro.bossMesh.scale.setScalar(bScale);
+      intro.bossMesh.visible = shrinkP < 0.98;
+      animateMonsterRig(intro.bossMesh, {
+        mode: walkBackP > 0 && walkBackP < 1 ? 'patrol' : 'menace',
+        speed: walkBackP > 0 && walkBackP < 1 ? 3.8 : 0,
+        walkPhase: this.elapsed * 9.5,
+        elapsed: this.elapsed,
+        phase: 0.4,
+        dt,
+      });
+      animateBossCutsceneTraits(intro.bossMesh, 'menace', this.elapsed, false);
+
+      intro.guards.forEach((g, idx) => {
+        const gt = intro.guardTargets[idx];
+        const gFaceYaw = Math.atan2(intro.heroStand.x - gt.x, intro.heroStand.z - gt.z);
+        const gBackYaw = Math.atan2(intro.cloudPos.x - gt.x, intro.cloudPos.z - gt.z);
+        let gDelta = gBackYaw - gFaceYaw;
+        while (gDelta > Math.PI) gDelta -= Math.PI * 2;
+        while (gDelta < -Math.PI) gDelta += Math.PI * 2;
+        g.rotation.y = gFaceYaw + gDelta * turnP;
+        g.position.lerpVectors(gt, intro.cloudPos, easeIn);
+        const gScale = Math.max(0.02, 1 - shrinkP);
+        g.scale.setScalar(gScale);
+        g.visible = shrinkP < 0.98;
+        animateShooterRig(g, {
+          speed: walkBackP > 0 && walkBackP < 1 ? 4.2 : 0,
+          walkPhase: this.elapsed * 11 + idx * 1.4,
+          aimAlpha: 0.25 * (1 - turnP),
+          recoil: 0,
+          hitSquash: 0,
+          elapsed: this.elapsed,
+          phase: idx * 1.8,
+          dt,
+        });
+      });
+
+      if (t >= 1.15 && !intro.vanishSoundFired) {
+        intro.vanishSoundFired = true;
+        soundEngine.playDarkCloudVanish();
+        this.spawnBurst(intro.cloudPos.x, intro.cloudPos.y + 2.0, intro.cloudPos.z, 0x4c1d95, 24);
+      }
+
+      if (t >= 2.75) {
+        this.finishDungeonIntroBossPhase(intro.zoneId);
+        return;
+      }
+    }
+
+    // 4. Multi-angle Dramatic Camera Cuts
+    if (beat === 'emerge') {
+      const panP = THREE.MathUtils.clamp((t - 0.8) / 1.4, 0, 1);
+      const shakeAmp = t < 0.85 ? (1 - t / 0.85) * 0.16 : 0;
+      const sx = shakeAmp > 0 ? Math.sin(this.elapsed * 54) * shakeAmp : 0;
+      const sy = shakeAmp > 0 ? Math.cos(this.elapsed * 67) * shakeAmp * 0.65 : 0;
+      _v1.set(
+        THREE.MathUtils.lerp(intro.heroStart.x - 2.3, intro.bossStand.x + 3.6, panP) + sx,
+        THREE.MathUtils.lerp(2.9, 2.65, panP) + sy,
+        THREE.MathUtils.lerp(
+          intro.heroStart.z + 2.5,
+          (intro.heroStand.z + intro.bossStand.z) * 0.5 + 1.2,
+          panP,
+        ),
+      );
+      _v2.set(
+        THREE.MathUtils.lerp(intro.cloudPos.x, intro.bossStand.x, panP),
+        THREE.MathUtils.lerp(2.2, 2.0, panP),
+        THREE.MathUtils.lerp(intro.cloudPos.z, intro.bossStand.z, panP),
+      );
+    } else if (beat === 'boss_taunt') {
+      // Low-angle menacing Boss close-up with armed guards flanking
+      _v1.set(intro.bossStand.x + 2.25, 1.55, intro.bossStand.z + 3.35);
+      _v2.set(intro.bossStand.x, 2.25, intro.bossStand.z);
+    } else if (beat === 'hero_reply') {
+      // Reverse low-angle close-up on Hero's fierce face & combat stance
+      _v1.set(intro.heroStand.x - 2.15, 1.88, intro.heroStand.z - 2.85);
+      _v2.set(intro.heroStand.x, 1.68, intro.heroStand.z);
+    } else if (beat === 'boss_farewell') {
+      // Wide dramatic confrontation framing Hero vs Boss Squad + Black Cloud
+      _v1.set(
+        intro.bossStand.x - 4.3,
+        3.05,
+        (intro.heroStand.z + intro.bossStand.z) * 0.5 + 1.8,
+      );
+      _v2.set(intro.bossStand.x, 1.85, intro.bossStand.z - 0.8);
+    } else {
+      // Retreat: over-hero angle watching all 3 vanish into the collapsing black cloud
+      _v1.set(intro.heroStand.x + 2.35, 2.85, intro.heroStand.z + 2.6);
+      _v2.set(intro.cloudPos.x, 2.1, intro.cloudPos.z);
+    }
+
+    const camLerp = 1 - Math.exp(-6.2 * dt);
+    this.camera.position.lerp(_v1, camLerp);
+    this.controls.target.lerp(_v2, camLerp);
+  }
+
   private updateStoryAnimations(dt: number): void {
     this.storyTimer += dt;
 
@@ -19432,6 +20009,10 @@ export class RpgWorldEngine {
     }
 
     if (this.storyDialog?.kind === 'dungeon_intro' && this.dungeonRig) {
+      if (this.dungeonBossIntro) {
+        this.updateDungeonBossIntro(dt);
+        return;
+      }
       const hasInsideGuardian = this.dungeonRig.hasInsideGuardian;
       const walkDuration = 1.7;
       const t = Math.min(1, this.storyTimer / walkDuration);
@@ -20025,6 +20606,33 @@ export class RpgWorldEngine {
           }
         });
         this.updateDungeonHazards(dt);
+        if (this.dungeonBossSpawnCloud) {
+          const sc = this.dungeonBossSpawnCloud;
+          sc.timer += dt;
+          const p = sc.timer;
+          const openScale =
+            p < 0.55
+              ? THREE.MathUtils.lerp(0.2, 1.24, p / 0.55)
+              : p < 2.2
+                ? 1.05 + Math.sin(this.elapsed * 7) * 0.08
+                : Math.max(0, 1.05 * (1 - (p - 2.2) / 0.8));
+          const surge = p < 0.8 ? 1.0 : p > 2.2 ? 0.7 : 0.25;
+          updateDarkCloudPortal(sc.rig, this.elapsed, dt, openScale, surge);
+
+          const emergeRatio = Math.min(1, p / 0.95);
+          const easeOut = 1 - Math.pow(1 - emergeRatio, 3);
+          for (let i = 0; i < sc.emergeMeshes.length; i++) {
+            const em = sc.emergeMeshes[i];
+            const bs = sc.baseScales[i];
+            em.scale.setScalar(THREE.MathUtils.lerp(bs * 0.18, bs, easeOut));
+          }
+          if (p >= sc.duration) {
+            for (let i = 0; i < sc.emergeMeshes.length; i++) {
+              sc.emergeMeshes[i].scale.setScalar(sc.baseScales[i]);
+            }
+            this.clearDungeonBossSpawnCloud();
+          }
+        }
       } else if (this.worldMode === 'academy') {
         let acIdx = 0;
         for (const npc of this.academyNpcs.values()) {
@@ -20049,8 +20657,10 @@ export class RpgWorldEngine {
     const isOverworldGuest =
       this.worldMode === 'overworld' && this.multiplayerActive && !this.isWorldAuthority();
     const guestBlend = 1 - Math.exp(-10 * dt);
+    const hideCaveMobsForCutscene =
+      this.worldMode === 'dungeon' && Boolean(this.dungeonBossIntro);
     for (const m of this.getActiveMonsters()) {
-      if (inPrologue) {
+      if (inPrologue || hideCaveMobsForCutscene) {
         m.mesh.visible = false;
         continue;
       }
@@ -25683,6 +26293,63 @@ export class RpgWorldEngine {
             y: hp.y,
             title: '🦉 Burung Hantu utusan Istana?!',
             kind: 'speech',
+          });
+        }
+      }
+      return labels;
+    }
+
+    if (this.dungeonBossIntro && this.storyDialog?.kind === 'dungeon_intro') {
+      const intro = this.dungeonBossIntro;
+      const boss = BOSSES[intro.zoneId];
+      const bossHeadY = intro.bossMesh.position.y + 3.05;
+      const bp = projectPoint(
+        intro.bossMesh.position.x,
+        bossHeadY,
+        intro.bossMesh.position.z,
+      );
+      if (bp && intro.bossMesh.visible && intro.bossMesh.scale.x > 0.35) {
+        let bossBubble = `👿 ${boss.name}`;
+        let bubbleKind: 'speech' | 'npc_alert' = 'npc_alert';
+        if (intro.beat === 'emerge') {
+          bossBubble = '🌪️ Muncul dari Awan Hitam!';
+        } else if (intro.beat === 'boss_taunt') {
+          bossBubble = '😈 "Hahaha! Ayo maju jika berani!"';
+          bubbleKind = 'speech';
+        } else if (intro.beat === 'hero_reply') {
+          bossBubble = `💢 ${boss.name} (Menggeram!)`;
+        } else if (intro.beat === 'boss_farewell') {
+          bossBubble = '⚡ "Kalahkan dulu anak buahku!"';
+          bubbleKind = 'speech';
+        } else if (intro.beat === 'retreat') {
+          bossBubble = '🌑 Kembali ke Awan Hitam...';
+        }
+        labels.push({
+          id: 'dungeon_intro_boss',
+          x: bp.x,
+          y: bp.y,
+          title: bossBubble,
+          kind: bubbleKind,
+        });
+      }
+
+      const hp = projectPoint(this.heroPos.x, this.heroPos.y + 2.95, this.heroPos.z);
+      if (hp) {
+        let heroBubble: string | null = null;
+        if (intro.beat === 'emerge' && intro.timer >= 1.1) {
+          heroBubble = '😠 Siaga Tempur!';
+        } else if (intro.beat === 'hero_reply') {
+          heroBubble = '🔥 "Saya tidak takut!"';
+        } else if (intro.beat === 'boss_taunt' || intro.beat === 'boss_farewell') {
+          heroBubble = '😠 Menatap Tajam!';
+        }
+        if (heroBubble) {
+          labels.push({
+            id: 'dungeon_intro_hero',
+            x: hp.x,
+            y: hp.y,
+            title: heroBubble,
+            kind: intro.beat === 'hero_reply' ? 'speech' : 'thought',
           });
         }
       }

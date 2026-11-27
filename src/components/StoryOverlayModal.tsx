@@ -394,6 +394,81 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     );
   }
 
+  const resolvedPlayerName = playerName.trim() || 'Hoot';
+
+  if (
+    story.kind === 'dungeon_intro' &&
+    (story.dungeonIntroBeat === 'emerge' || story.dungeonIntroBeat === 'retreat')
+  ) {
+    return (
+      <>
+        {projectedLabels && projectedLabels.length > 0 && (
+          <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden">
+            {projectedLabels.map((lbl) => (
+              <div
+                key={lbl.id}
+                style={{ transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)` }}
+                className={`absolute left-0 top-0 whitespace-nowrap shadow-lg ${
+                  lbl.kind === 'speech'
+                    ? 'rounded-2xl border-2 border-rose-400 bg-slate-950/95 px-3 py-1 text-xs font-black text-rose-200'
+                    : 'rounded-xl border border-purple-400/80 bg-slate-950/90 px-2.5 py-1 text-[11px] font-extrabold text-purple-200'
+                }`}
+              >
+                {lbl.title}
+              </div>
+            ))}
+          </div>
+        )}
+        {/* Top thin cinema letterbox bar */}
+        <div className="pointer-events-none fixed inset-x-0 top-0 z-40 flex items-center justify-between bg-gradient-to-b from-black/95 via-black/80 to-transparent px-4 py-2.5 sm:px-6 sm:py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="inline-flex shrink-0 items-center rounded-full border border-rose-400/70 bg-rose-950/90 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-rose-200 sm:text-xs">
+              {story.dungeonIntroBeat === 'emerge' ? 'Pusaran Kabut Hitam' : 'Kembalinya Sang Bos'}
+            </span>
+            <span className="truncate text-xs font-extrabold text-amber-100 drop-shadow sm:text-sm">
+              {personalizePlayerText(story.speakerName, resolvedPlayerName)}
+            </span>
+          </div>
+          <div className="pointer-events-auto flex shrink-0 items-center gap-1.5">
+            {onToggleMute && (
+              <button
+                type="button"
+                onClick={onToggleMute}
+                title={muted ? 'Nyalakan Musik & Suara' : 'Bisukan Musik & Suara'}
+                className={`flex h-7 w-7 items-center justify-center rounded-lg border transition ${
+                  muted
+                    ? 'border-rose-400/60 bg-rose-950/80 text-rose-200 hover:bg-rose-900'
+                    : 'border-white/25 bg-slate-950/75 text-amber-100 hover:bg-slate-900'
+                }`}
+              >
+                {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onSkip}
+              className="inline-flex items-center gap-1 rounded-lg border border-amber-300/60 bg-slate-950/85 px-3 py-1 text-[11px] font-extrabold text-amber-100 shadow transition hover:bg-slate-900"
+            >
+              <span>Lewati Adegan</span>
+              <SkipForward className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+        {/* Bottom thin cinema letterbox bar with dramatic subtitle */}
+        <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex flex-col items-center bg-gradient-to-t from-black/95 via-black/82 to-transparent px-4 pb-3.5 pt-6 text-center sm:px-8 sm:pb-5">
+          <p className="max-w-3xl text-xs font-extrabold leading-relaxed text-amber-50 [text-shadow:0_2px_6px_rgba(0,0,0,0.95)] sm:text-sm">
+            {personalizePlayerText(story.textId, resolvedPlayerName)}
+          </p>
+          {story.textEn && (
+            <p className="mt-0.5 max-w-2xl text-[11px] font-semibold italic text-rose-200/90 [text-shadow:0_1px_4px_rgba(0,0,0,0.95)] sm:text-xs">
+              {personalizePlayerText(story.textEn, resolvedPlayerName)}
+            </p>
+          )}
+        </div>
+      </>
+    );
+  }
+
   const canSkip =
     story.kind === 'opening' ||
     story.kind === 'village_rescue_talk' ||
@@ -447,7 +522,6 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     }
   }
 
-  const resolvedPlayerName = playerName.trim() || 'Hoot';
   const displaySpeakerName =
     speakerKind === 'hero' && (story.speakerName === 'Hoot' || story.speakerName === 'Kamu')
       ? resolvedPlayerName
@@ -501,23 +575,44 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     ) : null;
 
   return (
-    <HarvestDialogueBox
-      speakerName={displaySpeakerName}
-      speakerRole={personalizePlayerText(story.speakerRole, resolvedPlayerName)}
-      speakerKind={speakerKind}
-      characterId={characterId}
-      npcId={npcId}
-      villagerArchetypes={story.villagerArchetypes}
-      captiveKind={captiveKind}
-      captiveColor={captiveColor}
-      speakerSide={speakerSide}
-      textId={personalizePlayerText(story.textId, resolvedPlayerName)}
-      textEn={story.textEn ? personalizePlayerText(story.textEn, resolvedPlayerName) : undefined}
-      topAccessory={topAccessory}
-      footerActions={footerActions}
-      canAdvance={story.kind !== 'defeat_exit'}
-      onAdvance={onAdvance}
-      onSkip={canSkip ? onSkip : undefined}
-    />
+    <>
+      {story.kind === 'dungeon_intro' && projectedLabels && projectedLabels.length > 0 && (
+        <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden">
+          {projectedLabels.map((lbl) => (
+            <div
+              key={lbl.id}
+              style={{ transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)` }}
+              className={`absolute left-0 top-0 whitespace-nowrap shadow-lg ${
+                lbl.kind === 'speech'
+                  ? 'rounded-2xl border-2 border-rose-400 bg-slate-950/95 px-3 py-1 text-xs font-black text-rose-100'
+                  : 'rounded-xl border border-amber-300/80 bg-slate-950/90 px-2.5 py-1 text-[11px] font-extrabold text-amber-100'
+              }`}
+            >
+              {lbl.title}
+            </div>
+          ))}
+        </div>
+      )}
+      <HarvestDialogueBox
+        speakerName={displaySpeakerName}
+        speakerRole={personalizePlayerText(story.speakerRole, resolvedPlayerName)}
+        speakerKind={speakerKind}
+        characterId={characterId}
+        npcId={npcId}
+        villagerArchetypes={story.villagerArchetypes}
+        captiveKind={captiveKind}
+        captiveColor={captiveColor}
+        monsterType={story.speakerMonsterType}
+        heroExpression={story.heroExpression}
+        speakerSide={speakerSide}
+        textId={personalizePlayerText(story.textId, resolvedPlayerName)}
+        textEn={story.textEn ? personalizePlayerText(story.textEn, resolvedPlayerName) : undefined}
+        topAccessory={topAccessory}
+        footerActions={footerActions}
+        canAdvance={story.kind !== 'defeat_exit'}
+        onAdvance={onAdvance}
+        onSkip={canSkip ? onSkip : undefined}
+      />
+    </>
   );
 };

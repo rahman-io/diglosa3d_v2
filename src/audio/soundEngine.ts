@@ -802,6 +802,42 @@ class SoundEngine {
     this.planeEngineGain.gain.setTargetAtTime(targetGain, now, 0.09);
   }
 
+  public playDarkCloudErupt(): void {
+    this.noise(0.55, 0.12, 0, 260);
+    this.beep(92, 0.55, 'sawtooth', 0.11, 42);
+    this.beep(138, 0.42, 'triangle', 0.085, 64, 0.06);
+    this.beep(260, 0.28, 'sine', 0.055, 110, 0.14);
+  }
+
+  public playDarkCloudVanish(): void {
+    this.noise(0.45, 0.1, 0, 720);
+    this.beep(140, 0.34, 'sawtooth', 0.08, 420);
+    this.beep(420, 0.28, 'triangle', 0.09, 58, 0.24);
+  }
+
+  public playVillainLaugh(subtle = false): void {
+    const volScale = subtle ? 0.68 : 1.0;
+    const bursts: Array<[number, number, number]> = [
+      [218, 152, 0.0],
+      [204, 140, 0.15],
+      [190, 126, 0.3],
+      [232, 108, 0.46],
+    ];
+    bursts.forEach(([startHz, endHz, delay]) => {
+      this.beep(startHz, 0.12, 'sawtooth', 0.072 * volScale, endHz, delay);
+      this.beep(startHz * 0.52, 0.12, 'triangle', 0.068 * volScale, endHz * 0.5, delay);
+    });
+    if (!subtle) {
+      this.playBoss();
+    }
+  }
+
+  public playHeroDefiance(): void {
+    this.beep(329.63, 0.12, 'triangle', 0.085);
+    this.beep(440, 0.14, 'triangle', 0.09, undefined, 0.08);
+    this.beep(659.25, 0.22, 'sine', 0.095, 740, 0.16);
+  }
+
   public playDialogueBlip(pitchOffset = 0): void {
     if (this.muted) return;
     const nowMs = Date.now();

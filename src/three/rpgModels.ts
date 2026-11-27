@@ -39,6 +39,9 @@ export interface HeroAvatarRig {
   headGroup: THREE.Group;
   leftEye: THREE.Mesh;
   rightEye: THREE.Mesh;
+  leftBrow?: THREE.Mesh;
+  rightBrow?: THREE.Mesh;
+  mouthMesh?: THREE.Mesh;
   leftLeg: THREE.Group;
   rightLeg: THREE.Group;
   leftArm: THREE.Group;
@@ -406,7 +409,18 @@ export function createHeroAvatar(
   rightEye.position.set(-0.2, 0.41, 0.42);
   const leftEye = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.18, 0.06), eyeMat);
   leftEye.position.set(0.2, 0.41, 0.42);
-  headGroup.add(leftEye, rightEye);
+  const browMat = palette.getMat(0x2d1b10, 'matte');
+  const rightBrow = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.052, 0.05), browMat);
+  rightBrow.position.set(-0.2, 0.515, 0.428);
+  rightBrow.visible = false;
+  const leftBrow = new THREE.Mesh(new THREE.BoxGeometry(0.19, 0.052, 0.05), browMat);
+  leftBrow.position.set(0.2, 0.515, 0.428);
+  leftBrow.visible = false;
+  const mouthMat = palette.getMat(0x1e1b2e, 'matte');
+  const mouthMesh = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.06, 0.045), mouthMat);
+  mouthMesh.position.set(0, 0.205, 0.422);
+  mouthMesh.visible = false;
+  headGroup.add(leftEye, rightEye, leftBrow, rightBrow, mouthMesh);
 
   // Weapon tip custom material fallback
   const weaponTipMat = palette.createSurfaceMat({
@@ -943,6 +957,9 @@ export function createHeroAvatar(
     headGroup,
     leftEye,
     rightEye,
+    leftBrow,
+    rightBrow,
+    mouthMesh,
     leftLeg,
     rightLeg,
     leftArm,
@@ -998,6 +1015,54 @@ export function applyHeroAppearance(
     const sleeveMat = presetId === 'karsa_crimson' ? mats.skin : mats.tunic;
     if (rig.leftSleeveMesh) rig.leftSleeveMesh.material = sleeveMat;
     if (rig.rightSleeveMesh) rig.rightSleeveMesh.material = sleeveMat;
+  }
+}
+
+export function setHeroFacialExpression(
+  rig: HeroAvatarRig,
+  mode: 'neutral' | 'tense' | 'fierce',
+  elapsed: number,
+  isSpeaking: boolean,
+): void {
+  const { leftBrow, rightBrow, mouthMesh, leftEye, rightEye } = rig;
+  if (mode === 'neutral' && !isSpeaking) {
+    if (leftBrow) leftBrow.visible = false;
+    if (rightBrow) rightBrow.visible = false;
+    if (mouthMesh) mouthMesh.visible = false;
+    return;
+  }
+
+  if (leftBrow && rightBrow) {
+    leftBrow.visible = mode !== 'neutral';
+    rightBrow.visible = mode !== 'neutral';
+    if (mode === 'fierce') {
+      rightBrow.rotation.z = -0.36;
+      leftBrow.rotation.z = 0.36;
+      rightBrow.position.y = 0.495;
+      leftBrow.position.y = 0.495;
+      leftEye.scale.y = Math.min(leftEye.scale.y, 0.72);
+      rightEye.scale.y = Math.min(rightEye.scale.y, 0.72);
+    } else if (mode === 'tense') {
+      rightBrow.rotation.z = -0.2;
+      leftBrow.rotation.z = 0.2;
+      rightBrow.position.y = 0.51;
+      leftBrow.position.y = 0.51;
+      leftEye.scale.y = Math.min(leftEye.scale.y, 0.86);
+      rightEye.scale.y = Math.min(rightEye.scale.y, 0.86);
+    }
+  }
+
+  if (mouthMesh) {
+    mouthMesh.visible = true;
+    if (isSpeaking) {
+      const talkOpen = 0.75 + Math.abs(Math.sin(elapsed * 16.5)) * 1.55;
+      const talkWide = 0.92 + Math.cos(elapsed * 11.8) * 0.14;
+      mouthMesh.scale.set(talkWide, talkOpen, 1);
+    } else if (mode === 'fierce') {
+      mouthMesh.scale.set(1.14, 0.58, 1);
+    } else {
+      mouthMesh.scale.set(0.86, 0.65, 1);
+    }
   }
 }
 
@@ -2259,7 +2324,18 @@ export function createMonsterMesh(
 }
 
 export interface MonsterAnimInput {
-  mode: 'idle' | 'patrol' | 'windup' | 'attack' | 'shoot' | 'hit' | 'ko' | 'celebrate';
+  mode:
+    | 'idle'
+    | 'patrol'
+    | 'windup'
+    | 'attack'
+    | 'shoot'
+    | 'hit'
+    | 'ko'
+    | 'celebrate'
+    | 'laugh'
+    | 'taunt'
+    | 'menace';
   speed?: number;
   walkPhase?: number;
   elapsed: number;
@@ -2362,6 +2438,36 @@ export function animateMonsterRig(mesh: THREE.Object3D, input: MonsterAnimInput)
     targetScaleY = 1 + Math.abs(Math.sin(elapsed * 8.5)) * 0.12;
     targetRightArmX = -2.25 + Math.sin(elapsed * 10) * 0.3;
     targetLeftArmX = -2.15 - Math.sin(elapsed * 10) * 0.3;
+  } else if (mode === 'laugh') {
+    const cackle = Math.sin(elapsed * 11.5 + phase);
+    const bellyBounce = Math.abs(cackle);
+    targetScaleY = 0.98 + bellyBounce * 0.12;
+    targetBodyX = -0.14 + cackle * 0.08;
+    targetUpperX = -0.2 + cackle * 0.11;
+    targetHeadX = -0.24 + Math.sin(elapsed * 14.5 + phase) * 0.14;
+    targetHeadY = Math.sin(elapsed * 4.2 + phase) * 0.16;
+    targetRightArmX = -1.78 + Math.sin(elapsed * 10.5) * 0.28;
+    targetLeftArmX = -1.48 - Math.sin(elapsed * 10.5) * 0.28;
+    targetRightArmZ = -0.34;
+    targetLeftArmZ = 0.34;
+  } else if (mode === 'taunt') {
+    targetScaleY = 1.03 + Math.sin(elapsed * 5.2 + phase) * 0.05;
+    targetUpperX = 0.12;
+    targetHeadY = Math.sin(elapsed * 3.8 + phase) * 0.18;
+    targetHeadX = 0.08 + Math.sin(elapsed * 9.0) * 0.05;
+    targetRightArmX = -1.52 + Math.sin(elapsed * 6.5) * 0.16;
+    targetLeftArmX = -0.52 + Math.cos(elapsed * 4.2) * 0.12;
+    targetRightArmZ = -0.14;
+    targetLeftArmZ = 0.32;
+  } else if (mode === 'menace') {
+    targetScaleY = 1.04 + Math.sin(elapsed * 4.0 + phase) * 0.045;
+    targetUpperX = 0.15;
+    targetHeadX = 0.12;
+    targetHeadY = Math.sin(elapsed * 2.1 + phase) * 0.1;
+    targetRightArmX = -0.94 + Math.sin(elapsed * 3.4) * 0.1;
+    targetLeftArmX = -0.94 - Math.sin(elapsed * 3.4) * 0.1;
+    targetRightArmZ = -0.24;
+    targetLeftArmZ = 0.24;
   }
 
   const curSy = THREE.MathUtils.damp(rig.bodyPivot.scale.y, targetScaleY, damp, dt);
@@ -2437,8 +2543,12 @@ export function animateMonsterRig(mesh: THREE.Object3D, input: MonsterAnimInput)
     const snapCycle =
       mode === 'attack' || mode === 'shoot'
         ? 0.06 + Math.sin(Math.min(1, attackProgress) * Math.PI) * 0.56
-        : mode === 'windup'
-        ? 0.48 + Math.sin(elapsed * 18) * 0.08
+        : mode === 'laugh'
+        ? 0.38 + Math.abs(Math.sin(elapsed * 15)) * 0.44
+        : mode === 'taunt'
+        ? 0.22 + Math.abs(Math.sin(elapsed * 9.5)) * 0.3
+        : mode === 'windup' || mode === 'menace'
+        ? 0.42 + Math.sin(elapsed * 14) * 0.08
         : 0.16 + Math.sin(elapsed * 3.2 + phase) * 0.11;
     rig.jawPivot.rotation.x = THREE.MathUtils.damp(rig.jawPivot.rotation.x, snapCycle, 16, dt);
   }
@@ -2474,6 +2584,358 @@ export function animateMonsterRig(mesh: THREE.Object3D, input: MonsterAnimInput)
       rig.eyes[i].scale.y = blinkY;
     }
   }
+}
+
+export interface BossCutsceneTraits {
+  crownGroup: THREE.Group;
+  leftBrow: THREE.Mesh;
+  rightBrow: THREE.Mesh;
+  mouthGroup: THREE.Group;
+}
+
+export function attachBossCutsceneTraits(
+  mesh: THREE.Object3D,
+  monsterType: MonsterType,
+  palette: MaterialPalette,
+): BossCutsceneTraits | null {
+  if (mesh.userData.bossCutsceneTraits) {
+    return mesh.userData.bossCutsceneTraits as BossCutsceneTraits;
+  }
+  const rig = mesh.userData.monsterRig as MonsterAnimRig | undefined;
+  if (!rig) return null;
+
+  const crownBandMat = palette.getMat(0x991b1b, 'metal');
+  const crownSpikeMat = palette.getMat(0xf59e0b, 'emissive');
+  const browMat = palette.getMat(0x1f0a14, 'matte');
+  const mouthVoidMat = palette.getMat(0x09040d, 'matte');
+  const toothMat = palette.getMat(0xf8fafc, 'matte');
+
+  const crownGroup = new THREE.Group();
+  const band = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.12, 0.62), crownBandMat);
+  crownGroup.add(band);
+  for (const sx of [-0.22, 0, 0.22]) {
+    const spikeH = sx === 0 ? 0.34 : 0.24;
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.085, spikeH, 4), crownSpikeMat);
+    spike.position.set(sx, 0.06 + spikeH * 0.5, 0.22);
+    crownGroup.add(spike);
+  }
+
+  const rightBrow = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.065, 0.06), browMat);
+  const leftBrow = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.065, 0.06), browMat);
+  rightBrow.rotation.z = -0.32;
+  leftBrow.rotation.z = 0.32;
+
+  const mouthGroup = new THREE.Group();
+  const mouthVoid = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.14, 0.05), mouthVoidMat);
+  const toothL = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 0.055), toothMat);
+  toothL.position.set(-0.1, 0.04, 0.008);
+  const toothR = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 0.055), toothMat);
+  toothR.position.set(0.1, 0.04, 0.008);
+  mouthGroup.add(mouthVoid, toothL, toothR);
+
+  let crownParent: THREE.Object3D = rig.headGroup || rig.upperBody || rig.bodyPivot;
+  let faceParent: THREE.Object3D = rig.headGroup || rig.upperBody || rig.bodyPivot;
+
+  if (monsterType === 'forest_slime') {
+    crownParent = rig.bodyPivot;
+    faceParent = rig.bodyPivot;
+    crownGroup.position.set(0, 1.42, 0);
+    rightBrow.position.set(-0.26, 0.79, 0.69);
+    leftBrow.position.set(0.26, 0.79, 0.69);
+    mouthGroup.position.set(0, 0.4, 0.69);
+  } else if (monsterType === 'sand_scorpion') {
+    crownParent = rig.bodyPivot;
+    faceParent = rig.bodyPivot;
+    crownGroup.position.set(0, 0.92, 0.1);
+    rightBrow.position.set(-0.22, 0.68, 0.64);
+    leftBrow.position.set(0.22, 0.68, 0.64);
+    mouthGroup.position.set(0, 0.36, 0.64);
+  } else if (monsterType === 'ancient_treant') {
+    crownParent = rig.headGroup || rig.upperBody || rig.bodyPivot;
+    faceParent = rig.upperBody || rig.bodyPivot;
+    crownGroup.position.set(0, 1.24, 0);
+    rightBrow.position.set(-0.24, 1.18, 0.5);
+    leftBrow.position.set(0.24, 1.18, 0.5);
+    mouthGroup.position.set(0, 0.74, 0.49);
+  } else if (monsterType === 'iron_juggernaut') {
+    crownGroup.position.set(0, 0.68, 0);
+    rightBrow.position.set(-0.18, 0.47, 0.38);
+    leftBrow.position.set(0.18, 0.47, 0.38);
+    mouthGroup.position.set(0, 0.16, 0.38);
+  } else if (monsterType === 'titan_colossus') {
+    crownGroup.position.set(0, 0.86, 0);
+    rightBrow.position.set(-0.18, 0.51, 0.4);
+    leftBrow.position.set(0.18, 0.51, 0.4);
+    mouthGroup.position.set(0, 0.17, 0.4);
+  } else if (monsterType === 'obsidian_hydra') {
+    crownGroup.position.set(0, 0.96, 0.22);
+    rightBrow.position.set(-0.15, 0.86, 0.6);
+    leftBrow.position.set(0.15, 0.86, 0.6);
+    mouthGroup.position.set(0, 0.58, 0.6);
+  } else {
+    crownGroup.position.set(0, 0.85, 0);
+    rightBrow.position.set(-0.2, 0.5, 0.45);
+    leftBrow.position.set(0.2, 0.5, 0.45);
+    mouthGroup.position.set(0, 0.24, 0.45);
+  }
+
+  crownParent.add(crownGroup);
+  faceParent.add(rightBrow, leftBrow, mouthGroup);
+
+  const traits: BossCutsceneTraits = {
+    crownGroup,
+    leftBrow,
+    rightBrow,
+    mouthGroup,
+  };
+  mesh.userData.bossCutsceneTraits = traits;
+  return traits;
+}
+
+export function animateBossCutsceneTraits(
+  mesh: THREE.Object3D,
+  mode: 'laugh' | 'menace' | 'taunt' | 'idle',
+  elapsed: number,
+  isSpeaking: boolean,
+): void {
+  const traits = mesh.userData.bossCutsceneTraits as BossCutsceneTraits | undefined;
+  if (!traits) return;
+
+  const browFurrow =
+    mode === 'laugh'
+      ? 0.26 + Math.sin(elapsed * 12) * 0.06
+      : mode === 'taunt' || mode === 'menace'
+      ? 0.38
+      : 0.24;
+  traits.rightBrow.rotation.z = -browFurrow;
+  traits.leftBrow.rotation.z = browFurrow;
+
+  if (mode === 'laugh') {
+    const sy = 1.15 + Math.abs(Math.sin(elapsed * 14.5)) * 1.15;
+    traits.mouthGroup.scale.set(1.18, sy, 1);
+  } else if (isSpeaking) {
+    const sy = 0.72 + Math.abs(Math.sin(elapsed * 14)) * 1.1;
+    traits.mouthGroup.scale.set(1.06, sy, 1);
+  } else if (mode === 'menace' || mode === 'taunt') {
+    traits.mouthGroup.scale.set(1.12, 0.55 + Math.sin(elapsed * 4.5) * 0.12, 1);
+  } else {
+    traits.mouthGroup.scale.set(0.95, 0.48, 1);
+  }
+
+  const crownPulse = 1 + Math.sin(elapsed * 5.5) * 0.045;
+  traits.crownGroup.scale.setScalar(crownPulse);
+}
+
+export interface DarkCloudPortalRig {
+  root: THREE.Group;
+  coreSphere: THREE.Mesh;
+  outerHalo: THREE.Mesh;
+  ringA: THREE.Mesh;
+  ringB: THREE.Mesh;
+  puffs: Array<{
+    sprite: THREE.Sprite;
+    angle: number;
+    radius: number;
+    height: number;
+    speed: number;
+    baseScale: number;
+    phase: number;
+  }>;
+  bolts: THREE.Mesh[];
+  motes: THREE.Group;
+  light: THREE.PointLight;
+  disposables: Array<{ dispose: () => void }>;
+}
+
+function createDarkSmokeTexture(): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 128;
+  canvas.height = 128;
+  const ctx = canvas.getContext('2d');
+  if (ctx) {
+    const grad = ctx.createRadialGradient(64, 64, 8, 64, 64, 62);
+    grad.addColorStop(0, 'rgba(8, 10, 18, 0.96)');
+    grad.addColorStop(0.45, 'rgba(17, 16, 36, 0.85)');
+    grad.addColorStop(0.75, 'rgba(30, 20, 48, 0.42)');
+    grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 128, 128);
+  }
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+export function createDarkCloudPortalRig(palette: MaterialPalette): DarkCloudPortalRig {
+  const root = new THREE.Group();
+  root.userData.isMapHidden = true;
+  const disposables: Array<{ dispose: () => void }> = [];
+
+  const smokeTex = createDarkSmokeTexture();
+  disposables.push(smokeTex);
+
+  const coreGeo = new THREE.SphereGeometry(1.55, 16, 14);
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: 0x05030a,
+    transparent: true,
+    opacity: 0.94,
+    depthWrite: false,
+  });
+  const coreSphere = new THREE.Mesh(coreGeo, coreMat);
+  coreSphere.position.set(0, 2.35, 0);
+  root.add(coreSphere);
+  disposables.push(coreGeo, coreMat);
+
+  const haloGeo = new THREE.SphereGeometry(2.35, 16, 14);
+  const haloMat = new THREE.MeshBasicMaterial({
+    color: 0x3b0764,
+    transparent: true,
+    opacity: 0.42,
+    side: THREE.BackSide,
+    depthWrite: false,
+  });
+  const outerHalo = new THREE.Mesh(haloGeo, haloMat);
+  outerHalo.position.set(0, 2.35, 0);
+  root.add(outerHalo);
+  disposables.push(haloGeo, haloMat);
+
+  const ringAGeo = new THREE.TorusGeometry(2.4, 0.14, 8, 28);
+  const ringAMat = new THREE.MeshBasicMaterial({
+    color: 0x1e1b4b,
+    transparent: true,
+    opacity: 0.86,
+  });
+  const ringA = new THREE.Mesh(ringAGeo, ringAMat);
+  ringA.position.set(0, 2.35, 0);
+  root.add(ringA);
+  disposables.push(ringAGeo, ringAMat);
+
+  const ringBGeo = new THREE.TorusGeometry(2.9, 0.1, 8, 28);
+  const ringBMat = new THREE.MeshBasicMaterial({
+    color: 0x991b1b,
+    transparent: true,
+    opacity: 0.72,
+  });
+  const ringB = new THREE.Mesh(ringBGeo, ringBMat);
+  ringB.position.set(0, 2.35, 0);
+  ringB.rotation.x = Math.PI * 0.42;
+  root.add(ringB);
+  disposables.push(ringBGeo, ringBMat);
+
+  const puffs: DarkCloudPortalRig['puffs'] = [];
+  const puffTints = [0x090b12, 0x111827, 0x1e1b4b, 0x2e1065, 0x18181b];
+  for (let i = 0; i < 18; i++) {
+    const pMat = new THREE.SpriteMaterial({
+      map: smokeTex,
+      color: puffTints[i % puffTints.length],
+      transparent: true,
+      opacity: 0.9,
+      depthWrite: false,
+    });
+    disposables.push(pMat);
+    const sprite = new THREE.Sprite(pMat);
+    const angle = (i / 18) * Math.PI * 2;
+    const radius = i < 6 ? 0.55 + (i % 3) * 0.35 : 1.35 + (i % 4) * 0.48;
+    const height = 0.9 + ((i * 7) % 10) * 0.34;
+    const speed = (i % 2 === 0 ? 1 : -1) * (1.2 + (i % 5) * 0.32);
+    const baseScale = i < 6 ? 3.5 : 2.35 + (i % 3) * 0.65;
+    sprite.scale.setScalar(baseScale);
+    sprite.position.set(Math.cos(angle) * radius, height, Math.sin(angle) * radius * 0.8);
+    root.add(sprite);
+    puffs.push({ sprite, angle, radius, height, speed, baseScale, phase: i * 1.17 });
+  }
+
+  const bolts: THREE.Mesh[] = [];
+  const boltGeo = new THREE.BoxGeometry(0.11, 1.85, 0.11);
+  disposables.push(boltGeo);
+  const boltMat = palette.getMat(0xe879f9, 'emissive');
+  const boltRedMat = palette.getMat(0xf43f5e, 'emissive');
+  for (let i = 0; i < 4; i++) {
+    const bolt = new THREE.Mesh(boltGeo, i % 2 === 0 ? boltMat : boltRedMat);
+    const a = (i / 4) * Math.PI * 2;
+    bolt.position.set(Math.cos(a) * 1.75, 2.35, Math.sin(a) * 1.5);
+    bolt.rotation.z = (i % 2 === 0 ? 1 : -1) * 0.42;
+    root.add(bolt);
+    bolts.push(bolt);
+  }
+
+  const motes = new THREE.Group();
+  motes.position.set(0, 2.2, 0);
+  const moteGeo = new THREE.BoxGeometry(0.18, 0.18, 0.18);
+  const moteMat = palette.getMat(0xc084fc, 'emissive');
+  disposables.push(moteGeo);
+  for (let i = 0; i < 12; i++) {
+    const m = new THREE.Mesh(moteGeo, moteMat);
+    const a = (i / 12) * Math.PI * 2;
+    const r = 1.9 + (i % 3) * 0.65;
+    m.position.set(Math.cos(a) * r, ((i % 5) - 2) * 0.65, Math.sin(a) * r);
+    motes.add(m);
+  }
+  root.add(motes);
+
+  const light = new THREE.PointLight(0xa855f7, 0, 15, 1.5);
+  light.position.set(0, 2.6, 0.4);
+  root.add(light);
+
+  root.traverse((obj) => {
+    obj.userData.isMapHidden = true;
+  });
+
+  return {
+    root,
+    coreSphere,
+    outerHalo,
+    ringA,
+    ringB,
+    puffs,
+    bolts,
+    motes,
+    light,
+    disposables,
+  };
+}
+
+export function updateDarkCloudPortal(
+  rig: DarkCloudPortalRig,
+  elapsed: number,
+  dt: number,
+  openScale: number,
+  surgeIntensity: number,
+): void {
+  const s = Math.max(0.001, openScale);
+  rig.root.scale.setScalar(s);
+  rig.root.visible = openScale > 0.01;
+
+  const corePulse = 1 + Math.sin(elapsed * 7.2) * 0.08 + surgeIntensity * 0.18;
+  rig.coreSphere.scale.setScalar(corePulse);
+  rig.outerHalo.scale.setScalar(1.02 + Math.cos(elapsed * 5.4) * 0.09 + surgeIntensity * 0.24);
+
+  const spinMult = 1 + surgeIntensity * 1.9;
+  rig.ringA.rotation.z += dt * 2.4 * spinMult;
+  rig.ringA.rotation.y += dt * 1.3 * spinMult;
+  rig.ringB.rotation.z -= dt * 3.1 * spinMult;
+  rig.ringB.rotation.x = Math.PI * 0.42 + Math.sin(elapsed * 2.6) * 0.28;
+  rig.motes.rotation.y += dt * 2.6 * spinMult;
+
+  for (let i = 0; i < rig.puffs.length; i++) {
+    const p = rig.puffs[i];
+    const ang = p.angle + elapsed * p.speed * spinMult;
+    const rad = p.radius * (0.9 + Math.sin(elapsed * 2.8 + p.phase) * 0.14);
+    const yOff = Math.sin(elapsed * 2.4 + p.phase) * 0.26;
+    p.sprite.position.set(Math.cos(ang) * rad, p.height + yOff, Math.sin(ang) * rad * 0.78);
+    const ps = p.baseScale * (0.9 + Math.sin(elapsed * 4.5 + p.phase) * 0.15 + surgeIntensity * 0.18);
+    p.sprite.scale.setScalar(ps);
+  }
+
+  for (let i = 0; i < rig.bolts.length; i++) {
+    const bolt = rig.bolts[i];
+    const flash = Math.sin(elapsed * (23 + i * 7) + i * 2.1);
+    bolt.visible = flash > 0.55 - surgeIntensity * 0.35;
+    bolt.rotation.y += dt * (4.5 + i);
+  }
+
+  rig.light.intensity =
+    Math.min(1, openScale) * (3.2 + Math.sin(elapsed * 9.5) * 1.1 + surgeIntensity * 4.2);
 }
 
 // 3D Armed Raider Shooter Enemy (Articulated Limbs, Roblox-Style Blaster & Aim/Recoil Stance)
