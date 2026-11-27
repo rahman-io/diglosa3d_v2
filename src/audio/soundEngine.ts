@@ -838,6 +838,14 @@ class SoundEngine {
     this.beep(659.25, 0.22, 'sine', 0.095, 740, 0.16);
   }
 
+  public playSadPlea(): void {
+    // Gentle descending minor notes evoking sorrow and vulnerability
+    this.beep(523.25, 0.28, 'sine', 0.06, 493.88, 0.0);
+    this.beep(440.0, 0.32, 'sine', 0.06, 415.3, 0.24);
+    this.beep(392.0, 0.38, 'triangle', 0.055, 349.23, 0.52);
+    this.beep(329.63, 0.55, 'sine', 0.06, 293.66, 0.84);
+  }
+
   public playDialogueBlip(pitchOffset = 0): void {
     if (this.muted) return;
     const nowMs = Date.now();

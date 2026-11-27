@@ -38,6 +38,7 @@ interface DialoguePortraitCanvasProps {
   monsterType?: MonsterType;
   heroExpression?: 'neutral' | 'fierce';
   bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry';
+  captiveExpression?: 'neutral' | 'sad_injured' | 'happy';
   isSpeaking?: boolean;
   className?: string;
 }
@@ -298,6 +299,7 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
   monsterType,
   heroExpression = 'neutral',
   bossExpression,
+  captiveExpression,
   isSpeaking = false,
   className = '',
 }) => {
@@ -308,6 +310,8 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
   heroExprRef.current = heroExpression;
   const bossExprRef = useRef<'laugh' | 'taunt' | 'menace' | 'shock' | 'angry' | undefined>(bossExpression);
   bossExprRef.current = bossExpression;
+  const captiveExprRef = useRef<'neutral' | 'sad_injured' | 'happy' | undefined>(captiveExpression);
+  captiveExprRef.current = captiveExpression;
   const villagerKey = villagerArchetypes?.join(',') ?? '';
   const entryKey = `${speakerKind}|${characterId}|${npcId}|${villagerKey}|${captiveKind}|${captiveColor}|${monsterType ?? ''}`;
   const elapsedRef = useRef(0);
@@ -398,7 +402,13 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
           }
         });
       } else if (entry.kind === 'captive' && entry.captiveMesh) {
-        animateCaptiveMesh(entry.captiveMesh, elapsed, talking);
+        const cMood =
+          captiveExprRef.current === 'sad_injured'
+            ? 'sad_injured'
+            : captiveExprRef.current === 'happy'
+              ? true
+              : talking;
+        animateCaptiveMesh(entry.captiveMesh, elapsed, cMood);
       } else if (entry.kind === 'owl' && entry.owlRig) {
         const flap = Math.sin(elapsed * (talking ? 8.5 : 3.2)) * 0.22;
         entry.owlRig.leftWing.rotation.z = 0.2 + flap;
@@ -422,12 +432,15 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
 
     renderPortraitFrame(0.016, speakingRef.current);
 
+    const keepAnimatingCrying =
+      speakerKind === 'captive' && captiveExpression === 'sad_injured';
     let timerId: number | null = null;
-    if (isSpeaking) {
+    if (isSpeaking || keepAnimatingCrying) {
       timerId = window.setInterval(() => {
-        if (document.hidden || !speakingRef.current) return;
+        if (document.hidden) return;
+        if (!speakingRef.current && captiveExprRef.current !== 'sad_injured') return;
         elapsedRef.current += 0.125;
-        renderPortraitFrame(0.125, true);
+        renderPortraitFrame(0.125, speakingRef.current);
       }, 125);
     }
 
@@ -454,6 +467,7 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
     monsterType,
     heroExpression,
     bossExpression,
+    captiveExpression,
   ]);
 
   return (

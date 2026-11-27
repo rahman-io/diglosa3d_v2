@@ -16,6 +16,7 @@ export interface HarvestDialogueBoxProps {
   monsterType?: MonsterType;
   heroExpression?: 'neutral' | 'fierce';
   bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry';
+  captiveExpression?: 'neutral' | 'sad_injured' | 'happy';
   speakerSide?: 'npc' | 'hero';
   textId: string;
   textEn?: string;
@@ -38,6 +39,7 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
   monsterType,
   heroExpression = 'neutral',
   bossExpression,
+  captiveExpression,
   speakerSide = 'npc',
   textId,
   textEn,
@@ -164,6 +166,7 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
             monsterType={monsterType}
             heroExpression={heroExpression}
             bossExpression={bossExpression}
+            captiveExpression={captiveExpression}
             isSpeaking={isTyping}
             className="h-full w-full"
           />

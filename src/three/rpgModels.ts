@@ -2103,6 +2103,19 @@ export interface CaptiveAnimRig {
   rightArm?: THREE.Group;
   tailPivot?: THREE.Group;
   halo?: THREE.Object3D;
+  sadGroup?: THREE.Group;
+  sparkleGroup?: THREE.Group;
+  sparkleL?: THREE.Mesh;
+  sparkleR?: THREE.Mesh;
+  sparkleMiniL?: THREE.Mesh;
+  sparkleMiniR?: THREE.Mesh;
+  tearDropL?: THREE.Mesh;
+  tearDropR?: THREE.Mesh;
+  tearTrailL?: THREE.Mesh;
+  tearTrailR?: THREE.Mesh;
+  mouthSad?: THREE.Mesh;
+  injuryArmBandage?: THREE.Group;
+  tearOriginY?: number;
 }
 
 // 4. All Distinct Zone, Story, and Academy Examiner 3D NPCs (20 Diverse World NPCs Sheet)
@@ -4319,7 +4332,104 @@ export function createCaptiveMesh(
   const skin = palette.getMat(0xfed7aa, 'matte');
   const outfit = palette.getMat(colorHex, 'matte');
   const darkEye = palette.getMat(0x0f172a, 'matte');
+  const sparkleMat = palette.getMat(0xffffff, 'emissive');
+  const sparkleCyanMat = palette.getMat(0xbae6fd, 'emissive');
+  const tearDropMat = palette.getMat(0xe0f2fe, 'emissive');
+  const tearTrailMat = palette.getMat(0x38bdf8, 'emissive');
+  const bandageMat = palette.getMat(0xf8fafc, 'matte');
+  const woundMat = palette.getMat(0xf43f5e, 'matte');
+  const sadBrowMat = palette.getMat(0x451a03, 'matte');
   const rig: CaptiveAnimRig = { bodyPivot };
+
+  const attachEyeSadVisuals = (
+    parent: THREE.Group,
+    eyeX: number,
+    eyeY: number,
+    faceZ: number,
+    bandageY: number,
+    hasMouth = true,
+  ) => {
+    const sparkleGroup = new THREE.Group();
+    const sGeo = new THREE.BoxGeometry(0.044, 0.044, 0.024);
+    const smGeo = new THREE.BoxGeometry(0.026, 0.026, 0.024);
+    const sparkleL = new THREE.Mesh(sGeo, sparkleMat);
+    sparkleL.position.set(-eyeX - 0.022, eyeY + 0.026, faceZ + 0.032);
+    const sparkleR = new THREE.Mesh(sGeo, sparkleMat);
+    sparkleR.position.set(eyeX - 0.022, eyeY + 0.026, faceZ + 0.032);
+    const sparkleMiniL = new THREE.Mesh(smGeo, sparkleCyanMat);
+    sparkleMiniL.position.set(-eyeX + 0.026, eyeY - 0.024, faceZ + 0.032);
+    const sparkleMiniR = new THREE.Mesh(smGeo, sparkleCyanMat);
+    sparkleMiniR.position.set(eyeX + 0.026, eyeY - 0.024, faceZ + 0.032);
+    sparkleGroup.add(sparkleL, sparkleR, sparkleMiniL, sparkleMiniR);
+    sparkleGroup.visible = false;
+    parent.add(sparkleGroup);
+
+    const sadGroup = new THREE.Group();
+    const trailGeo = new THREE.BoxGeometry(0.036, 0.13, 0.022);
+    const tearTrailL = new THREE.Mesh(trailGeo, tearTrailMat);
+    tearTrailL.position.set(-eyeX, eyeY - 0.1, faceZ + 0.015);
+    const tearTrailR = new THREE.Mesh(trailGeo, tearTrailMat);
+    tearTrailR.position.set(eyeX, eyeY - 0.1, faceZ + 0.015);
+
+    const dropGeo = new THREE.BoxGeometry(0.056, 0.072, 0.036);
+    const tearOriginY = eyeY - 0.045;
+    const tearDropL = new THREE.Mesh(dropGeo, tearDropMat);
+    tearDropL.position.set(-eyeX, tearOriginY, faceZ + 0.028);
+    const tearDropR = new THREE.Mesh(dropGeo, tearDropMat);
+    tearDropR.position.set(eyeX, tearOriginY, faceZ + 0.028);
+
+    const browGeo = new THREE.BoxGeometry(0.13, 0.03, 0.028);
+    const browL = new THREE.Mesh(browGeo, sadBrowMat);
+    browL.position.set(-eyeX - 0.005, eyeY + 0.098, faceZ + 0.016);
+    browL.rotation.z = 0.34;
+    const browR = new THREE.Mesh(browGeo, sadBrowMat);
+    browR.position.set(eyeX + 0.005, eyeY + 0.098, faceZ + 0.016);
+    browR.rotation.z = -0.34;
+
+    const bandStrip = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.075, 0.028), bandageMat);
+    bandStrip.position.set(0.12, bandageY, faceZ + 0.014);
+    bandStrip.rotation.z = -0.18;
+    const bandCross = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.048, 0.032), woundMat);
+    bandCross.position.copy(bandStrip.position);
+    bandCross.rotation.z = -0.18;
+
+    const cheekBruise = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.055, 0.02), woundMat);
+    cheekBruise.position.set(-eyeX - 0.045, eyeY - 0.11, faceZ + 0.01);
+
+    sadGroup.add(
+      tearTrailL,
+      tearTrailR,
+      tearDropL,
+      tearDropR,
+      browL,
+      browR,
+      bandStrip,
+      bandCross,
+      cheekBruise,
+    );
+
+    if (hasMouth) {
+      const mouthSad = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.028, 0.024), woundMat);
+      mouthSad.position.set(0, eyeY - 0.185, faceZ + 0.014);
+      sadGroup.add(mouthSad);
+      rig.mouthSad = mouthSad;
+    }
+
+    sadGroup.visible = false;
+    parent.add(sadGroup);
+
+    rig.sparkleGroup = sparkleGroup;
+    rig.sparkleL = sparkleL;
+    rig.sparkleR = sparkleR;
+    rig.sparkleMiniL = sparkleMiniL;
+    rig.sparkleMiniR = sparkleMiniR;
+    rig.sadGroup = sadGroup;
+    rig.tearDropL = tearDropL;
+    rig.tearDropR = tearDropR;
+    rig.tearTrailL = tearTrailL;
+    rig.tearTrailR = tearTrailR;
+    rig.tearOriginY = tearOriginY;
+  };
 
   if (kind === 'fox_kit') {
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.72, 0.85), outfit);
@@ -4337,6 +4447,7 @@ export function createCaptiveMesh(
     const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.06), darkEye);
     eyeR.position.set(0.15, 0.04, 0.36);
     headGroup.add(head, earL, earR, eyeL, eyeR);
+    attachEyeSadVisuals(headGroup, 0.15, 0.04, 0.36, 0.2, false);
 
     const tailPivot = new THREE.Group();
     tailPivot.position.set(0, 0.58, -0.38);
@@ -4361,7 +4472,18 @@ export function createCaptiveMesh(
     halo.position.y = 1.45;
     const baseOrb = new THREE.Mesh(new THREE.ConeGeometry(0.42, 0.95, 6), palette.getMat(0x7c3aed, 'gloss'));
     baseOrb.position.y = 0.65;
-    bodyPivot.add(baseOrb, core, halo);
+    const headGroup = new THREE.Group();
+    headGroup.position.set(0, 1.45, 0);
+    const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.095, 0.05), darkEye);
+    eyeL.position.set(-0.14, 0.03, 0.36);
+    const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.095, 0.05), darkEye);
+    eyeR.position.set(0.14, 0.03, 0.36);
+    headGroup.add(eyeL, eyeR);
+    attachEyeSadVisuals(headGroup, 0.14, 0.03, 0.36, 0.18, false);
+    bodyPivot.add(baseOrb, core, halo, headGroup);
+    rig.headGroup = headGroup;
+    rig.leftEye = eyeL;
+    rig.rightEye = eyeR;
     rig.halo = halo;
     root.userData.captiveRig = rig;
     return root;
@@ -4387,6 +4509,7 @@ export function createCaptiveMesh(
   const eyeR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.06), darkEye);
   eyeR.position.set(0.15, 0.32, 0.33);
   headGroup.add(head, hair, eyeL, eyeR);
+  attachEyeSadVisuals(headGroup, 0.15, 0.32, 0.33, 0.49, true);
   if (kind === 'girl') {
     const ribbon = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.14, 0.14), palette.getMat(0xe11d48, 'matte'));
     ribbon.position.set(0.24, 0.72, 0.12);
@@ -4405,6 +4528,13 @@ export function createCaptiveMesh(
   };
   const leftArm = makeCaptiveArm(-0.48);
   const rightArm = makeCaptiveArm(0.48);
+  const injuryArmBandage = new THREE.Group();
+  injuryArmBandage.position.set(0, -0.34, 0);
+  const armBandWrap = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.14, 0.27), bandageMat);
+  const armBandSpot = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.07, 0.285), woundMat);
+  injuryArmBandage.add(armBandWrap, armBandSpot);
+  injuryArmBandage.visible = false;
+  rightArm.add(injuryArmBandage);
 
   const legL = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.45, 0.26), palette.getMat(0x1e293b, 'matte'));
   legL.position.set(-0.18, 0.24, 0);
@@ -4417,6 +4547,7 @@ export function createCaptiveMesh(
   rig.rightEye = eyeR;
   rig.leftArm = leftArm;
   rig.rightArm = rightArm;
+  rig.injuryArmBandage = injuryArmBandage;
   root.userData.captiveRig = rig;
   root.scale.setScalar(heightScale);
   return root;
@@ -4425,40 +4556,133 @@ export function createCaptiveMesh(
 export function animateCaptiveMesh(
   mesh: THREE.Object3D,
   elapsed: number,
-  happy = false,
+  mood: boolean | 'happy' | 'sad_injured' | 'neutral' = false,
   moving = false,
 ): void {
   const rig = mesh.userData.captiveRig as CaptiveAnimRig | undefined;
   if (!rig) return;
-  const breath = Math.sin(elapsed * (happy ? 5.8 : 2.8));
-  const sy = 1 + breath * (happy ? 0.08 : 0.045);
+  const isSadInjured = mood === 'sad_injured';
+  const happy = mood === true || mood === 'happy';
+
+  const breath = Math.sin(elapsed * (happy ? 5.8 : isSadInjured ? 6.4 : 2.8));
+  const sy = 1 + breath * (happy ? 0.08 : isSadInjured ? 0.06 : 0.045);
   const sXZ = 1 / Math.sqrt(sy);
   rig.bodyPivot.scale.set(sXZ, sy, sXZ);
-  if (rig.headGroup) {
-    rig.headGroup.rotation.y = Math.sin(elapsed * 2.2) * 0.2;
+
+  if (isSadInjured) {
+    // Hunched, trembling in pain while sobbing
+    rig.bodyPivot.rotation.x = 0.14 + Math.sin(elapsed * 4.4) * 0.035;
+    rig.bodyPivot.position.x = Math.sin(elapsed * 24) * 0.015;
+    rig.bodyPivot.position.y = Math.abs(Math.sin(elapsed * 6.4)) * -0.025;
+  } else {
+    rig.bodyPivot.rotation.x = 0;
+    rig.bodyPivot.position.x = 0;
+    rig.bodyPivot.position.y = 0;
   }
+
+  if (rig.headGroup) {
+    if (isSadInjured) {
+      rig.headGroup.rotation.y = Math.sin(elapsed * 2.1) * 0.16;
+      rig.headGroup.rotation.x = 0.18 + Math.sin(elapsed * 6.2) * 0.055;
+      rig.headGroup.rotation.z = Math.sin(elapsed * 2.9) * 0.085;
+    } else {
+      rig.headGroup.rotation.y = Math.sin(elapsed * 2.2) * 0.2;
+      rig.headGroup.rotation.x = 0;
+      rig.headGroup.rotation.z = 0;
+    }
+  }
+
   if (rig.leftEye && rig.rightEye) {
-    const blinkY = computeBlinkScale(elapsed, 3.3);
+    const blinkY = isSadInjured ? Math.max(0.72, computeBlinkScale(elapsed, 2.7)) : computeBlinkScale(elapsed, 3.3);
     rig.leftEye.scale.y = blinkY;
     rig.rightEye.scale.y = blinkY;
   }
+
+  if (rig.sparkleGroup) {
+    rig.sparkleGroup.visible = isSadInjured || happy;
+    if (rig.sparkleL && rig.sparkleR) {
+      const shimmer = isSadInjured
+        ? 0.95 + Math.sin(elapsed * 9.5) * 0.35
+        : 0.72 + Math.sin(elapsed * 4.5) * 0.15;
+      rig.sparkleL.scale.setScalar(shimmer);
+      rig.sparkleR.scale.setScalar(shimmer);
+    }
+    if (rig.sparkleMiniL && rig.sparkleMiniR) {
+      const shimmer2 = isSadInjured
+        ? 0.9 + Math.cos(elapsed * 11.2) * 0.38
+        : 0.7;
+      rig.sparkleMiniL.scale.setScalar(shimmer2);
+      rig.sparkleMiniR.scale.setScalar(shimmer2);
+    }
+  }
+
+  if (rig.sadGroup) {
+    rig.sadGroup.visible = isSadInjured;
+    if (isSadInjured) {
+      const originY = rig.tearOriginY ?? 0.275;
+      const dropPhaseL = (elapsed * 1.35) % 1;
+      const dropPhaseR = (elapsed * 1.35 + 0.48) % 1;
+      if (rig.tearDropL) {
+        rig.tearDropL.position.y = originY - dropPhaseL * 0.21;
+        const sL = Math.sin(dropPhaseL * Math.PI);
+        rig.tearDropL.scale.set(0.75 + sL * 0.45, 0.8 + sL * 0.55, 1);
+      }
+      if (rig.tearDropR) {
+        rig.tearDropR.position.y = originY - dropPhaseR * 0.21;
+        const sR = Math.sin(dropPhaseR * Math.PI);
+        rig.tearDropR.scale.set(0.75 + sR * 0.45, 0.8 + sR * 0.55, 1);
+      }
+      if (rig.tearTrailL && rig.tearTrailR) {
+        const trailPulse = 0.85 + Math.sin(elapsed * 7.5) * 0.22;
+        rig.tearTrailL.scale.x = trailPulse;
+        rig.tearTrailR.scale.x = trailPulse;
+      }
+      if (rig.mouthSad) {
+        rig.mouthSad.scale.y = 0.85 + Math.abs(Math.sin(elapsed * 8.5)) * 0.45;
+      }
+    }
+  }
+
+  if (rig.injuryArmBandage) {
+    rig.injuryArmBandage.visible = isSadInjured;
+  }
+
   if (rig.leftArm && rig.rightArm) {
     if (moving) {
       rig.leftArm.rotation.x = Math.sin(elapsed * 9) * 0.52;
       rig.rightArm.rotation.x = -Math.sin(elapsed * 9) * 0.52;
+      rig.leftArm.rotation.z = 0;
+      rig.rightArm.rotation.z = 0;
+    } else if (isSadInjured) {
+      // Left hand wipes sparkling tears near face; right hurt arm cradled cautiously
+      rig.leftArm.rotation.x = -1.25 + Math.sin(elapsed * 5.2) * 0.16;
+      rig.leftArm.rotation.z = -0.34;
+      rig.rightArm.rotation.x = -0.72 + Math.sin(elapsed * 4.2) * 0.07;
+      rig.rightArm.rotation.z = 0.26;
     } else if (happy) {
       rig.leftArm.rotation.x = -2.1 + Math.sin(elapsed * 10) * 0.35;
       rig.rightArm.rotation.x = -2.1 - Math.sin(elapsed * 10) * 0.35;
+      rig.leftArm.rotation.z = 0;
+      rig.rightArm.rotation.z = 0;
     } else {
       rig.leftArm.rotation.x = -0.35 + Math.sin(elapsed * 4.5) * 0.2;
       rig.rightArm.rotation.x = -0.35 - Math.sin(elapsed * 4.5) * 0.2;
+      rig.leftArm.rotation.z = 0;
+      rig.rightArm.rotation.z = 0;
     }
   }
   if (rig.tailPivot) {
-    rig.tailPivot.rotation.y = Math.sin(elapsed * 7) * 0.38;
+    if (isSadInjured) {
+      rig.tailPivot.rotation.x = -0.38;
+      rig.tailPivot.rotation.y = Math.sin(elapsed * 14) * 0.09;
+    } else {
+      rig.tailPivot.rotation.x = 0;
+      rig.tailPivot.rotation.y = Math.sin(elapsed * 7) * 0.38;
+    }
   }
   if (rig.halo) {
-    rig.halo.rotation.z = elapsed * 2.4;
+    rig.halo.rotation.z = elapsed * (isSadInjured ? 0.9 : 2.4);
+    rig.halo.rotation.x = isSadInjured ? Math.PI / 2 + Math.sin(elapsed * 4) * 0.2 : Math.PI / 2;
   }
 }
 

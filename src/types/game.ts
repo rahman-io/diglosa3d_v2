@@ -438,6 +438,7 @@ export interface StoryDialogState {
     | 'dungeon_intro'
     | 'dungeon_boss_summon'
     | 'dungeon_boss_solo_rage'
+    | 'dungeon_prison_plea'
     | 'dungeon_rescue'
     | 'dungeon_reunion_exit'
     | 'cave_guardian';
@@ -464,8 +465,14 @@ export interface StoryDialogState {
     | 'boss_threat'
     | 'hero_sharp_retort'
     | 'boss_shaken_clash';
+  dungeonPrisonPleaBeat?:
+    | 'discover'
+    | 'captive_cry_plea'
+    | 'hero_promise'
+    | 'captive_hope';
   bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry';
   heroExpression?: 'neutral' | 'fierce';
+  captiveExpression?: 'neutral' | 'sad_injured' | 'happy';
   villagerArchetypes?: string[];
   captiveKind?: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
   captiveColor?: number;

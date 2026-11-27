@@ -402,10 +402,14 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     (story.kind === 'dungeon_boss_summon' &&
       (story.dungeonBossSummonBeat === 'emerge_shock' ||
         story.dungeonBossSummonBeat === 'boss_furious_summon')) ||
-    (story.kind === 'dungeon_boss_solo_rage' && story.dungeonBossSoloBeat === 'rage_erupt')
+    (story.kind === 'dungeon_boss_solo_rage' && story.dungeonBossSoloBeat === 'rage_erupt') ||
+    (story.kind === 'dungeon_prison_plea' && story.dungeonPrisonPleaBeat === 'discover')
   ) {
+    const isPrisonPleaDiscover = story.kind === 'dungeon_prison_plea';
     const cinemaBadge =
-      story.kind === 'dungeon_boss_solo_rage'
+      isPrisonPleaDiscover
+        ? 'Penjara Tersembunyi Ditemukan'
+        : story.kind === 'dungeon_boss_solo_rage'
         ? 'Amarah Puncak Sang Bos'
         : story.kind === 'dungeon_boss_summon'
         ? story.dungeonBossSummonBeat === 'emerge_shock'
@@ -424,7 +428,9 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
                 style={{ transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)` }}
                 className={`absolute left-0 top-0 whitespace-nowrap shadow-lg ${
                   lbl.kind === 'speech'
-                    ? 'rounded-2xl border-2 border-rose-400 bg-slate-950/95 px-3 py-1 text-xs font-black text-rose-200'
+                    ? isPrisonPleaDiscover
+                      ? 'rounded-2xl border-2 border-sky-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-sky-100'
+                      : 'rounded-2xl border-2 border-rose-400 bg-slate-950/95 px-3 py-1 text-xs font-black text-rose-200'
                     : 'rounded-xl border border-purple-400/80 bg-slate-950/90 px-2.5 py-1 text-[11px] font-extrabold text-purple-200'
                 }`}
               >
@@ -436,7 +442,13 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
         {/* Top thin cinema letterbox bar */}
         <div className="pointer-events-none fixed inset-x-0 top-0 z-40 flex items-center justify-between bg-gradient-to-b from-black/95 via-black/80 to-transparent px-4 py-2.5 sm:px-6 sm:py-3">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="inline-flex shrink-0 items-center rounded-full border border-rose-400/70 bg-rose-950/90 px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider text-rose-200 sm:text-xs">
+            <span
+              className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider sm:text-xs ${
+                isPrisonPleaDiscover
+                  ? 'border-sky-300/75 bg-sky-950/90 text-sky-100'
+                  : 'border-rose-400/70 bg-rose-950/90 text-rose-200'
+              }`}
+            >
               {cinemaBadge}
             </span>
             <span className="truncate text-xs font-extrabold text-amber-100 drop-shadow sm:text-sm">
@@ -489,6 +501,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     story.kind === 'dungeon_intro' ||
     story.kind === 'dungeon_boss_summon' ||
     story.kind === 'dungeon_boss_solo_rage' ||
+    story.kind === 'dungeon_prison_plea' ||
     story.kind === 'cave_guardian' ||
     story.kind === 'dungeon_rescue' ||
     story.kind === 'dungeon_reunion_exit';
@@ -594,7 +607,8 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     <>
       {(story.kind === 'dungeon_intro' ||
         story.kind === 'dungeon_boss_summon' ||
-        story.kind === 'dungeon_boss_solo_rage') &&
+        story.kind === 'dungeon_boss_solo_rage' ||
+        story.kind === 'dungeon_prison_plea') &&
         projectedLabels &&
         projectedLabels.length > 0 && (
         <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden">
@@ -604,7 +618,9 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
               style={{ transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)` }}
               className={`absolute left-0 top-0 whitespace-nowrap shadow-lg ${
                 lbl.kind === 'speech'
-                  ? 'rounded-2xl border-2 border-rose-400 bg-slate-950/95 px-3 py-1 text-xs font-black text-rose-100'
+                  ? story.kind === 'dungeon_prison_plea'
+                    ? 'rounded-2xl border-2 border-sky-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-sky-100'
+                    : 'rounded-2xl border-2 border-rose-400 bg-slate-950/95 px-3 py-1 text-xs font-black text-rose-100'
                   : 'rounded-xl border border-amber-300/80 bg-slate-950/90 px-2.5 py-1 text-[11px] font-extrabold text-amber-100'
               }`}
             >
@@ -625,6 +641,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
         monsterType={story.speakerMonsterType}
         heroExpression={story.heroExpression}
         bossExpression={story.bossExpression}
+        captiveExpression={story.captiveExpression}
         speakerSide={speakerSide}
         textId={personalizePlayerText(story.textId, resolvedPlayerName)}
         textEn={story.textEn ? personalizePlayerText(story.textEn, resolvedPlayerName) : undefined}
