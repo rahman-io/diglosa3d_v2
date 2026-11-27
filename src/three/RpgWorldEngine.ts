@@ -1430,6 +1430,19 @@ export class RpgWorldEngine {
     summonEruptFired: boolean;
     vanishSoundFired: boolean;
   } | null = null;
+  private bossSoloCutsceneSeenZones = new Set<ZoneId>();
+  private bossRageSparkTimer = 0;
+  private dungeonBossSoloCutscene: {
+    zoneId: ZoneId;
+    beat: 'rage_erupt' | 'boss_threat' | 'hero_sharp_retort' | 'boss_shaken_clash';
+    timer: number;
+    bossMesh: THREE.Group;
+    bossBaseScale: number;
+    bossPos: THREE.Vector3;
+    heroStandPos: THREE.Vector3;
+    eruptBurstFired: boolean;
+    sparkAccum: number;
+  } | null = null;
   private reunionCutscene: {
     zoneId: ZoneId;
     captiveMesh: THREE.Group;
@@ -7747,6 +7760,30 @@ export class RpgWorldEngine {
       }
     }
 
+    if (this.storyDialog.kind === 'dungeon_boss_solo_rage') {
+      const sc = this.dungeonBossSoloCutscene;
+      if (!sc) {
+        this.finishDungeonBossSoloRageCutscene();
+        return;
+      }
+      if (sc.beat === 'rage_erupt') {
+        this.transitionDungeonBossSoloToThreat();
+        return;
+      }
+      if (sc.beat === 'boss_threat') {
+        this.transitionDungeonBossSoloToHeroRetort();
+        return;
+      }
+      if (sc.beat === 'hero_sharp_retort') {
+        this.transitionDungeonBossSoloToBossShaken();
+        return;
+      }
+      if (sc.beat === 'boss_shaken_clash') {
+        this.finishDungeonBossSoloRageCutscene();
+        return;
+      }
+    }
+
     if (this.storyDialog.kind === 'cave_guardian') {
       const nextStep = this.storyDialog.step + 1;
       if (nextStep < this.caveGuardianTurns.length) {
@@ -7855,6 +7892,8 @@ export class RpgWorldEngine {
       this.finishDungeonIntroCutscene();
     } else if (this.storyDialog.kind === 'dungeon_boss_summon') {
       this.finishDungeonBossSummonCutscene();
+    } else if (this.storyDialog.kind === 'dungeon_boss_solo_rage') {
+      this.finishDungeonBossSoloRageCutscene();
     } else if (this.storyDialog.kind === 'dungeon_rescue') {
       this.finishDungeonRescueCutscene(this.storyDialog.zoneId);
     } else if (this.storyDialog.kind === 'dungeon_reunion_exit') {
@@ -7916,13 +7955,38 @@ export class RpgWorldEngine {
     );
   }
 
+  private hasAliveBossMinions(): boolean {
+    if (this.worldMode !== 'dungeon' || !this.dungeonState || this.dungeonState.bossDefeated) {
+      return false;
+    }
+    return this.dungeonMonsters.some((m) => m.alive && m.isBossMinion);
+  }
+
+  private getBossRageTier(zoneId: ZoneId): 0 | 1 | 2 | 3 {
+    if (this.worldMode !== 'dungeon' || !this.dungeonState || this.dungeonState.bossDefeated) {
+      return 0;
+    }
+    if (this.hasAliveSummonedWaveMonsters()) return 0;
+    const guardsAlive = this.dungeonMonsters.filter(
+      (m) => m.alive && m.isBossMinion && m.zoneId === zoneId,
+    ).length;
+    if (guardsAlive >= 2) return 1;
+    if (guardsAlive === 1) return 2;
+    return 3;
+  }
+
   private isBossSquadProtectedEnemy(id: string): boolean {
     if (this.worldMode !== 'dungeon' || !this.dungeonState || this.dungeonState.bossDefeated) {
       return false;
     }
-    if (!this.hasAliveSummonedWaveMonsters()) return false;
     const bossId = BOSSES[this.dungeonState.zoneId]?.id;
-    return id === bossId || id.startsWith('boss_guard_');
+    if (this.hasAliveSummonedWaveMonsters()) {
+      return id === bossId || id.startsWith('boss_guard_');
+    }
+    if (this.hasAliveBossMinions()) {
+      return id === bossId;
+    }
+    return false;
   }
 
   private notifyBossShieldBlocked(): void {
@@ -7930,10 +7994,17 @@ export class RpgWorldEngine {
     if (now - this.lastBossShieldWarnMs < 1400) return;
     this.lastBossShieldWarnMs = now;
     soundEngine.playNo();
-    this.showBanner(
-      'Bos dan kedua pengawalnya belum bisa ditembak, jadi kalahkan delapan monster terlebih dahulu.',
-      2.6,
-    );
+    if (this.hasAliveSummonedWaveMonsters()) {
+      this.showBanner(
+        'Bos dan kedua anak buahnya masih dilindungi perisai! Kalahkan delapan monster bayangan terlebih dahulu.',
+        2.8,
+      );
+    } else if (this.hasAliveBossMinions()) {
+      this.showBanner(
+        'Perisai Bos Besar masih aktif! Kalahkan kedua anak buahnya dulu, baru serang Bos Besar terakhir!',
+        3.0,
+      );
+    }
   }
 
   private clearBossGuardShields(): void {
@@ -7947,15 +8018,15 @@ export class RpgWorldEngine {
     this.bossGuardShieldMeshes = [];
   }
 
-  private attachBossGuardShields(targets: THREE.Object3D[]): void {
+  private attachBossGuardShields(targets: THREE.Object3D[], colorHex = 0xa855f7): void {
     this.clearBossGuardShields();
     for (const obj of targets) {
       const shield = new THREE.Mesh(
         new THREE.TorusGeometry(1.18, 0.085, 8, 22),
         new THREE.MeshBasicMaterial({
-          color: 0xa855f7,
+          color: colorHex,
           transparent: true,
-          opacity: 0.78,
+          opacity: 0.82,
         }),
       );
       shield.rotation.x = Math.PI / 2;
@@ -7969,24 +8040,47 @@ export class RpgWorldEngine {
     if (!this.bossSummonShieldActive) return;
     if (this.hasAliveSummonedWaveMonsters()) return;
     this.bossSummonShieldActive = false;
-    this.clearBossGuardShields();
-    if (this.worldMode !== 'dungeon' || !this.dungeonState || this.dungeonState.bossDefeated) return;
-    const bossId = BOSSES[this.dungeonState.zoneId]?.id;
+    if (this.worldMode !== 'dungeon' || !this.dungeonState || this.dungeonState.bossDefeated) {
+      this.clearBossGuardShields();
+      return;
+    }
+    const zId = this.dungeonState.zoneId;
+    const bossId = BOSSES[zId]?.id;
     const bossMob = this.dungeonMonsters.find((m) => m.id === bossId && m.alive);
-    if (bossMob) {
-      this.spawnBurst(bossMob.x, (bossMob.y ?? 0) + 1.8, bossMob.z, 0xf43f5e, 26);
+    const minionsLeft = this.dungeonMonsters.filter((gm) => gm.alive && gm.isBossMinion);
+
+    for (const gm of minionsLeft) {
+      this.spawnBurst(gm.x, (gm.y ?? 0) + 1.5, gm.z, 0xf59e0b, 18);
     }
-    for (const gm of this.dungeonMonsters) {
-      if (gm.alive && gm.isBossMinion) {
-        this.spawnBurst(gm.x, (gm.y ?? 0) + 1.5, gm.z, 0xf59e0b, 18);
+
+    if (bossMob && minionsLeft.length > 0) {
+      // Remove shields from the 2 minions, lock Boss Besar behind a blazing crimson rage shield until minions fall
+      this.attachBossGuardShields([bossMob.mesh], 0xef4444);
+      this.spawnBurst(bossMob.x, (bossMob.y ?? 0) + 2.0, bossMob.z, 0xef4444, 28);
+      this.spawnBurst(bossMob.x, (bossMob.y ?? 0) + 1.5, bossMob.z, 0xf97316, 18);
+      soundEngine.playBoss();
+      soundEngine.playWin();
+      this.showBanner(
+        '🔥 Delapan monster bayangan tumbang! Bos semakin murka—kalahkan 2 anak buahnya dulu untuk menghancurkan perisai Bos Besar!',
+        4.6,
+      );
+    } else {
+      this.clearBossGuardShields();
+      if (bossMob) {
+        this.spawnBurst(bossMob.x, (bossMob.y ?? 0) + 1.8, bossMob.z, 0xf43f5e, 26);
+        if (!this.bossSoloCutsceneSeenZones.has(zId)) {
+          this.bossSoloCutsceneSeenZones.add(zId);
+          this.startDungeonBossSoloRageCutscene(zId);
+          return;
+        }
       }
+      soundEngine.playBoss();
+      soundEngine.playWin();
+      this.showBanner(
+        '🔥 Perisai Bos Besar hancur! Sekarang kamu bisa menantang Bos terakhir!',
+        4.2,
+      );
     }
-    soundEngine.playBoss();
-    soundEngine.playWin();
-    this.showBanner(
-      'Kedelapan monster bayangan sudah kalah, sekarang kamu bisa menyerang Bos dan kedua anak buahnya satu per satu.',
-      4.2,
-    );
   }
 
   private isDoor5WordGuardian(m: RoamingMonster): boolean {
@@ -9720,10 +9814,12 @@ export class RpgWorldEngine {
     this.clearDungeonBossIntro();
     this.clearDungeonBossSpawnCloud();
     this.clearDungeonBossSummonCutscene();
+    this.clearDungeonBossSoloCutscene();
     this.clearBossGuardShields();
     this.bossSummonedWaveIds.clear();
     this.bossGuardWaitPositions.clear();
     this.bossSummonShieldActive = false;
+    this.bossRageSparkTimer = 0;
     this.clearReunionCutscene();
     this.clearProjectiles();
     this.applyAtmosphere('overworld');
@@ -14889,7 +14985,9 @@ export class RpgWorldEngine {
 
     this.bossSummonShieldActive = aliveSummonCount > 0;
     if (this.bossSummonShieldActive) {
-      this.attachBossGuardShields(shieldTargets);
+      this.attachBossGuardShields(shieldTargets, 0xa855f7);
+    } else if (isBossAlive && guardsForCutscene.length > 0) {
+      this.attachBossGuardShields([mesh], 0xef4444);
     }
 
     this.dungeonTotalSpawned += 1 + guardCount + 8;
@@ -14914,8 +15012,10 @@ export class RpgWorldEngine {
     this.spawnBurst(doorBossPos.x, doorBossPos.y + 2.5, doorBossPos.z, 0x4c1d95, 28);
     this.showBanner(
       this.bossSummonShieldActive
-        ? `Bos ${boss.name} dan pengawalnya menunggu di pintu sehingga kamu harus mengalahkan delapan monster terlebih dahulu.`
-        : `Awan hitam muncul kembali lalu Bos ${boss.name} dan pengawalnya siap bertarung.`,
+        ? `Bos ${boss.name} dan 2 anak buahnya menunggu di pintu. Kalahkan 8 monster bayangan dulu!`
+        : guardsForCutscene.length > 0
+        ? `Bos ${boss.name} sangat murka! Kalahkan ${guardsForCutscene.length} anak buahnya dulu untuk memecahkan perisai Bos Besar!`
+        : `Bos ${boss.name} berdiri sendirian dengan amarah memuncak—tembak untuk Duel Final!`,
       5.0,
     );
   }
@@ -15263,17 +15363,50 @@ export class RpgWorldEngine {
           if (m?.isBossMinion) {
             this.diamonds += m.rewardDiamonds;
           }
-          const squadRemaining = (bossStillAlive ? 1 : 0) + guardsRemaining;
-          const nextHint = bossStillAlive && guardsRemaining > 0
-            ? `Sisa Bos ${boss.name} & ${guardsRemaining} anak buah — tembak target berikutnya secara terpisah!`
-            : bossStillAlive
-            ? `Semua anak buah tumbang! Sekarang tembak Bos ${boss.name} (15 Tantangan) untuk merebut Kunci Penjara!`
-            : `Bos ${boss.name} sudah tumbang! Tembak & kalahkan ${guardsRemaining} anak buah tersisa untuk membuka Kunci Penjara!`;
-          soundEngine.playWin();
-          this.showBanner(
-            `⚔️ ${battle.monsterName} kalah! (${squadRemaining} lawan tersisa) ${nextHint}`,
-            4.2,
+          const bossMob = this.dungeonMonsters.find(
+            (dm) => dm.alive && dm.isBoss && dm.zoneId === zId,
           );
+          if (bossStillAlive && guardsRemaining === 1) {
+            if (bossMob) {
+              this.spawnBurst(bossMob.x, (bossMob.y ?? 0) + 2.2, bossMob.z, 0xef4444, 30);
+              this.spawnBurst(bossMob.x, (bossMob.y ?? 0) + 1.6, bossMob.z, 0xf97316, 18);
+            }
+            soundEngine.playBoss();
+            soundEngine.playWin();
+            this.showBanner(
+              `🔥 ${battle.monsterName} kalah! Bos ${boss.name} semakin murka melihat anak buahnya tumbang—kalahkan 1 anak buah terakhir dulu!`,
+              4.6,
+            );
+          } else if (bossStillAlive && guardsRemaining === 0) {
+            this.bossSummonShieldActive = false;
+            this.clearBossGuardShields();
+            if (bossMob) {
+              this.spawnBurst(bossMob.x, (bossMob.y ?? 0) + 2.2, bossMob.z, 0xfacc15, 30);
+              this.spawnBurst(bossMob.x, (bossMob.y ?? 0) + 1.8, bossMob.z, 0xef4444, 24);
+            }
+            if (!this.bossSoloCutsceneSeenZones.has(zId)) {
+              this.bossSoloCutsceneSeenZones.add(zId);
+              this.syncDungeonMonsterStats();
+              this.checkAreaTrophy(zId);
+              this.startDungeonBossSoloRageCutscene(zId);
+              this.saveProgress();
+              this.pushHud(true);
+              return;
+            }
+            soundEngine.playBoss();
+            soundEngine.playWin();
+            this.showBanner(
+              `🔥 Kedua anak buah tumbang! Perisai Bos ${boss.name} hancur—tembak Bos Besar (15 Tantangan) sekarang!`,
+              4.6,
+            );
+          } else {
+            const squadRemaining = (bossStillAlive ? 1 : 0) + guardsRemaining;
+            soundEngine.playWin();
+            this.showBanner(
+              `⚔️ ${battle.monsterName} kalah! (${squadRemaining} lawan tersisa)`,
+              4.0,
+            );
+          }
         }
       } else if (m?.isAmbush) {
         this.diamonds += 1;
@@ -20826,6 +20959,327 @@ export class RpgWorldEngine {
     this.controls.target.lerp(_v2, camLerp);
   }
 
+  private clearDungeonBossSoloCutscene(): void {
+    this.dungeonBossSoloCutscene = null;
+  }
+
+  private startDungeonBossSoloRageCutscene(zoneId: ZoneId): void {
+    this.clearDungeonBossSoloCutscene();
+    const boss = BOSSES[zoneId];
+    const bossMob = this.dungeonMonsters.find((m) => m.alive && m.isBoss && m.zoneId === zoneId);
+    if (!bossMob) return;
+
+    if (this.cameraMode === 'first_person') {
+      this.cameraMode = 'third_back';
+    }
+    this.phase = 'story';
+    this.heldKeys.clear();
+    this.tapMoveTarget = null;
+    this.applyCameraVisibilityAndControls();
+    this.storyTimer = 0;
+
+    const isDesa = zoneId === 'desa_sapaan';
+    const bossPos = new THREE.Vector3(
+      isDesa ? 2.0 : 0,
+      isDesa ? 9.5 : 0,
+      isDesa ? -43.2 : -13.0,
+    );
+    const heroStandPos = new THREE.Vector3(
+      isDesa ? 2.0 : 0,
+      isDesa ? 9.5 : 0,
+      isDesa ? -36.5 : -6.8,
+    );
+
+    bossMob.x = bossPos.x;
+    bossMob.y = bossPos.y;
+    bossMob.z = bossPos.z;
+    bossMob.homeX = bossPos.x;
+    bossMob.homeZ = bossPos.z;
+    bossMob.mesh.position.copy(bossPos);
+    bossMob.mesh.visible = true;
+    bossMob.mesh.scale.setScalar(1.65);
+
+    this.heroPos.copy(heroStandPos);
+    this.heroYaw = Math.atan2(bossPos.x - heroStandPos.x, bossPos.z - heroStandPos.z);
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.body.rotation.y = this.heroYaw;
+    this.playerCaveLight.position.set(this.heroPos.x, this.heroPos.y + 2.8, this.heroPos.z);
+
+    for (const m of this.dungeonMonsters) {
+      if (m.id !== bossMob.id) {
+        m.mesh.visible = false;
+      }
+    }
+    for (const s of this.shooters) {
+      s.mesh.visible = false;
+    }
+
+    this.dungeonBossSoloCutscene = {
+      zoneId,
+      beat: 'rage_erupt',
+      timer: 0,
+      bossMesh: bossMob.mesh,
+      bossBaseScale: 1.65,
+      bossPos,
+      heroStandPos,
+      eruptBurstFired: false,
+      sparkAccum: 0,
+    };
+
+    const eruptEn = `Every minion has fallen! ${boss.name} erupts in blinding fury as the final barrier shatters!`;
+    const eruptId = `Semua anak buahnya tumbang! ${boss.name} mengamuk hebat sampai perisai terakhirnya hancur berkeping-keping!`;
+    this.storyDialog = {
+      kind: 'dungeon_boss_solo_rage',
+      step: 0,
+      maxStep: 3,
+      zoneId,
+      dungeonBossSoloBeat: 'rage_erupt',
+      speakerName: boss.name,
+      speakerRole: `Amarah Puncak Bos ${ZONE_INFO[zoneId].name}`,
+      speakerKind: 'boss',
+      speakerMonsterType: boss.monsterType,
+      speakerSide: 'npc',
+      bossExpression: 'angry',
+      heroExpression: 'fierce',
+      textEn: eruptEn,
+      textId: eruptId,
+      accentColor: '#dc2626',
+    };
+    soundEngine.playDarkCloudErupt();
+    soundEngine.playBoss();
+    this.spawnBurst(bossPos.x, bossPos.y + 2.2, bossPos.z, 0xef4444, 34);
+    this.spawnBurst(bossPos.x, bossPos.y + 1.8, bossPos.z, 0xf97316, 22);
+    this.pushHud(true);
+  }
+
+  private transitionDungeonBossSoloToThreat(): void {
+    const sc = this.dungeonBossSoloCutscene;
+    if (!sc || sc.beat !== 'rage_erupt') return;
+    const boss = BOSSES[sc.zoneId];
+    sc.beat = 'boss_threat';
+    sc.timer = 0;
+
+    const threatEn =
+      'Unforgivable!! You crushed my eight shadows AND both of my guards! Now you face MY full wrath alone—I will smash you to dust and lock this cave prison forever!';
+    const threatId =
+      'Kurang ajar sekali!! Kamu menghabisi delapan bayanganku DAN kedua anak buahku! Jangan besar kepala—sekarang rasakan amarahku sendirian! Akan kuhancurkan kamu dan kukunci penjara gua ini selamanya!';
+    this.storyDialog = {
+      kind: 'dungeon_boss_solo_rage',
+      step: 1,
+      maxStep: 3,
+      zoneId: sc.zoneId,
+      dungeonBossSoloBeat: 'boss_threat',
+      speakerName: boss.name,
+      speakerRole: `Ancaman Bos Terakhir ${ZONE_INFO[sc.zoneId].name}`,
+      speakerKind: 'boss',
+      speakerMonsterType: boss.monsterType,
+      speakerSide: 'npc',
+      bossExpression: 'angry',
+      heroExpression: 'fierce',
+      textEn: threatEn,
+      textId: threatId,
+      accentColor: '#dc2626',
+    };
+    soundEngine.playMonster();
+    soundEngine.speakEnglish(threatEn);
+    this.pushHud(true);
+  }
+
+  private transitionDungeonBossSoloToHeroRetort(): void {
+    const sc = this.dungeonBossSoloCutscene;
+    if (!sc || sc.beat !== 'boss_threat') return;
+    const boss = BOSSES[sc.zoneId];
+    sc.beat = 'hero_sharp_retort';
+    sc.timer = 0;
+
+    const pName = this.getPlayerDisplayName();
+    const retortEn = `Your eight shadows and your two guards all fell at my feet, ${boss.name}! Now you stand completely alone with nowhere left to hide—hand over that prison key right now, or brace yourself to tremble on the floor next!`;
+    const retortId = `Delapan bayanganmu dan kedua anak buahmu saja sudah tumbang di hadapanku, ${boss.name}! Sekarang kamu berdiri sendirian tanpa perisai lagi—serahkan kunci penjara itu sekarang, atau bersiaplah gemetar kalah seperti bawahanmu!`;
+    this.storyDialog = {
+      kind: 'dungeon_boss_solo_rage',
+      step: 2,
+      maxStep: 3,
+      zoneId: sc.zoneId,
+      dungeonBossSoloBeat: 'hero_sharp_retort',
+      speakerName: pName,
+      speakerRole: 'Balasan Tegas Penantang Terakhir',
+      speakerKind: 'hero',
+      speakerSide: 'hero',
+      heroExpression: 'fierce',
+      bossExpression: 'shock',
+      textEn: retortEn,
+      textId: retortId,
+      accentColor: '#0ea5e9',
+    };
+    soundEngine.playWin();
+    soundEngine.speakEnglish(retortEn);
+    this.pushHud(true);
+  }
+
+  private transitionDungeonBossSoloToBossShaken(): void {
+    const sc = this.dungeonBossSoloCutscene;
+    if (!sc || sc.beat !== 'hero_sharp_retort') return;
+    const boss = BOSSES[sc.zoneId];
+    sc.beat = 'boss_shaken_clash';
+    sc.timer = 0;
+
+    const pName = this.getPlayerDisplayName();
+    const clashEn = `Ghh... d-don't get cocky, ${pName}! Even alone, I will never hand over the key without crushing you in this final battle!`;
+    const clashId = `Ghh... j-jangan berani meremehkanku, ${pName}! Meski gemetar dan tinggal sendirian, aku tidak akan pernah menyerahkan kunci itu sebelum duel terakhir di antara kita!`;
+    this.storyDialog = {
+      kind: 'dungeon_boss_solo_rage',
+      step: 3,
+      maxStep: 3,
+      zoneId: sc.zoneId,
+      dungeonBossSoloBeat: 'boss_shaken_clash',
+      speakerName: boss.name,
+      speakerRole: 'Bos Tersentak Namun Nekat Bertahan',
+      speakerKind: 'boss',
+      speakerMonsterType: boss.monsterType,
+      speakerSide: 'npc',
+      bossExpression: 'shock',
+      heroExpression: 'fierce',
+      textEn: clashEn,
+      textId: clashId,
+      accentColor: '#f59e0b',
+    };
+    soundEngine.playBoss();
+    soundEngine.speakEnglish(clashEn);
+    this.pushHud(true);
+  }
+
+  private finishDungeonBossSoloRageCutscene(): void {
+    const sc = this.dungeonBossSoloCutscene;
+    if (sc) {
+      sc.bossMesh.position.copy(sc.bossPos);
+      sc.bossMesh.scale.setScalar(sc.bossBaseScale);
+      sc.bossMesh.visible = true;
+      this.heroPos.copy(sc.heroStandPos);
+      this.heroYaw = Math.atan2(
+        sc.bossPos.x - sc.heroStandPos.x,
+        sc.bossPos.z - sc.heroStandPos.z,
+      );
+      this.clearDungeonBossSoloCutscene();
+    }
+    this.bossSummonShieldActive = false;
+    this.clearBossGuardShields();
+
+    for (const m of this.dungeonMonsters) {
+      m.mesh.visible = m.alive;
+    }
+    for (const s of this.shooters) {
+      s.mesh.visible = s.alive;
+    }
+
+    setHeroFacialExpression(this.hero, 'neutral', this.elapsed, false);
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.body.rotation.y = this.heroYaw;
+    this.storyDialog = null;
+    this.phase = 'playing';
+    this.applyCameraVisibilityAndControls();
+    this.snapCameraBehindHero();
+    soundEngine.playBoss();
+    this.showBanner(
+      '🔥 Perisai Bos Besar hancur! Tembak Bos sekarang untuk menghadapi 15 Tantangan Final!',
+      4.6,
+    );
+    this.pushHud(true);
+  }
+
+  private updateDungeonBossSoloRageCutscene(dt: number): void {
+    const sc = this.dungeonBossSoloCutscene;
+    if (!sc) return;
+    sc.timer += dt;
+    sc.sparkAccum += dt;
+    const t = sc.timer;
+
+    this.hero.root.position.copy(sc.heroStandPos);
+    this.hero.body.rotation.y = Math.atan2(
+      sc.bossPos.x - sc.heroStandPos.x,
+      sc.bossPos.z - sc.heroStandPos.z,
+    );
+    this.playerCaveLight.position.set(sc.heroStandPos.x, sc.heroStandPos.y + 2.8, sc.heroStandPos.z);
+
+    const hBlink = computeBlinkScale(this.elapsed, 0.2);
+    this.hero.leftEye.scale.y = hBlink;
+    this.hero.rightEye.scale.y = hBlink;
+    const isHeroSpeaking = sc.beat === 'hero_sharp_retort';
+    setHeroFacialExpression(this.hero, 'fierce', this.elapsed, isHeroSpeaking);
+    const hasEquippedWeapon = this.activeHotbarSlot <= 7 && this.ownedWeapons.has(this.activeWeapon);
+    applyHeroWeaponPose(this.hero, this.activeWeapon, hasEquippedWeapon, {
+      speed: 0,
+      walkCycle: this.walkCycle,
+      aimAlpha: isHeroSpeaking ? 0.55 : 0.2,
+      recoil: 0,
+      dt,
+      elapsed: this.elapsed,
+      idleDuration: 0,
+    });
+
+    const bossMode = sc.beat === 'boss_shaken_clash' ? 'shock' : 'angry';
+    const isBossSpeaking = sc.beat === 'boss_threat' || sc.beat === 'boss_shaken_clash';
+    sc.bossMesh.position.copy(sc.bossPos);
+    sc.bossMesh.rotation.y = Math.atan2(
+      sc.heroStandPos.x - sc.bossPos.x,
+      sc.heroStandPos.z - sc.bossPos.z,
+    );
+    const pulseScale =
+      sc.beat === 'rage_erupt'
+        ? sc.bossBaseScale * (1 + Math.sin(Math.min(1, t / 0.8) * Math.PI) * 0.14)
+        : sc.bossBaseScale * (1 + Math.sin(this.elapsed * 12) * 0.03);
+    sc.bossMesh.scale.setScalar(pulseScale);
+    animateMonsterRig(sc.bossMesh, {
+      mode: bossMode,
+      elapsed: this.elapsed,
+      phase: 0.4,
+      dt,
+    });
+    animateBossCutsceneTraits(sc.bossMesh, bossMode, this.elapsed, isBossSpeaking);
+
+    if (sc.sparkAccum >= 0.28) {
+      sc.sparkAccum = 0;
+      this.spawnBurst(
+        sc.bossPos.x + (Math.random() - 0.5) * 1.4,
+        sc.bossPos.y + 1.6 + Math.random() * 1.1,
+        sc.bossPos.z + (Math.random() - 0.5) * 1.4,
+        sc.beat === 'boss_shaken_clash' ? 0xf59e0b : 0xef4444,
+        6,
+      );
+    }
+
+    if (sc.beat === 'rage_erupt') {
+      if (!sc.eruptBurstFired && t >= 0.45) {
+        sc.eruptBurstFired = true;
+        this.spawnBurst(sc.bossPos.x, sc.bossPos.y + 2.0, sc.bossPos.z, 0xef4444, 28);
+        this.spawnBurst(sc.bossPos.x, sc.bossPos.y + 2.4, sc.bossPos.z, 0xfacc15, 18);
+      }
+      const zoomP = THREE.MathUtils.clamp(t / 1.8, 0, 1);
+      _v1.set(
+        THREE.MathUtils.lerp(sc.heroStandPos.x - 1.8, sc.bossPos.x + 2.5, zoomP),
+        sc.bossPos.y + 2.35,
+        THREE.MathUtils.lerp(sc.heroStandPos.z + 2.0, sc.bossPos.z + 4.3, zoomP),
+      );
+      _v2.set(sc.bossPos.x, sc.bossPos.y + 2.05, sc.bossPos.z);
+      if (t >= 2.65) {
+        this.transitionDungeonBossSoloToThreat();
+        return;
+      }
+    } else if (sc.beat === 'boss_threat') {
+      _v1.set(sc.bossPos.x + 2.35, sc.bossPos.y + 1.9, sc.bossPos.z + 3.65);
+      _v2.set(sc.bossPos.x, sc.bossPos.y + 2.1, sc.bossPos.z);
+    } else if (sc.beat === 'hero_sharp_retort') {
+      _v1.set(sc.heroStandPos.x - 2.15, sc.heroStandPos.y + 1.75, sc.heroStandPos.z - 2.65);
+      _v2.set(sc.heroStandPos.x, sc.heroStandPos.y + 1.35, sc.heroStandPos.z);
+    } else {
+      _v1.set(sc.bossPos.x - 2.35, sc.bossPos.y + 1.95, sc.bossPos.z + 3.8);
+      _v2.set(sc.bossPos.x, sc.bossPos.y + 2.05, sc.bossPos.z);
+    }
+
+    const camLerp = 1 - Math.exp(-5.4 * dt);
+    this.camera.position.lerp(_v1, camLerp);
+    this.controls.target.lerp(_v2, camLerp);
+  }
+
   private updateStoryAnimations(dt: number): void {
     this.storyTimer += dt;
 
@@ -21017,6 +21471,11 @@ export class RpgWorldEngine {
 
     if (this.storyDialog?.kind === 'dungeon_boss_summon' && this.dungeonBossSummonCutscene) {
       this.updateDungeonBossSummonCutscene(dt);
+      return;
+    }
+
+    if (this.storyDialog?.kind === 'dungeon_boss_solo_rage' && this.dungeonBossSoloCutscene) {
+      this.updateDungeonBossSoloRageCutscene(dt);
       return;
     }
 
@@ -21673,16 +22132,26 @@ export class RpgWorldEngine {
       this.worldMode === 'dungeon' && Boolean(this.dungeonBossIntro);
     const bossSummonCutscene =
       this.worldMode === 'dungeon' ? this.dungeonBossSummonCutscene : null;
+    const bossSoloCutscene =
+      this.worldMode === 'dungeon' ? this.dungeonBossSoloCutscene : null;
     for (let i = 0; i < this.bossGuardShieldMeshes.length; i++) {
       const sh = this.bossGuardShieldMeshes[i];
       sh.rotation.z += dt * 2.2;
       sh.position.y = 1.15 + Math.sin(this.elapsed * 3.8 + i) * 0.08;
     }
     for (const m of this.getActiveMonsters()) {
-      if (inPrologue || hideCaveMobsForCutscene || bossSummonCutscene) {
+      if (inPrologue || hideCaveMobsForCutscene || bossSummonCutscene || bossSoloCutscene) {
+        if (bossSoloCutscene) {
+          if (m.id !== BOSSES[bossSoloCutscene.zoneId].id) {
+            m.mesh.visible = false;
+          }
+          continue;
+        }
         if (
           !bossSummonCutscene ||
-          (m.id !== BOSSES[bossSummonCutscene.zoneId].id && !this.bossSummonedWaveIds.has(m.id))
+          (m.id !== BOSSES[bossSummonCutscene.zoneId].id &&
+            !m.isBossMinion &&
+            !this.bossSummonedWaveIds.has(m.id))
         ) {
           m.mesh.visible = false;
         }
@@ -22454,7 +22923,7 @@ export class RpgWorldEngine {
         continue;
       }
 
-      // Protected Boss waiting at Door 4 watching player fight the 8 summoned monsters!
+      // Protected Boss waiting at Door 5 while summons or minions remain
       if (this.isBossSquadProtectedEnemy(m.id)) {
         const waitPos = this.bossGuardWaitPositions.get(m.id);
         if (waitPos) {
@@ -22463,16 +22932,40 @@ export class RpgWorldEngine {
           m.z = waitPos.z;
           m.mesh.position.set(m.x, m.y, m.z);
         }
+        const rageTier = m.isBoss && this.worldMode === 'dungeon' ? this.getBossRageTier(m.zoneId) : 0;
         const minionScale = Math.min(1.15, Math.max(0.85, spec.baseScale));
-        m.mesh.scale.setScalar(m.isBoss ? 1.65 : m.isBossMinion ? minionScale : spec.baseScale);
+        const ragePulse =
+          m.isBoss && rageTier >= 1
+            ? 1.65 * (1 + Math.sin(this.elapsed * (8 + rageTier * 4)) * 0.032)
+            : m.isBoss
+            ? 1.65
+            : m.isBossMinion
+            ? minionScale
+            : spec.baseScale;
+        m.mesh.scale.setScalar(ragePulse);
         m.mesh.rotation.y = Math.atan2(this.heroPos.x - m.x, this.heroPos.z - m.z);
+        const bossWaitMode = m.isBoss && rageTier >= 1 ? 'angry' : 'menace';
         animateMonsterRig(m.mesh, {
-          mode: 'menace',
+          mode: bossWaitMode,
           elapsed: this.elapsed,
           phase: m.patrolPhase,
           dt,
         });
-        animateBossCutsceneTraits(m.mesh, 'menace', this.elapsed, false);
+        animateBossCutsceneTraits(m.mesh, bossWaitMode, this.elapsed, m.isBoss ? rageTier >= 1 : false);
+        if (m.isBoss && rageTier >= 1) {
+          this.bossRageSparkTimer += dt;
+          const sparkInterval = rageTier >= 2 ? 0.24 : 0.42;
+          if (this.bossRageSparkTimer >= sparkInterval) {
+            this.bossRageSparkTimer = 0;
+            this.spawnBurst(
+              m.x + (Math.random() - 0.5) * 1.3,
+              (m.y ?? 0) + 1.6 + Math.random() * 1.1,
+              m.z + (Math.random() - 0.5) * 1.3,
+              rageTier >= 2 ? 0xef4444 : 0xf97316,
+              rageTier >= 2 ? 6 : 4,
+            );
+          }
+        }
         continue;
       }
 
@@ -22580,15 +23073,35 @@ export class RpgWorldEngine {
           : 0;
       m.y = nGroundY + nHover;
       m.mesh.position.set(m.x, m.y, m.z);
+      const soloBossRage = Boolean(
+        m.isBoss && this.worldMode === 'dungeon' && this.getBossRageTier(m.zoneId) >= 3,
+      );
+      if (soloBossRage) {
+        m.mesh.scale.setScalar(1.65 * (1 + Math.sin(this.elapsed * 14) * 0.035));
+        this.bossRageSparkTimer += dt;
+        if (this.bossRageSparkTimer >= 0.22) {
+          this.bossRageSparkTimer = 0;
+          this.spawnBurst(
+            m.x + (Math.random() - 0.5) * 1.4,
+            (m.y ?? 0) + 1.6 + Math.random() * 1.2,
+            m.z + (Math.random() - 0.5) * 1.4,
+            0xef4444,
+            6,
+          );
+        }
+      }
       if (distSqHero <= 42 * 42) {
         animateMonsterRig(m.mesh, {
-          mode: normalMonMode,
+          mode: soloBossRage ? 'angry' : normalMonMode,
           speed: mSpd,
           walkPhase: m.walkPhase,
           elapsed: this.elapsed,
           phase: m.patrolPhase,
           dt,
         });
+        if (soloBossRage) {
+          animateBossCutsceneTraits(m.mesh, 'angry', this.elapsed, true);
+        }
       }
     }
     if (sunburnRemoved) {
@@ -27437,6 +27950,49 @@ export class RpgWorldEngine {
           y: hp.y,
           title: cs.beat === 'boss_furious_summon' ? 'Siap menghadapi delapan monster' : 'Siaga di depan pintu',
           kind: 'thought',
+        });
+      }
+      return labels;
+    }
+
+    if (this.dungeonBossSoloCutscene && this.storyDialog?.kind === 'dungeon_boss_solo_rage') {
+      const sc = this.dungeonBossSoloCutscene;
+      const boss = BOSSES[sc.zoneId];
+      const bp = projectPoint(sc.bossPos.x, sc.bossPos.y + 3.2, sc.bossPos.z);
+      if (bp) {
+        let bTitle = `${boss.name}`;
+        let bKind: 'speech' | 'npc_alert' = 'npc_alert';
+        if (sc.beat === 'rage_erupt') {
+          bTitle = 'Grrraaah!! Habis semua anak buahku?!';
+          bKind = 'speech';
+        } else if (sc.beat === 'boss_threat') {
+          bTitle = 'Hadapi amarahku sendirian sekarang!';
+          bKind = 'speech';
+        } else if (sc.beat === 'boss_shaken_clash') {
+          bTitle = 'Ghh... jangan meremehkanku!!';
+          bKind = 'speech';
+        }
+        if (sc.beat !== 'hero_sharp_retort') {
+          labels.push({
+            id: 'boss_solo_boss_lbl',
+            x: bp.x,
+            y: bp.y,
+            title: bTitle,
+            kind: bKind,
+          });
+        }
+      }
+      const hp = projectPoint(this.heroPos.x, this.heroPos.y + 2.95, this.heroPos.z);
+      if (hp) {
+        labels.push({
+          id: 'boss_solo_hero_lbl',
+          x: hp.x,
+          y: hp.y,
+          title:
+            sc.beat === 'hero_sharp_retort'
+              ? 'Tinggal sendirian, serahkan kuncinya!'
+              : 'Siaga penuh hadapi Bos Besar!',
+          kind: sc.beat === 'hero_sharp_retort' ? 'speech' : 'thought',
         });
       }
       return labels;

@@ -401,10 +401,13 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
       (story.dungeonIntroBeat === 'emerge' || story.dungeonIntroBeat === 'retreat')) ||
     (story.kind === 'dungeon_boss_summon' &&
       (story.dungeonBossSummonBeat === 'emerge_shock' ||
-        story.dungeonBossSummonBeat === 'boss_furious_summon'))
+        story.dungeonBossSummonBeat === 'boss_furious_summon')) ||
+    (story.kind === 'dungeon_boss_solo_rage' && story.dungeonBossSoloBeat === 'rage_erupt')
   ) {
     const cinemaBadge =
-      story.kind === 'dungeon_boss_summon'
+      story.kind === 'dungeon_boss_solo_rage'
+        ? 'Amarah Puncak Sang Bos'
+        : story.kind === 'dungeon_boss_summon'
         ? story.dungeonBossSummonBeat === 'emerge_shock'
           ? 'Pintu Terakhir Terbuka'
           : 'Panggilan Delapan Awan Hitam'
@@ -485,6 +488,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     story.kind === 'village_rescue_talk' ||
     story.kind === 'dungeon_intro' ||
     story.kind === 'dungeon_boss_summon' ||
+    story.kind === 'dungeon_boss_solo_rage' ||
     story.kind === 'cave_guardian' ||
     story.kind === 'dungeon_rescue' ||
     story.kind === 'dungeon_reunion_exit';
@@ -588,7 +592,9 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
 
   return (
     <>
-      {(story.kind === 'dungeon_intro' || story.kind === 'dungeon_boss_summon') &&
+      {(story.kind === 'dungeon_intro' ||
+        story.kind === 'dungeon_boss_summon' ||
+        story.kind === 'dungeon_boss_solo_rage') &&
         projectedLabels &&
         projectedLabels.length > 0 && (
         <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden">

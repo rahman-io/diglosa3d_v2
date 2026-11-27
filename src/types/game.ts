@@ -437,6 +437,7 @@ export interface StoryDialogState {
     | 'defeat_exit'
     | 'dungeon_intro'
     | 'dungeon_boss_summon'
+    | 'dungeon_boss_solo_rage'
     | 'dungeon_rescue'
     | 'dungeon_reunion_exit'
     | 'cave_guardian';
@@ -458,6 +459,11 @@ export interface StoryDialogState {
     | 'boss_shock_talk'
     | 'guard_angry_talk'
     | 'boss_furious_summon';
+  dungeonBossSoloBeat?:
+    | 'rage_erupt'
+    | 'boss_threat'
+    | 'hero_sharp_retort'
+    | 'boss_shaken_clash';
   bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry';
   heroExpression?: 'neutral' | 'fierce';
   villagerArchetypes?: string[];
