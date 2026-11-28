@@ -2160,6 +2160,8 @@ export interface CaptiveAnimRig {
   rightEye?: THREE.Mesh;
   leftArm?: THREE.Group;
   rightArm?: THREE.Group;
+  leftLeg?: THREE.Mesh;
+  rightLeg?: THREE.Mesh;
   tailPivot?: THREE.Group;
   halo?: THREE.Object3D;
   sadGroup?: THREE.Group;
@@ -4660,6 +4662,8 @@ export function createCaptiveMesh(
   rig.rightEye = eyeR;
   rig.leftArm = leftArm;
   rig.rightArm = rightArm;
+  rig.leftLeg = legL;
+  rig.rightLeg = legR;
   rig.injuryArmBandage = injuryArmBandage;
   root.userData.captiveRig = rig;
   root.scale.setScalar(heightScale);
@@ -4773,6 +4777,16 @@ export function animateCaptiveMesh(
     rig.injuryArmBandage.visible = isSadInjured;
   }
 
+  if (rig.leftLeg && rig.rightLeg) {
+    if (moving) {
+      const legSwing = Math.sin(elapsed * 9) * 0.48;
+      rig.leftLeg.rotation.x = legSwing;
+      rig.rightLeg.rotation.x = -legSwing;
+    } else {
+      rig.leftLeg.rotation.x = 0;
+      rig.rightLeg.rotation.x = 0;
+    }
+  }
   if (rig.leftArm && rig.rightArm) {
     if (moving) {
       rig.leftArm.rotation.x = Math.sin(elapsed * 9) * 0.52;

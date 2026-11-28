@@ -110,7 +110,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                 onOpenProfile();
               }}
               title="Menu Profil & Nama Karakter"
-              className="inline-flex max-w-[140px] items-center gap-1.5 rounded-full border-2 border-amber-300/65 bg-slate-950/85 py-1 pl-1 pr-2.5 text-left text-white shadow-lg backdrop-blur-md transition hover:border-amber-300 hover:bg-slate-900 sm:max-w-[200px] sm:pr-3"
+              className="inline-flex max-w-[140px] items-center gap-1.5 rounded-full border-2 border-amber-300/65 bg-slate-950/92 py-1 pl-1 pr-2.5 text-left text-white shadow-lg transition hover:border-amber-300 hover:bg-slate-900 sm:max-w-[200px] sm:pr-3"
             >
               <span
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-white/40 text-xs font-black text-white shadow sm:h-8 sm:w-8"
@@ -223,7 +223,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
 
           {/* Unified Info & Menu Popover */}
           {showInfoSheet && (
-            <div className="absolute right-0 top-14 z-30 w-72 rounded-2xl border-2 border-amber-300/45 bg-slate-950/92 p-3.5 text-white shadow-2xl backdrop-blur-md">
+            <div className="absolute right-0 top-14 z-30 w-72 rounded-2xl border-2 border-amber-300/45 bg-slate-950/95 p-3.5 text-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-white/10 pb-2">
                 <div>
                   <div className="text-xs font-extrabold text-amber-300">Diglosa 3D RPG</div>
@@ -384,7 +384,7 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
       {/* BOTTOM HERO ACTION CLUSTER: Giant Center Play + Flanking Icon Buttons (Zero Text) */}
       <div className="flex flex-col items-center gap-2.5 pb-1 sm:pb-2">
         {showQuickMenu && (
-          <div className="pointer-events-auto flex flex-wrap justify-center gap-1.5 rounded-2xl border-2 border-amber-300/40 bg-slate-950/85 p-2 shadow-2xl backdrop-blur-md">
+          <div className="pointer-events-auto flex flex-wrap justify-center gap-1.5 rounded-2xl border-2 border-amber-300/40 bg-slate-950/92 p-2 shadow-2xl">
             {(
               [
                 ['cards', 'Kartu'],

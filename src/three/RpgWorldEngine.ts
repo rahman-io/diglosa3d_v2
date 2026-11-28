@@ -42,9 +42,11 @@ import {
   AreaWaveDeal,
   computeAreaWaveDeal,
   getWordsForZone,
+  pickSmartWords,
   VOCAB_BY_ID,
   VOCAB_CATALOG,
 } from '../data/vocabCatalog';
+import { getDevicePerfProfile } from '../utils/devicePerf';
 import {
   getCharacterPreset,
   getMultiplayerGroupSpawnPoint,
@@ -215,6 +217,11 @@ import {
   updateDoorRigVisual,
 } from './rpgModels';
 import { isInCrystalRiverChannel } from './desaCaveWorld';
+import {
+  DesaCaveLivingWorldState,
+  initDesaCaveLivingWorld,
+  updateDesaCaveLivingWorld,
+} from './desaLivingWorld';
 import {
   createDriveableCarRig,
   DriveableCarRig,
@@ -955,6 +962,7 @@ export class RpgWorldEngine {
   private isSoftwareGl: boolean;
   private isMobileDevice: boolean;
   private isLowEndMobile: boolean;
+  private isUltraLowEndMobile: boolean;
   private preferLiteShader: boolean;
   private callbacks: RpgEngineCallbacks;
 
@@ -1770,6 +1778,9 @@ export class RpgWorldEngine {
     { mesh: THREE.Group; startPos: THREE.Vector3; endPos: THREE.Vector3 }
   > = new Map();
   private dungeonCaptiveTrailPositions: Map<string, THREE.Vector3> = new Map();
+  private dungeonEnteredLiberated = false;
+  private desaLivingState: DesaCaveLivingWorldState | null = null;
+  private nearbyCaveCitizenId: string | null = null;
   private bannerMessage: string | null = null;
   private bannerTimer = 0;
   private caveCountdownTimer = 0;
@@ -1847,41 +1858,18 @@ export class RpgWorldEngine {
     this.container = container;
     this.callbacks = callbacks;
 
-    const gpuProbe = (() => {
-      const c = document.createElement('canvas');
-      const gl = c.getContext('webgl2');
-      if (!gl) return { software: true, gpu: '' };
-      const ext = gl.getExtension('WEBGL_debug_renderer_info');
-      const param = ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER;
-      const gpu = String(gl.getParameter(param));
-      gl.getExtension('WEBGL_lose_context')?.loseContext();
-      return {
-        software: /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu),
-        gpu,
-      };
-    })();
-    this.isSoftwareGl = gpuProbe.software;
-
-    this.isMobileDevice =
-      typeof navigator !== 'undefined' &&
-      (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
-        (navigator.maxTouchPoints > 1 &&
-          typeof window !== 'undefined' &&
-          window.innerWidth <= 1024));
-    const hwCores = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 4;
-    const hwMem =
-      typeof navigator !== 'undefined'
-        ? (navigator as Navigator & { deviceMemory?: number }).deviceMemory || 4
-        : 4;
-    this.isLowEndMobile =
-      this.isMobileDevice &&
-      (hwCores <= 4 ||
-        hwMem <= 3 ||
-        /Mali-G5[0-2]|Mali-T|Adreno \(TM\) 5|Adreno \(TM\) 610|PowerVR/i.test(gpuProbe.gpu));
-    this.preferLiteShader = this.isSoftwareGl;
+    const perf = getDevicePerfProfile();
+    this.isSoftwareGl = perf.isSoftwareGl;
+    this.isMobileDevice = perf.isMobile;
+    this.isLowEndMobile = perf.isLowEnd;
+    this.isUltraLowEndMobile = perf.isUltraLowEnd;
+    this.preferLiteShader = this.isSoftwareGl || this.isUltraLowEndMobile;
+    if (this.isUltraLowEndMobile) {
+      this.settings.fxLevel = 'lite';
+    }
 
     this.renderer = new THREE.WebGLRenderer({
-      antialias: !this.isSoftwareGl,
+      antialias: !this.isSoftwareGl && !this.isLowEndMobile,
       powerPreference: this.isMobileDevice ? 'default' : 'high-performance',
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -1892,7 +1880,13 @@ export class RpgWorldEngine {
         ? 1
         : Math.min(
             window.devicePixelRatio || 1,
-            this.isLowEndMobile ? 1.35 : this.isMobileDevice ? 1.6 : 1.75,
+            this.isUltraLowEndMobile
+              ? 0.9
+              : this.isLowEndMobile
+              ? 1.25
+              : this.isMobileDevice
+              ? 1.6
+              : 1.75,
           ),
     );
     this.renderer.shadowMap.enabled = !this.isSoftwareGl;
@@ -1911,7 +1905,7 @@ export class RpgWorldEngine {
     this.scene.background = skyColor;
     this.scene.fog = new THREE.FogExp2(0x9cd6fc, 0.0022);
 
-    if (!this.isSoftwareGl) {
+    if (!this.isSoftwareGl && !this.isUltraLowEndMobile) {
       const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
       this.scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
       pmremGenerator.dispose();
@@ -1925,7 +1919,7 @@ export class RpgWorldEngine {
       50,
       width / height,
       0.16,
-      this.isMobileDevice ? 460 : 560,
+      this.isLowEndMobile ? 360 : this.isMobileDevice ? 460 : 560,
     );
     this.camera.position.set(16, 48, 86);
     this.scene.add(this.camera);
@@ -1948,14 +1942,20 @@ export class RpgWorldEngine {
     );
     this.scene.add(this.hemiLight);
 
-    const shadowMapSize = this.isLowEndMobile ? 768 : this.isMobileDevice ? 1024 : 1536;
+    const shadowMapSize = this.isUltraLowEndMobile
+      ? 512
+      : this.isLowEndMobile
+      ? 768
+      : this.isMobileDevice
+      ? 1024
+      : 1536;
     this.sunLight = new THREE.DirectionalLight(0xfff4d6, 1.95);
     this.sunLight.position.set(42, 68, 42);
     this.sunLight.castShadow = !this.isSoftwareGl;
     this.sunLight.shadow.mapSize.set(shadowMapSize, shadowMapSize);
     this.sunLight.shadow.camera.near = 10;
     this.sunLight.shadow.camera.far = 210;
-    const d = this.isMobileDevice ? 62 : 76;
+    const d = this.isLowEndMobile ? 54 : this.isMobileDevice ? 62 : 76;
     this.sunLight.shadow.camera.left = -d;
     this.sunLight.shadow.camera.right = d;
     this.sunLight.shadow.camera.top = d;
@@ -2225,17 +2225,25 @@ export class RpgWorldEngine {
     const dprRaw = window.devicePixelRatio || 1;
     if (this.isSoftwareGl) return 1;
     if (fx === 'off') {
-      return this.isMobileDevice ? Math.min(dprRaw, 1.0) : Math.min(dprRaw, 1.1);
+      return this.isUltraLowEndMobile
+        ? Math.min(dprRaw, 0.8)
+        : this.isMobileDevice
+        ? Math.min(dprRaw, 0.95)
+        : Math.min(dprRaw, 1.1);
     }
     if (fx === 'lite') {
-      return this.isLowEndMobile
-        ? Math.min(dprRaw, 1.15)
+      return this.isUltraLowEndMobile
+        ? Math.min(dprRaw, 0.9)
+        : this.isLowEndMobile
+        ? Math.min(dprRaw, 1.1)
         : this.isMobileDevice
         ? Math.min(dprRaw, 1.25)
         : Math.min(dprRaw, 1.35);
     }
-    return this.isLowEndMobile
-      ? Math.min(dprRaw, 1.35)
+    return this.isUltraLowEndMobile
+      ? Math.min(dprRaw, 1.05)
+      : this.isLowEndMobile
+      ? Math.min(dprRaw, 1.25)
       : this.isMobileDevice
       ? Math.min(dprRaw, 1.6)
       : Math.min(dprRaw, 1.75);
@@ -2245,13 +2253,15 @@ export class RpgWorldEngine {
     const baseDpr = this.getBaseTargetDpr();
     const minFloor = this.isSoftwareGl
       ? 1
+      : this.isUltraLowEndMobile
+      ? 0.72
       : this.worldMode === 'ocean' && this.isMobileDevice
-      ? 0.78
+      ? 0.75
       : this.isMobileDevice
-      ? 1.0
+      ? 0.92
       : 1.1;
     const scaled =
-      this.settings.fxLevel === 'full' && !this.isSoftwareGl
+      this.settings.fxLevel !== 'off' && !this.isSoftwareGl
         ? Math.max(minFloor, Math.round(baseDpr * this.activeDprScale * 100) / 100)
         : baseDpr;
     if (!forceResize && Math.abs(scaled - this.appliedDpr) < 0.03) return;
@@ -2269,8 +2279,11 @@ export class RpgWorldEngine {
     this.fastFrameStreak = 0;
     this.applyEffectivePixelRatio(true);
 
-    // Keep crisp sun shadows active across GPU devices (throttled & dirty-checked) unless FX is Off
-    const shadowsOn = !this.isSoftwareGl && fx !== 'off';
+    // Keep crisp sun shadows active on capable devices, skip in off or low-end lite to save GPU bandwidth
+    const shadowsOn =
+      !this.isSoftwareGl &&
+      fx !== 'off' &&
+      !(fx === 'lite' && this.isLowEndMobile);
     this.renderer.shadowMap.enabled = shadowsOn;
     this.sunLight.castShadow = shadowsOn;
     if (shadowsOn) {
@@ -2279,7 +2292,7 @@ export class RpgWorldEngine {
     }
 
     if (this.villageRig?.breezeMotes) {
-      this.villageRig.breezeMotes.mesh.visible = fx !== 'off';
+      this.villageRig.breezeMotes.mesh.visible = fx !== 'off' && !this.isUltraLowEndMobile;
     }
     this.forceRenderNextFrame = true;
   }
@@ -3672,14 +3685,7 @@ export class RpgWorldEngine {
   private pickZoneChallengeWords(zoneId: ZoneId, count = 4): string[] {
     const zonePool = getWordsForZone(zoneId);
     const source = zonePool.length > 0 ? zonePool : VOCAB_CATALOG;
-    const out: string[] = [];
-    for (let i = 0; i < count && source.length > 0; i++) {
-      const picked = source[Math.floor(Math.random() * source.length)];
-      if (picked && !out.includes(picked.id)) {
-        out.push(picked.id);
-      }
-    }
-    return out;
+    return pickSmartWords(source, count, this.wordProgress).map((v) => v.id);
   }
 
   private resolveSafeOverworldMonsterSpot(rawX: number, rawZ: number): { x: number; z: number } {
@@ -11600,7 +11606,11 @@ export class RpgWorldEngine {
     gardenOasis = false,
   ): void {
     const liteBoost = this.preferLiteShader ? 0.2 : 0;
-    const shadowsDesired = mode !== 'ocean' && !this.isSoftwareGl && this.settings.fxLevel !== 'off';
+    const shadowsDesired =
+      mode !== 'ocean' &&
+      !this.isSoftwareGl &&
+      this.settings.fxLevel !== 'off' &&
+      !(this.settings.fxLevel === 'lite' && this.isLowEndMobile);
     this.renderer.shadowMap.enabled = shadowsDesired;
     this.sunLight.castShadow = shadowsDesired;
     if (shadowsDesired) {
@@ -11839,6 +11849,9 @@ export class RpgWorldEngine {
     this.activeRescueCellId = null;
     this.dungeonCellRescueTargets.clear();
     this.dungeonCaptiveTrailPositions.clear();
+    this.dungeonEnteredLiberated = false;
+    this.desaLivingState = null;
+    this.nearbyCaveCitizenId = null;
     this.tapMoveTarget = null;
     this.caveCountdownTimer = 0;
     this.caveCountdownStep = null;
@@ -11886,7 +11899,7 @@ export class RpgWorldEngine {
 
   private getOrCreateAreaDeal(zoneId: ZoneId): AreaWaveDeal {
     if (!this.areaDeals[zoneId]) {
-      this.areaDeals[zoneId] = computeAreaWaveDeal(zoneId);
+      this.areaDeals[zoneId] = computeAreaWaveDeal(zoneId, this.wordProgress);
       this.saveProgress();
     }
     return this.areaDeals[zoneId]!;
@@ -12006,6 +12019,7 @@ export class RpgWorldEngine {
     this.mapHiddenDungeon = this.collectMapHidden(rig.group);
 
     const rescued = this.captiveRescuedZones.has(zoneId) || this.liberatedZones.has(zoneId);
+    this.dungeonEnteredLiberated = rescued;
     const bossBeaten = rescued || this.defeatedBossZones.has(zoneId);
     const gardenTransformed = rescued && this.ribbons.has(zoneId);
     this.applyAtmosphere('dungeon', zoneId, bossBeaten, gardenTransformed);
@@ -12545,22 +12559,37 @@ export class RpgWorldEngine {
       if (prisonFullyUnlocked && rig.hasInsideGuardian) {
         rig.guardianAuraMat.color.setHex(0x22c55e);
       }
-      const sp = rig.spawnPos;
-      for (const cell of multiCells) {
-        if (!cell.unlocked) continue;
-        for (const cap of cell.captives) {
-          rig.group.add(cap.mesh);
-          const pos = new THREE.Vector3(
-            sp.x + cap.followOffset.x,
-            sp.y,
-            sp.z - cap.followOffset.z * 0.55,
-          );
-          cap.mesh.position.copy(pos);
-          cap.mesh.rotation.y = Math.PI;
-          this.dungeonCaptiveTrailPositions.set(cap.id, pos.clone());
+      if (this.dungeonEnteredLiberated) {
+        for (const cell of multiCells) {
+          cell.bars.visible = false;
+          cell.group.visible = false;
         }
+        rig.caveColliders = rig.caveColliders.filter((col) => !col.isPrisonCollider);
+        if (zoneId === 'desa_sapaan') {
+          this.desaLivingState = initDesaCaveLivingWorld(
+            rig,
+            this.palette,
+            this.dungeonClickables,
+          );
+        }
+      } else {
+        const sp = rig.spawnPos;
+        for (const cell of multiCells) {
+          if (!cell.unlocked) continue;
+          for (const cap of cell.captives) {
+            rig.group.add(cap.mesh);
+            const pos = new THREE.Vector3(
+              sp.x + cap.followOffset.x,
+              sp.y,
+              sp.z - cap.followOffset.z * 0.55,
+            );
+            cap.mesh.position.copy(pos);
+            cap.mesh.rotation.y = Math.PI;
+            this.dungeonCaptiveTrailPositions.set(cap.id, pos.clone());
+          }
+        }
+        this.dungeonCaptivePos.set(sp.x + 1.8, sp.y, sp.z);
       }
-      this.dungeonCaptivePos.set(sp.x + 1.8, sp.y, sp.z);
     } else if (rescued) {
       rig.prisonBars.visible = false;
       rig.prisonKeyGroup.visible = false;
@@ -12570,10 +12599,23 @@ export class RpgWorldEngine {
         rig.guardianAuraMat.color.setHex(0x22c55e);
       }
       rig.group.add(rig.captiveMesh);
-      const sp = rig.spawnPos;
-      this.dungeonCaptivePos.set(sp.x + 1.8, sp.y, sp.z);
+      const baseSpot = rig.hasInsideGuardian ? rig.guardianPos : rig.exitPadPos;
+      const freeX = baseSpot.x + (rig.hasInsideGuardian ? 1.8 : 1.6);
+      const freeZ = baseSpot.z + (rig.hasInsideGuardian ? 1.0 : 2.6);
+      const freeY = this.getDungeonSupportHeight(freeX, freeZ, baseSpot.y + 0.8);
+      this.dungeonCaptivePos.set(freeX, freeY, freeZ);
       rig.captiveMesh.position.copy(this.dungeonCaptivePos);
-      rig.captiveMesh.rotation.y = Math.PI;
+      rig.captiveMesh.rotation.y = Math.atan2(
+        rig.spawnPos.x - freeX,
+        rig.spawnPos.z - freeZ,
+      );
+      rig.captiveMesh.userData.caveFreeCaptive = true;
+      rig.captiveMesh.traverse((child) => {
+        child.userData.caveFreeCaptive = true;
+      });
+      if (!this.dungeonClickables.includes(rig.captiveMesh)) {
+        this.dungeonClickables.push(rig.captiveMesh);
+      }
     } else if (bossBeaten) {
       rig.prisonKeyGroup.visible = !keyCollected;
       rig.ribbonGroup.visible = false;
@@ -16973,7 +17015,7 @@ export class RpgWorldEngine {
   }
 
   public startAmmoQuiz(): void {
-    const pool = [...VOCAB_CATALOG].sort(() => Math.random() - 0.5).slice(0, 3);
+    const pool = pickSmartWords(VOCAB_CATALOG, 3, this.wordProgress);
     this.phase = 'learning';
     this.heldKeys.clear();
     this.callbacks.onStartLearning({
@@ -16987,14 +17029,32 @@ export class RpgWorldEngine {
   }
 
   public startQuickLearning(mode: LearningSessionContext['mode'], catId?: number, zoneId?: ZoneId): void {
-    const pool =
+    const rawPool =
       catId !== undefined
         ? VOCAB_CATALOG.filter((v) => v.catId === catId)
         : zoneId
         ? getWordsForZone(zoneId)
         : VOCAB_CATALOG;
     const count = mode === 'match' ? 8 : 10;
-    const picked = [...pool].sort(() => Math.random() - 0.5).slice(0, count);
+    let eligible = rawPool;
+    if (mode === 'type') {
+      const typeable = rawPool.filter((v) => /^[A-Za-z' -]{2,16}$/.test(v.word));
+      if (typeable.length >= Math.min(4, count)) {
+        eligible = typeable;
+      }
+    } else if (mode === 'match') {
+      const seenWords = new Set<string>();
+      const seenMeanings = new Set<string>();
+      eligible = rawPool.filter((v) => {
+        const w = v.word.toLowerCase();
+        const m = v.meaningId.toLowerCase();
+        if (seenWords.has(w) || seenMeanings.has(m)) return false;
+        seenWords.add(w);
+        seenMeanings.add(m);
+        return true;
+      });
+    }
+    const picked = pickSmartWords(eligible, count, this.wordProgress);
     this.phase = 'learning';
     this.heldKeys.clear();
     this.callbacks.onStartLearning({
@@ -18105,6 +18165,36 @@ export class RpgWorldEngine {
       return;
     }
 
+    if (this.worldMode === 'dungeon' && this.nearbyCaveCitizenId && this.desaLivingState) {
+      const actor = this.desaLivingState.actorById.get(this.nearbyCaveCitizenId);
+      if (actor) {
+        soundEngine.playPick();
+        this.showBanner(
+          `🌿 ${actor.name} (${actor.scenarioTitle}): "${actor.dialogueId}" — "${actor.dialogueEn}"`,
+          5.6,
+        );
+        return;
+      }
+    }
+
+    if (
+      this.worldMode === 'dungeon' &&
+      this.dungeonEnteredLiberated &&
+      !this.desaLivingState &&
+      this.dungeonState &&
+      Math.hypot(
+        this.heroPos.x - this.dungeonCaptivePos.x,
+        this.heroPos.z - this.dungeonCaptivePos.z,
+      ) < 4.0
+    ) {
+      soundEngine.playPick();
+      this.showBanner(
+        `🌸 ${this.dungeonState.captiveName}: "Gua ini sekarang asri, aman, dan nyaman! Terima kasih sudah membebaskan kami!"`,
+        4.6,
+      );
+      return;
+    }
+
     if (
       this.worldMode === 'dungeon' &&
       this.targetedCaveBlock &&
@@ -18452,7 +18542,7 @@ export class RpgWorldEngine {
     if (!target || !target.alive || target.kind !== 'word_seal' || !this.dungeonState) return;
     const pool = getWordsForZone(this.dungeonState.zoneId);
     if (pool.length === 0) return;
-    const picked = pool[Math.floor(Math.random() * pool.length)];
+    const picked = pickSmartWords(pool, 1, this.wordProgress)[0] || pool[0];
     this.phase = 'learning';
     this.heldKeys.clear();
     this.callbacks.onOpenCaveSeal({
@@ -20850,6 +20940,8 @@ export class RpgWorldEngine {
           !cur.userData.caveSeaWeaponChest &&
           !cur.userData.craftingTable &&
           !cur.userData.caveGuardian &&
+          !cur.userData.caveCitizenId &&
+          !cur.userData.caveFreeCaptive &&
           !cur.userData.prisonKey &&
           !cur.userData.hiddenPrison &&
           cur.userData.doorIndex === undefined
@@ -20984,6 +21076,54 @@ export class RpgWorldEngine {
           } else {
             this.showBanner(
               `🗣️ Dekati ${this.dungeonState?.guardianName || 'Penjaga Gua'} terlebih dahulu!`,
+              2.0,
+            );
+          }
+          return;
+        }
+        if (
+          obj.userData.caveCitizenId &&
+          this.worldMode === 'dungeon' &&
+          this.desaLivingState
+        ) {
+          const actor = this.desaLivingState.actorById.get(
+            obj.userData.caveCitizenId as string,
+          );
+          if (actor) {
+            const dist = Math.hypot(actor.x - this.heroPos.x, actor.z - this.heroPos.z);
+            if (dist < 7.8) {
+              soundEngine.playPick();
+              this.showBanner(
+                `🌿 ${actor.name} (${actor.scenarioTitle}): "${actor.dialogueId}" — "${actor.dialogueEn}"`,
+                5.6,
+              );
+            } else {
+              this.showBanner(
+                `🗣️ Dekati ${actor.name} (${actor.scenarioTitle}) untuk berbincang!`,
+                2.2,
+              );
+            }
+          }
+          return;
+        }
+        if (
+          obj.userData.caveFreeCaptive &&
+          this.worldMode === 'dungeon' &&
+          this.dungeonState
+        ) {
+          const dist = Math.hypot(
+            this.dungeonCaptivePos.x - this.heroPos.x,
+            this.dungeonCaptivePos.z - this.heroPos.z,
+          );
+          if (dist < 7.5) {
+            soundEngine.playPick();
+            this.showBanner(
+              `🌸 ${this.dungeonState.captiveName}: "Gua ini sekarang asri, aman, dan nyaman! Terima kasih sudah membebaskan kami!"`,
+              4.6,
+            );
+          } else {
+            this.showBanner(
+              `🗣️ Dekati ${this.dungeonState.captiveName} terlebih dahulu!`,
               2.0,
             );
           }
@@ -21196,14 +21336,14 @@ export class RpgWorldEngine {
       return 650;
     }
     if (this.phase === 'title') {
-      return this.isLowEndMobile ? 44 : this.isMobileDevice ? 38 : 32;
+      return this.isUltraLowEndMobile ? 52 : this.isLowEndMobile ? 44 : this.isMobileDevice ? 38 : 32;
     }
     if (this.phase === 'dialogue' || this.phase === 'story') {
-      return this.isLowEndMobile ? 42 : this.isMobileDevice ? 34 : 24;
+      return this.isUltraLowEndMobile ? 48 : this.isLowEndMobile ? 42 : this.isMobileDevice ? 34 : 24;
     }
     const fx = this.settings.fxLevel;
-    if (fx === 'off') return 32;
-    if (fx === 'lite') return this.isMobileDevice ? 32 : 16;
+    if (fx === 'off') return this.isUltraLowEndMobile ? 40 : 32;
+    if (fx === 'lite') return this.isUltraLowEndMobile ? 38 : this.isMobileDevice ? 32 : 16;
     // Idle power-save: ease gently when standing completely still with no active touch/projectiles
     if (
       this.isMobileDevice &&
@@ -21216,10 +21356,11 @@ export class RpgWorldEngine {
       !this.hasActiveParticles &&
       now - this.lastInputActivityMs > 1800
     ) {
-      return 42;
+      return this.isUltraLowEndMobile ? 55 : this.isLowEndMobile ? 48 : 42;
     }
-    // Low-end mobile devices lock to rock-steady 30-40Hz pacing so full PBR + shadows + sharp DPR stay cool
-    if (this.isLowEndMobile) return 26;
+    if (this.isUltraLowEndMobile) return 34;
+    // Low-end mobile devices lock to rock-steady 30-35Hz pacing so full PBR + shadows + sharp DPR stay cool
+    if (this.isLowEndMobile) return 30;
     // Adaptive thermal governor: if a mid-range mobile device takes >11ms per frame tick, ease to ~35-45Hz headroom
     if (this.isMobileDevice && this.emaFrameWorkMs > 11) return 24;
     // Cap at 60 FPS (prevents 120Hz thermal drain while keeping 60Hz buttery smooth)
@@ -21236,7 +21377,7 @@ export class RpgWorldEngine {
       this.phase === 'learning' ||
       this.phase === 'academy';
     if (isIdle && !this.forceRenderNextFrame) {
-      this.frameId = window.setTimeout(this.tick, 650);
+      // Zero-Hz wake-on-demand during modal overlays & background idle — saves battery & heat
       return;
     }
     if (this.isSoftwareGl) {
@@ -21334,8 +21475,10 @@ export class RpgWorldEngine {
       const shadowMod =
         this.phase === 'title'
           ? 12
+          : this.isUltraLowEndMobile
+          ? 7
           : this.isLowEndMobile
-          ? 4
+          ? 5
           : this.isMobileDevice
           ? 3
           : 2;
@@ -21352,8 +21495,10 @@ export class RpgWorldEngine {
             ? 3200
             : this.phase === 'dialogue'
             ? 2400
+            : this.isUltraLowEndMobile
+            ? 1800
             : this.isLowEndMobile
-            ? 1250
+            ? 1400
             : 900;
         const timeRefresh = now - this.lastShadowUpdateMs > refreshIntervalMs;
         if (heroMoved || sunMoved || modeChanged || timeRefresh) {
@@ -21392,18 +21537,23 @@ export class RpgWorldEngine {
     const workMs = performance.now() - now;
     this.emaFrameWorkMs = this.emaFrameWorkMs * 0.9 + workMs * 0.1;
 
-    // Adaptive resolution scaling on mobile Full mode: keep sharp DPR by default, step down only under sustained load
-    if (this.isMobileDevice && this.phase === 'playing' && this.settings.fxLevel === 'full') {
-      const minDprScale = this.worldMode === 'ocean' ? 0.72 : 0.85;
-      if (workMs > 13.5) {
+    // Adaptive resolution scaling on mobile Full & Lite modes: step down gracefully under sustained GPU load
+    if (this.isMobileDevice && this.phase === 'playing' && this.settings.fxLevel !== 'off') {
+      const minDprScale = this.isUltraLowEndMobile
+        ? 0.72
+        : this.worldMode === 'ocean'
+        ? 0.72
+        : 0.85;
+      const slowBudgetMs = this.isLowEndMobile ? 11.5 : 13.5;
+      if (workMs > slowBudgetMs) {
         this.slowFrameStreak += 1;
         this.fastFrameStreak = 0;
-        if (this.slowFrameStreak >= 45 && this.activeDprScale > minDprScale) {
+        if (this.slowFrameStreak >= 40 && this.activeDprScale > minDprScale) {
           this.activeDprScale = Math.max(minDprScale, this.activeDprScale - 0.08);
           this.slowFrameStreak = 0;
           this.applyEffectivePixelRatio();
         }
-      } else if (workMs < 7.5) {
+      } else if (workMs < 7.0) {
         this.fastFrameStreak += 1;
         this.slowFrameStreak = 0;
         if (this.fastFrameStreak >= 90 && this.activeDprScale < 1.0) {
@@ -21416,7 +21566,13 @@ export class RpgWorldEngine {
       }
     }
 
-    const hudMinMs = this.isLowEndMobile ? 250 : this.isMobileDevice ? 200 : 140;
+    const hudMinMs = this.isUltraLowEndMobile
+      ? 300
+      : this.isLowEndMobile
+      ? 250
+      : this.isMobileDevice
+      ? 200
+      : 140;
     if (now - this.lastHudPushMs > hudMinMs) {
       this.pushHud(false);
     }
@@ -27642,7 +27798,43 @@ export class RpgWorldEngine {
           );
           animateZoneNpc(this.dungeonRig.guardianMesh, this.elapsed, 0.5, gDist < 4.5, dt);
         }
-        if (this.dungeonRig.prisonCells && this.dungeonRig.prisonCells.length > 0) {
+        if (this.dungeonEnteredLiberated) {
+          if (this.desaLivingState && this.dungeonState?.zoneId === 'desa_sapaan') {
+            if (this.phase !== 'story') {
+              updateDesaCaveLivingWorld(
+                this.desaLivingState,
+                dt,
+                this.elapsed,
+                this.heroPos.x,
+                this.heroPos.z,
+                this.isLowEndMobile || this.settings.fxLevel !== 'full',
+              );
+            }
+          } else {
+            if (this.dungeonRig.hasInsideGuardian) {
+              this.dungeonRig.guardianMesh.position.y =
+                Math.abs(Math.sin(this.elapsed * 4.2)) * 0.1;
+            }
+            const dCap = Math.hypot(
+              this.heroPos.x - this.dungeonCaptivePos.x,
+              this.heroPos.z - this.dungeonCaptivePos.z,
+            );
+            const nearCap = dCap < 4.6;
+            const hop = nearCap ? Math.abs(Math.sin(this.elapsed * 4.4)) * 0.08 : 0;
+            this.dungeonRig.captiveMesh.position.set(
+              this.dungeonCaptivePos.x,
+              this.dungeonCaptivePos.y + hop,
+              this.dungeonCaptivePos.z,
+            );
+            if (nearCap) {
+              this.dungeonRig.captiveMesh.rotation.y = Math.atan2(
+                this.heroPos.x - this.dungeonCaptivePos.x,
+                this.heroPos.z - this.dungeonCaptivePos.z,
+              );
+            }
+            animateCaptiveMesh(this.dungeonRig.captiveMesh, this.elapsed, nearCap, false);
+          }
+        } else if (this.dungeonRig.prisonCells && this.dungeonRig.prisonCells.length > 0) {
           if (this.dungeonState?.prisonUnlocked && this.dungeonRig.hasInsideGuardian) {
             this.dungeonRig.guardianMesh.position.y = Math.abs(Math.sin(this.elapsed * 4.2)) * 0.1;
           }
@@ -29388,8 +29580,13 @@ export class RpgWorldEngine {
 
     // Gentle blocky Minecraft-style voxel clouds drift across the sky
     const throttleUpload = this.isLowEndMobile || this.settings.fxLevel !== 'full';
-    if (!throttleUpload || (this.animFrameCounter & 1) === 0) {
-      const cloudStep = throttleUpload ? dt * 1.8 : dt * 0.9;
+    const cloudMask = this.isUltraLowEndMobile ? 3 : 1;
+    if (!throttleUpload || (this.animFrameCounter & cloudMask) === 0) {
+      const cloudStep = this.isUltraLowEndMobile
+        ? dt * 3.2
+        : throttleUpload
+        ? dt * 1.8
+        : dt * 0.9;
       for (let i = 0; i < this.cloudsMesh.count; i++) {
         this.cloudsMesh.getMatrixAt(i, _cloudMat);
         _cloudMat.decompose(_cloudPos, _cloudQuat, _cloudScale);
@@ -32075,6 +32272,7 @@ export class RpgWorldEngine {
 
       this.nearbyDoorIndex = null;
       this.nearbyDungeonGuardian = false;
+      this.nearbyCaveCitizenId = null;
       this.nearPrisonKey = false;
       this.nearHiddenPrison = false;
       this.nearPrisonCellId = null;
@@ -32224,6 +32422,23 @@ export class RpgWorldEngine {
       this.nearCaveRibbon = canGetCaveRibbon && caveRibbonDist < 4.5;
       if (this.nearCaveRibbon && caveRibbonDist < 2.25) {
         this.collectCaveRibbon(this.dungeonState.zoneId);
+      }
+
+      if (this.desaLivingState) {
+        let closestId: string | null = null;
+        let closestDist = 3.6;
+        for (const a of this.desaLivingState.actors) {
+          if (a.transitHideTimer > 0) continue;
+          if (Math.abs(a.y - this.heroPos.y) > 2.2) continue;
+          const d = Math.hypot(a.x - this.heroPos.x, a.z - this.heroPos.z);
+          if (d < closestDist) {
+            closestDist = d;
+            closestId = a.id;
+          }
+        }
+        this.nearbyCaveCitizenId = closestId;
+      } else {
+        this.nearbyCaveCitizenId = null;
       }
 
       if (
@@ -35081,7 +35296,49 @@ export class RpgWorldEngine {
             }
           }
         }
-        if (this.dungeonRig.prisonCells && this.dungeonRig.prisonCells.length > 0 && this.phase === 'playing') {
+        if (this.dungeonEnteredLiberated && this.phase === 'playing') {
+          if (this.desaLivingState) {
+            let shownCount = 0;
+            for (const actor of this.desaLivingState.actors) {
+              if (shownCount >= 2 || actor.transitHideTimer > 0) continue;
+              const d = Math.hypot(actor.x - this.heroPos.x, actor.z - this.heroPos.z);
+              if (d > 9.5 || Math.abs(actor.y - this.heroPos.y) > 3.2) continue;
+              const cp = projectPoint(actor.x, actor.y + 2.25, actor.z);
+              if (cp) {
+                labels.push({
+                  id: `cave_living_${actor.id}`,
+                  x: cp.x,
+                  y: cp.y,
+                  title: `🌿 ${actor.name}`,
+                  subtext: d < 3.6 ? `Klik / [E]: ${actor.scenarioTitle}` : actor.scenarioTitle,
+                  kind: 'speech',
+                });
+                shownCount += 1;
+              }
+            }
+          } else if (
+            Math.hypot(
+              this.dungeonCaptivePos.x - this.heroPos.x,
+              this.dungeonCaptivePos.z - this.heroPos.z,
+            ) < 8.5
+          ) {
+            const cp = projectPoint(
+              this.dungeonCaptivePos.x,
+              this.dungeonCaptivePos.y + 2.35,
+              this.dungeonCaptivePos.z,
+            );
+            if (cp) {
+              labels.push({
+                id: 'cave_captive_free',
+                x: cp.x,
+                y: cp.y,
+                title: `🌸 ${this.dungeonState.captiveName}`,
+                subtext: 'Gua aman & asri! Klik / [E] untuk menyapa',
+                kind: 'speech',
+              });
+            }
+          }
+        } else if (this.dungeonRig.prisonCells && this.dungeonRig.prisonCells.length > 0 && this.phase === 'playing') {
           const crateBroken = this.isRibbonCrateBroken();
           const hasRibbon = this.ribbons.has(this.dungeonState.zoneId);
           for (const cell of this.dungeonRig.prisonCells) {
@@ -36956,8 +37213,10 @@ export class RpgWorldEngine {
     const lastMs = isMini ? this.lastMinimapCaptureMs : this.lastFullMapCaptureMs;
     const lastKey = isMini ? this.lastMinimapKey : this.lastFullMapKey;
     const minInterval = isMini
-      ? this.isLowEndMobile
-        ? 1400
+      ? this.isUltraLowEndMobile
+        ? 2400
+        : this.isLowEndMobile
+        ? 1600
         : this.isMobileDevice
         ? 950
         : 450
@@ -36966,18 +37225,21 @@ export class RpgWorldEngine {
       : 350;
 
     if (key === lastKey) {
-      if (now - lastMs < minInterval) {
+      if (
+        (this.phase !== 'playing' && now - lastMs < 4000) ||
+        now - lastMs < minInterval
+      ) {
         return {
           canvas,
           bounds: isMini ? this.lastMinimapBounds : this.lastFullMapBounds,
         };
       }
-      const miniDistThresh = this.isLowEndMobile ? 1.8 : 1.1;
+      const miniDistThresh = this.isUltraLowEndMobile ? 2.4 : this.isLowEndMobile ? 1.8 : 1.1;
       if (
         isMini &&
         Math.hypot(this.heroPos.x - this.lastMiniHeroX, this.heroPos.z - this.lastMiniHeroZ) <
           miniDistThresh &&
-        now - lastMs < 3800
+        now - lastMs < 4200
       ) {
         return {
           canvas,
@@ -37103,7 +37365,13 @@ export class RpgWorldEngine {
 
   private pushHud(force: boolean): void {
     const now = performance.now();
-    const baseHudMinMs = this.isLowEndMobile ? 250 : this.isMobileDevice ? 200 : 140;
+    const baseHudMinMs = this.isUltraLowEndMobile
+      ? 300
+      : this.isLowEndMobile
+      ? 250
+      : this.isMobileDevice
+      ? 200
+      : 140;
     if (!force) {
       const moved =
         Math.abs(this.heroPos.x - this.lastHudHeroX) +
@@ -37121,7 +37389,9 @@ export class RpgWorldEngine {
         !this.nearbyNpcId &&
         !this.nearbyMonsterId;
       const hudMinMs = isIdleHud
-        ? this.isLowEndMobile
+        ? this.isUltraLowEndMobile
+          ? 560
+          : this.isLowEndMobile
           ? 480
           : this.isMobileDevice
           ? 420

@@ -13,6 +13,7 @@ import {
   setHeroWeaponVisual,
 } from '../three/rpgModels';
 import { CharacterPresetId } from '../types/game';
+import { getDevicePerfProfile } from '../utils/devicePerf';
 
 interface HeroPreviewCanvasProps {
   characterId: CharacterPresetId;
@@ -251,20 +252,6 @@ function applyCharacterShowcasePose(
   rig.rightLeg.rotation.z = THREE.MathUtils.damp(rig.rightLeg.rotation.z, targetRightLegZ, dampRate, dt);
 }
 
-const isSoftwareWebGl = (): boolean => {
-  try {
-    const gl = document.createElement('canvas').getContext('webgl2');
-    if (!gl) return true;
-    const ext = gl.getExtension('WEBGL_debug_renderer_info');
-    const param = ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER;
-    const gpu = String(gl.getParameter(param));
-    gl.getExtension('WEBGL_lose_context')?.loseContext();
-    return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
-  } catch {
-    return true;
-  }
-};
-
 export const HeroPreviewCanvas: React.FC<HeroPreviewCanvasProps> = ({
   characterId,
   className = 'h-56 sm:h-64',
@@ -289,22 +276,27 @@ export const HeroPreviewCanvas: React.FC<HeroPreviewCanvasProps> = ({
     const initPreset = getCharacterPreset(initCharId);
     const initTheme = PEDESTAL_THEMES[initCharId];
 
-    const softGl = isSoftwareWebGl();
-    const isMobile =
-      typeof navigator !== 'undefined' &&
-      (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
-        (navigator.maxTouchPoints > 1 && window.innerWidth <= 1024));
+    const perf = getDevicePerfProfile();
+    const softGl = perf.isSoftwareGl;
+    const isMobile = perf.isMobile;
+    const isLowEnd = perf.isLowEnd;
+    const isUltraLow = perf.isUltraLowEnd;
 
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
-      antialias: !softGl,
+      antialias: !softGl && !isLowEnd,
       powerPreference: isMobile ? 'default' : 'high-performance',
     });
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.15;
     renderer.setPixelRatio(
-      softGl ? 1 : Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 1.75),
+      softGl
+        ? 1
+        : Math.min(
+            window.devicePixelRatio || 1,
+            isUltraLow ? 0.9 : isLowEnd ? 1.05 : isMobile ? 1.25 : 1.75,
+          ),
     );
     renderer.setClearColor(0x000000, 0);
     renderer.domElement.style.width = '100%';
@@ -314,7 +306,7 @@ export const HeroPreviewCanvas: React.FC<HeroPreviewCanvasProps> = ({
 
     const scene = new THREE.Scene();
     let envTex: THREE.Texture | null = null;
-    if (!softGl) {
+    if (!softGl && !isLowEnd) {
       const pmrem = new THREE.PMREMGenerator(renderer);
       envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
       scene.environment = envTex;
@@ -324,14 +316,14 @@ export const HeroPreviewCanvas: React.FC<HeroPreviewCanvasProps> = ({
     const camera = new THREE.PerspectiveCamera(32, 1.1, 0.1, 35);
     camera.position.set(1.65, 2.35, 4.95);
 
-    const hemi = new THREE.HemisphereLight(0xfffbeb, 0x1e293b, softGl ? 1.45 : 1.05);
+    const hemi = new THREE.HemisphereLight(0xfffbeb, 0x1e293b, isLowEnd || softGl ? 1.45 : 1.05);
     const key = new THREE.DirectionalLight(0xfff7ed, 2.15);
     key.position.set(3.5, 6, 4.5);
     const rim = new THREE.DirectionalLight(0x38bdf8, 1.3);
     rim.position.set(-4, 2.8, -3.5);
     scene.add(hemi, key, rim);
 
-    const palette = createMaterialPalette(renderer, softGl, softGl);
+    const palette = createMaterialPalette(renderer, softGl, softGl || isUltraLow);
 
     // Voxel Diorama Pedestal matching the 6 Character Design Sheets
     const pedestalGroup = new THREE.Group();
@@ -420,11 +412,12 @@ export const HeroPreviewCanvas: React.FC<HeroPreviewCanvasProps> = ({
     ro.observe(host);
 
     let disposed = false;
+    let inViewport = true;
     let frameId = 0;
+    let timerId = 0;
     let lastMs = performance.now();
-    let lastRenderMs = 0;
     let totalTime = 0;
-    const minFrameMs = isMobile ? 33 : 20;
+    const minFrameMs = isUltraLow ? 42 : isLowEnd ? 36 : isMobile ? 33 : 20;
 
     const afterDraw = (cb: () => void) => {
       const gl = renderer.getContext() as WebGL2RenderingContext;
@@ -434,23 +427,33 @@ export const HeroPreviewCanvas: React.FC<HeroPreviewCanvasProps> = ({
         if (disposed) return;
         const st = sync && gl.getSyncParameter(sync, gl.SYNC_STATUS);
         if (st === gl.UNSIGNALED) {
-          frameId = window.setTimeout(poll, 5);
+          timerId = window.setTimeout(poll, 5);
         } else {
           if (sync) gl.deleteSync(sync);
-          frameId = window.setTimeout(cb, 80);
+          timerId = window.setTimeout(cb, 80);
         }
       };
-      frameId = window.setTimeout(poll, 5);
+      timerId = window.setTimeout(poll, 5);
+    };
+
+    const schedule = () => {
+      if (disposed || document.hidden || !inViewport) return;
+      if (softGl) {
+        afterDraw(tick);
+      } else if (minFrameMs >= 30) {
+        timerId = window.setTimeout(() => {
+          if (!disposed && !document.hidden && inViewport) {
+            frameId = window.requestAnimationFrame(tick);
+          }
+        }, minFrameMs - 4);
+      } else {
+        frameId = window.requestAnimationFrame(tick);
+      }
     };
 
     const tick = () => {
-      if (disposed) return;
+      if (disposed || document.hidden || !inViewport) return;
       const now = performance.now();
-      if (!softGl && (document.hidden || now - lastRenderMs < minFrameMs - 1.5)) {
-        frameId = window.requestAnimationFrame(tick);
-        return;
-      }
-      lastRenderMs = now;
       const dt = Math.min(0.06, Math.max(0.001, (now - lastMs) / 1000));
       lastMs = now;
       totalTime += dt;
@@ -471,13 +474,40 @@ export const HeroPreviewCanvas: React.FC<HeroPreviewCanvasProps> = ({
 
       controls.update();
       renderer.render(scene, camera);
+      schedule();
+    };
 
-      if (softGl) {
-        afterDraw(tick);
-      } else {
-        frameId = window.requestAnimationFrame(tick);
+    const onVisibility = () => {
+      if (!document.hidden && inViewport && !disposed) {
+        lastMs = performance.now();
+        window.cancelAnimationFrame(frameId);
+        window.clearTimeout(timerId);
+        if (softGl) tick();
+        else frameId = window.requestAnimationFrame(tick);
       }
     };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    let io: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver !== 'undefined') {
+      io = new IntersectionObserver(
+        (entries) => {
+          const visible = entries.some((e) => e.isIntersecting);
+          if (visible !== inViewport) {
+            inViewport = visible;
+            if (visible && !document.hidden && !disposed) {
+              lastMs = performance.now();
+              window.cancelAnimationFrame(frameId);
+              window.clearTimeout(timerId);
+              if (softGl) tick();
+              else frameId = window.requestAnimationFrame(tick);
+            }
+          }
+        },
+        { threshold: 0.01 },
+      );
+      io.observe(host);
+    }
 
     if (softGl) {
       tick();
@@ -490,7 +520,9 @@ export const HeroPreviewCanvas: React.FC<HeroPreviewCanvasProps> = ({
       rigRef.current = null;
       pedestalMatsRef.current = null;
       window.cancelAnimationFrame(frameId);
-      window.clearTimeout(frameId);
+      window.clearTimeout(timerId);
+      document.removeEventListener('visibilitychange', onVisibility);
+      io?.disconnect();
       ro.disconnect();
       controls.removeEventListener('start', onStart);
       controls.removeEventListener('end', onEnd);

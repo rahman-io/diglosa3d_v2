@@ -1484,17 +1484,21 @@ export function updateOceanWorld(
     b.rotation.z = 0.22 + Math.sin(elapsed * 0.7 + idx * 1.1) * 0.05;
   });
 
-  // Animate rising bubbles
-  const posAttr = rig.bubblesPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
-  const arr = posAttr.array as Float32Array;
-  for (let i = 0; i < arr.length; i += 3) {
-    arr[i + 1] += dt * (1.8 + (i % 5) * 0.35);
-    arr[i] += Math.sin(elapsed * 2.2 + i) * dt * 0.22;
-    if (arr[i + 1] > -0.35) {
-      arr[i + 1] = -26 + Math.random() * 4;
+  // Animate rising bubbles (throttle GPU buffer upload on lowDetail)
+  const bubbleTick = Math.floor(elapsed * 20);
+  if (!lowDetail || (bubbleTick & 1) === 0) {
+    const posAttr = rig.bubblesPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
+    const arr = posAttr.array as Float32Array;
+    const stepDt = lowDetail ? dt * 1.9 : dt;
+    for (let i = 0; i < arr.length; i += 3) {
+      arr[i + 1] += stepDt * (1.8 + (i % 5) * 0.35);
+      arr[i] += Math.sin(elapsed * 2.2 + i) * stepDt * 0.22;
+      if (arr[i + 1] > -0.35) {
+        arr[i + 1] = -26 + Math.random() * 4;
+      }
     }
+    posAttr.needsUpdate = true;
   }
-  posAttr.needsUpdate = true;
 
   // Surface Return Buoy gentle bob & spin
   rig.buoyGroup.position.y = rig.buoyPos.y + Math.sin(elapsed * 2.2) * 0.2;
@@ -2286,16 +2290,20 @@ export function updateArchipelagoUnderwaterProps(
   rig.bubblesPoints.visible = showAtmosphereFx;
   if (showAtmosphereFx) {
     rig.bubblesPoints.position.set(heroPos.x, 0, heroPos.z);
-    const posAttr = rig.bubblesPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
-    const arr = posAttr.array as Float32Array;
-    for (let i = 0; i < arr.length; i += 3) {
-      arr[i + 1] += dt * (1.8 + (i % 5) * 0.35);
-      arr[i] += Math.sin(elapsed * 2.2 + i) * dt * 0.2;
-      if (arr[i + 1] > -0.25) {
-        arr[i + 1] = -24 + Math.random() * 6;
+    const bubbleTick = Math.floor(elapsed * 20);
+    if (!lowDetail || (bubbleTick & 1) === 0) {
+      const posAttr = rig.bubblesPoints.geometry.getAttribute('position') as THREE.BufferAttribute;
+      const arr = posAttr.array as Float32Array;
+      const stepDt = lowDetail ? dt * 1.9 : dt;
+      for (let i = 0; i < arr.length; i += 3) {
+        arr[i + 1] += stepDt * (1.8 + (i % 5) * 0.35);
+        arr[i] += Math.sin(elapsed * 2.2 + i) * stepDt * 0.2;
+        if (arr[i + 1] > -0.25) {
+          arr[i + 1] = -24 + Math.random() * 6;
+        }
       }
+      posAttr.needsUpdate = true;
     }
-    posAttr.needsUpdate = true;
   }
 
   for (let i = 0; i < rig.sunbeams.length; i++) {

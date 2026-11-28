@@ -35,7 +35,7 @@ export const RetryConfirmModal: React.FC<RetryConfirmModalProps> = ({
   const summary = hasSavedGame ? readSavedGameSummary() : null;
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto overscroll-contain bg-[#060b16]/82 p-2 backdrop-blur-md sm:p-4">
+    <div className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto overscroll-contain bg-[#060b16]/90 p-2 sm:p-4">
       <div className="my-auto max-h-[94dvh] w-full max-w-md overflow-y-auto overscroll-contain">
         <RpgBoardPanel>
           {/* Header */}

@@ -3268,7 +3268,7 @@ function DiglosaRpgApp() {
       />
 
       {isPortraitTouch && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#0f172a]/95 p-6 text-center text-white backdrop-blur-md">
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-[#0f172a]/96 p-6 text-center text-white">
           <div className="relative mb-4 flex h-20 w-20 items-center justify-center rounded-3xl border-2 border-amber-300/60 bg-amber-500/15 text-amber-300 shadow-xl">
             <Smartphone className="h-10 w-10 rotate-90" />
             <RotateCw className="absolute -right-2 -top-2 h-6 w-6 animate-spin rounded-full bg-slate-900 p-1 text-cyan-300 [animation-duration:3s]" />

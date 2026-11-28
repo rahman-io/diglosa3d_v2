@@ -221,7 +221,7 @@ export const PWAInstallButton: React.FC<{
         </button>
 
         {showIOSGuide && (
-          <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
+          <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/82 p-4">
             <div className="w-full max-w-sm rounded-2xl border border-amber-300/35 bg-slate-950 p-5 text-white shadow-2xl">
               <div className="flex items-center justify-between border-b border-white/10 pb-3">
                 <h3 className="text-sm font-extrabold text-amber-300">
@@ -273,7 +273,7 @@ export const OfflineIndicator: React.FC = () => {
     <div
       role="status"
       aria-live="polite"
-      className="pointer-events-none fixed bottom-2.5 left-2.5 z-[90] flex items-center gap-1.5 rounded-lg border border-amber-300/40 bg-slate-950/85 px-2.5 py-1 text-[11px] font-bold text-amber-200 shadow-lg backdrop-blur-sm"
+      className="pointer-events-none fixed bottom-2.5 left-2.5 z-[90] flex items-center gap-1.5 rounded-lg border border-amber-300/40 bg-slate-950/92 px-2.5 py-1 text-[11px] font-bold text-amber-200 shadow-lg"
     >
       <WifiOff className="h-3.5 w-3.5 text-amber-300" />
       <span>Mode Offline · Aset Lokal Aktif</span>

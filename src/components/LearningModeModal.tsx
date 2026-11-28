@@ -62,6 +62,29 @@ interface McqRound {
   correctIdx: number;
 }
 
+function normalizeSpelling(input: string): string {
+  return input
+    .trim()
+    .toLowerCase()
+    .replace(/[’‘`]/g, "'")
+    .replace(/\s+/g, ' ');
+}
+
+function isTypeSpellingMatch(rawInput: string, rawTarget: string): boolean {
+  const input = normalizeSpelling(rawInput);
+  const target = normalizeSpelling(rawTarget);
+  if (!input || !target) return false;
+  if (input === target) return true;
+  if (/[-']/.test(target)) {
+    const stripPunct = (s: string) => s.replace(/[-'\s]+/g, '');
+    const spacePunct = (s: string) => s.replace(/[-']+/g, ' ').replace(/\s+/g, ' ').trim();
+    if (spacePunct(input) === spacePunct(target) || stripPunct(input) === stripPunct(target)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function buildMcqRound(entry: VocabEntry, forceListen = false): McqRound {
   const distractors = pickDistractors(entry, 3);
   const askMeaning = forceListen ? true : Math.random() < 0.5;
@@ -120,12 +143,19 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
   const [typeTries, setTypeTries] = useState(0);
   const [typeHints, setTypeHints] = useState(0);
 
+  const sessionKey = session
+    ? `${session.mode}:${session.zoneId ?? ''}:${session.doorIndex ?? ''}:${session.catId ?? ''}:${session.title}:${session.wordIds.join(',')}`
+    : '';
+  const wordProgressRef = useRef(wordProgress);
+  wordProgressRef.current = wordProgress;
+
   // Match mode
   const [matchLeft, setMatchLeft] = useState<VocabEntry[]>([]);
   const [matchRight, setMatchRight] = useState<VocabEntry[]>([]);
   const [selLeftId, setSelLeftId] = useState<string | null>(null);
   const [matchedIds, setMatchedIds] = useState<string[]>([]);
   const [matchMoves, setMatchMoves] = useState(0);
+  const [matchWrongId, setMatchWrongId] = useState<string | null>(null);
 
   // Desa Sapaan Duolingo 6-type deck state
   const isDesaDuolingo = Boolean(session && session.zoneId === 'desa_sapaan');
@@ -213,7 +243,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
       const deckSize = session.doorIndex === 4 ? 8 : 10;
       const deck = buildPeopleDuolingoDeck(deckSize, {
         allowSpeak: !isSpeakingTemporarilyDisabled(),
-        wordProgress,
+        wordProgress: wordProgressRef.current,
         preferredVocabIds: session.wordIds,
       });
       setDuoDeck(deck);
@@ -238,24 +268,37 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
         scheduleTimeout(() => soundEngine.speakEnglish(words[0].word, 0.85), 350);
       }
     } else if (session.mode === 'match') {
-      const sub = words.slice(0, 8);
+      const uniqueSub: VocabEntry[] = [];
+      const seenWords = new Set<string>();
+      const seenMeanings = new Set<string>();
+      for (const candidate of words) {
+        const wKey = candidate.word.toLowerCase();
+        const mKey = candidate.meaningId.toLowerCase();
+        if (seenWords.has(wKey) || seenMeanings.has(mKey)) continue;
+        seenWords.add(wKey);
+        seenMeanings.add(mKey);
+        uniqueSub.push(candidate);
+        if (uniqueSub.length >= 8) break;
+      }
+      const sub = uniqueSub.length >= 2 ? uniqueSub : words.slice(0, 8);
       setMatchLeft([...sub].sort(() => Math.random() - 0.5));
       setMatchRight([...sub].sort(() => Math.random() - 0.5));
       setSelLeftId(null);
       setMatchedIds([]);
       setMatchMoves(0);
+      setMatchWrongId(null);
     }
 
     return () => {
       clearAllTimers();
       soundEngine.stopSpeech();
     };
-  }, [session, words, diffCfg.matchSec, diffCfg.qSec]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sessionKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Reset double-continue guard cleanly after each duoIdx or session change
   useEffect(() => {
     duoAdvancingRef.current = false;
-  }, [duoIdx, session]);
+  }, [duoIdx, sessionKey]);
 
   // Countdown timer for qstrip / match board
   useEffect(() => {
@@ -415,7 +458,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
   handleTimeoutRef.current = handleTimeout;
 
   const handleCardMark = (knewIt: boolean) => {
-    if (!session) return;
+    if (!session || cekCepatPool || resultData) return;
     const cur = words[idx];
     if (!cur) return;
     onRecordWord(cur.id, knewIt, false);
@@ -433,7 +476,17 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
     if (idx + 1 >= words.length) {
       // Door 0 triggers 3-question Cek Cepat!
       if (session.doorIndex === 0) {
-        const sample = [...words].sort(() => Math.random() - 0.5).slice(0, 3);
+        const distinctPool: VocabEntry[] = [];
+        const usedW = new Set<string>();
+        const usedM = new Set<string>();
+        for (const w of [...words].sort(() => Math.random() - 0.5)) {
+          if (usedW.has(w.word.toLowerCase()) || usedM.has(w.meaningId.toLowerCase())) continue;
+          usedW.add(w.word.toLowerCase());
+          usedM.add(w.meaningId.toLowerCase());
+          distinctPool.push(w);
+          if (distinctPool.length >= 3) break;
+        }
+        const sample = distinctPool.length > 0 ? distinctPool : words.slice(0, 3);
         setCekCepatPool(sample.map((w) => buildMcqRound(w, false)));
         setCekIdx(0);
         setCekRight(0);
@@ -510,12 +563,15 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
 
   const handleSubmitType = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session || feedback) return;
+    if (!session || feedback || resultData) return;
     const cur = words[idx];
     if (!cur) return;
-    const cleanInput = typed.trim().toLowerCase();
-    const cleanTarget = cur.word.trim().toLowerCase();
-    if (cleanInput === cleanTarget) {
+    if (!typed.trim()) {
+      setFeedback({ ok: false, msg: 'Ketik ejaan bahasa Inggris terlebih dahulu!' });
+      scheduleTimeout(() => setFeedback(null), 900);
+      return;
+    }
+    if (isTypeSpellingMatch(typed, cur.word)) {
       const gain = Math.max(5, 15 - 3 * typeHints);
       onRecordWord(cur.id, true, false);
       setXpEarned((x) => x + gain);
@@ -544,13 +600,14 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
   };
 
   const handlePickRightMatch = (rightEntry: VocabEntry) => {
-    if (!selLeftId || matchedIds.includes(rightEntry.id)) return;
+    if (!selLeftId || matchedIds.includes(rightEntry.id) || resultData) return;
     const nextMoves = matchMoves + 1;
     setMatchMoves(nextMoves);
     if (selLeftId === rightEntry.id) {
       onRecordWord(rightEntry.id, true, false);
       setXpEarned((x) => x + 8);
       soundEngine.playOk();
+      setMatchWrongId(null);
       const nextMatched = [...matchedIds, rightEntry.id];
       setMatchedIds(nextMatched);
       setSelLeftId(null);
@@ -560,11 +617,53 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
     } else {
       onRecordWord(selLeftId, false, false);
       soundEngine.playWrongAnswer();
+      setMatchWrongId(rightEntry.id);
       setSelLeftId(null);
+      scheduleTimeout(() => setMatchWrongId(null), 420);
     }
   };
 
   const hasResult = Boolean(resultData);
+
+  // Keyboard 1-4 support for non-Desa Quiz / Listen / Cek Cepat & Escape to close
+  const keyActionRef = useRef({
+    pickCek: handleCekCepatPick,
+    pickMcq: handleMcqPick,
+    close: handleClose,
+  });
+  keyActionRef.current = {
+    pickCek: handleCekCepatPick,
+    pickMcq: handleMcqPick,
+    close: handleClose,
+  };
+
+  useEffect(() => {
+    if (!session || isDesaDuolingo || hasResult) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        keyActionRef.current.close();
+        return;
+      }
+      if (feedback) return;
+      const targetEl = e.target as HTMLElement | null;
+      if (targetEl && (targetEl.tagName === 'INPUT' || targetEl.tagName === 'TEXTAREA')) return;
+      const num = Number(e.key);
+      if (num >= 1 && num <= 4) {
+        const cIdx = num - 1;
+        if (cekCepatPool && cIdx < (cekCepatPool[cekIdx]?.choices.length ?? 0)) {
+          e.preventDefault();
+          keyActionRef.current.pickCek(cIdx);
+        } else if ((session.mode === 'quiz' || session.mode === 'listen') && mcq && cIdx < mcq.choices.length) {
+          e.preventDefault();
+          keyActionRef.current.pickMcq(cIdx);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [session, isDesaDuolingo, hasResult, feedback, cekCepatPool, cekIdx, mcq]);
 
   // Scroll back to top whenever question/challenge advances so progress bar & timer are visible
   useEffect(() => {
@@ -968,7 +1067,15 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
                   >
                     {currentWord.word
                       .split('')
-                      .map((ch, i) => (ch === ' ' ? '  ' : i < typeHints ? ch : '_'))
+                      .map((ch, i) =>
+                        ch === ' '
+                          ? '  '
+                          : ch === '-' || ch === "'" || ch === '’'
+                          ? ch
+                          : i < typeHints
+                          ? ch
+                          : '_',
+                      )
                       .join(' ')}
                   </div>
                 </div>
@@ -977,6 +1084,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
                   <input
                     type="text"
                     autoFocus
+                    disabled={Boolean(feedback)}
                     enterKeyHint="done"
                     autoComplete="off"
                     autoCorrect="off"
@@ -986,14 +1094,21 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
                     onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
                     onChange={(e) => setTyped(e.target.value)}
                     placeholder="Ketik kata Inggris..."
-                    className={`min-w-0 flex-1 rounded-xl border-2 border-amber-300/40 bg-slate-950/75 text-sm font-bold text-white placeholder-slate-400 focus:border-amber-300 focus:outline-none ${
+                    className={`min-w-0 flex-1 rounded-xl border-2 border-amber-300/40 bg-slate-950/75 text-sm font-bold text-white placeholder-slate-400 focus:border-amber-300 focus:outline-none disabled:opacity-60 ${
                       isCompactKeyboard ? 'px-3 py-1.5' : 'px-4 py-2.5'
                     }`}
                   />
                   <button
                     type="button"
-                    onClick={() => setTypeHints((h) => Math.min(currentWord.word.length - 1, h + 1))}
-                    className={`inline-flex shrink-0 items-center gap-1 rounded-xl border border-amber-300/40 bg-amber-500/20 font-extrabold text-amber-200 hover:bg-amber-500/35 ${
+                    disabled={
+                      Boolean(feedback) ||
+                      currentWord.word.length <= 1 ||
+                      typeHints >= Math.max(0, currentWord.word.length - 1)
+                    }
+                    onClick={() =>
+                      setTypeHints((h) => Math.min(Math.max(0, currentWord.word.length - 1), h + 1))
+                    }
+                    className={`inline-flex shrink-0 items-center gap-1 rounded-xl border border-amber-300/40 bg-amber-500/20 font-extrabold text-amber-200 hover:bg-amber-500/35 disabled:opacity-45 ${
                       isCompactKeyboard ? 'px-2.5 py-1.5 text-[11px]' : 'px-3 py-2 text-xs'
                     }`}
                   >
@@ -1006,6 +1121,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
                   type="submit"
                   variant="green"
                   size={isCompactKeyboard ? 'sm' : 'md'}
+                  disabled={Boolean(feedback) || !typed.trim()}
                   className="w-full"
                 >
                   <span>Periksa Ejaan (Sisa {2 - typeTries}x)</span>
@@ -1050,10 +1166,11 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
                 <div className="space-y-2">
                   {matchRight.map((item) => {
                     const done = matchedIds.includes(item.id);
+                    const wrong = matchWrongId === item.id;
                     return (
                       <RpgChoiceCard
                         key={item.id}
-                        tone={done ? 'correct' : !selLeftId ? 'muted' : 'default'}
+                        tone={done ? 'correct' : wrong ? 'wrong' : !selLeftId ? 'muted' : 'default'}
                         disabled={done || !selLeftId}
                         onClick={() => handlePickRightMatch(item)}
                         className="w-full px-2.5 py-2 text-xs font-bold"

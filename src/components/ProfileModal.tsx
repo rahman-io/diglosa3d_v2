@@ -105,7 +105,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
   return (
     <div
       style={{ top: `${vp.offsetTop}px`, height: `${vp.height}px` }}
-      className="fixed left-0 right-0 z-[65] flex items-center justify-center overflow-y-auto overscroll-contain bg-[#060b16]/80 p-2 backdrop-blur-md sm:p-4"
+      className="fixed left-0 right-0 z-[65] flex items-center justify-center overflow-y-auto overscroll-contain bg-[#060b16]/88 p-2 sm:p-4"
     >
       <div className="my-auto max-h-[94dvh] w-full max-w-2xl overflow-y-auto overscroll-contain">
         <RpgBoardPanel>

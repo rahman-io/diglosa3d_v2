@@ -62,7 +62,7 @@ export const ResumeCountdownOverlay: React.FC<ResumeCountdownOverlayProps> = ({
       role="dialog"
       aria-live="assertive"
       aria-label="Hitung mundur siap bermain"
-      className="fixed inset-0 z-[75] flex flex-col items-center justify-center bg-slate-950/55 px-4 text-center backdrop-blur-[3px] select-none"
+      className="fixed inset-0 z-[75] flex flex-col items-center justify-center bg-slate-950/76 px-4 text-center select-none"
     >
       <div className="mb-4 flex flex-col items-center gap-1.5">
         <span className="inline-flex items-center gap-2 rounded-full border border-amber-300/60 bg-slate-950/90 px-4 py-1 text-xs font-black uppercase tracking-wider text-amber-200 shadow-lg sm:text-sm">
@@ -77,7 +77,7 @@ export const ResumeCountdownOverlay: React.FC<ResumeCountdownOverlayProps> = ({
 
       <div
         key={String(step)}
-        className={`flex items-center justify-center rounded-3xl border-2 px-8 py-5 shadow-[0_0_50px_rgba(251,191,36,0.38)] backdrop-blur-md transition-transform duration-200 ${
+        className={`flex items-center justify-center rounded-3xl border-2 px-8 py-5 shadow-[0_0_50px_rgba(251,191,36,0.38)] transition-transform duration-200 ${
           isGo
             ? 'border-emerald-300/85 bg-gradient-to-b from-emerald-600/90 to-teal-900/90 shadow-[0_0_60px_rgba(52,211,153,0.55)]'
             : 'border-amber-300/80 bg-gradient-to-b from-slate-900/92 to-slate-950/95'

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   BookOpen,
   CheckCircle2,
@@ -28,6 +28,21 @@ interface IeltsAcademyModalProps {
   onClose: () => void;
 }
 
+type SpeechRecInstance = {
+  lang: string;
+  interimResults: boolean;
+  onresult: (ev: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void;
+  onerror: ((ev: { error?: string }) => void) | null;
+  onend: () => void;
+  start: () => void;
+  stop?: () => void;
+  abort?: () => void;
+};
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
   skill,
   onCompleteSkill,
@@ -52,20 +67,44 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
   const [writeTaskIdx, setWriteTaskIdx] = useState(0);
   const [essayText, setEssayText] = useState('');
   const [copiedPrompt, setCopiedPrompt] = useState(false);
+  const [writingHint, setWritingHint] = useState<string | null>(null);
 
   // Speaking state
   const [speakIdx, setSpeakIdx] = useState(0);
   const [recording, setRecording] = useState(false);
   const [spokenText, setSpokenText] = useState('');
+  const [micError, setMicError] = useState<string | null>(null);
   const [prepTimer, setPrepTimer] = useState(0);
   const [showModelAns, setShowModelAns] = useState(false);
 
   // Result summary
   const [summaryPct, setSummaryPct] = useState<number | null>(null);
   const vp = useVisualViewport(Boolean(skill));
+  const recognitionRef = useRef<SpeechRecInstance | null>(null);
+
+  const stopSpeechAndRec = () => {
+    try {
+      recognitionRef.current?.abort?.();
+    } catch {
+      // ignore
+    }
+    recognitionRef.current = null;
+    setRecording(false);
+    soundEngine.stopSpeech();
+    if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+      try {
+        window.speechSynthesis.cancel();
+      } catch {
+        // ignore
+      }
+    }
+  };
 
   useEffect(() => {
-    if (!skill) return;
+    if (!skill) {
+      stopSpeechAndRec();
+      return;
+    }
     setSummaryPct(null);
     setFullScores([]);
     if (skill === 'full') {
@@ -82,10 +121,22 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
     setReadAnswers({});
     setWriteTaskIdx(0);
     setEssayText('');
+    setWritingHint(null);
     setSpeakIdx(0);
     setSpokenText('');
+    setMicError(null);
+    setPrepTimer(0);
     setShowModelAns(false);
+    return () => {
+      stopSpeechAndRec();
+    };
   }, [skill]);
+
+  useEffect(() => {
+    stopSpeechAndRec();
+    setMicError(null);
+    setWritingHint(null);
+  }, [activeSkill, speakIdx]);
 
   useEffect(() => {
     if (prepTimer <= 0) return;
@@ -101,8 +152,11 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
   const filteredWritings = WRITING_TASKS.filter(
     (w) => w.track === track || w.taskNumber === 2,
   );
+  const safeReadPassIdx = Math.min(readPassIdx, Math.max(0, filteredReadings.length - 1));
+  const safeWriteTaskIdx = Math.min(writeTaskIdx, Math.max(0, filteredWritings.length - 1));
 
   const playDialogue = (lines: Array<{ speaker: 'A' | 'B'; name: string; line: string }>) => {
+    if (soundEngine.isMuted()) return;
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     window.speechSynthesis.cancel();
     lines.forEach((item) => {
@@ -115,39 +169,60 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
   };
 
   const handleStartSpeechRec = () => {
+    if (recording && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop?.();
+      } catch {
+        recognitionRef.current.abort?.();
+      }
+      setRecording(false);
+      return;
+    }
+
     const SpeechRec =
       (window as unknown as { SpeechRecognition?: new () => unknown; webkitSpeechRecognition?: new () => unknown })
         .SpeechRecognition ||
       (window as unknown as { webkitSpeechRecognition?: new () => unknown }).webkitSpeechRecognition;
 
     if (!SpeechRec) {
-      setSpokenText(
-        (prev) =>
-          prev ||
-          'Browser tidak mendukung SpeechRecognition langsung; ketik atau ucapkan latihanmu dengan timer!',
-      );
+      setMicError('Browser tidak mendukung rekam suara otomatis; ketik latihan ucapanmu di kotak bawah.');
       return;
     }
 
     try {
-      const rec = new SpeechRec() as {
-        lang: string;
-        interimResults: boolean;
-        onresult: (ev: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void;
-        onend: () => void;
-        start: () => void;
-      };
+      stopSpeechAndRec();
+      const rec = new SpeechRec() as SpeechRecInstance;
+      recognitionRef.current = rec;
       rec.lang = 'en-US';
       rec.interimResults = false;
+      setMicError(null);
       setRecording(true);
       rec.onresult = (ev) => {
         const transcript = ev.results[0]?.[0]?.transcript || '';
-        setSpokenText((prev) => (prev ? `${prev} ${transcript}` : transcript));
+        if (transcript.trim()) {
+          setSpokenText((prev) => (prev ? `${prev} ${transcript}` : transcript));
+        }
       };
-      rec.onend = () => setRecording(false);
+      rec.onerror = (ev) => {
+        setRecording(false);
+        recognitionRef.current = null;
+        if (ev?.error === 'not-allowed' || ev?.error === 'service-not-allowed') {
+          setMicError('Izin mikrofon ditolak; silakan izinkan mic atau ketik jawaban di bawah.');
+        } else if (ev?.error === 'no-speech') {
+          setMicError('Suara belum terdengar; coba ulangi atau ketik langsung.');
+        } else {
+          setMicError('Rekam suara terhenti; coba lagi atau ketik latihanmu di bawah.');
+        }
+      };
+      rec.onend = () => {
+        setRecording(false);
+        recognitionRef.current = null;
+      };
       rec.start();
     } catch {
       setRecording(false);
+      recognitionRef.current = null;
+      setMicError('Gagal memulai mikrofon; ketik jawaban latihanmu di kotak bawah.');
     }
   };
 
@@ -195,10 +270,17 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
     finishSection(Math.round((ok / allQs.length) * 100));
   };
 
-  const currentWritingTask = filteredWritings[writeTaskIdx] || WRITING_TASKS[0];
-  const wordCount = essayText.trim() ? essayText.trim().split(/\s+/).length : 0;
+  const currentWritingTask = filteredWritings[safeWriteTaskIdx] || WRITING_TASKS[0];
+  const essayWords = essayText
+    .toLowerCase()
+    .replace(/[^a-z0-9'\s-]/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  const wordCount = essayWords.length;
+  const uniqueEssayWords = new Set(essayWords).size;
   const detectedConnectors = currentWritingTask.sampleConnectors.filter((c) =>
-    essayText.toLowerCase().includes(c),
+    new RegExp(`\\b${escapeRegExp(c.toLowerCase())}\\b`, 'i').test(essayText),
   );
   const paragraphCount = essayText
     .split(/\n+/)
@@ -206,15 +288,43 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
     .filter(Boolean).length;
 
   const submitWriting = () => {
-    const wcScore = Math.min(50, Math.round((wordCount / currentWritingTask.minWords) * 50));
+    const normEssay = essayText.trim().toLowerCase();
+    const normPrompt = currentWritingTask.prompt.trim().toLowerCase();
+    if (wordCount === 0) {
+      setWritingHint('Tulis jawaban bahasa Inggris kamu terlebih dahulu sebelum dinilai.');
+      return;
+    }
+    if (normPrompt && normEssay === normPrompt) {
+      setWritingHint('Jangan menyalin soal langsung — tulis paragraf jawabanmu sendiri.');
+      return;
+    }
+    setWritingHint(null);
+    // Guard against single-word spam repetition using unique lexical variety factor
+    const lexicalFactor =
+      wordCount >= 12 ? Math.min(1, uniqueEssayWords / Math.max(8, Math.round(wordCount * 0.42))) : 1;
+    const wcScore = Math.min(50, Math.round((wordCount / currentWritingTask.minWords) * 50 * lexicalFactor));
     const connScore = Math.min(30, detectedConnectors.length * 10);
     const paraScore = Math.min(20, paragraphCount * 10);
     finishSection(Math.min(100, wcScore + connScore + paraScore));
   };
 
   const submitSpeaking = () => {
-    const spokenWords = spokenText.trim() ? spokenText.trim().split(/\s+/).length : 0;
-    const pct = Math.min(100, Math.max(55, Math.round((spokenWords / 25) * 100)));
+    const spokenTokens = spokenText
+      .toLowerCase()
+      .replace(/[^a-z0-9'\s-]/g, ' ')
+      .trim()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (spokenTokens.length === 0) {
+      setMicError('Rekam ucapan atau ketik latihan jawabanmu terlebih dahulu sebelum menghitung skor.');
+      return;
+    }
+    const uniqueSpoken = new Set(spokenTokens).size;
+    const variety =
+      spokenTokens.length >= 10
+        ? Math.min(1, uniqueSpoken / Math.max(6, Math.round(spokenTokens.length * 0.45)))
+        : 1;
+    const pct = Math.min(100, Math.round((spokenTokens.length / 24) * 100 * variety));
     finishSection(pct);
   };
 
@@ -246,7 +356,11 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
               <div className="mt-1 flex items-center gap-2 text-xs font-bold">
                 <button
                   type="button"
-                  onClick={() => setTrack((t) => (t === 'academic' ? 'general' : 'academic'))}
+                  onClick={() => {
+                    setTrack((t) => (t === 'academic' ? 'general' : 'academic'));
+                    setReadPassIdx(0);
+                    setWriteTaskIdx(0);
+                  }}
                   className="rounded-md border border-[#7c3aed] bg-white px-2 py-0.5 text-[#5b21b6]"
                 >
                   Jalur {track === 'academic' ? 'Academic' : 'General Training'}
@@ -401,7 +515,7 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
                     type="button"
                     onClick={() => setReadPassIdx(i)}
                     className={`rounded-xl px-3 py-1.5 text-xs font-extrabold ${
-                      readPassIdx === i
+                      safeReadPassIdx === i
                         ? 'bg-emerald-600 text-white'
                         : 'border border-[#ddd6fe] bg-white text-[#4c1d95]'
                     }`}
@@ -412,7 +526,7 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
               </div>
 
               {(() => {
-                const p = filteredReadings[readPassIdx];
+                const p = filteredReadings[safeReadPassIdx];
                 if (!p) return null;
                 return (
                   <div className="space-y-3">
@@ -482,7 +596,7 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
                     type="button"
                     onClick={() => setWriteTaskIdx(i)}
                     className={`rounded-xl px-3 py-1.5 text-xs font-extrabold ${
-                      writeTaskIdx === i ? 'bg-amber-600 text-white' : 'bg-white text-amber-900'
+                      safeWriteTaskIdx === i ? 'bg-amber-600 text-white' : 'bg-white text-amber-900'
                     }`}
                   >
                     Task {t.taskNumber}
@@ -509,10 +623,19 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
                 rows={vp.isKeyboardOpen ? 4 : 7}
                 value={essayText}
                 onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
-                onChange={(e) => setEssayText(e.target.value)}
+                onChange={(e) => {
+                  setEssayText(e.target.value);
+                  if (writingHint) setWritingHint(null);
+                }}
                 placeholder="Tulis paragraf bahasa Inggris kamu di sini..."
                 className="w-full rounded-2xl border-2 border-[#c4b5fd] bg-white p-3.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-purple-500"
               />
+
+              {writingHint && (
+                <div className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                  {writingHint}
+                </div>
+              )}
 
               <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-white px-4 py-2 text-xs font-extrabold">
                 <span>
@@ -611,7 +734,7 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
                         }`}
                       >
                         {recording ? <Square className="h-3.5 w-3.5" /> : <Mic className="h-3.5 w-3.5" />}
-                        <span>{recording ? 'Merekam...' : 'Rekam Suara (Mic)'}</span>
+                        <span>{recording ? 'Stop Rekam' : 'Rekam Suara (Mic)'}</span>
                       </button>
 
                       <button
@@ -623,11 +746,20 @@ export const IeltsAcademyModal: React.FC<IeltsAcademyModalProps> = ({
                       </button>
                     </div>
 
+                    {micError && (
+                      <div className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                        {micError}
+                      </div>
+                    )}
+
                     <textarea
                       rows={3}
                       value={spokenText}
                       onFocus={(e) => scrollFieldIntoView(e.currentTarget)}
-                      onChange={(e) => setSpokenText(e.target.value)}
+                      onChange={(e) => {
+                        setSpokenText(e.target.value);
+                        if (micError) setMicError(null);
+                      }}
                       placeholder="Transkrip ucapanmu muncul di sini (atau ketik latihan jawaban)..."
                       className="w-full rounded-xl border border-slate-300 p-2.5 text-xs font-medium"
                     />

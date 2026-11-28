@@ -1,6 +1,7 @@
 // 100% Procedural Web Audio API Synthesis + Custom MP3 SFX + SpeechSynthesis TTS
 
 import { WeaponId } from '../types/game';
+import { getDevicePerfProfile } from '../utils/devicePerf';
 
 type AudioClipKey =
   | 'collect'
@@ -91,13 +92,22 @@ class SoundEngine {
 
   constructor() {
     if (typeof window !== 'undefined' && typeof Audio !== 'undefined') {
+      const isLowEnd = getDevicePerfProfile().isLowEnd;
+      const instantClips = new Set<AudioClipKey>([
+        'button_click',
+        'collect',
+        'correct_answer',
+        'wrong_answer',
+        'shoot_1',
+        'shoot_2',
+      ]);
       (Object.keys(AUDIO_CLIP_PATHS) as AudioClipKey[]).forEach((key) => {
         const audio = new Audio(AUDIO_CLIP_PATHS[key]);
-        audio.preload = 'auto';
+        audio.preload = isLowEnd && !instantClips.has(key) ? 'metadata' : 'auto';
         this.clipTemplates[key] = audio;
       });
       const intro = new Audio(INTRO_AUDIO_PATH);
-      intro.preload = 'auto';
+      intro.preload = 'metadata';
       intro.loop = true;
       intro.volume = 0.34;
       this.introAudio = intro;
@@ -106,27 +116,27 @@ class SoundEngine {
         const idx = Number(k);
         const spec = PROLOGUE_SCENE_AUDIO_PATHS[idx];
         const track = new Audio(spec.path);
-        track.preload = 'auto';
+        track.preload = 'metadata';
         track.loop = true;
         track.volume = spec.volume;
         this.prologueAudios[idx] = track;
       });
 
       const walk = new Audio(WALK_AUDIO_PATH);
-      walk.preload = 'auto';
+      walk.preload = 'metadata';
       walk.loop = true;
       walk.volume = 0.45;
       this.walkAudio = walk;
 
       const swim = new Audio(SWIM_AUDIO_PATH);
-      swim.preload = 'auto';
+      swim.preload = 'metadata';
       swim.loop = true;
       swim.volume = 0.44;
       this.swimAudio = swim;
 
       (['day', 'night', 'deep_sea'] as const).forEach((mode) => {
         const amb = new Audio(AMBIENT_AUDIO_PATHS[mode]);
-        amb.preload = 'auto';
+        amb.preload = 'metadata';
         amb.loop = true;
         amb.volume = mode === 'day' ? 0.24 : mode === 'deep_sea' ? 0.3 : 0.26;
         this.ambientAudios[mode] = amb;

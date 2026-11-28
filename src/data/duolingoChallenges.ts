@@ -4520,11 +4520,51 @@ export function buildPeopleListenWordBank(targetId?: DesaVocabId): DuolingoChall
   };
 }
 
-export function buildPeopleMatchPairs(preferredId?: DesaVocabId): DuolingoChallenge {
+export function buildPeopleMatchPairs(
+  preferredId?: DesaVocabId,
+  wordProgress: Record<string, WordProgress> = {},
+): DuolingoChallenge {
   const target = preferredId ?? pickRandom(DESA_ALL_VOCAB_IDS);
+  const targetEntry = VOCAB_BY_ID[target];
   const samePool = getCategoryPool(target);
-  const rest = shuffle(samePool.filter((id) => id !== target));
-  const picked = [target, ...rest.slice(0, 4)];
+  const sortedRest = samePool
+    .filter((id) => id !== target)
+    .map((id) => ({ id, score: (wordProgress[id]?.b || 0) + Math.random() * 2.2 }))
+    .sort((a, b) => a.score - b.score)
+    .map((x) => x.id);
+
+  const picked: DesaVocabId[] = [target];
+  const usedLeft = new Set<string>(targetEntry ? [targetEntry.meaningId.toLowerCase()] : []);
+  const usedRight = new Set<string>(targetEntry ? [targetEntry.word.toLowerCase()] : []);
+
+  for (const id of sortedRest) {
+    if (picked.length >= 5) break;
+    const e = VOCAB_BY_ID[id];
+    if (!e) continue;
+    const leftKey = e.meaningId.toLowerCase();
+    const rightKey = e.word.toLowerCase();
+    if (usedLeft.has(leftKey) || usedRight.has(rightKey)) continue;
+    usedLeft.add(leftKey);
+    usedRight.add(rightKey);
+    picked.push(id);
+  }
+
+  // Fallback across other Desa vocab if same topic lacked 5 unique translations
+  if (picked.length < 5) {
+    for (const id of shuffle(DESA_ALL_VOCAB_IDS)) {
+      if (picked.length >= 5) break;
+      if (picked.includes(id)) continue;
+      const e = VOCAB_BY_ID[id];
+      if (!e) continue;
+      const leftKey = e.meaningId.toLowerCase();
+      const rightKey = e.word.toLowerCase();
+      if (usedLeft.has(leftKey) || usedRight.has(rightKey)) continue;
+      usedLeft.add(leftKey);
+      usedRight.add(rightKey);
+      picked.push(id);
+    }
+  }
+
   const primaryId = picked[0];
   const tag = getCategoryTag(primaryId);
 
@@ -4573,6 +4613,7 @@ function sanitizeDesaVocabPool(preferredIds?: readonly string[]): DesaVocabId[] 
 export function buildChallengeOfType(
   type: DuolingoChallengeType,
   targetVocabId?: DesaVocabId,
+  wordProgress: Record<string, WordProgress> = {},
 ): DuolingoChallenge {
   switch (type) {
     case 'picture_choice':
@@ -4586,7 +4627,7 @@ export function buildChallengeOfType(
     case 'listen_word_bank':
       return buildPeopleListenWordBank(targetVocabId);
     case 'match_pairs':
-      return buildPeopleMatchPairs(targetVocabId);
+      return buildPeopleMatchPairs(targetVocabId, wordProgress);
   }
 }
 
@@ -4626,12 +4667,13 @@ export function pickRandomPeopleChallenge(options?: {
   if (nonRepeatTypes.length > 0) types = nonRepeatTypes;
 
   const chosenType = pickRandom(types);
+  const progress = options?.wordProgress ?? {};
   const targetId = pickSmartPeopleVocabId(
-    options?.wordProgress ?? {},
+    progress,
     options?.excludeVocabId,
     options?.preferredVocabIds,
   );
-  return buildChallengeOfType(chosenType, targetId);
+  return buildChallengeOfType(chosenType, targetId, progress);
 }
 
 /**
@@ -4688,7 +4730,7 @@ export function buildPeopleDuolingoDeck(
       vocabId = vocabCycle[(i + 1) % vocabCycle.length];
     }
 
-    const challenge = buildChallengeOfType(type, vocabId);
+    const challenge = buildChallengeOfType(type, vocabId, progress);
     deck.push(challenge);
     prevType = type;
     prevVocab = vocabId;
@@ -4763,6 +4805,10 @@ const SPEECH_SYNONYMS: Record<string, string> = {
   ms: 'miss',
   ok: 'okay',
   grey: 'gray',
+  mum: 'mom',
+  colour: 'color',
+  favourite: 'favorite',
+  telephone: 'phone',
   hi: 'hi',
   im: 'i am',
   youre: 'you are',
@@ -4770,20 +4816,94 @@ const SPEECH_SYNONYMS: Record<string, string> = {
   shes: 'she is',
   its: 'it is',
   thats: 'that is',
+  whats: 'what is',
+  whos: 'who is',
+  wheres: 'where is',
+  whens: 'when is',
+  hows: 'how is',
+  theyre: 'they are',
+  ive: 'i have',
+  youve: 'you have',
+  weve: 'we have',
+  youll: 'you will',
   dont: 'do not',
   cant: 'can not',
   cannot: 'can not',
   lets: 'let us',
 };
 
+const CONFUSABLE_WORD_PAIRS = new Set<string>([
+  'thirteen|thirty',
+  'fourteen|forty',
+  'fifteen|fifty',
+  'sixteen|sixty',
+  'seventeen|seventy',
+  'eighteen|eighty',
+  'nineteen|ninety',
+  'grandfather|grandmother',
+  'grandfather|grandchild',
+  'grandmother|grandchild',
+  'boyfriend|girlfriend',
+  'mr|mrs',
+  'mister|missus',
+  'son|daughter',
+  'man|woman',
+  'men|women',
+  'night|right',
+  'light|night',
+  'cold|gold',
+]);
+
+function areConfusableWords(a: string, b: string): boolean {
+  return CONFUSABLE_WORD_PAIRS.has(`${a}|${b}`) || CONFUSABLE_WORD_PAIRS.has(`${b}|${a}`);
+}
+
+function editDistance(a: string, b: string): number {
+  const m = a.length;
+  const n = b.length;
+  const dp = new Array<number>(n + 1);
+  for (let j = 0; j <= n; j++) dp[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let prev = dp[0];
+    dp[0] = i;
+    for (let j = 1; j <= n; j++) {
+      const temp = dp[j];
+      if (a[i - 1] === b[j - 1]) {
+        dp[j] = prev;
+      } else {
+        dp[j] = 1 + Math.min(prev, dp[j], dp[j - 1]);
+      }
+      prev = temp;
+    }
+  }
+  return dp[n];
+}
+
+function numberTokenToWords(tok: string): string[] | null {
+  if (NUMBER_WORDS_0_TO_100[tok]) {
+    return NUMBER_WORDS_0_TO_100[tok].split(' ');
+  }
+  if (/^\d{2}$/.test(tok)) {
+    const n = Number(tok);
+    const tens = Math.floor(n / 10) * 10;
+    const ones = n % 10;
+    const tensWord = NUMBER_WORDS_0_TO_100[String(tens)];
+    const onesWord = NUMBER_WORDS_0_TO_100[String(ones)];
+    if (tensWord && onesWord) {
+      return [tensWord, onesWord];
+    }
+  }
+  return null;
+}
+
 function tokenizeSpoken(text: string): string[] {
   const norm = normalizeSentenceText(text);
   const words = norm.split(' ').filter(Boolean);
   const expanded: string[] = [];
   for (const w of words) {
-    const numRep = NUMBER_WORDS_0_TO_100[w];
-    if (numRep) {
-      expanded.push(...numRep.split(' '));
+    const numWords = numberTokenToWords(w);
+    if (numWords) {
+      expanded.push(...numWords);
       continue;
     }
     const rep = SPEECH_SYNONYMS[w];
@@ -4809,14 +4929,16 @@ export function evaluateSpokenEnglish(
     if (spokenSet.has(word)) {
       hits += 1;
     } else {
-      // Allow 1-char typo/phonetic fuzz for longer words
+      const maxDist = word.length >= 7 ? 2 : 1;
       const fuzzy = spoken.some(
         (sw) =>
           sw.length >= 4 &&
           word.length >= 4 &&
-          (sw.startsWith(word.slice(0, 3)) || word.startsWith(sw.slice(0, 3))),
+          Math.abs(sw.length - word.length) <= maxDist &&
+          !areConfusableWords(sw, word) &&
+          editDistance(sw, word) <= maxDist,
       );
-      if (fuzzy) hits += 0.75;
+      if (fuzzy) hits += 0.8;
     }
   }
   const score = hits / target.length;

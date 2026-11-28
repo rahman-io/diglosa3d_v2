@@ -138,7 +138,7 @@ export const DifficultyModeModal: React.FC<DifficultyModeModalProps> = ({
     DIFFICULTY_CARDS.find((card) => card.id === selected) || DIFFICULTY_CARDS[1];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-[radial-gradient(circle_at_50%_20%,rgba(30,58,138,0.45),rgba(4,9,22,0.92))] p-3 backdrop-blur-md sm:p-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-[radial-gradient(circle_at_50%_20%,rgba(30,58,138,0.58),rgba(4,9,22,0.96))] p-3 sm:p-5">
       <div className="my-auto flex w-full max-w-5xl flex-col gap-3 sm:gap-4">
         {/* Top Lobby Header */}
         <div className="flex items-center justify-between gap-3 px-1">
@@ -193,12 +193,12 @@ export const DifficultyModeModal: React.FC<DifficultyModeModalProps> = ({
                 {/* Top Badge Row */}
                 <div className="relative z-10 flex items-center justify-between gap-2 p-3 sm:p-3.5">
                   <span
-                    className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-black tracking-wider backdrop-blur-sm ${card.badgeClass}`}
+                    className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-black tracking-wider ${card.badgeClass}`}
                   >
                     {card.badge}
                   </span>
                   <span
-                    className={`flex h-8 w-8 items-center justify-center rounded-xl border backdrop-blur-sm ${card.iconBgClass}`}
+                    className={`flex h-8 w-8 items-center justify-center rounded-xl border ${card.iconBgClass}`}
                   >
                     <Icon className="h-4 w-4" />
                   </span>
@@ -238,7 +238,7 @@ export const DifficultyModeModal: React.FC<DifficultyModeModalProps> = ({
         </div>
 
         {/* Footer Action Bar */}
-        <div className="flex flex-col items-center justify-between gap-2.5 rounded-2xl border border-white/15 bg-slate-950/70 px-4 py-3 backdrop-blur-sm sm:flex-row">
+        <div className="flex flex-col items-center justify-between gap-2.5 rounded-2xl border border-white/15 bg-slate-950/88 px-4 py-3 sm:flex-row">
           <span className="text-center text-xs font-semibold text-slate-200/90 sm:text-left">
             Mode terpilih:{' '}
             <strong className="font-black text-white">{activeSpec.title}</strong> ({activeSpec.subtitle}) · Bisa diubah kapan saja di Menu → Opsi.

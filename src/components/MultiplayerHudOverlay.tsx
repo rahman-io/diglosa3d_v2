@@ -163,7 +163,7 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
   return (
     <div className="pointer-events-none fixed left-1/2 top-2 z-20 flex -translate-x-1/2 flex-col items-center gap-1.5 sm:top-2.5">
       {/* Compact Top-Center Multiplayer Bar (never covers joystick or right combat cluster) */}
-      <div className="pointer-events-auto flex max-w-[92vw] items-center gap-1 rounded-full border border-cyan-300/45 bg-slate-950/90 px-2 py-1 text-[10px] font-extrabold text-white shadow-xl backdrop-blur-md sm:gap-1.5 sm:px-2.5 sm:text-[11px]">
+      <div className="pointer-events-auto flex max-w-[92vw] items-center gap-1 rounded-full border border-cyan-300/45 bg-slate-950/94 px-2 py-1 text-[10px] font-extrabold text-white shadow-xl sm:gap-1.5 sm:px-2.5 sm:text-[11px]">
         {/* Room Code & Peers Badge */}
         <button
           type="button"
@@ -316,7 +316,7 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
 
       {/* Collapsible Team Contribution & Leaderboard Drawer */}
       {teamOpen && (
-        <div className="pointer-events-auto flex w-[min(365px,92vw)] flex-col gap-2 rounded-2xl border border-amber-300/40 bg-slate-950/94 p-2.5 text-white shadow-2xl backdrop-blur-md">
+        <div className="pointer-events-auto flex w-[min(365px,92vw)] flex-col gap-2 rounded-2xl border border-amber-300/40 bg-slate-950/96 p-2.5 text-white shadow-2xl">
           <div className="flex items-center justify-between border-b border-white/10 pb-1.5">
             <div className="flex items-center gap-1.5">
               <Trophy className="h-3.5 w-3.5 text-amber-300" />
@@ -418,7 +418,7 @@ export const MultiplayerHudOverlay: React.FC<MultiplayerHudOverlayProps> = ({
 
       {/* Collapsible Compact Chat Drawer */}
       {chatOpen && (
-        <div className="pointer-events-auto flex w-[min(325px,90vw)] flex-col gap-2 rounded-2xl border border-cyan-300/40 bg-slate-950/92 p-2.5 text-white shadow-2xl backdrop-blur-md">
+        <div className="pointer-events-auto flex w-[min(325px,90vw)] flex-col gap-2 rounded-2xl border border-cyan-300/40 bg-slate-950/96 p-2.5 text-white shadow-2xl">
           <div className="flex items-center justify-between border-b border-white/10 pb-1">
             <span className="text-[10px] font-black uppercase tracking-wider text-cyan-200">
               Obrolan Tim ({connectedPeers > 0 ? `${connectedPeers} P2P Aktif` : members.length > 1 ? 'Cloud Relay Aktif' : 'Siaga'})

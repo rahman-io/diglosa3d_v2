@@ -1570,7 +1570,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           >
             <div
               key={String(hud.caveCountdown.step)}
-              className={`flex max-w-md flex-col items-center rounded-3xl border px-7 py-5 shadow-2xl backdrop-blur-md transition-transform duration-200 sm:px-10 sm:py-6 ${
+              className={`flex max-w-md flex-col items-center rounded-3xl border px-7 py-5 shadow-2xl transition-transform duration-200 sm:px-10 sm:py-6 ${
                 isGo
                   ? 'border-emerald-300/80 bg-gradient-to-b from-emerald-700/92 to-slate-950/92 shadow-[0_0_55px_rgba(52,211,153,0.45)]'
                   : 'border-amber-300/75 bg-gradient-to-b from-slate-900/92 to-slate-950/95 shadow-[0_0_50px_rgba(245,158,11,0.35)]'
@@ -1657,7 +1657,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             </div>
 
             {swimMenuOpen && (
-              <div className="w-[90vw] max-w-[430px] rounded-xl border border-cyan-400/45 bg-slate-950/95 p-2 shadow-2xl backdrop-blur-md">
+              <div className="w-[90vw] max-w-[430px] rounded-xl border border-cyan-400/45 bg-slate-950/95 p-2 shadow-2xl">
                 <div className="mb-1.5 flex items-center justify-between gap-2 px-1">
                   <span className="text-[10px] font-black tracking-wide text-cyan-200">
                     10 GAYA RENANG & SELAM
@@ -3863,7 +3863,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           style={{ top: `${voiceModalVp.offsetTop}px`, height: `${voiceModalVp.height}px` }}
           className="pointer-events-none fixed left-0 right-0 z-30 flex items-center justify-center p-2 sm:p-4"
         >
-          <div className="pointer-events-auto flex max-h-[64dvh] w-full max-w-[min(32rem,calc(100vw-88px))] flex-col overflow-hidden rounded-2xl border border-cyan-300/35 bg-slate-950/22 p-2.5 text-slate-100 shadow-[0_8px_28px_rgba(0,0,0,0.45)] backdrop-blur-[1.5px] sm:max-h-[70dvh] sm:max-w-lg sm:p-3.5">
+          <div className="pointer-events-auto flex max-h-[64dvh] w-full max-w-[min(32rem,calc(100vw-88px))] flex-col overflow-hidden rounded-2xl border border-cyan-300/35 bg-slate-950/78 p-2.5 text-slate-100 shadow-[0_8px_28px_rgba(0,0,0,0.55)] sm:max-h-[70dvh] sm:max-w-lg sm:p-3.5">
             <div className="flex items-center justify-between gap-2 border-b border-white/15 pb-1.5">
               <div className="[text-shadow:0_1px_3px_rgba(0,0,0,0.95)]">
                 <h3 className="text-xs font-black text-cyan-200 sm:text-sm">

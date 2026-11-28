@@ -102,6 +102,14 @@ export interface VillagerActor {
   vehicleCooldown: number;
   zoneId: ZoneId | 'hub';
   interactable?: VillageInteractable;
+  caveCommuter?: {
+    postWaypoints: Array<[number, number]>;
+    postDialogue: string;
+    defaultWaypoints: Array<[number, number]>;
+    defaultDialogue: string;
+    caveThresholdIdx: number;
+  };
+  caveTransitTimer?: number;
 }
 
 interface GolemActor {
@@ -1129,6 +1137,11 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     variant?: NpcAppearanceVariant;
     label?: string;
     dialogue?: string;
+    caveCommuter?: {
+      postWaypoints: Array<[number, number]>;
+      postDialogue: string;
+      caveThresholdIdx: number;
+    };
   }> = [
     // =========================================================================
     // 1. DESA SAPAAN (10 Citizens: Kids, Youth, Adults, Elderly)
@@ -1136,7 +1149,25 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     { archetype: 'village_kid', waypoints: [[-2.5, 118.0], [-5.0, 115.0], [-8.0, 118.0], [-5.0, 121.0]], homeDoor: [-14.0, 118.0], speed: 2.35 },
     { archetype: 'schoolgirl', waypoints: [[-8.5, 123.0], [-3.5, 124.5], [-2.0, 129.0], [-7.5, 129.0]], homeDoor: [-14.0, 118.0], speed: 2.15 },
     { archetype: 'farmer_boy', waypoints: [[0.2, 130.5], [0.2, 137.8], [8.8, 137.8], [8.8, 130.5]], homeDoor: [-13.5, 90.0], speed: 1.9 },
-    { archetype: 'florist_girl', waypoints: [[9.0, 114.5], [14.5, 116.5], [14.5, 121.5], [9.0, 121.5]], homeDoor: [11.5, 109.0], speed: 1.85 },
+    {
+      archetype: 'florist_girl',
+      waypoints: [[9.0, 114.5], [14.5, 116.5], [14.5, 121.5], [9.0, 121.5]],
+      homeDoor: [11.5, 109.0],
+      speed: 1.85,
+      caveCommuter: {
+        postWaypoints: [
+          [9.0, 114.5],
+          [14.5, 118.8],
+          [22.2, 119.5],
+          [28.0, 119.4],
+          [21.5, 119.5],
+          [13.5, 121.2],
+        ],
+        postDialogue:
+          'Perangkai Bunga Rina & warga kini bebas keluar-masuk gua membawa bunga segar dan tanaman obat!',
+        caveThresholdIdx: 3,
+      },
+    },
     {
       archetype: 'village_kid',
       waypoints: [[-7.0, 102.0], [0.0, 102.0], [0.0, 106.5], [-7.0, 106.5]],
@@ -1163,6 +1194,19 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
       variant: { shirtHex: 0x22c55e, pantsHex: 0x1e40af },
       label: 'Pemuda Tani Bagas (Muda · Laki-laki)',
       dialogue: 'Gandum emas kami butuh air bersih dan semangat belajar yang tekun!',
+      caveCommuter: {
+        postWaypoints: [
+          [9.8, 128.0],
+          [16.2, 124.2],
+          [22.5, 119.6],
+          [28.0, 119.6],
+          [21.0, 120.2],
+          [11.5, 132.5],
+        ],
+        postDialogue:
+          'Kami sekarang gotong royong mengantar hasil panen keluar-masuk Mulut Gua Hutan Kata dengan aman dan nyaman!',
+        caveThresholdIdx: 3,
+      },
     },
     {
       archetype: 'florist_girl',
@@ -1723,6 +1767,19 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
       mesh: v.root,
     };
     v.interactable = inter;
+    if (cp.caveCommuter) {
+      const postMsg = cp.label
+        ? `${cp.label} berkata, "${cp.caveCommuter.postDialogue}" [${spec.professionId} · HP ${spec.stats.hp} / ATK ${spec.stats.atk} / NRG ${spec.stats.nrg}]`
+        : `${cp.caveCommuter.postDialogue} [${spec.professionId} · HP ${spec.stats.hp} / ATK ${spec.stats.atk} / NRG ${spec.stats.nrg}]`;
+      v.caveCommuter = {
+        postWaypoints: cp.caveCommuter.postWaypoints,
+        postDialogue: postMsg,
+        defaultWaypoints: cp.waypoints,
+        defaultDialogue: msg,
+        caveThresholdIdx: cp.caveCommuter.caveThresholdIdx,
+      };
+      v.caveTransitTimer = 0;
+    }
     villagers.push(v);
     interactables.push(inter);
   });
@@ -2647,6 +2704,42 @@ export function updateMinecraftVillage(
         ? !allSixLiberated
         : !Boolean(liberatedZones && liberatedZones.has(v.zoneId));
 
+    if (v.caveCommuter) {
+      const wantPost = !shouldGoHome;
+      const targetWaypoints = wantPost
+        ? v.caveCommuter.postWaypoints
+        : v.caveCommuter.defaultWaypoints;
+      if (v.waypoints !== targetWaypoints) {
+        v.waypoints = targetWaypoints;
+        v.wpIdx = v.wpIdx % targetWaypoints.length;
+        if (inter) {
+          inter.message = wantPost
+            ? v.caveCommuter.postDialogue
+            : v.caveCommuter.defaultDialogue;
+        }
+      }
+      if (v.caveTransitTimer && v.caveTransitTimer > 0) {
+        if (shouldGoHome) {
+          v.caveTransitTimer = 0;
+          v.root.visible = true;
+        } else {
+          v.caveTransitTimer = Math.max(0, v.caveTransitTimer - dt);
+          if (v.caveTransitTimer === 0) {
+            v.wpIdx = (v.wpIdx + 1) % v.waypoints.length;
+            v.root.visible = true;
+            v.pauseTimer = 0.2;
+          } else {
+            v.root.visible = false;
+            if (inter) {
+              inter.x = 9999;
+              inter.z = 9999;
+            }
+            continue;
+          }
+        }
+      }
+    }
+
     if (v.vehicleCooldown > 0) {
       v.vehicleCooldown = Math.max(0, v.vehicleCooldown - dt);
     }
@@ -3001,6 +3094,20 @@ export function updateMinecraftVillage(
       continue;
     }
     if (!shouldGoHome && dist < 0.45) {
+      if (
+        v.caveCommuter &&
+        v.waypoints === v.caveCommuter.postWaypoints &&
+        v.wpIdx === v.caveCommuter.caveThresholdIdx
+      ) {
+        v.caveTransitTimer = 3.2;
+        v.root.visible = false;
+        v.stuckTimer = 0;
+        if (inter) {
+          inter.x = 9999;
+          inter.z = 9999;
+        }
+        continue;
+      }
       v.wpIdx = (v.wpIdx + 1) % v.waypoints.length;
       v.pauseTimer = 1.25 + (i % 3) * 0.7;
       v.stuckTimer = 0;

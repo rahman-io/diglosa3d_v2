@@ -211,6 +211,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
   const lastRelicTickRef = useRef(relicEliminateTick);
   const resolvedRef = useRef(false);
   const continuedRef = useRef(false);
+  const feedbackEnteredAtRef = useRef(0);
   const pendingTimersRef = useRef<number[]>([]);
 
   const clearPendingTimers = useCallback(() => {
@@ -328,7 +329,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
       setRightTiles([]);
     }
 
-    // Auto-play audio for listen / word_bank / dialogue when unlocked
+    // Auto-play audio when challenge mounts already unlocked
     if (!disabled) {
       if (challenge.type === 'listen_word_bank') {
         scheduleSafeTimeout(() => soundEngine.speakEnglish(challenge.audioSentence, 0.9), 250);
@@ -336,6 +337,10 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
         scheduleSafeTimeout(() => soundEngine.speakEnglish(challenge.audioText, 0.92), 250);
       } else if (challenge.type === 'dialogue_complete') {
         scheduleSafeTimeout(() => soundEngine.speakEnglish(challenge.speakerALine, 0.92), 250);
+      } else if (challenge.type === 'picture_choice') {
+        scheduleSafeTimeout(() => soundEngine.speakEnglish(challenge.audioWord, 0.92), 250);
+      } else if (challenge.type === 'speak') {
+        scheduleSafeTimeout(() => soundEngine.speakEnglish(challenge.targetSentence, 0.9), 250);
       }
     }
 
@@ -426,6 +431,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
     (ok: boolean, skipped: boolean, note: string, mistakes = 0) => {
       if (resolvedRef.current) return;
       resolvedRef.current = true;
+      feedbackEnteredAtRef.current = Date.now();
       stopMicResources();
       setPhase('feedback');
       setIsCorrect(ok);
@@ -635,7 +641,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
 
   // Speaking challenge microphone handler (synchronous start for browser user-gesture compatibility)
   const handleStartSpeak = useCallback(() => {
-    if (disabled || phase !== 'answering' || challenge.type !== 'speak') return;
+    if (disabled || phase !== 'answering' || challenge.type !== 'speak' || isStoppingSpeak) return;
     if (isListening) {
       stopAndEvaluateSpeak();
       return;
@@ -779,6 +785,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
     phase,
     challenge,
     isListening,
+    isStoppingSpeak,
     stopAndEvaluateSpeak,
     stopMicResources,
     clearSpeakTimers,
@@ -861,8 +868,22 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
   useEffect(() => {
     if (disabled) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      const targetEl = e.target as HTMLElement | null;
+      if (
+        targetEl &&
+        (targetEl.tagName === 'INPUT' ||
+          targetEl.tagName === 'TEXTAREA' ||
+          targetEl.isContentEditable)
+      ) {
+        return;
+      }
       if (phase === 'feedback') {
-        if ((e.key === 'Enter' || e.code === 'Space') && onContinue) {
+        if (
+          (e.key === 'Enter' || e.code === 'Space') &&
+          onContinue &&
+          Date.now() - feedbackEnteredAtRef.current >= 260
+        ) {
           e.preventDefault();
           safeContinue();
         }
@@ -1654,7 +1675,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
                   ? praiseTitle
                   : 'Kurang tepat!'}
               </div>
-              <div className="truncate text-xs font-bold opacity-90">{feedbackNote}</div>
+              <div className="break-words text-xs font-bold leading-snug opacity-95">{feedbackNote}</div>
             </div>
           </div>
 

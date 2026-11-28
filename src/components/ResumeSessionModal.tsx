@@ -103,7 +103,7 @@ export const ResumeSessionModal: React.FC<ResumeSessionModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-[#060b16]/78 p-2 backdrop-blur-md sm:p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-[#060b16]/88 p-2 sm:p-4">
       <div className="my-auto max-h-[94dvh] w-full max-w-xl overflow-y-auto overscroll-contain">
         <RpgBoardPanel>
           {/* Header */}

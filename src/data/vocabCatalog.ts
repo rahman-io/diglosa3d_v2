@@ -734,7 +734,7 @@ const PDF_A1_ROWS: Record<number, RawPdfRow[]> = {
 
 // Retained IELTS Prep A1 words on catId 25 (used by isIeltsBoss in diglosaCatalog.ts)
 const IELTS_PREP_WORDS =
-  'abundant=berlimpah|achieve=mencapai|advantage=keuntungan|analyze=menganalisis|approach=pendekatan|appropriate=sesuai|benefit=manfaat|challenge=tantangan|coherent=terstruktur jelas|compare=membandingkan|conclusion=kesimpulan|consider=mempertimbangkan|context=konteks|contrast=perbedaan|contribute=berkontribusi|create=menciptakan|crucial=sangat penting|culture=budaya|data=data|debate=debat|decision=keputusan|describe=menggambarkan|develop=mengembangkan|difference=perbedaan|discuss=mendiskusikan|economy=ekonomi|education=pendidikan|effect=dampak|efficient=efisien|environment=lingkungan|essential=esensial|evidence=bukti|example=contoh|experience=pengalaman|explain=menjelaskan|factor=faktor|feature=fitur|global=global|goal=tujuan|impact=pengaruh|improve=meningkatkan|increase=meningkat|inevitable=tak terhindarkan|influence=memengaruhi|information=informasi|issue=isu / topik|knowledge=pengetahuan|method=metode|mitigate=mengurangi dampak|modern=modern|opportunity=kesempatan|opinion=pendapat|percent=persen|pollution=polusi|population=populasi|process=proses|progress=kemajuan|quality=kualitas|reduce=mengurangi|research=penelitian|resilient=tangguh|resource=sumber daya|result=hasil|similar=serupa|solution=solusi|strategy=strategi|summary=ringkasan|support=mendukung|technology=teknologi|trend=tren|ubiquitous=ada di mana-mana';
+  'abundant=berlimpah|achieve=mencapai|advantage=keuntungan|analyze=menganalisis|approach=pendekatan|appropriate=sesuai|benefit=manfaat|challenge=tantangan|coherent=terstruktur jelas|compare=membandingkan|conclusion=kesimpulan|consider=mempertimbangkan|context=konteks|contrast=kontras / perbedaan|contribute=berkontribusi|create=menciptakan|crucial=sangat penting|culture=budaya|data=data|debate=debat|decision=keputusan|describe=menggambarkan|develop=mengembangkan|difference=perbedaan|discuss=mendiskusikan|economy=ekonomi|education=pendidikan|effect=dampak|efficient=efisien|environment=lingkungan|essential=esensial|evidence=bukti|example=contoh|experience=pengalaman|explain=menjelaskan|factor=faktor|feature=fitur|global=global|goal=tujuan|impact=pengaruh|improve=meningkatkan|increase=meningkat|inevitable=tak terhindarkan|influence=memengaruhi|information=informasi|issue=isu / topik|knowledge=pengetahuan|method=metode|mitigate=mengurangi dampak|modern=modern|opportunity=kesempatan|opinion=pendapat|percent=persen|pollution=polusi|population=populasi|process=proses|progress=kemajuan|quality=kualitas|reduce=mengurangi|research=penelitian|resilient=tangguh|resource=sumber daya|result=hasil|similar=serupa|solution=solusi|strategy=strategi|summary=ringkasan|support=mendukung|technology=teknologi|trend=tren|ubiquitous=ada di mana-mana';
 
 function buildCatalog(): VocabEntry[] {
   // Dedupe ONLY within the same category so cross-topic dual-sense words (e.g., Fish, Chicken, Orange, Right, Open, Work, Call, Get, What) are preserved 100%
@@ -875,8 +875,14 @@ export interface AreaWaveDeal {
   monsterWaves: string[][]; // wave groups for patrolling monsters
 }
 
-export function computeAreaWaveDeal(zoneId: ZoneId): AreaWaveDeal {
-  const pool = [...getWordsForZone(zoneId)].sort(() => Math.random() - 0.5);
+export function computeAreaWaveDeal(
+  zoneId: ZoneId,
+  wordProgress: Record<string, WordProgress> = {},
+): AreaWaveDeal {
+  const pool = [...getWordsForZone(zoneId)]
+    .map((v) => ({ v, score: (wordProgress[v.id]?.b || 0) + Math.random() * 2.2 }))
+    .sort((a, b) => a.score - b.score)
+    .map((x) => x.v);
   const used = new Set<string>();
 
   const take = (n: number, filterFn?: (v: VocabEntry) => boolean): string[] => {
@@ -891,11 +897,23 @@ export function computeAreaWaveDeal(zoneId: ZoneId): AreaWaveDeal {
     return picked;
   };
 
-  // Door 0 (cards): 10, Door 2 (listen): 10, Door 3 (type: /^[A-Za-z' ]{2,14}$/): 10, Door 4 (match): 8
+  // Door 0 (cards): 10, Door 2 (listen): 10, Door 3 (type: /^[A-Za-z' -]{2,16}$/): 10, Door 4 (match): 8 unique
   const door0 = take(10);
   const door2 = take(10);
-  const door3 = take(10, (v) => /^[A-Za-z' ]{2,14}$/.test(v.word));
-  const door4 = take(8);
+  const door3 = take(10, (v) => /^[A-Za-z' -]{2,16}$/.test(v.word));
+  if (door3.length < 10) {
+    door3.push(...take(10 - door3.length));
+  }
+  const matchWords = new Set<string>();
+  const matchMeanings = new Set<string>();
+  const door4 = take(8, (v) => {
+    const w = v.word.toLowerCase();
+    const m = v.meaningId.toLowerCase();
+    if (matchWords.has(w) || matchMeanings.has(m)) return false;
+    matchWords.add(w);
+    matchMeanings.add(m);
+    return true;
+  });
 
   // Remaining area words grouped into monster squads using cycle [10,5,3,5,10,3,5,10,5,3]
   const remaining = pool.filter((v) => !used.has(v.id)).map((v) => v.id);

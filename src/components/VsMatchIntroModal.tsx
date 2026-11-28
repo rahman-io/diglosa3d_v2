@@ -96,7 +96,7 @@ export const VsMatchIntroModal: React.FC<VsMatchIntroModalProps> = ({
 
   if (variant === 'victory') {
     return (
-      <div className="fixed inset-0 z-[65] flex items-center justify-center overflow-y-auto overscroll-contain bg-[radial-gradient(circle_at_50%_20%,rgba(245,158,11,0.28),rgba(4,9,22,0.94))] p-3 backdrop-blur-md">
+      <div className="fixed inset-0 z-[65] flex items-center justify-center overflow-y-auto overscroll-contain bg-[radial-gradient(circle_at_50%_20%,rgba(245,158,11,0.28),rgba(4,9,22,0.96))] p-3">
         <div className="w-full max-w-2xl rounded-2xl border-2 border-amber-300/65 bg-gradient-to-b from-[#132345] to-[#070f21] p-4 text-white shadow-[0_24px_80px_rgba(0,0,0,0.88)] sm:p-6">
           <div className="flex flex-col items-center text-center">
             <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl border-2 border-amber-300/75 bg-amber-500/20 shadow-[0_0_30px_rgba(251,191,36,0.35)]">
@@ -178,7 +178,7 @@ export const VsMatchIntroModal: React.FC<VsMatchIntroModalProps> = ({
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col justify-between overflow-y-auto overscroll-contain bg-[radial-gradient(ellipse_at_top,rgba(30,64,175,0.65),rgba(4,9,22,0.97)_55%,rgba(12,24,54,0.98))] p-2.5 text-white backdrop-blur-md sm:p-5">
+    <div className="fixed inset-0 z-[60] flex flex-col justify-between overflow-y-auto overscroll-contain bg-[radial-gradient(ellipse_at_top,rgba(30,64,175,0.65),rgba(4,9,22,0.97)_55%,rgba(12,24,54,0.98))] p-2.5 text-white sm:p-5">
       {/* Top Row: MONSTER SQUAD cards (left/center) + Bold "MONSTER SQUAD" title (right), matching VS Splash layout */}
       <div className="mx-auto flex w-full max-w-6xl flex-col items-center gap-3 md:flex-row md:items-center md:justify-between">
         <div className="flex w-full items-stretch gap-2 overflow-x-auto pb-1 md:w-auto md:flex-1">

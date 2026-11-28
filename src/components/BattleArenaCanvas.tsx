@@ -16,6 +16,7 @@ import {
 } from '../three/monstersCatalog';
 import { getCharacterPreset } from '../data/characterPresets';
 import { CharacterPresetId, MonsterType, WeaponId } from '../types/game';
+import { getDevicePerfProfile } from '../utils/devicePerf';
 
 export type BattleAnimEvent =
   | 'idle'
@@ -46,21 +47,6 @@ interface SparkParticle {
   maxLife: number;
 }
 
-const isSoftwareWebGl = (): boolean => {
-  try {
-    const c = document.createElement('canvas');
-    const gl = c.getContext('webgl2');
-    if (!gl) return true;
-    const ext = gl.getExtension('WEBGL_debug_renderer_info');
-    const param = ext ? ext.UNMASKED_RENDERER_WEBGL : gl.RENDERER;
-    const gpu = String(gl.getParameter(param));
-    gl.getExtension('WEBGL_lose_context')?.loseContext();
-    return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
-  } catch {
-    return true;
-  }
-};
-
 export const BattleArenaCanvas: React.FC<BattleArenaCanvasProps> = ({
   characterId = 'hoot_emerald',
   monsterType,
@@ -89,19 +75,24 @@ export const BattleArenaCanvas: React.FC<BattleArenaCanvasProps> = ({
     const host = containerRef.current;
     if (!host) return;
 
-    const softGl = isSoftwareWebGl();
-    const isMobile =
-      typeof navigator !== 'undefined' &&
-      (/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
-        (navigator.maxTouchPoints > 1 && window.innerWidth <= 1024));
+    const perf = getDevicePerfProfile();
+    const softGl = perf.isSoftwareGl;
+    const isMobile = perf.isMobile;
+    const isLowEnd = perf.isLowEnd;
+    const isUltraLow = perf.isUltraLowEnd;
 
     const renderer = new THREE.WebGLRenderer({
       alpha: true,
-      antialias: !softGl,
+      antialias: !softGl && !isLowEnd,
       powerPreference: isMobile ? 'default' : 'high-performance',
     });
     renderer.setPixelRatio(
-      softGl ? 1 : Math.min(window.devicePixelRatio || 1, isMobile ? 1.5 : 1.75),
+      softGl
+        ? 1
+        : Math.min(
+            window.devicePixelRatio || 1,
+            isUltraLow ? 0.9 : isLowEnd ? 1.05 : isMobile ? 1.25 : 1.75,
+          ),
     );
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -114,7 +105,7 @@ export const BattleArenaCanvas: React.FC<BattleArenaCanvasProps> = ({
 
     const scene = new THREE.Scene();
     let envTex: THREE.Texture | null = null;
-    if (!softGl) {
+    if (!softGl && !isLowEnd) {
       const pmrem = new THREE.PMREMGenerator(renderer);
       envTex = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
       scene.environment = envTex;
@@ -125,7 +116,7 @@ export const BattleArenaCanvas: React.FC<BattleArenaCanvasProps> = ({
     camera.position.set(0, 2.15, 8.6);
     camera.lookAt(0, 1.35, 0);
 
-    const hemiLight = new THREE.HemisphereLight(0xfef3c7, 0x1e293b, 1.32);
+    const hemiLight = new THREE.HemisphereLight(0xfef3c7, 0x1e293b, isLowEnd || softGl ? 1.48 : 1.32);
     const dirLight = new THREE.DirectionalLight(0xffffff, 2.05);
     dirLight.position.set(2, 6, 6);
     const heroRim = new THREE.PointLight(0x34d399, 1.45, 10);
@@ -134,7 +125,7 @@ export const BattleArenaCanvas: React.FC<BattleArenaCanvasProps> = ({
     monsterRim.position.set(4.2, 2.5, 2.2);
     scene.add(hemiLight, dirLight, heroRim, monsterRim);
 
-    const palette = createMaterialPalette(renderer, softGl, softGl);
+    const palette = createMaterialPalette(renderer, softGl, softGl || isUltraLow);
 
     // 3D Hero Explorer
     const heroRig = createHeroAvatar(
@@ -215,15 +206,28 @@ export const BattleArenaCanvas: React.FC<BattleArenaCanvasProps> = ({
 
     let lastTickHandled = -1;
     let lastTime = performance.now();
-    let lastRenderMs = 0;
-    const minFrameMs = isMobile ? 32 : 16;
+    const minFrameMs = isUltraLow ? 42 : isLowEnd ? 36 : isMobile ? 32 : 16;
     let totalTime = 0;
     let rafId = 0;
+    let timerId = 0;
+    let disposed = false;
+    let inViewport = true;
+
+    const schedule = () => {
+      if (disposed || document.hidden || !inViewport) return;
+      if (minFrameMs >= 30) {
+        timerId = window.setTimeout(() => {
+          if (!disposed && !document.hidden && inViewport) {
+            rafId = window.requestAnimationFrame(animate);
+          }
+        }, minFrameMs - 4);
+      } else {
+        rafId = window.requestAnimationFrame(animate);
+      }
+    };
 
     const animate = (now: number) => {
-      rafId = window.requestAnimationFrame(animate);
-      if (document.hidden || now - lastRenderMs < minFrameMs - 1.5) return;
-      lastRenderMs = now;
+      if (disposed || document.hidden || !inViewport) return;
       const dt = Math.min(0.06, Math.max(0.001, (now - lastTime) / 1000));
       lastTime = now;
       totalTime += dt;
@@ -390,12 +394,47 @@ export const BattleArenaCanvas: React.FC<BattleArenaCanvasProps> = ({
       }
 
       renderer.render(scene, camera);
+      schedule();
     };
+
+    const onVisibility = () => {
+      if (!document.hidden && inViewport && !disposed) {
+        lastTime = performance.now();
+        window.cancelAnimationFrame(rafId);
+        window.clearTimeout(timerId);
+        rafId = window.requestAnimationFrame(animate);
+      }
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    let io: IntersectionObserver | null = null;
+    if (typeof IntersectionObserver !== 'undefined') {
+      io = new IntersectionObserver(
+        (entries) => {
+          const visible = entries.some((e) => e.isIntersecting);
+          if (visible !== inViewport) {
+            inViewport = visible;
+            if (visible && !document.hidden && !disposed) {
+              lastTime = performance.now();
+              window.cancelAnimationFrame(rafId);
+              window.clearTimeout(timerId);
+              rafId = window.requestAnimationFrame(animate);
+            }
+          }
+        },
+        { threshold: 0.01 },
+      );
+      io.observe(host);
+    }
 
     rafId = window.requestAnimationFrame(animate);
 
     return () => {
+      disposed = true;
       window.cancelAnimationFrame(rafId);
+      window.clearTimeout(timerId);
+      document.removeEventListener('visibilitychange', onVisibility);
+      io?.disconnect();
       ro.disconnect();
       sparks.forEach((s) => scene.remove(s.mesh));
       scene.traverse((obj) => {

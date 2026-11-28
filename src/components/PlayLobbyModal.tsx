@@ -328,7 +328,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-[radial-gradient(circle_at_50%_20%,rgba(30,58,138,0.58),rgba(4,9,22,0.96))] p-2 backdrop-blur-md sm:p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-[radial-gradient(circle_at_50%_20%,rgba(30,58,138,0.68),rgba(4,9,22,0.97))] p-2 sm:p-4">
       <div className="my-auto flex w-full max-w-5xl flex-col gap-3 rounded-2xl border border-sky-400/25 bg-[#09152b]/95 p-3 shadow-[0_24px_65px_rgba(0,0,0,0.8)] sm:gap-3.5 sm:p-5">
         {/* Top Header + Stepper */}
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-sky-400/15 pb-2.5">
@@ -956,12 +956,12 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
 
                             <div className="relative z-10 flex items-center justify-between gap-2 p-2.5 sm:p-3">
                               <span
-                                className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[9.5px] font-black tracking-wider backdrop-blur-sm ${card.badgeClass}`}
+                                className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[9.5px] font-black tracking-wider ${card.badgeClass}`}
                               >
                                 {card.badge}
                               </span>
                               <span
-                                className={`flex h-7 w-7 items-center justify-center rounded-xl border backdrop-blur-sm ${card.iconBgClass}`}
+                                className={`flex h-7 w-7 items-center justify-center rounded-xl border ${card.iconBgClass}`}
                               >
                                 <Icon className="h-3.5 w-3.5" />
                               </span>

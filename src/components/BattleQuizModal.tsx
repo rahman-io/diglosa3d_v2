@@ -367,11 +367,12 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
       soundEngine.stopSpeech();
 
       const effectiveMonsterHp = nextMonsterHpOverride ?? monsterHp;
+      const activeVocabId = (isDesaDuolingo && duoChallenge?.vocabId) || q?.vocabId || '';
 
       if (hasPerisai && !shieldUsed) {
         setShieldUsed(true);
-        if (q) {
-          onAnswerResult(false, q.vocabId, {
+        if (activeVocabId) {
+          onAnswerResult(false, activeVocabId, {
             shieldBlocked: true,
             isAcademyMini: b.isAcademyShadow,
           });
@@ -385,8 +386,8 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
         return;
       }
 
-      if (q) {
-        onAnswerResult(false, q.vocabId, {
+      if (activeVocabId) {
+        onAnswerResult(false, activeVocabId, {
           shieldBlocked: false,
           isAcademyMini: b.isAcademyShadow,
         });
@@ -434,6 +435,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
       pickNextQuestion,
       pickNextDuoChallenge,
       duoChallenge,
+      isDesaDuolingo,
       setupTurnModifiers,
       scheduleNextTurn,
       triggerAnim,
@@ -849,6 +851,13 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
   useEffect(() => {
     if (!battle) return;
     const onKey = (e: KeyboardEvent) => {
+      if (e.repeat || isTerminalRef.current) return;
+      const tgt = e.target as HTMLElement | null;
+      const isTyping =
+        tgt?.tagName === 'INPUT' ||
+        tgt?.tagName === 'TEXTAREA' ||
+        tgt?.isContentEditable;
+      if (isTyping) return;
       if (turnPhase === 'grab' && (e.code === 'Space' || e.code === 'Enter')) {
         e.preventDefault();
         handleGrab();
@@ -1138,13 +1147,15 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
                   {hasSepatu && ' (👟 Sepatu Angin aktif +1 dtk)'}
                 </p>
               </div>
-            ) : !isDesaDuolingo || turnPhase === 'feedback' ? (
+            ) : !isDesaDuolingo || turnPhase === 'feedback' || feedbackMsg ? (
               <div
                 className={`rounded-xl border px-3 py-1.5 text-center text-[11px] font-extrabold sm:py-2 sm:text-xs ${
                   turnPhase === 'feedback'
                     ? feedbackGood
                       ? 'border-emerald-400/50 bg-emerald-950/65 text-emerald-200'
                       : 'border-rose-400/50 bg-rose-950/65 text-rose-200'
+                    : feedbackMsg
+                    ? 'border-rose-400/50 bg-rose-950/55 text-rose-200'
                     : 'border-amber-300/30 bg-slate-950/55 text-amber-200'
                 }`}
               >
@@ -1162,6 +1173,14 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
             {/* Desa Sapaan 6-Type People Duolingo Stage OR Classic 4-Option Tablets */}
             {isDesaDuolingo && duoChallenge ? (
               <div className="rounded-2xl border border-amber-300/20 bg-slate-950/40 p-2.5 sm:p-3">
+                {hasKompas &&
+                  ((wordProgress[duoChallenge.vocabId]?.w ?? 0) >
+                    (wordProgress[duoChallenge.vocabId]?.r ?? 0)) && (
+                    <div className="mb-2 inline-flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-black text-amber-200">
+                      <AlertTriangle className="h-3 w-3 shrink-0" />
+                      <span>🧭 Kompas Tanya Kata Sulit</span>
+                    </div>
+                  )}
                 <DuolingoChallengeView
                   challenge={duoChallenge}
                   disabled={turnPhase !== 'answer'}
@@ -1170,7 +1189,9 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
                   onResolved={handleDuoBattleResolved}
                   onDisableSpeaking={() => disableSpeakingTemporarily(15)}
                   onMatchMistake={(_, mistakes) => {
-                    if (mistakes >= 2) {
+                    if (mistakes === 1) {
+                      setFeedbackMsg('⚠️ Salah 1/2 pasangan — hati-hati serangan monster!');
+                    } else if (mistakes >= 2) {
                       handleMonsterAttack(
                         battle,
                         question ? { ...question, vocabId: duoChallenge.vocabId } : null,

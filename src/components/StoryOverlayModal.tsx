@@ -138,7 +138,7 @@ const StorybookPrologueBox: React.FC<{
               handleInteract();
             }
           }}
-          className="cursor-pointer select-none rounded-2xl border border-amber-300/45 bg-slate-950/22 px-4 py-2.5 text-amber-50 shadow-[0_8px_28px_rgba(0,0,0,0.45)] backdrop-blur-[1.5px] transition focus:outline-none sm:px-5 sm:py-3"
+          className="cursor-pointer select-none rounded-2xl border border-amber-300/45 bg-slate-950/76 px-4 py-2.5 text-amber-50 shadow-[0_8px_28px_rgba(0,0,0,0.55)] transition focus:outline-none sm:px-5 sm:py-3"
         >
           {/* Header Bar */}
           <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2 border-b border-white/15 pb-1.5">
@@ -297,7 +297,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
           </div>
         )}
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex flex-col items-center px-3 pb-3 sm:px-6 sm:pb-5">
-          <div className="pointer-events-auto flex w-full max-w-3xl flex-col gap-2.5 rounded-2xl border-2 border-rose-400/70 bg-slate-950/70 px-4 py-3 text-amber-50 shadow-[0_10px_32px_rgba(0,0,0,0.6)] backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-3.5">
+          <div className="pointer-events-auto flex w-full max-w-3xl flex-col gap-2.5 rounded-2xl border-2 border-rose-400/70 bg-slate-950/88 px-4 py-3 text-amber-50 shadow-[0_10px_32px_rgba(0,0,0,0.6)] sm:flex-row sm:items-center sm:justify-between sm:px-5 sm:py-3.5">
             <div className="min-w-0 flex-1">
               <div className="mb-1 flex flex-wrap items-center gap-2">
                 <span className="inline-flex items-center rounded-full border border-rose-400/70 bg-rose-600/85 px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wide text-white">
@@ -357,7 +357,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
           </div>
         )}
         <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex flex-col items-center px-3 pb-3 sm:px-6 sm:pb-5">
-          <div className="pointer-events-auto flex w-full max-w-2xl items-center justify-between gap-3 rounded-2xl border-2 border-emerald-400/75 bg-slate-950/75 px-4 py-3 text-amber-50 shadow-[0_10px_32px_rgba(0,0,0,0.55)] backdrop-blur-sm sm:px-5">
+          <div className="pointer-events-auto flex w-full max-w-2xl items-center justify-between gap-3 rounded-2xl border-2 border-emerald-400/75 bg-slate-950/88 px-4 py-3 text-amber-50 shadow-[0_10px_32px_rgba(0,0,0,0.55)] sm:px-5">
             <div className="min-w-0 flex-1">
               <span className="mb-1 inline-flex items-center rounded-full border border-emerald-400/60 bg-emerald-600/80 px-2.5 py-0.5 text-[11px] font-black uppercase tracking-wide text-white">
                 {story.speakerName}

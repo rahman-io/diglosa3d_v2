@@ -7,6 +7,7 @@ import {
   ZoneId,
 } from '../types/game';
 import { IELTS_TEMPORARILY_LOCKED, OVERWORLD_ANCHORS } from '../three/archipelagoWorld';
+import { getDevicePerfProfile } from '../utils/devicePerf';
 
 const ZONE_SPOT_IMAGE_SRC: Partial<Record<RadarBlipKind, string>> = {
   spot_desa: './assets/aistudio/image_e351f895.png',
@@ -1047,7 +1048,11 @@ export const RadarMinimap: React.FC<RadarMinimapProps> = React.memo(({
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const perf = getDevicePerfProfile();
+    const dpr = Math.min(
+      window.devicePixelRatio || 1,
+      perf.isLowEnd ? 1.25 : perf.isMobile ? 1.5 : 2,
+    );
     const total = size + 16;
     const targetW = Math.round(total * dpr);
     const targetH = Math.round(total * dpr);
@@ -1584,7 +1589,11 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
     if (!canvas) return;
     const width = 640;
     const height = 400;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const perf = getDevicePerfProfile();
+    const dpr = Math.min(
+      window.devicePixelRatio || 1,
+      perf.isLowEnd ? 1.25 : perf.isMobile ? 1.5 : 2,
+    );
     if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
       canvas.width = width * dpr;
       canvas.height = height * dpr;
@@ -1881,7 +1890,7 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
     drawFrame();
     const timer = window.setInterval(() => {
       if (!document.hidden) drawFrame();
-    }, 280);
+    }, 500);
     return () => window.clearInterval(timer);
   }, [radar?.worldMode, dungeonName]);
 

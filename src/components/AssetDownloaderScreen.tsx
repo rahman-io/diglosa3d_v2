@@ -133,7 +133,7 @@ export const AssetDownloaderScreen: React.FC<AssetDownloaderScreenProps> = ({
       {/* Center Action Card ONLY when awaiting user consent, post-download install, or error/offline recovery */}
       {(isPrompting || isInstallPrompt || isOfflineEmpty || isError) && (
         <div className="absolute inset-x-0 bottom-20 z-20 flex justify-center px-4 sm:bottom-24">
-          <div className="w-full max-w-lg rounded-2xl border border-amber-300/40 bg-slate-950/90 p-4 shadow-2xl backdrop-blur-md sm:p-5">
+          <div className="w-full max-w-lg rounded-2xl border border-amber-300/40 bg-slate-950/94 p-4 shadow-2xl sm:p-5">
             {isPrompting && (
               <>
                 <div className="flex items-start justify-between gap-3">

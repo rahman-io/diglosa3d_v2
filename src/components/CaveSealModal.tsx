@@ -35,9 +35,12 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
   const innerScrollRef = useRef<HTMLDivElement | null>(null);
 
   const isDesaDuolingo = Boolean(seal && seal.zoneId === 'desa_sapaan');
+  const sealKey = seal ? `${seal.blockId}:${seal.zoneId}:${seal.vocabId}` : null;
+  const wordProgressRef = useRef(wordProgress);
+  wordProgressRef.current = wordProgress;
 
   const challenge = useMemo(() => {
-    if (!seal || isDesaDuolingo) return null;
+    if (!sealKey || !seal || isDesaDuolingo) return null;
     const entry = VOCAB_BY_ID[seal.vocabId];
     if (!entry) return null;
     const distractors = pickDistractors(entry, 3).map((d) => d.meaningId);
@@ -53,7 +56,8 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
       choices: indexed.map((item) => item.label),
       correctIndex,
     };
-  }, [seal, isDesaDuolingo]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sealKey, isDesaDuolingo]);
 
   const handleClose = useCallback(() => {
     if (resolveTimerRef.current !== null) {
@@ -74,7 +78,7 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
     setPickedIndex(null);
     setPendingOutcome(null);
 
-    if (!seal) {
+    if (!seal || !sealKey) {
       setDuoChallenge(null);
       return;
     }
@@ -82,7 +86,7 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
     if (seal.zoneId === 'desa_sapaan') {
       setDuoChallenge(
         pickRandomPeopleChallenge({
-          wordProgress,
+          wordProgress: wordProgressRef.current,
           preferredVocabIds: seal.vocabId ? [seal.vocabId] : undefined,
           allowSpeak: !isSpeakingTemporarilyDisabled(),
           allowMatch: true,
@@ -109,7 +113,8 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
       }
       soundEngine.stopSpeech();
     };
-  }, [seal, challenge, wordProgress]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sealKey]);
 
   const handleChoose = useCallback(
     (idx: number) => {
@@ -136,7 +141,7 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
         setPendingOutcome(null);
         setDuoChallenge(
           pickRandomPeopleChallenge({
-            wordProgress,
+            wordProgress: wordProgressRef.current,
             preferredVocabIds: seal.vocabId ? [seal.vocabId] : undefined,
             allowSpeak: false,
             allowMatch: true,
@@ -146,7 +151,7 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
       }
       setPendingOutcome(outcome);
     },
-    [seal, duoChallenge, wordProgress],
+    [seal, duoChallenge],
   );
 
   const handleDuoContinue = useCallback(() => {

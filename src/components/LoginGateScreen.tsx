@@ -99,7 +99,7 @@ export const LoginGateScreen: React.FC<LoginGateScreenProps> = ({
               onClick={onOpenOfflineSync}
               title={offlineReady ? 'Periksa Update Aset' : 'Unduh Aset Offline'}
               aria-label={offlineReady ? 'Periksa Update Aset' : 'Unduh Aset Offline'}
-              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-slate-950/75 text-slate-100 shadow-lg backdrop-blur-sm transition hover:border-white/60 hover:bg-slate-900"
+              className="flex h-9 w-9 items-center justify-center rounded-full border border-white/30 bg-slate-950/88 text-slate-100 shadow-lg transition hover:border-white/60 hover:bg-slate-900"
             >
               {offlineReady ? (
                 <RefreshCw className="h-4 w-4" />
@@ -114,14 +114,14 @@ export const LoginGateScreen: React.FC<LoginGateScreenProps> = ({
       {/* Center-Bottom Auth Action Cluster (Google Account Only) */}
       <div className="mx-auto flex w-full max-w-[360px] flex-col items-center gap-2.5 pb-2 sm:pb-5">
         {!authChecked ? (
-          <div className="inline-flex items-center gap-2.5 rounded-full border border-white/20 bg-slate-950/80 px-5 py-2.5 text-xs font-bold text-slate-100 shadow-xl backdrop-blur-md">
+          <div className="inline-flex items-center gap-2.5 rounded-full border border-white/20 bg-slate-950/90 px-5 py-2.5 text-xs font-bold text-slate-100 shadow-xl">
             <Loader2 className="h-4 w-4 animate-spin text-sky-300" />
             <span>Memeriksa sesi login tersimpan...</span>
           </div>
         ) : (
           <>
             {errorMsg && (
-              <div className="w-full rounded-xl border border-rose-400/50 bg-rose-950/85 px-3.5 py-2 text-center text-xs font-bold text-rose-100 shadow-lg backdrop-blur-sm">
+              <div className="w-full rounded-xl border border-rose-400/50 bg-rose-950/92 px-3.5 py-2 text-center text-xs font-bold text-rose-100 shadow-lg">
                 ⚠️ {errorMsg}
               </div>
             )}
@@ -155,7 +155,7 @@ export const LoginGateScreen: React.FC<LoginGateScreenProps> = ({
               type="button"
               disabled={Boolean(busyMode) || !agreedTerms}
               onClick={() => void handleLogin(true)}
-              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/25 bg-slate-200/85 px-5 py-2 text-xs font-extrabold text-slate-900 shadow-lg backdrop-blur-sm transition hover:bg-white active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-55"
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/25 bg-slate-200/94 px-5 py-2 text-xs font-extrabold text-slate-900 shadow-lg transition hover:bg-white active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-55"
             >
               {busyMode === 'switch' ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-800" />
