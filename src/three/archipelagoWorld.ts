@@ -10,6 +10,8 @@ import {
 import {
   AirbaseWorldRig,
   buildAirbaseIslands,
+  isLockedAirbasePos,
+  isStarterAirbasePos,
   isWalkableAirbase,
   sampleAirbaseTerrain,
   updateAirbaseIslands,
@@ -158,14 +160,17 @@ export const ISLAND_DISKS: IslandDisk[] = [
 export const STARTER_DESA_CENTER_X = 0;
 export const STARTER_DESA_CENTER_Z = 134;
 export const STARTER_DESA_MAX_RADIUS = 98;
-export const STARTER_DESA_MIN_Z = 60.5;
+export const STARTER_DESA_MIN_Z = 57.2;
+
+function isOnLockedNorthBridgeEntry(x: number, z: number): boolean {
+  return z < 61.8 && x >= -25.5 && x <= -12.5;
+}
 
 export function isAllowedStarterWorldPos(x: number, z: number): boolean {
   if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
   if (z < STARTER_DESA_MIN_Z) return false;
-  if (Math.hypot(x - STARTER_DESA_CENTER_X, z - STARTER_DESA_CENTER_Z) > STARTER_DESA_MAX_RADIUS) {
-    return false;
-  }
+  if (isOnLockedNorthBridgeEntry(x, z)) return false;
+  if (isLockedAirbasePos(x, z, 2.5)) return false;
   for (let i = 0; i < ISLAND_DISKS.length; i++) {
     const d = ISLAND_DISKS[i];
     if (d.id === 'desa_sapaan') continue;
@@ -173,7 +178,10 @@ export function isAllowedStarterWorldPos(x: number, z: number): boolean {
       return false;
     }
   }
-  if (sampleAirbaseTerrain(x, z) !== null) return false;
+  if (isStarterAirbasePos(x, z, 1.5)) return true;
+  if (Math.hypot(x - STARTER_DESA_CENTER_X, z - STARTER_DESA_CENTER_Z) > STARTER_DESA_MAX_RADIUS) {
+    return false;
+  }
   return true;
 }
 
@@ -184,14 +192,20 @@ export function clampPosToStarterZone(pos: { x: number; z: number }, margin = 0.
     pos.z = minZ;
     clamped = true;
   }
-  const dx = pos.x - STARTER_DESA_CENTER_X;
-  const dz = pos.z - STARTER_DESA_CENTER_Z;
-  const maxR = STARTER_DESA_MAX_RADIUS - margin;
-  const dist = Math.hypot(dx, dz);
-  if (dist > maxR && dist > 0.0001) {
-    pos.x = STARTER_DESA_CENTER_X + (dx / dist) * maxR;
-    pos.z = STARTER_DESA_CENTER_Z + (dz / dist) * maxR;
+  if (isOnLockedNorthBridgeEntry(pos.x, pos.z)) {
+    pos.z = Math.max(pos.z, 61.8 + margin * 0.45);
     clamped = true;
+  }
+  if (!isStarterAirbasePos(pos.x, pos.z, 1.2)) {
+    const dx = pos.x - STARTER_DESA_CENTER_X;
+    const dz = pos.z - STARTER_DESA_CENTER_Z;
+    const maxR = STARTER_DESA_MAX_RADIUS - margin;
+    const dist = Math.hypot(dx, dz);
+    if (dist > maxR && dist > 0.0001) {
+      pos.x = STARTER_DESA_CENTER_X + (dx / dist) * maxR;
+      pos.z = STARTER_DESA_CENTER_Z + (dz / dist) * maxR;
+      clamped = true;
+    }
   }
   for (let i = 0; i < ISLAND_DISKS.length; i++) {
     const d = ISLAND_DISKS[i];
@@ -213,6 +227,88 @@ export function clampPosToStarterZone(pos: { x: number; z: number }, margin = 0.
     clamped = true;
   }
   return clamped;
+}
+
+export function isAllowedStarterFlightPos(x: number, z: number): boolean {
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
+  if (z < 56.5) return false;
+  if (isLockedAirbasePos(x, z, 14)) return false;
+  for (let i = 0; i < ISLAND_DISKS.length; i++) {
+    const d = ISLAND_DISKS[i];
+    if (d.id === 'desa_sapaan') continue;
+    if (Math.hypot(x - d.cx, z - d.cz) <= d.radius + 12) {
+      return false;
+    }
+  }
+  const nearDesa = Math.hypot(x - STARTER_DESA_CENTER_X, z - STARTER_DESA_CENTER_Z) <= 112;
+  const nearSouthAirbase = Math.hypot(x - -86, z - 198) <= 104;
+  return nearDesa || nearSouthAirbase;
+}
+
+export function clampFlightPosToStarterZone(pos: { x: number; z: number }): boolean {
+  let clamped = false;
+  if (pos.z < 58.0) {
+    pos.z = 58.0;
+    clamped = true;
+  }
+  for (let i = 0; i < ISLAND_DISKS.length; i++) {
+    const d = ISLAND_DISKS[i];
+    if (d.id === 'desa_sapaan') continue;
+    const ox = pos.x - d.cx;
+    const oz = pos.z - d.cz;
+    const od = Math.hypot(ox, oz);
+    const minDiskD = d.radius + 13.5;
+    if (od < minDiskD) {
+      const nx = od > 0.001 ? ox / od : 0;
+      const nz = od > 0.001 ? oz / od : 1;
+      pos.x = d.cx + nx * minDiskD;
+      pos.z = d.cz + nz * minDiskD;
+      clamped = true;
+    }
+  }
+  const dDesa = Math.hypot(pos.x - STARTER_DESA_CENTER_X, pos.z - STARTER_DESA_CENTER_Z);
+  const dAir = Math.hypot(pos.x - -86, pos.z - 198);
+  if (dDesa > 109 && dAir > 101) {
+    if (dAir - 101 < dDesa - 109) {
+      const k = 100 / Math.max(0.001, dAir);
+      pos.x = -86 + (pos.x - -86) * k;
+      pos.z = 198 + (pos.z - 198) * k;
+    } else {
+      const k = 108 / Math.max(0.001, dDesa);
+      pos.x = STARTER_DESA_CENTER_X + (pos.x - STARTER_DESA_CENTER_X) * k;
+      pos.z = STARTER_DESA_CENTER_Z + (pos.z - STARTER_DESA_CENTER_Z) * k;
+    }
+    clamped = true;
+  }
+  if (pos.z < 58.0) {
+    pos.z = 58.0;
+    clamped = true;
+  }
+  return clamped;
+}
+
+export function nudgePosInsideStarterZone(
+  pos: { x: number; z: number },
+  stepBackMeters = 2.4,
+): boolean {
+  let moved = false;
+  if (isOnLockedNorthBridgeEntry(pos.x, pos.z) || pos.z < 60.0) {
+    pos.z = Math.max(pos.z, isOnLockedNorthBridgeEntry(pos.x, pos.z) ? 64.5 : 60.2);
+    moved = true;
+  }
+  if (!isStarterAirbasePos(pos.x, pos.z, 1.2)) {
+    const dx = pos.x - STARTER_DESA_CENTER_X;
+    const dz = pos.z - STARTER_DESA_CENTER_Z;
+    const dist = Math.hypot(dx, dz);
+    const safeR = STARTER_DESA_MAX_RADIUS - stepBackMeters - 1.2;
+    if (dist > safeR && dist > 0.001) {
+      pos.x = STARTER_DESA_CENTER_X + (dx / dist) * safeR;
+      pos.z = STARTER_DESA_CENTER_Z + (dz / dist) * safeR;
+      moved = true;
+    }
+  }
+  clampPosToStarterZone(pos, 1.1);
+  return moved;
 }
 
 export const SEA_ISLETS: SeaIslet[] = [

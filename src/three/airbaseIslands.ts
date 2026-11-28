@@ -227,6 +227,45 @@ export function isWalkableAirbase(x: number, z: number, margin = 0): boolean {
   return ramp.onRamp && ramp.perp <= AIRBASE_SOUTH_RAMP.halfWidth - margin * 0.4;
 }
 
+export function isStarterAirbasePos(x: number, z: number, extraMargin = 0): boolean {
+  const south = AIRBASE_ISLANDS[0];
+  if (south && south.zoneId === 'desa_sapaan') {
+    const dx = x - south.cx;
+    const dz = z - south.cz;
+    const maxSpan = Math.max(south.halfW, south.halfL) + extraMargin + 12;
+    if (Math.abs(dx) <= maxSpan && Math.abs(dz) <= maxSpan) {
+      const cosY = Math.cos(south.yaw);
+      const sinY = Math.sin(south.yaw);
+      const lx = dx * cosY - dz * sinY;
+      const lz = dx * sinY + dz * cosY;
+      if (Math.abs(lx) <= south.halfW + extraMargin && Math.abs(lz) <= south.halfL + extraMargin) {
+        return true;
+      }
+    }
+  }
+  const ramp = evalSouthRampSample(x, z);
+  return ramp.onRamp && ramp.perp <= AIRBASE_SOUTH_RAMP.halfWidth + 0.45 + extraMargin;
+}
+
+export function isLockedAirbasePos(x: number, z: number, extraMargin = 0): boolean {
+  for (let i = 0; i < AIRBASE_ISLANDS.length; i++) {
+    const b = AIRBASE_ISLANDS[i];
+    if (b.zoneId === 'desa_sapaan') continue;
+    const dx = x - b.cx;
+    const dz = z - b.cz;
+    const maxSpan = Math.max(b.halfW, b.halfL) + extraMargin + 12;
+    if (Math.abs(dx) > maxSpan || Math.abs(dz) > maxSpan) continue;
+    const cosY = Math.cos(b.yaw);
+    const sinY = Math.sin(b.yaw);
+    const lx = dx * cosY - dz * sinY;
+    const lz = dx * sinY + dz * cosY;
+    if (Math.abs(lx) <= b.halfW + extraMargin && Math.abs(lz) <= b.halfL + extraMargin) {
+      return true;
+    }
+  }
+  return false;
+}
+
 export function getAirbaseRunwaySpawn(base: AirbaseIslandDef): {
   pos: THREE.Vector3;
   yaw: number;

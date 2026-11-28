@@ -3272,7 +3272,7 @@ export const SKY_MONSTER_SPAWNS: SkyMonsterSpawnTemplate[] = [
   // Desa Sapaan & Langit Pesisir Luar (3 yaitu 2 combat + 1 quiz, aman dari area spawn awal desa)
   { zoneId: 'desa_sapaan', name: 'Crimson Phoenix (Burung Api)', type: 'crimson_phoenix', x: 64, z: 168, combatOnly: true },
   { zoneId: 'desa_sapaan', name: 'Blight Hornet (Tawon Beracun)', type: 'blight_hornet', x: -74, z: 132, combatOnly: true },
-  { zoneId: 'desa_sapaan', name: 'Giant Phantom Kata', type: 'giant_phantom', x: 46, z: 54, combatOnly: false },
+  { zoneId: 'desa_sapaan', name: 'Giant Phantom Kata', type: 'giant_phantom', x: 44, z: 68, combatOnly: false },
 
   // Pasar Rasa & Langit Barat (3: 2 combat + 1 quiz)
   { zoneId: 'pasar_rasa', name: 'Shadow Harpy (Harpi Kegelapan)', type: 'shadow_harpy', x: -112, z: 62, combatOnly: true },

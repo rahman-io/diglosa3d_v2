@@ -313,11 +313,20 @@ export const IslandPaywallModal: React.FC<IslandPaywallModalProps> = ({
               <RpgPillButton
                 variant="cream"
                 size="md"
-                onClick={onDecline}
+                onClick={isPostRefugee ? onDecline : onClose ?? onDecline}
                 className="w-full sm:w-auto"
               >
-                <GraduationCap className="h-4 w-4 shrink-0 text-emerald-700" />
-                <span>Tolak / Belum Beli — Tetap di Desa</span>
+                {isPostRefugee ? (
+                  <>
+                    <GraduationCap className="h-4 w-4 shrink-0 text-emerald-700" />
+                    <span>Tolak / Belum Beli — Tetap di Desa</span>
+                  </>
+                ) : (
+                  <>
+                    <X className="h-4 w-4 shrink-0 text-slate-700" />
+                    <span>Tutup — Tetap di Posisi</span>
+                  </>
+                )}
               </RpgPillButton>
 
               <RpgPillButton

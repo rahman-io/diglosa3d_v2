@@ -832,9 +832,14 @@ function DiglosaRpgApp() {
         onOpenAcademyExam: (skill) => setActiveAcademySkill(skill),
         onOpenCaveSeal: (seal) => setActiveCaveSeal(seal),
         onOpenCrafting: () => setCraftingOpen(true),
-        onOpenIslandPaywall: (reason, targetZoneId) =>
-          setPaywallModal({ reason, targetZoneId }),
-        onOpenDesaSchool: () => setDesaSchoolOpen(true),
+        onOpenIslandPaywall: (reason, targetZoneId) => {
+          setSideTab(null);
+          setPaywallModal({ reason, targetZoneId });
+        },
+        onOpenDesaSchool: () => {
+          setSideTab(null);
+          setDesaSchoolOpen(true);
+        },
         onMultiplayerPacket: (pkt, targetUid) => {
           const transport = transportRef.current;
           if (!transport) return;
@@ -1027,6 +1032,7 @@ function DiglosaRpgApp() {
             engineRef.current?.startVillagerSchoolInviteScene();
           } else {
             setPaywallModal(null);
+            engineRef.current?.dismissLockedBorderPrompt();
           }
           return;
         }
@@ -2913,18 +2919,20 @@ function DiglosaRpgApp() {
         />
       )}
 
-      {((hud.phase === 'playing' ||
-        (hud.phase === 'story' &&
-          hud.storyDialog?.kind !== 'prologue' &&
-          hud.storyDialog?.kind !== 'owl_depart' &&
-          hud.storyDialog?.kind !== 'village_ambush' &&
-          hud.storyDialog?.kind !== 'village_rescue_escort') ||
-        hud.phase === 'battle' ||
-        hud.phase === 'learning' ||
-        hud.phase === 'dialogue' ||
-        hud.phase === 'academy' ||
-        hud.phase === 'paused' ||
-        hud.phase === 'gameover')) && (
+      {!paywallModal &&
+        !desaSchoolOpen &&
+        (hud.phase === 'playing' ||
+          (hud.phase === 'story' &&
+            hud.storyDialog?.kind !== 'prologue' &&
+            hud.storyDialog?.kind !== 'owl_depart' &&
+            hud.storyDialog?.kind !== 'village_ambush' &&
+            hud.storyDialog?.kind !== 'village_rescue_escort') ||
+          hud.phase === 'battle' ||
+          hud.phase === 'learning' ||
+          hud.phase === 'dialogue' ||
+          hud.phase === 'academy' ||
+          hud.phase === 'paused' ||
+          hud.phase === 'gameover') && (
         <RpgHud
           hud={hud}
           muted={muted}
@@ -3107,14 +3115,22 @@ function DiglosaRpgApp() {
         targetZoneId={paywallModal?.targetZoneId}
         playerName={playerName}
         onDecline={() => {
+          const reason = paywallModal?.reason;
           setPaywallModal(null);
-          engineRef.current?.startVillagerSchoolInviteScene();
+          if (reason === 'post_refugee') {
+            engineRef.current?.startVillagerSchoolInviteScene();
+          } else {
+            engineRef.current?.dismissLockedBorderPrompt();
+          }
         }}
         onUnlocked={() => {
           setPaywallModal(null);
           engineRef.current?.unlockOtherIslands();
         }}
-        onClose={() => setPaywallModal(null)}
+        onClose={() => {
+          setPaywallModal(null);
+          engineRef.current?.dismissLockedBorderPrompt();
+        }}
       />
 
       <BattleQuizModal
@@ -3189,7 +3205,7 @@ function DiglosaRpgApp() {
         onSignOut={handleSignOut}
       />
 
-      {!vsIntroData && !resumeCountdown && (
+      {!vsIntroData && !resumeCountdown && !paywallModal && !desaSchoolOpen && (
         <GameOverModal
           hud={hud}
           playerName={playerName}
