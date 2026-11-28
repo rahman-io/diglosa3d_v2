@@ -22,6 +22,14 @@ import {
   VocabEntry,
 } from '../types/game';
 import {
+  buildChallengeOfType,
+  buildPeopleDuolingoDeck,
+  disableSpeakingTemporarily,
+  DuolingoChallenge,
+  isSpeakingTemporarilyDisabled,
+} from '../data/duolingoChallenges';
+import { DuolingoChallengeOutcome, DuolingoChallengeView } from './DuolingoChallengeView';
+import {
   RpgBoardPanel,
   RpgChoiceCard,
   RpgNameplate,
@@ -115,10 +123,21 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
   const [matchedIds, setMatchedIds] = useState<string[]>([]);
   const [matchMoves, setMatchMoves] = useState(0);
 
+  // Desa Sapaan Duolingo 6-type deck state
+  const isDesaDuolingo = Boolean(session && session.zoneId === 'desa_sapaan');
+  const [duoDeck, setDuoDeck] = useState<DuolingoChallenge[]>([]);
+  const [duoIdx, setDuoIdx] = useState(0);
+  const [duoAwaitingContinue, setDuoAwaitingContinue] = useState(false);
+
   // Timer (qstrip / board)
   const diffCfg = DIFF_CONFIG[difficulty];
+  const currentDuoChallenge = isDesaDuolingo ? duoDeck[duoIdx] ?? null : null;
   const activeMaxSec = session
-    ? session.mode === 'match'
+    ? isDesaDuolingo
+      ? currentDuoChallenge?.type === 'match_pairs'
+        ? diffCfg.matchSec
+        : Math.max(24, diffCfg.qSec * 2)
+      : session.mode === 'match'
       ? diffCfg.matchSec
       : session.mode === 'type'
       ? Math.round(diffCfg.qSec * 1.5)
@@ -156,6 +175,23 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
     setTyped('');
     setTypeTries(0);
     setTypeHints(0);
+    setDuoAwaitingContinue(false);
+
+    if (session.zoneId === 'desa_sapaan') {
+      const deckSize = session.doorIndex === 4 ? 8 : 10;
+      const deck = buildPeopleDuolingoDeck(deckSize, {
+        allowSpeak: !isSpeakingTemporarilyDisabled(),
+      });
+      setDuoDeck(deck);
+      setDuoIdx(0);
+      const firstSec =
+        deck[0]?.type === 'match_pairs' ? diffCfg.matchSec : Math.max(24, diffCfg.qSec * 2);
+      resetTimeLeft(firstSec);
+      return;
+    }
+
+    setDuoDeck([]);
+    setDuoIdx(0);
     resetTimeLeft(activeMaxSec);
 
     if (session.mode === 'quiz' || session.mode === 'listen') {
@@ -172,12 +208,13 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
       setMatchedIds([]);
       setMatchMoves(0);
     }
-  }, [session, words, activeMaxSec]);
+  }, [session, words, diffCfg.matchSec, diffCfg.qSec]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Countdown timer for qstrip / match board
   useEffect(() => {
     if (!session || resultData || !qtimerEnabled) return;
-    if (session.mode === 'cards' && !cekCepatPool) return;
+    if (isDesaDuolingo && duoAwaitingContinue) return;
+    if (!isDesaDuolingo && session.mode === 'cards' && !cekCepatPool) return;
     if (feedback) return;
 
     let lastMs = performance.now();
@@ -230,8 +267,81 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
     }
   };
 
+  const advanceDuoCard = (nextRight: number, nextTotal: number) => {
+    if (!session) return;
+    const nextIdx = duoIdx + 1;
+    setDuoAwaitingContinue(false);
+    if (nextIdx >= duoDeck.length) {
+      const passedDoor0 =
+        session.doorIndex === 0
+          ? nextTotal > 0
+            ? Math.round((nextRight / nextTotal) * 100) >= 60
+            : true
+          : undefined;
+      finishSession(nextRight, nextTotal, passedDoor0);
+      return;
+    }
+    setDuoIdx(nextIdx);
+    const nextCard = duoDeck[nextIdx];
+    const nextSec =
+      nextCard?.type === 'match_pairs' ? diffCfg.matchSec : Math.max(24, diffCfg.qSec * 2);
+    resetTimeLeft(nextSec);
+  };
+
+  const handleDuoResolved = (outcome: DuolingoChallengeOutcome) => {
+    if (!session || !currentDuoChallenge) return;
+    const isSpeakBypass = outcome.skipped && currentDuoChallenge.type === 'speak';
+    if (!isSpeakBypass) {
+      onRecordWord(outcome.vocabId, outcome.correct, false);
+    }
+
+    let nextCombo = combo;
+    let nextRight = rightCount;
+    let nextTotal = totalAttempted;
+
+    if (!isSpeakBypass) {
+      nextTotal += 1;
+      if (outcome.correct) {
+        nextCombo += 1;
+        nextRight += 1;
+        const gain = 12 + Math.min(nextCombo - 1, 5) * 2;
+        setXpEarned((x) => x + gain);
+      } else {
+        nextCombo = 0;
+      }
+    }
+
+    setCombo(nextCombo);
+    setRightCount(nextRight);
+    setTotalAttempted(nextTotal);
+    setDuoAwaitingContinue(true);
+  };
+
+  const handleDuoDisableSpeaking = () => {
+    disableSpeakingTemporarily(15);
+    setDuoDeck((prev) =>
+      prev.map((card, i) =>
+        i > duoIdx && card.type === 'speak'
+          ? buildChallengeOfType('word_bank_translate')
+          : card,
+      ),
+    );
+  };
+
   const handleTimeout = () => {
     if (!session || resultData) return;
+    if (isDesaDuolingo) {
+      if (duoAwaitingContinue) return;
+      if (currentDuoChallenge) {
+        onRecordWord(currentDuoChallenge.vocabId, false, false);
+      }
+      soundEngine.playWrongAnswer();
+      setCombo(0);
+      const nextTotal = totalAttempted + 1;
+      setTotalAttempted(nextTotal);
+      advanceDuoCard(rightCount, nextTotal);
+      return;
+    }
     if (session.mode === 'match') {
       const subCount = matchLeft.length;
       finishSession(matchedIds.length, Math.max(subCount, matchMoves));
@@ -459,7 +569,9 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
                       {session.title}
                     </h2>
                     <p className="truncate text-[10px] font-extrabold text-[#78350f] sm:text-[11px]">
-                      {session.mode === 'match'
+                      {isDesaDuolingo
+                        ? `Tantangan ${Math.min(duoIdx + 1, duoDeck.length)}/${duoDeck.length} · +${xpEarned} XP`
+                        : session.mode === 'match'
                         ? `Pasangan ${matchedIds.length}/${matchLeft.length} · Langkah ${matchMoves}`
                         : cekCepatPool
                         ? `Cek Cepat Kartu ${cekIdx + 1}/${cekCepatPool.length}`
@@ -478,8 +590,30 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
                 </button>
               </div>
 
+              {/* Duolingo-style Lesson Progress Bar for Desa Sapaan */}
+              {isDesaDuolingo && !resultData && duoDeck.length > 0 && (
+                <div className="mb-2.5 flex items-center gap-2">
+                  <div className="h-2.5 flex-1 overflow-hidden rounded-full border border-amber-300/35 bg-slate-950/80">
+                    <div
+                      className="h-full rounded-full bg-gradient-to-r from-emerald-400 to-lime-400 transition-all duration-300"
+                      style={{
+                        width: `${Math.max(
+                          6,
+                          Math.min(
+                            100,
+                            ((duoIdx + (duoAwaitingContinue ? 1 : 0)) / duoDeck.length) * 100,
+                          ),
+                        )}%`,
+                      }}
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* qstrip Ornate RPG Timer Bar (Hoot on left, Monster approaching from right!) */}
-              {qtimerEnabled && !resultData && (session.mode !== 'cards' || Boolean(cekCepatPool)) && (
+              {qtimerEnabled &&
+                !resultData &&
+                (isDesaDuolingo || session.mode !== 'cards' || Boolean(cekCepatPool)) && (
                 <div className="mb-3">
                   <RpgTimerBar
                     pct={timerRatio * 100}
@@ -534,8 +668,10 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
                 {resultData.cekCepatPassed !== undefined && (
                   <div className="rounded-xl border border-emerald-400/50 bg-emerald-950/60 px-4 py-2 text-xs font-extrabold text-emerald-200">
                     {resultData.cekCepatPassed
-                      ? 'Cek Cepat Lulus (≥2/3)! Bonus +1 ❤️ ditemukan di luar pintu!'
-                      : 'Pintu Kartu tetap terbuka! Jawab ≥2/3 Cek Cepat lain kali untuk hadiah ❤️.'}
+                      ? isDesaDuolingo
+                        ? 'Tantangan Desa Sapaan Tuntas (≥60%)! Bonus +1 ❤️ ditemukan di luar pintu!'
+                        : 'Cek Cepat Lulus (≥2/3)! Bonus +1 ❤️ ditemukan di luar pintu!'
+                      : 'Pintu tetap terbuka! Raih ≥60% lain kali untuk hadiah ❤️.'}
                   </div>
                 )}
                 <RpgPillButton
@@ -553,6 +689,14 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
                   <span>Selesai &amp; Lanjutkan</span>
                 </RpgPillButton>
               </div>
+            ) : isDesaDuolingo && currentDuoChallenge ? (
+              <DuolingoChallengeView
+                challenge={currentDuoChallenge}
+                streak={combo}
+                onResolved={handleDuoResolved}
+                onContinue={() => advanceDuoCard(rightCount, totalAttempted)}
+                onDisableSpeaking={handleDuoDisableSpeaking}
+              />
             ) : cekCepatPool ? (
               <div className="space-y-3">
                 <div className="rounded-xl border border-amber-400/40 bg-amber-500/20 px-3 py-2 text-xs font-extrabold text-amber-200">

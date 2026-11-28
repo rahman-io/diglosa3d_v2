@@ -27,6 +27,13 @@ import {
   WordProgress,
 } from '../types/game';
 import {
+  disableSpeakingTemporarily,
+  DuolingoChallenge,
+  isSpeakingTemporarilyDisabled,
+  pickRandomPeopleChallenge,
+} from '../data/duolingoChallenges';
+import { DuolingoChallengeOutcome, DuolingoChallengeView } from './DuolingoChallengeView';
+import {
   RpgBoardPanel,
   RpgChoiceCard,
   RpgChoiceTone,
@@ -108,6 +115,13 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
   const hasJam = ownedRelics.includes('jam');
   const hasKompas = ownedRelics.includes('kompas');
 
+  const isDesaDuolingo = Boolean(
+    battle &&
+      battle.zoneId === 'desa_sapaan' &&
+      !battle.isAcademyShadow &&
+      !battle.isMixedChallenge,
+  );
+
   const [monsterHp, setMonsterHp] = useState(3);
   const [monsterMaxHp, setMonsterMaxHp] = useState(3);
   const [bossPhase, setBossPhase] = useState(1);
@@ -118,6 +132,8 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
 
   const [question, setQuestion] = useState<QuizQuestion | null>(null);
   const [prevQuestion, setPrevQuestion] = useState<QuizQuestion | null>(null);
+  const [duoChallenge, setDuoChallenge] = useState<DuolingoChallenge | null>(null);
+  const [peluitEliminateTick, setPeluitEliminateTick] = useState(0);
   const [turnCount, setTurnCount] = useState(0);
 
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
@@ -195,6 +211,28 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
     [wordProgress, hasKompas],
   );
 
+  const pickNextDuoChallenge = useCallback(
+    (lastDuo: DuolingoChallenge | null): DuolingoChallenge =>
+      pickRandomPeopleChallenge({
+        wordProgress,
+        excludeType: lastDuo?.type ?? null,
+        excludeVocabId: lastDuo?.vocabId ?? null,
+        allowSpeak: !isSpeakingTemporarilyDisabled(),
+        allowMatch: true,
+      }),
+    [wordProgress],
+  );
+
+  const getActiveDuelAnswerSec = useCallback(
+    (b: BattleContext) => {
+      if (diffCfg.duelAnswerSec <= 0) return 0;
+      const useDesa =
+        b.zoneId === 'desa_sapaan' && !b.isAcademyShadow && !b.isMixedChallenge;
+      return useDesa ? Math.max(24, diffCfg.duelAnswerSec * 2) : diffCfg.duelAnswerSec;
+    },
+    [diffCfg.duelAnswerSec],
+  );
+
   const setupTurnModifiers = useCallback(
     (b: BattleContext, q: QuizQuestion, curMonsterHp: number, tCount: number) => {
       const mechanic = b.isZoneBoss ? BOSSES[b.zoneId].mechanic : 'none';
@@ -205,11 +243,12 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
       if (enraged && mechanic === 'close' && !hasSepatu) {
         gSec = Math.max(1.8, gSec - 1);
       }
+      const ansSec = getActiveDuelAnswerSec(b);
       grabTimerRef.current = gSec;
-      answerTimerRef.current = diffCfg.duelAnswerSec;
+      answerTimerRef.current = ansSec;
       setGrabWindowMax(gSec);
       setGrabTimer(gSec);
-      setAnswerTimer(diffCfg.duelAnswerSec);
+      setAnswerTimer(ansSec);
 
       const wrongIndices = [0, 1, 2, 3].filter((i) => i !== q.correctIndex);
 
@@ -263,10 +302,16 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
     const firstQ = pickNextQuestion(battle, startHp, 0, null, false);
     setQuestion(firstQ);
     setPrevQuestion(null);
+    if (battle.zoneId === 'desa_sapaan' && !battle.isAcademyShadow && !battle.isMixedChallenge) {
+      setDuoChallenge(pickNextDuoChallenge(null));
+    } else {
+      setDuoChallenge(null);
+    }
+    setPeluitEliminateTick(0);
     setupTurnModifiers(battle, firstQ, startHp, 0);
 
     return () => clearPendingTimeout();
-  }, [battle]);
+  }, [battle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scheduleNextTurn = useCallback(
     (
@@ -275,19 +320,23 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
       nextTurnCount: number,
       currentQ: QuizQuestion | null,
       delayMs: number,
+      currentDuo: DuolingoChallenge | null = null,
     ) => {
       clearPendingTimeout();
       timeoutRef.current = window.setTimeout(() => {
         const nextQ = pickNextQuestion(b, curMonsterHp, nextTurnCount, currentQ, false);
         setPrevQuestion(currentQ);
         setQuestion(nextQ);
+        if (b.zoneId === 'desa_sapaan' && !b.isAcademyShadow && !b.isMixedChallenge) {
+          setDuoChallenge(pickNextDuoChallenge(currentDuo));
+        }
         setTurnCount(nextTurnCount);
         setTurnPhase('grab');
         setAnimEvent('idle');
         setupTurnModifiers(b, nextQ, curMonsterHp, nextTurnCount);
       }, delayMs);
     },
-    [pickNextQuestion, setupTurnModifiers],
+    [pickNextQuestion, pickNextDuoChallenge, setupTurnModifiers],
   );
 
   const handleMonsterAttack = useCallback(
@@ -305,7 +354,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
         setFeedbackMsg(`🛡️ Perisai Panci menangkis serangan! (${reasonMsg}) Nyawamu aman!`);
         soundEngine.playPick();
         triggerAnim('monster_attack');
-        scheduleNextTurn(b, monsterHp, turnCount + 1, q, 1300);
+        scheduleNextTurn(b, monsterHp, turnCount + 1, q, 1300, duoChallenge);
         return;
       }
 
@@ -333,6 +382,9 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
           const nextQ = pickNextQuestion(b, monsterHp, turnCount + 1, q, false);
           setPrevQuestion(q);
           setQuestion(nextQ);
+          if (b.zoneId === 'desa_sapaan' && !b.isAcademyShadow && !b.isMixedChallenge) {
+            setDuoChallenge(pickNextDuoChallenge(duoChallenge));
+          }
           setTurnCount(turnCount + 1);
           setTurnPhase('grab');
           setAnimEvent('idle');
@@ -349,6 +401,8 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
       monsterHp,
       turnCount,
       pickNextQuestion,
+      pickNextDuoChallenge,
+      duoChallenge,
       setupTurnModifiers,
       scheduleNextTurn,
       triggerAnim,
@@ -383,7 +437,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
             `${battle.monsterName} merebut giliran, tapi tebakannya meleset! Giliran baru siap!`,
           );
           soundEngine.playFlip();
-          scheduleNextTurn(battle, monsterHp, turnCount + 1, question, 1150);
+          scheduleNextTurn(battle, monsterHp, turnCount + 1, question, 1150, duoChallenge);
         }
       }
     }, 50);
@@ -395,12 +449,13 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
     diffCfg.monsterGuessAcc,
     handleMonsterAttack,
     question,
+    duoChallenge,
     scheduleNextTurn,
     monsterHp,
     turnCount,
   ]);
 
-  // Pendekar mode 12s duel answer timer
+  // Pendekar mode duel answer timer
   useEffect(() => {
     if (!battle || turnPhase !== 'answer' || diffCfg.duelAnswerSec <= 0 || turnFrozen) return;
     let lastMs = performance.now();
@@ -416,25 +471,40 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
         handleMonsterAttack(
           battle,
           question,
-          'Waktu jawab mode Pendekar (12 dtk) habis!',
+          `Waktu jawab mode Pendekar (${getActiveDuelAnswerSec(battle)} dtk) habis!`,
         );
       }
     }, 100);
     return () => window.clearInterval(interval);
-  }, [battle, turnPhase, diffCfg.duelAnswerSec, turnFrozen, handleMonsterAttack, question]);
+  }, [
+    battle,
+    turnPhase,
+    diffCfg.duelAnswerSec,
+    turnFrozen,
+    handleMonsterAttack,
+    question,
+    getActiveDuelAnswerSec,
+  ]);
 
   const handleGrab = useCallback(() => {
     if (!battle || turnPhase !== 'grab') return;
     setTurnPhase('answer');
     triggerAnim('grab_ready');
     soundEngine.playDash();
-    if (question) {
+    if (!isDesaDuolingo && question) {
       soundEngine.speakEnglish(question.audioWord);
     }
-  }, [battle, turnPhase, question, triggerAnim]);
+  }, [battle, turnPhase, isDesaDuolingo, question, triggerAnim]);
 
   const handleUsePeluit = () => {
-    if (!question || peluitUsed || turnPhase !== 'answer') return;
+    if (peluitUsed || turnPhase !== 'answer') return;
+    if (isDesaDuolingo && duoChallenge) {
+      setPeluitEliminateTick((t) => t + 1);
+      setPeluitUsed(true);
+      soundEngine.playPick();
+      return;
+    }
+    if (!question) return;
     const candidates = [0, 1, 2, 3].filter(
       (i) => i !== question.correctIndex && !eliminatedChoices.includes(i) && i !== lockedChoiceIdx,
     );
@@ -580,14 +650,149 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
     ],
   );
 
-  // Keyboard shortcuts: Space to AMBIL, 1-4 to pick choice
+  const handleDuoBattleResolved = useCallback(
+    (outcome: DuolingoChallengeOutcome) => {
+      if (!battle || !duoChallenge || turnPhase !== 'answer') return;
+
+      // Safe bypass if player cannot speak right now
+      if (outcome.skipped && duoChallenge.type === 'speak') {
+        disableSpeakingTemporarily(15);
+        setTurnPhase('feedback');
+        setFeedbackGood(true);
+        setFeedbackMsg('Soal bicara dilewati sementara — menyiapkan tantangan baru!');
+        scheduleNextTurn(battle, monsterHp, turnCount + 1, question, 950, duoChallenge);
+        return;
+      }
+
+      setTurnPhase('feedback');
+      const syntheticQ: QuizQuestion | null = question
+        ? { ...question, vocabId: outcome.vocabId }
+        : null;
+
+      if (outcome.correct && !outcome.skipped) {
+        const nextStreak = duelHitStreak + 1;
+        setDuelHitStreak(nextStreak);
+
+        const res = onAnswerResult(true, outcome.vocabId, {
+          duelHitStreak: nextStreak,
+          duelAmmoGained,
+          isAcademyMini: battle.isAcademyShadow,
+        });
+        if (res && res.ammoAwarded > 0) {
+          setDuelAmmoGained((g) => g + res.ammoAwarded);
+        }
+
+        const isBossSquad = Boolean(battle.isZoneBoss || battle.isBossMinion);
+        const dmg = !isBossSquad && hasPedang ? 2 : 1;
+        let healNote = '';
+        if (isBossSquad && hasPedang && nextStreak % 4 === 0 && localPlayerHp < playerMaxHp) {
+          setLocalPlayerHp((hp) => Math.min(playerMaxHp, hp + 1));
+          onUseHealHeart();
+          healNote = ' · 🗡️ Pedang Kata pulihkan +1 ❤️!';
+        }
+
+        const nextMonsterHp = Math.max(0, monsterHp - dmg);
+        setMonsterHp(nextMonsterHp);
+        setFeedbackGood(true);
+        const ammoNote = res && res.ammoAwarded > 0 ? ` · +${res.ammoAwarded} Peluru` : '';
+        setFeedbackMsg(`Tepat! ${dmg} Damage!${ammoNote}${healNote}`);
+
+        const bossDef = battle.isZoneBoss ? BOSSES[battle.zoneId] : null;
+        if (bossDef) {
+          if (nextMonsterHp <= 5 && bossDef.taunts[2]) setBossTaunt(bossDef.taunts[2]);
+          else if (nextMonsterHp <= 10 && bossDef.taunts[1]) setBossTaunt(bossDef.taunts[1]);
+        }
+
+        const isTerminalVictory =
+          nextMonsterHp <= 0 && (!bossDef || bossPhase >= bossDef.phases);
+        triggerAnim(isTerminalVictory ? 'monster_ko' : 'hero_attack');
+
+        clearPendingTimeout();
+        timeoutRef.current = window.setTimeout(() => {
+          if (nextMonsterHp <= 0) {
+            if (bossDef && bossPhase < bossDef.phases) {
+              const nextPhase = bossPhase + 1;
+              setBossPhase(nextPhase);
+              setMonsterHp(bossDef.hpPerPhase);
+              setMonsterMaxHp(bossDef.hpPerPhase);
+              setGrowHealsInPhase(0);
+              setBossTaunt(bossDef.taunts[nextPhase - 1] || null);
+              soundEngine.playBoss();
+              const nextQ = pickNextQuestion(battle, bossDef.hpPerPhase, turnCount + 1, question, turnFrozen);
+              setPrevQuestion(question);
+              setQuestion(nextQ);
+              setDuoChallenge(pickNextDuoChallenge(duoChallenge));
+              setTurnCount(turnCount + 1);
+              setTurnPhase('grab');
+              setAnimEvent('idle');
+              setupTurnModifiers(battle, nextQ, bossDef.hpPerPhase, turnCount + 1);
+            } else {
+              onBattleEnd('victory', { ...battle, monsterHp: 0 });
+            }
+          } else {
+            const nextQ = pickNextQuestion(battle, nextMonsterHp, turnCount + 1, question, turnFrozen);
+            setPrevQuestion(question);
+            setQuestion(nextQ);
+            setDuoChallenge(pickNextDuoChallenge(duoChallenge));
+            setTurnCount(turnCount + 1);
+            setTurnPhase('grab');
+            setAnimEvent('idle');
+            setupTurnModifiers(battle, nextQ, nextMonsterHp, turnCount + 1);
+          }
+        }, isTerminalVictory ? 1850 : 1200);
+      } else {
+        const bossDef = battle.isZoneBoss ? BOSSES[battle.zoneId] : null;
+        let growNote = '';
+        if (bossDef && bossDef.mechanic === 'grow' && monsterHp <= 10 && growHealsInPhase < 2) {
+          setMonsterHp(Math.min(monsterMaxHp, monsterHp + 1));
+          setGrowHealsInPhase((c) => c + 1);
+          growNote = ' (🌿 Akar Bos tumbuh +1 HP!)';
+        }
+        handleMonsterAttack(
+          battle,
+          syntheticQ,
+          outcome.skipped
+            ? `Giliran dilewati! ${battle.monsterName} menyerangmu!${growNote}`
+            : `Kurang tepat! ${battle.monsterName} menyerangmu!${growNote}`,
+        );
+      }
+    },
+    [
+      battle,
+      duoChallenge,
+      turnPhase,
+      scheduleNextTurn,
+      monsterHp,
+      turnCount,
+      question,
+      duelHitStreak,
+      onAnswerResult,
+      duelAmmoGained,
+      hasPedang,
+      localPlayerHp,
+      playerMaxHp,
+      onUseHealHeart,
+      bossPhase,
+      triggerAnim,
+      onBattleEnd,
+      pickNextQuestion,
+      turnFrozen,
+      pickNextDuoChallenge,
+      setupTurnModifiers,
+      growHealsInPhase,
+      monsterMaxHp,
+      handleMonsterAttack,
+    ],
+  );
+
+  // Keyboard shortcuts: Space to AMBIL, 1-4 to pick choice (classic mode only)
   useEffect(() => {
     if (!battle) return;
     const onKey = (e: KeyboardEvent) => {
       if (turnPhase === 'grab' && (e.code === 'Space' || e.code === 'Enter')) {
         e.preventDefault();
         handleGrab();
-      } else if (turnPhase === 'answer') {
+      } else if (turnPhase === 'answer' && !isDesaDuolingo) {
         if (e.key === '1') handlePickChoice(0);
         else if (e.key === '2') handlePickChoice(1);
         else if (e.key === '3') handlePickChoice(2);
@@ -596,16 +801,17 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [battle, turnPhase, handleGrab, handlePickChoice]);
+  }, [battle, turnPhase, isDesaDuolingo, handleGrab, handlePickChoice]);
 
   if (!battle || !question) return null;
 
   const grabPct = Math.max(0, Math.min(100, (grabTimer / Math.max(0.5, grabWindowMax)) * 100));
+  const activeAnsSec = getActiveDuelAnswerSec(battle);
   const timerPct =
     turnPhase === 'grab'
       ? grabPct
-      : turnPhase === 'answer' && diffCfg.duelAnswerSec > 0
-      ? Math.max(0, (answerTimer / diffCfg.duelAnswerSec) * 100)
+      : turnPhase === 'answer' && activeAnsSec > 0
+      ? Math.max(0, (answerTimer / activeAnsSec) * 100)
       : 100;
   const bossDef = battle.isZoneBoss ? BOSSES[battle.zoneId] : null;
 
@@ -746,7 +952,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
 
             {/* Bottom Corner Category & Monster HP Pills */}
             <div className="pointer-events-none absolute bottom-2 left-2.5 z-10 rounded-md border border-emerald-400/45 bg-slate-950/85 px-2 py-0.5 text-[9px] font-extrabold text-emerald-200 shadow sm:text-[10px]">
-              {question.category}
+              {isDesaDuolingo && duoChallenge ? duoChallenge.kicker : question.category}
             </div>
             <div className="pointer-events-none absolute bottom-2 right-2.5 z-10 rounded-md border border-amber-400/45 bg-slate-950/85 px-2 py-0.5 font-mono-nums text-[9px] font-extrabold text-amber-300 shadow sm:text-[10px]">
               HP {monsterHp}/{monsterMaxHp}
@@ -791,32 +997,34 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
 
           {/* Question Box + Audio + Timer Gauge */}
           <div className="mt-2.5 space-y-2 sm:mt-3 sm:space-y-2.5">
-            <div className="flex items-start justify-between gap-2.5 rounded-2xl border border-amber-300/20 bg-slate-950/45 px-3.5 py-2.5">
-              <div className="min-w-0">
-                {question.isDifficultyFlagged && (
-                  <div className="mb-1 inline-flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-black text-amber-200">
-                    <AlertTriangle className="h-3 w-3 shrink-0" />
-                    <span>🧭 Kompas Tanya Kata Sulit</span>
-                  </div>
-                )}
-                <h3 className="text-base font-extrabold leading-snug text-white sm:text-lg">
-                  {question.prompt}
-                </h3>
-                {question.hintWord && turnPhase !== 'grab' && (
-                  <div className="mt-0.5 font-mono-nums text-xs font-semibold text-amber-300">
-                    Petunjuk {question.hintWord}
-                  </div>
-                )}
+            {!isDesaDuolingo && (
+              <div className="flex items-start justify-between gap-2.5 rounded-2xl border border-amber-300/20 bg-slate-950/45 px-3.5 py-2.5">
+                <div className="min-w-0">
+                  {question.isDifficultyFlagged && (
+                    <div className="mb-1 inline-flex items-center gap-1 rounded-md border border-amber-400/40 bg-amber-500/20 px-2 py-0.5 text-[10px] font-black text-amber-200">
+                      <AlertTriangle className="h-3 w-3 shrink-0" />
+                      <span>🧭 Kompas Tanya Kata Sulit</span>
+                    </div>
+                  )}
+                  <h3 className="text-base font-extrabold leading-snug text-white sm:text-lg">
+                    {question.prompt}
+                  </h3>
+                  {question.hintWord && turnPhase !== 'grab' && (
+                    <div className="mt-0.5 font-mono-nums text-xs font-semibold text-amber-300">
+                      Petunjuk {question.hintWord}
+                    </div>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => soundEngine.speakEnglish(question.audioWord)}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-amber-300/40 bg-amber-400/20 px-2.5 py-1.5 text-xs font-extrabold text-amber-200 transition hover:bg-amber-400/35"
+                >
+                  <Volume2 className="h-3.5 w-3.5" />
+                  <span>Dengar</span>
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => soundEngine.speakEnglish(question.audioWord)}
-                className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-amber-300/40 bg-amber-400/20 px-2.5 py-1.5 text-xs font-extrabold text-amber-200 transition hover:bg-amber-400/35"
-              >
-                <Volume2 className="h-3.5 w-3.5" />
-                <span>Dengar</span>
-              </button>
-            </div>
+            )}
 
             {/* Ornate Carved RPG Timer Bar */}
             <RpgTimerBar
@@ -841,7 +1049,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
                   {hasSepatu && ' (👟 Sepatu Angin aktif +1 dtk)'}
                 </p>
               </div>
-            ) : (
+            ) : !isDesaDuolingo || turnPhase === 'feedback' ? (
               <div
                 className={`rounded-xl border px-3 py-1.5 text-center text-[11px] font-extrabold sm:py-2 sm:text-xs ${
                   turnPhase === 'feedback'
@@ -853,56 +1061,82 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
               >
                 {feedbackMsg ??
                   `Pilih jawaban tepat (1–4)${
-                    diffCfg.duelAnswerSec > 0 ? ` · Sisa ${answerTimer.toFixed(0)} dtk` : ''
+                    activeAnsSec > 0 ? ` · Sisa ${answerTimer.toFixed(0)} dtk` : ''
                   }`}
               </div>
-            )}
+            ) : activeAnsSec > 0 ? (
+              <div className="rounded-xl border border-amber-300/30 bg-slate-950/55 px-3 py-1 text-center text-[11px] font-extrabold text-amber-200">
+                Mode Pendekar · Sisa {answerTimer.toFixed(0)} dtk
+              </div>
+            ) : null}
 
-            {/* 4 Stone-Gold Answer Option Tablets */}
-            <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-2">
-              {question.choices.map((choice, idx) => {
-                const isPicked = selectedIdx === idx;
-                const isCorrectChoice = idx === question.correctIndex;
-                const isEliminated = eliminatedChoices.includes(idx);
-                const isLocked = lockedChoiceIdx === idx;
-                const isSlimed = slimedChoiceIdx === idx && turnPhase !== 'feedback';
+            {/* Desa Sapaan 6-Type People Duolingo Stage OR Classic 4-Option Tablets */}
+            {isDesaDuolingo && duoChallenge ? (
+              <div className="rounded-2xl border border-amber-300/20 bg-slate-950/40 p-2.5 sm:p-3">
+                <DuolingoChallengeView
+                  challenge={duoChallenge}
+                  disabled={turnPhase !== 'answer'}
+                  streak={duelHitStreak}
+                  relicEliminateTick={peluitEliminateTick}
+                  onResolved={handleDuoBattleResolved}
+                  onDisableSpeaking={() => disableSpeakingTemporarily(15)}
+                  onMatchMistake={(_, mistakes) => {
+                    if (mistakes >= 2) {
+                      handleMonsterAttack(
+                        battle,
+                        question ? { ...question, vocabId: duoChallenge.vocabId } : null,
+                        `Terlalu banyak pasangan keliru! ${battle.monsterName} menyerangmu!`,
+                      );
+                    }
+                  }}
+                />
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-2 min-[480px]:grid-cols-2">
+                {question.choices.map((choice, idx) => {
+                  const isPicked = selectedIdx === idx;
+                  const isCorrectChoice = idx === question.correctIndex;
+                  const isEliminated = eliminatedChoices.includes(idx);
+                  const isLocked = lockedChoiceIdx === idx;
+                  const isSlimed = slimedChoiceIdx === idx && turnPhase !== 'feedback';
 
-                let tone: RpgChoiceTone = 'default';
-                if (isEliminated || isLocked) {
-                  tone = 'locked';
-                } else if (turnPhase === 'grab') {
-                  tone = 'muted';
-                } else if (turnPhase === 'feedback') {
-                  if (isCorrectChoice) tone = 'correct';
-                  else if (isPicked && !feedbackGood) tone = 'wrong';
-                }
+                  let tone: RpgChoiceTone = 'default';
+                  if (isEliminated || isLocked) {
+                    tone = 'locked';
+                  } else if (turnPhase === 'grab') {
+                    tone = 'muted';
+                  } else if (turnPhase === 'feedback') {
+                    if (isCorrectChoice) tone = 'correct';
+                    else if (isPicked && !feedbackGood) tone = 'wrong';
+                  }
 
-                return (
-                  <RpgChoiceCard
-                    key={idx}
-                    tone={tone}
-                    disabled={turnPhase !== 'answer' || isEliminated || isLocked}
-                    onClick={() => handlePickChoice(idx)}
-                    className="flex items-center gap-2.5 px-2 py-1.5 text-xs sm:text-sm"
-                  >
-                    <span
-                      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border font-mono-nums text-xs font-black ${
-                        tone === 'correct'
-                          ? 'border-emerald-300 bg-emerald-600 text-white'
-                          : tone === 'wrong'
-                          ? 'border-rose-300 bg-rose-600 text-white'
-                          : 'border-amber-300/50 bg-amber-500/20 text-amber-200'
-                      }`}
+                  return (
+                    <RpgChoiceCard
+                      key={idx}
+                      tone={tone}
+                      disabled={turnPhase !== 'answer' || isEliminated || isLocked}
+                      onClick={() => handlePickChoice(idx)}
+                      className="flex items-center gap-2.5 px-2 py-1.5 text-xs sm:text-sm"
                     >
-                      {isLocked ? <Lock className="h-3.5 w-3.5" /> : idx + 1}
-                    </span>
-                    <span className="truncate font-extrabold">
-                      {isSlimed ? '🟢 ??? (Tertutup Lendir)' : choice}
-                    </span>
-                  </RpgChoiceCard>
-                );
-              })}
-            </div>
+                      <span
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md border font-mono-nums text-xs font-black ${
+                          tone === 'correct'
+                            ? 'border-emerald-300 bg-emerald-600 text-white'
+                            : tone === 'wrong'
+                            ? 'border-rose-300 bg-rose-600 text-white'
+                            : 'border-amber-300/50 bg-amber-500/20 text-amber-200'
+                        }`}
+                      >
+                        {isLocked ? <Lock className="h-3.5 w-3.5" /> : idx + 1}
+                      </span>
+                      <span className="truncate font-extrabold">
+                        {isSlimed ? '🟢 ??? (Tertutup Lendir)' : choice}
+                      </span>
+                    </RpgChoiceCard>
+                  );
+                })}
+              </div>
+            )}
 
             {/* Bottom Bar */}
             <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">

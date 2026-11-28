@@ -806,11 +806,11 @@ const DOOR_POSITIONS: Array<[number, number]> = [
 
 export const ZONE_DOORS: Record<ZoneId, DoorDef[]> = {
   desa_sapaan: [
-    { index: 0, id: 'desa_d0', name: 'Sumur Tua', mode: 'cards', modeLabel: 'Kartu Kilat', x: 12.8, y: 0, z: 44.5, rotY: -0.78, minPct: 0 },
-    { index: 1, id: 'desa_d1', name: 'Jembatan Batu', mode: 'duel', modeLabel: 'Duel Rebutan (Gumpal Kecil)', x: 7.4, y: 3.5, z: 12.2, rotY: -0.82, minPct: 0 },
-    { index: 2, id: 'desa_d2', name: 'Lumbung', mode: 'listen', modeLabel: 'Telinga Tajam', x: 37.0, y: 3.5, z: 10.5, rotY: -Math.PI / 2, minPct: 60 },
-    { index: 3, id: 'desa_d3', name: 'Parit', mode: 'type', modeLabel: 'Jago Ejaan', x: -22.2, y: 3.5, z: 25.5, rotY: Math.PI / 2, minPct: 60 },
-    { index: 4, id: 'desa_d4', name: 'Sel Tebing Rani', mode: 'match', modeLabel: 'Pasang Kartu → Bos', x: 2.0, y: 9.5, z: -47.2, rotY: 0, minPct: 60 },
+    { index: 0, id: 'desa_d0', name: 'Sumur Tua', mode: 'cards', modeLabel: 'Tantangan Acak (6 Mode)', x: 12.8, y: 0, z: 44.5, rotY: -0.78, minPct: 0 },
+    { index: 1, id: 'desa_d1', name: 'Jembatan Batu', mode: 'duel', modeLabel: 'Duel 6 Mode (Gumpal Kecil)', x: 7.4, y: 3.5, z: 12.2, rotY: -0.82, minPct: 0 },
+    { index: 2, id: 'desa_d2', name: 'Lumbung', mode: 'listen', modeLabel: 'Tantangan Acak (6 Mode)', x: 37.0, y: 3.5, z: 10.5, rotY: -Math.PI / 2, minPct: 60 },
+    { index: 3, id: 'desa_d3', name: 'Parit', mode: 'type', modeLabel: 'Tantangan Acak (6 Mode)', x: -22.2, y: 3.5, z: 25.5, rotY: Math.PI / 2, minPct: 60 },
+    { index: 4, id: 'desa_d4', name: 'Sel Tebing Rani', mode: 'match', modeLabel: 'Tantangan Acak → Bos', x: 2.0, y: 9.5, z: -47.2, rotY: 0, minPct: 60 },
   ],
   pasar_rasa: [
     { index: 0, id: 'pasar_d0', name: 'Panci Bening', mode: 'cards', modeLabel: 'Kartu Kilat', x: DOOR_POSITIONS[0][0], z: DOOR_POSITIONS[0][1], minPct: 0 },

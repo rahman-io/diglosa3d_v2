@@ -97,6 +97,22 @@ function collectPublicRuntimeAssets(rootDir: string): OfflineAssetManifestEntry[
     }
   }
 
+  // 1b. Vocabulary illustrations (public/assets/vocab/**/*.png)
+  const vocabDir = path.join(publicDir, 'assets', 'vocab');
+  if (fs.existsSync(vocabDir)) {
+    const files = walkFiles(vocabDir, new Set(['.png']));
+    for (const full of files) {
+      const rel = path.relative(publicDir, full).split(path.sep).join('/');
+      const { hash, size } = sha256File(full);
+      entries.push({
+        url: `./${rel}`,
+        hash,
+        size,
+        kind: 'image',
+      });
+    }
+  }
+
   // 2. Referenced MP3 audio + difficulty JPEGs (public/assets/aistudio/*)
   const aiStudioDir = path.join(publicDir, 'assets', 'aistudio');
   if (fs.existsSync(aiStudioDir)) {
