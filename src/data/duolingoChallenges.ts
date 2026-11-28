@@ -26,9 +26,41 @@ export const PEOPLE_VOCAB_IDS = [
   'v_1_miss',
 ] as const;
 
+export const FAMILY_VOCAB_IDS = [
+  'v_3_parent',
+  'v_3_father',
+  'v_3_mother',
+  'v_3_dad',
+  'v_3_mom',
+  'v_3_wife',
+  'v_3_husband',
+  'v_3_child',
+  'v_3_son',
+  'v_3_daughter',
+  'v_3_sister',
+  'v_3_brother',
+  'v_3_family',
+  'v_3_grandmother',
+  'v_3_grandfather',
+  'v_3_grandchild',
+  'v_3_aunt',
+  'v_3_uncle',
+  'v_3_niece',
+  'v_3_nephew',
+  'v_3_cousin',
+] as const;
+
+export const DESA_ILLUSTRATED_VOCAB_IDS = [
+  ...PEOPLE_VOCAB_IDS,
+  ...FAMILY_VOCAB_IDS,
+] as const;
+
 export type PeopleVocabId = (typeof PEOPLE_VOCAB_IDS)[number];
+export type FamilyVocabId = (typeof FAMILY_VOCAB_IDS)[number];
+export type DesaVocabId = (typeof DESA_ILLUSTRATED_VOCAB_IDS)[number];
 
 export const VOCAB_IMAGE_BY_ID: Record<string, string> = {
+  // People (14)
   v_1_man: './assets/vocab/people/man.png',
   v_1_woman: './assets/vocab/people/woman.png',
   v_1_boy: './assets/vocab/people/boy.png',
@@ -43,10 +75,38 @@ export const VOCAB_IMAGE_BY_ID: Record<string, string> = {
   v_1_mr: './assets/vocab/people/mr.png',
   v_1_mrs: './assets/vocab/people/mrs.png',
   v_1_miss: './assets/vocab/people/miss.png',
+
+  // Family (21)
+  v_3_parent: './assets/vocab/family/parent.png',
+  v_3_father: './assets/vocab/family/father.png',
+  v_3_mother: './assets/vocab/family/mother.png',
+  v_3_dad: './assets/vocab/family/dad.png',
+  v_3_mom: './assets/vocab/family/mom.png',
+  v_3_wife: './assets/vocab/family/wife.png',
+  v_3_husband: './assets/vocab/family/husband.png',
+  v_3_child: './assets/vocab/family/child.png',
+  v_3_son: './assets/vocab/family/son.png',
+  v_3_daughter: './assets/vocab/family/daughter.png',
+  v_3_sister: './assets/vocab/family/sister.png',
+  v_3_brother: './assets/vocab/family/brother.png',
+  v_3_family: './assets/vocab/family/family.png',
+  v_3_grandmother: './assets/vocab/family/grandmother.png',
+  v_3_grandfather: './assets/vocab/family/grandfather.png',
+  v_3_grandchild: './assets/vocab/family/grandchild.png',
+  v_3_aunt: './assets/vocab/family/aunt.png',
+  v_3_uncle: './assets/vocab/family/uncle.png',
+  v_3_niece: './assets/vocab/family/niece_nephew.png',
+  v_3_nephew: './assets/vocab/family/niece_nephew.png',
+  v_3_cousin: './assets/vocab/family/cousin.png',
 };
 
 export function getVocabImage(vocabId: string): string | null {
   return VOCAB_IMAGE_BY_ID[vocabId] ?? null;
+}
+
+function getCategoryTag(vocabId: string): { upper: string; title: string } {
+  if (vocabId.startsWith('v_3_')) return { upper: 'FAMILY', title: 'Family' };
+  return { upper: 'PEOPLE', title: 'People' };
 }
 
 export interface PictureChoiceOption {
@@ -155,12 +215,12 @@ function pickRandom<T>(items: readonly T[]): T {
 }
 
 // ============================================================================
-// 1. WORD BANK TRANSLATE DATA (PEOPLE FOCUS — EN -> ID & ID -> EN)
+// 1. WORD BANK TRANSLATE DATA (PEOPLE + FAMILY — EN -> ID & ID -> EN)
 // ============================================================================
 interface WordBankSeed {
-  vocabId: PeopleVocabId;
+  vocabId: DesaVocabId;
   direction: 'en_to_id' | 'id_to_en';
-  speakerId: PeopleVocabId;
+  speakerId: DesaVocabId;
   sourceText: string;
   targetTokens: string[];
   acceptedVariants?: string[];
@@ -169,7 +229,8 @@ interface WordBankSeed {
   translationNote: string;
 }
 
-const PEOPLE_WORD_BANK_SEEDS: WordBankSeed[] = [
+const WORD_BANK_SEEDS: WordBankSeed[] = [
+  // ---- PEOPLE ----
   {
     vocabId: 'v_1_man',
     direction: 'en_to_id',
@@ -406,20 +467,268 @@ const PEOPLE_WORD_BANK_SEEDS: WordBankSeed[] = [
     wordHints: { 'selamat siang': 'good afternoon', nona: 'Miss' },
     translationNote: 'Good afternoon, Miss!',
   },
+
+  // ---- FAMILY ----
+  {
+    vocabId: 'v_3_parent',
+    direction: 'en_to_id',
+    speakerId: 'v_3_parent',
+    sourceText: 'Love your parents',
+    targetTokens: ['Sayangi', 'orang', 'tuamu'],
+    acceptedVariants: ['cintai orang tuamu', 'sayangi kedua orang tua'],
+    distractors: ['teman', 'sepupu'],
+    wordHints: { love: 'sayangi / cintai', your: '-mu', parents: 'orang tua' },
+    translationNote: 'Sayangi orang tuamu',
+  },
+  {
+    vocabId: 'v_3_father',
+    direction: 'en_to_id',
+    speakerId: 'v_3_father',
+    sourceText: 'My father is strong',
+    targetTokens: ['Ayah', 'saya', 'kuat'],
+    acceptedVariants: ['ayahku kuat'],
+    distractors: ['ibu', 'nenek'],
+    wordHints: { my: 'saya', father: 'ayah', strong: 'kuat' },
+    translationNote: 'Ayah saya kuat',
+  },
+  {
+    vocabId: 'v_3_father',
+    direction: 'id_to_en',
+    speakerId: 'v_3_father',
+    sourceText: 'Ayahku bekerja setiap hari',
+    targetTokens: ['My', 'father', 'works', 'every', 'day'],
+    distractors: ['mother', 'sister'],
+    wordHints: { ayahku: 'my father', bekerja: 'works', 'setiap hari': 'every day' },
+    translationNote: 'My father works every day',
+  },
+  {
+    vocabId: 'v_3_mother',
+    direction: 'en_to_id',
+    speakerId: 'v_3_mother',
+    sourceText: 'Thank you, Mother!',
+    targetTokens: ['Terima', 'kasih,', 'Ibu!'],
+    acceptedVariants: ['terima kasih mama'],
+    distractors: ['Ayah', 'Paman'],
+    wordHints: { thank: 'terima', you: 'kasih', mother: 'ibu' },
+    translationNote: 'Terima kasih, Ibu!',
+  },
+  {
+    vocabId: 'v_3_mother',
+    direction: 'id_to_en',
+    speakerId: 'v_3_mother',
+    sourceText: 'Ibuku sangat ramah',
+    targetTokens: ['My', 'mother', 'is', 'very', 'kind'],
+    acceptedVariants: ['my mother is very friendly'],
+    distractors: ['father', 'uncle'],
+    wordHints: { ibuku: 'my mother', sangat: 'very', ramah: 'kind / friendly' },
+    translationNote: 'My mother is very kind',
+  },
+  {
+    vocabId: 'v_3_dad',
+    direction: 'id_to_en',
+    speakerId: 'v_3_dad',
+    sourceText: 'Selamat pagi, Papa!',
+    targetTokens: ['Good', 'morning,', 'Dad!'],
+    distractors: ['Mom!', 'Grandpa!'],
+    wordHints: { 'selamat pagi': 'good morning', papa: 'Dad' },
+    translationNote: 'Good morning, Dad!',
+  },
+  {
+    vocabId: 'v_3_mom',
+    direction: 'id_to_en',
+    speakerId: 'v_3_mom',
+    sourceText: 'Mama membaca buku denganku',
+    targetTokens: ['Mom', 'reads', 'a', 'book', 'with', 'me'],
+    distractors: ['Dad', 'Uncle'],
+    wordHints: { mama: 'Mom', membaca: 'reads', buku: 'book', denganku: 'with me' },
+    translationNote: 'Mom reads a book with me',
+  },
+  {
+    vocabId: 'v_3_wife',
+    direction: 'en_to_id',
+    speakerId: 'v_3_wife',
+    sourceText: 'She is his wife',
+    targetTokens: ['Dia', 'adalah', 'istrinya'],
+    acceptedVariants: ['dia istrinya'],
+    distractors: ['suaminya', 'bibinya'],
+    wordHints: { she: 'dia (pr)', is: 'adalah', his: '-nya (lk)', wife: 'istri' },
+    translationNote: 'Dia adalah istrinya',
+  },
+  {
+    vocabId: 'v_3_husband',
+    direction: 'en_to_id',
+    speakerId: 'v_3_husband',
+    sourceText: 'He is my husband',
+    targetTokens: ['Dia', 'adalah', 'suami', 'saya'],
+    acceptedVariants: ['dia suamiku'],
+    distractors: ['istri', 'paman'],
+    wordHints: { he: 'dia (lk)', is: 'adalah', my: 'saya', husband: 'suami' },
+    translationNote: 'Dia adalah suami saya',
+  },
+  {
+    vocabId: 'v_3_child',
+    direction: 'en_to_id',
+    speakerId: 'v_3_child',
+    sourceText: 'The child plays happily',
+    targetTokens: ['Anak', 'itu', 'bermain', 'dengan', 'senang'],
+    acceptedVariants: ['anak bermain dengan senang'],
+    distractors: ['kakek', 'nenek'],
+    wordHints: { the: 'itu', child: 'anak', plays: 'bermain', happily: 'dengan senang' },
+    translationNote: 'Anak itu bermain dengan senang',
+  },
+  {
+    vocabId: 'v_3_son',
+    direction: 'en_to_id',
+    speakerId: 'v_3_son',
+    sourceText: 'He is our son',
+    targetTokens: ['Dia', 'adalah', 'anak', 'laki-laki', 'kami'],
+    acceptedVariants: ['dia anak laki laki kandung kami', 'dia putra kami'],
+    distractors: ['perempuan', 'cucu'],
+    wordHints: { he: 'dia', our: 'kami', son: 'anak laki-laki kandung' },
+    translationNote: 'Dia adalah anak laki-laki kami',
+  },
+  {
+    vocabId: 'v_3_daughter',
+    direction: 'en_to_id',
+    speakerId: 'v_3_daughter',
+    sourceText: 'My daughter loves reading',
+    targetTokens: ['Anak', 'perempuan', 'saya', 'suka', 'membaca'],
+    acceptedVariants: ['putri saya suka membaca'],
+    distractors: ['laki-laki', 'paman'],
+    wordHints: { my: 'saya', daughter: 'anak perempuan kandung', loves: 'suka', reading: 'membaca' },
+    translationNote: 'Anak perempuan saya suka membaca',
+  },
+  {
+    vocabId: 'v_3_sister',
+    direction: 'id_to_en',
+    speakerId: 'v_3_sister',
+    sourceText: 'Dia saudara perempuanku',
+    targetTokens: ['She', 'is', 'my', 'sister'],
+    distractors: ['brother', 'aunt'],
+    wordHints: { dia: 'she', 'saudara perempuanku': 'my sister' },
+    translationNote: 'She is my sister',
+  },
+  {
+    vocabId: 'v_3_brother',
+    direction: 'id_to_en',
+    speakerId: 'v_3_brother',
+    sourceText: 'Saya punya saudara laki-laki',
+    targetTokens: ['I', 'have', 'a', 'brother'],
+    distractors: ['sister', 'cousin'],
+    wordHints: { saya: 'I', punya: 'have', 'saudara laki-laki': 'brother' },
+    translationNote: 'I have a brother',
+  },
+  {
+    vocabId: 'v_3_family',
+    direction: 'en_to_id',
+    speakerId: 'v_3_family',
+    sourceText: 'I love my big family',
+    targetTokens: ['Saya', 'menyayangi', 'keluarga', 'besar', 'saya'],
+    acceptedVariants: ['aku cinta keluarga besarku', 'saya cinta keluarga besar saya'],
+    distractors: ['teman', 'sendiri'],
+    wordHints: { love: 'menyayangi', big: 'besar', family: 'keluarga' },
+    translationNote: 'Saya menyayangi keluarga besar saya',
+  },
+  {
+    vocabId: 'v_3_grandmother',
+    direction: 'en_to_id',
+    speakerId: 'v_3_grandmother',
+    sourceText: 'Grandmother makes sweet cookies',
+    targetTokens: ['Nenek', 'membuat', 'kue', 'manis'],
+    acceptedVariants: ['nenek membuat kue yang manis'],
+    distractors: ['Kakek', 'Bibi'],
+    wordHints: { grandmother: 'nenek', makes: 'membuat', sweet: 'manis', cookies: 'kue' },
+    translationNote: 'Nenek membuat kue manis',
+  },
+  {
+    vocabId: 'v_3_grandfather',
+    direction: 'id_to_en',
+    speakerId: 'v_3_grandfather',
+    sourceText: 'Kakek berjalan dengan tongkat',
+    targetTokens: ['Grandfather', 'walks', 'with', 'a', 'cane'],
+    distractors: ['Grandmother', 'Uncle'],
+    wordHints: { kakek: 'grandfather', berjalan: 'walks', tongkat: 'cane' },
+    translationNote: 'Grandfather walks with a cane',
+  },
+  {
+    vocabId: 'v_3_grandchild',
+    direction: 'en_to_id',
+    speakerId: 'v_3_grandchild',
+    sourceText: 'The grandfather hugs his grandchild',
+    targetTokens: ['Kakek', 'memeluk', 'cucunya'],
+    acceptedVariants: ['kakek itu memeluk cucunya'],
+    distractors: ['sepupunya', 'keponakannya'],
+    wordHints: { grandfather: 'kakek', hugs: 'memeluk', grandchild: 'cucu' },
+    translationNote: 'Kakek memeluk cucunya',
+  },
+  {
+    vocabId: 'v_3_aunt',
+    direction: 'en_to_id',
+    speakerId: 'v_3_aunt',
+    sourceText: 'My aunt brings a gift',
+    targetTokens: ['Bibi', 'saya', 'membawa', 'hadiah'],
+    acceptedVariants: ['tante saya membawa hadiah', 'bibiku membawa sebuah hadiah'],
+    distractors: ['Paman', 'Sepupu'],
+    wordHints: { aunt: 'bibi / tante', brings: 'membawa', gift: 'hadiah' },
+    translationNote: 'Bibi saya membawa hadiah',
+  },
+  {
+    vocabId: 'v_3_uncle',
+    direction: 'id_to_en',
+    speakerId: 'v_3_uncle',
+    sourceText: 'Paman saya sangat lucu',
+    targetTokens: ['My', 'uncle', 'is', 'very', 'funny'],
+    distractors: ['aunt', 'nephew'],
+    wordHints: { paman: 'uncle', sangat: 'very', lucu: 'funny' },
+    translationNote: 'My uncle is very funny',
+  },
+  {
+    vocabId: 'v_3_niece',
+    direction: 'en_to_id',
+    speakerId: 'v_3_niece',
+    sourceText: 'She is my niece',
+    targetTokens: ['Dia', 'adalah', 'keponakan', 'perempuan', 'saya'],
+    acceptedVariants: ['dia keponakan perempuanku'],
+    distractors: ['laki-laki', 'sepupu'],
+    wordHints: { she: 'dia (pr)', my: 'saya', niece: 'keponakan perempuan' },
+    translationNote: 'Dia adalah keponakan perempuan saya',
+  },
+  {
+    vocabId: 'v_3_nephew',
+    direction: 'en_to_id',
+    speakerId: 'v_3_nephew',
+    sourceText: 'He is my nephew',
+    targetTokens: ['Dia', 'adalah', 'keponakan', 'laki-laki', 'saya'],
+    acceptedVariants: ['dia keponakan laki-lakiku'],
+    distractors: ['perempuan', 'cucu'],
+    wordHints: { he: 'dia (lk)', my: 'saya', nephew: 'keponakan laki-laki' },
+    translationNote: 'Dia adalah keponakan laki-laki saya',
+  },
+  {
+    vocabId: 'v_3_cousin',
+    direction: 'id_to_en',
+    speakerId: 'v_3_cousin',
+    sourceText: 'Sepupu saya tinggal di dekat sini',
+    targetTokens: ['My', 'cousin', 'lives', 'near', 'here'],
+    distractors: ['brother', 'grandchild'],
+    wordHints: { sepupu: 'cousin', tinggal: 'lives', 'dekat sini': 'near here' },
+    translationNote: 'My cousin lives near here',
+  },
 ];
 
 // ============================================================================
-// 2. SPEAK CHALLENGES (PEOPLE FOCUS — UCAPKAN KALIMAT INI)
+// 2. SPEAK CHALLENGES (PEOPLE + FAMILY — UCAPKAN KALIMAT INI)
 // ============================================================================
 interface SpeakSeed {
-  vocabId: PeopleVocabId;
-  speakerId: PeopleVocabId;
+  vocabId: DesaVocabId;
+  speakerId: DesaVocabId;
   sentence: string;
   wordHints: Record<string, string>;
   translationNote: string;
 }
 
-const PEOPLE_SPEAK_SEEDS: SpeakSeed[] = [
+const SPEAK_SEEDS: SpeakSeed[] = [
+  // ---- PEOPLE ----
   {
     vocabId: 'v_1_man',
     speakerId: 'v_1_man',
@@ -518,25 +827,175 @@ const PEOPLE_SPEAK_SEEDS: SpeakSeed[] = [
     wordHints: { afternoon: 'siang', miss: 'Nona' },
     translationNote: 'Selamat siang, Nona Rani!',
   },
+
+  // ---- FAMILY ----
+  {
+    vocabId: 'v_3_parent',
+    speakerId: 'v_3_parent',
+    sentence: 'I love my parents.',
+    wordHints: { love: 'menyayangi', parents: 'orang tua' },
+    translationNote: 'Saya menyayangi orang tua saya.',
+  },
+  {
+    vocabId: 'v_3_father',
+    speakerId: 'v_3_father',
+    sentence: 'My father is very kind.',
+    wordHints: { father: 'ayah', very: 'sangat', kind: 'baik' },
+    translationNote: 'Ayah saya sangat baik.',
+  },
+  {
+    vocabId: 'v_3_mother',
+    speakerId: 'v_3_mother',
+    sentence: 'My mother is at home.',
+    wordHints: { mother: 'ibu', home: 'rumah' },
+    translationNote: 'Ibu saya ada di rumah.',
+  },
+  {
+    vocabId: 'v_3_dad',
+    speakerId: 'v_3_dad',
+    sentence: 'Let us play, Dad!',
+    wordHints: { play: 'bermain', dad: 'papa / ayah' },
+    translationNote: 'Ayo kita bermain, Papa!',
+  },
+  {
+    vocabId: 'v_3_mom',
+    speakerId: 'v_3_mom',
+    sentence: 'Good morning, Mom!',
+    wordHints: { good: 'selamat', morning: 'pagi', mom: 'mama / ibu' },
+    translationNote: 'Selamat pagi, Mama!',
+  },
+  {
+    vocabId: 'v_3_wife',
+    speakerId: 'v_3_wife',
+    sentence: 'She is my lovely wife.',
+    wordHints: { lovely: 'tercinta', wife: 'istri' },
+    translationNote: 'Dia adalah istri tercinta saya.',
+  },
+  {
+    vocabId: 'v_3_husband',
+    speakerId: 'v_3_husband',
+    sentence: 'He is a good husband.',
+    wordHints: { good: 'baik', husband: 'suami' },
+    translationNote: 'Dia adalah suami yang baik.',
+  },
+  {
+    vocabId: 'v_3_child',
+    speakerId: 'v_3_child',
+    sentence: 'The child has a toy.',
+    wordHints: { child: 'anak', has: 'memiliki', toy: 'mainan' },
+    translationNote: 'Anak itu memiliki sebuah mainan.',
+  },
+  {
+    vocabId: 'v_3_son',
+    speakerId: 'v_3_son',
+    sentence: 'He is my little son.',
+    wordHints: { little: 'kecil', son: 'anak laki-laki kandung' },
+    translationNote: 'Dia adalah anak laki-laki kecil saya.',
+  },
+  {
+    vocabId: 'v_3_daughter',
+    speakerId: 'v_3_daughter',
+    sentence: 'She is my sweet daughter.',
+    wordHints: { sweet: 'manis', daughter: 'anak perempuan kandung' },
+    translationNote: 'Dia adalah anak perempuan manis saya.',
+  },
+  {
+    vocabId: 'v_3_sister',
+    speakerId: 'v_3_sister',
+    sentence: 'My sister is very smart.',
+    wordHints: { sister: 'saudara perempuan', smart: 'pintar' },
+    translationNote: 'Saudara perempuan saya sangat pintar.',
+  },
+  {
+    vocabId: 'v_3_brother',
+    speakerId: 'v_3_brother',
+    sentence: 'My brother is my best friend.',
+    wordHints: { brother: 'saudara laki-laki', best: 'terbaik', friend: 'teman' },
+    translationNote: 'Saudara laki-laki saya adalah teman terbaik saya.',
+  },
+  {
+    vocabId: 'v_3_family',
+    speakerId: 'v_3_family',
+    sentence: 'We are one happy family.',
+    wordHints: { happy: 'bahagia', family: 'keluarga' },
+    translationNote: 'Kami adalah satu keluarga yang bahagia.',
+  },
+  {
+    vocabId: 'v_3_grandmother',
+    speakerId: 'v_3_grandmother',
+    sentence: 'My grandmother is smiling.',
+    wordHints: { grandmother: 'nenek', smiling: 'tersenyum' },
+    translationNote: 'Nenek saya sedang tersenyum.',
+  },
+  {
+    vocabId: 'v_3_grandfather',
+    speakerId: 'v_3_grandfather',
+    sentence: 'My grandfather tells a story.',
+    wordHints: { grandfather: 'kakek', tells: 'menceritakan', story: 'cerita' },
+    translationNote: 'Kakek saya bercerita.',
+  },
+  {
+    vocabId: 'v_3_grandchild',
+    speakerId: 'v_3_grandchild',
+    sentence: 'I love my cute grandchild.',
+    wordHints: { cute: 'lucu', grandchild: 'cucu' },
+    translationNote: 'Saya menyayangi cucu lucu saya.',
+  },
+  {
+    vocabId: 'v_3_aunt',
+    speakerId: 'v_3_aunt',
+    sentence: 'My aunt is very cool.',
+    wordHints: { aunt: 'bibi / tante', cool: 'keren' },
+    translationNote: 'Bibi saya sangat keren.',
+  },
+  {
+    vocabId: 'v_3_uncle',
+    speakerId: 'v_3_uncle',
+    sentence: 'My uncle gives me ice cream.',
+    wordHints: { uncle: 'paman / om', gives: 'memberi' },
+    translationNote: 'Paman saya memberi saya es krim.',
+  },
+  {
+    vocabId: 'v_3_niece',
+    speakerId: 'v_3_niece',
+    sentence: 'Lina is my dear niece.',
+    wordHints: { dear: 'tersayang', niece: 'keponakan perempuan' },
+    translationNote: 'Lina adalah keponakan perempuan tersayang saya.',
+  },
+  {
+    vocabId: 'v_3_nephew',
+    speakerId: 'v_3_nephew',
+    sentence: 'Bimo is my young nephew.',
+    wordHints: { young: 'muda', nephew: 'keponakan laki-laki' },
+    translationNote: 'Bimo adalah keponakan laki-laki saya.',
+  },
+  {
+    vocabId: 'v_3_cousin',
+    speakerId: 'v_3_cousin',
+    sentence: 'Hello, my dear cousin!',
+    wordHints: { hello: 'halo', cousin: 'sepupu' },
+    translationNote: 'Halo, sepupu tersayangku!',
+  },
 ];
 
 // ============================================================================
 // 3. DIALOGUE COMPLETE CHALLENGES (LENGKAPI KALIMATNYA)
 // ============================================================================
 interface DialogueSeed {
-  vocabId: PeopleVocabId;
-  speakerAId: PeopleVocabId;
+  vocabId: DesaVocabId;
+  speakerAId: DesaVocabId;
   speakerAName: string;
   speakerALine: string;
   speakerAHints: Record<string, string>;
-  speakerBId: PeopleVocabId;
+  speakerBId: DesaVocabId;
   speakerBName: string;
   correctReply: string;
   distractorReplies: string[];
   translationNote: string;
 }
 
-const PEOPLE_DIALOGUE_SEEDS: DialogueSeed[] = [
+const DIALOGUE_SEEDS: DialogueSeed[] = [
+  // ---- PEOPLE ----
   {
     vocabId: 'v_1_friend',
     speakerAId: 'v_1_boy',
@@ -657,29 +1116,163 @@ const PEOPLE_DIALOGUE_SEEDS: DialogueSeed[] = [
     distractorReplies: ['Goodbye, night!', 'Ten people, please.'],
     translationNote: 'Kamu orang yang baik, sama-sama!',
   },
+
+  // ---- FAMILY ----
   {
-    vocabId: 'v_1_man',
-    speakerAId: 'v_1_woman',
-    speakerAName: 'Ibu Ani',
-    speakerALine: 'Who is wearing the blue shirt?',
-    speakerAHints: { who: 'siapa', wearing: 'memakai' },
-    speakerBId: 'v_1_man',
-    speakerBName: 'Pak Eko',
-    correctReply: 'That man over there.',
-    distractorReplies: ['That baby over there.', 'Thank you very much.'],
-    translationNote: 'Pria dewasa di sebelah sana itu.',
+    vocabId: 'v_3_father',
+    speakerAId: 'v_3_son',
+    speakerAName: 'Dimas',
+    speakerALine: 'Who is carrying you on his shoulders?',
+    speakerAHints: { who: 'siapa', carrying: 'menggendong', shoulders: 'bahu' },
+    speakerBId: 'v_3_father',
+    speakerBName: 'Rafi',
+    correctReply: 'That is my father!',
+    distractorReplies: ['That is my grandmother!', 'Good night, aunt!'],
+    translationNote: 'Itu adalah ayah saya!',
   },
   {
-    vocabId: 'v_1_boy',
-    speakerAId: 'v_1_girl',
-    speakerAName: 'Dewi',
-    speakerALine: 'Who is waving happily?',
-    speakerAHints: { waving: 'melambai', happily: 'dengan ceria' },
-    speakerBId: 'v_1_boy',
+    vocabId: 'v_3_mother',
+    speakerAId: 'v_3_daughter',
+    speakerAName: 'Putri',
+    speakerALine: 'Who always hugs you before school?',
+    speakerAHints: { who: 'siapa', always: 'selalu', hugs: 'memeluk' },
+    speakerBId: 'v_3_mother',
+    speakerBName: 'Siti',
+    correctReply: 'My mother hugs me every morning.',
+    distractorReplies: ['My grandfather is sleeping.', 'Goodbye, husband!'],
+    translationNote: 'Ibu saya memeluk saya setiap pagi.',
+  },
+  {
+    vocabId: 'v_3_dad',
+    speakerAId: 'v_3_dad',
+    speakerAName: 'Dad',
+    speakerALine: 'Ready to kick the soccer ball?',
+    speakerAHints: { ready: 'siap', kick: 'menendang', ball: 'bola' },
+    speakerBId: 'v_3_son',
     speakerBName: 'Bimo',
-    correctReply: 'The boy in the white shirt.',
-    distractorReplies: ['The woman in red.', 'Good evening, Mrs.'],
-    translationNote: 'Anak laki-laki berbaju putih itu.',
+    correctReply: 'Yes! Pass it to me, Dad!',
+    distractorReplies: ['Good night, Mom!', 'She is my niece.'],
+    translationNote: 'Ya! Oper ke aku, Papa!',
+  },
+  {
+    vocabId: 'v_3_mom',
+    speakerAId: 'v_3_daughter',
+    speakerAName: 'Nisa',
+    speakerALine: 'Can we read this storybook together?',
+    speakerAHints: { read: 'membaca', storybook: 'buku cerita', together: 'bersama' },
+    speakerBId: 'v_3_mom',
+    speakerBName: 'Mom',
+    correctReply: 'Sure, sit beside Mom!',
+    distractorReplies: ['No, uncle is a baby.', 'Thank you, Dad!'],
+    translationNote: 'Tentu, duduk di sebelah Mama!',
+  },
+  {
+    vocabId: 'v_3_wife',
+    speakerAId: 'v_3_husband',
+    speakerAName: 'Hendra',
+    speakerALine: 'Look at the ring on her finger!',
+    speakerAHints: { look: 'lihat', ring: 'cincin', finger: 'jari' },
+    speakerBId: 'v_3_wife',
+    speakerBName: 'Dewi',
+    correctReply: 'Yes, I am his happy wife!',
+    distractorReplies: ['Yes, I am his uncle!', 'Goodbye, children!'],
+    translationNote: 'Ya, saya adalah istrinya yang bahagia!',
+  },
+  {
+    vocabId: 'v_3_husband',
+    speakerAId: 'v_3_wife',
+    speakerAName: 'Dewi',
+    speakerALine: 'Who is wearing the gray vest?',
+    speakerAHints: { who: 'siapa', wearing: 'memakai', vest: 'rompi' },
+    speakerBId: 'v_3_husband',
+    speakerBName: 'Hendra',
+    correctReply: 'He is my new husband!',
+    distractorReplies: ['He is my little sister!', 'Sorry, grandmother.'],
+    translationNote: 'Dia adalah suami baru saya!',
+  },
+  {
+    vocabId: 'v_3_grandmother',
+    speakerAId: 'v_3_grandchild',
+    speakerAName: 'Fajar',
+    speakerALine: 'Mmm! Who baked these warm cookies?',
+    speakerAHints: { who: 'siapa', baked: 'memanggang', cookies: 'kue' },
+    speakerBId: 'v_3_grandmother',
+    speakerBName: 'Nenek',
+    correctReply: 'Grandmother baked them for you!',
+    distractorReplies: ['The baby baked them!', 'She is my nephew.'],
+    translationNote: 'Nenek memanggangnya untukmu!',
+  },
+  {
+    vocabId: 'v_3_grandfather',
+    speakerAId: 'v_1_boy',
+    speakerAName: 'Riko',
+    speakerALine: 'Who is the wise elder with glasses?',
+    speakerAHints: { wise: 'bijaksana', elder: 'sesepuh', glasses: 'kacamata' },
+    speakerBId: 'v_3_grandfather',
+    speakerBName: 'Dina',
+    correctReply: 'That is my grandfather.',
+    distractorReplies: ['That is my daughter.', 'Yes, she is my aunt.'],
+    translationNote: 'Itu adalah kakek saya.',
+  },
+  {
+    vocabId: 'v_3_aunt',
+    speakerAId: 'v_3_aunt',
+    speakerAName: 'Tante Maya',
+    speakerALine: 'Surprise! I brought a gift for you!',
+    speakerAHints: { surprise: 'kejutan', brought: 'membawa', gift: 'hadiah' },
+    speakerBId: 'v_3_nephew',
+    speakerBName: 'Bagas',
+    correctReply: 'Thank you so much, Aunt Maya!',
+    distractorReplies: ['Thank you, Grandfather!', 'Good night, wife!'],
+    translationNote: 'Terima kasih banyak, Bibi Maya!',
+  },
+  {
+    vocabId: 'v_3_uncle',
+    speakerAId: 'v_3_uncle',
+    speakerAName: 'Om Rudi',
+    speakerALine: 'Do you want some strawberry ice cream?',
+    speakerAHints: { want: 'ingin', ice: 'es', cream: 'krim' },
+    speakerBId: 'v_3_child',
+    speakerBName: 'Tono',
+    correctReply: 'Yes, please, Uncle Rudi!',
+    distractorReplies: ['No, Mom is a cousin!', 'Hello, sister!'],
+    translationNote: 'Ya, tolong, Paman Rudi!',
+  },
+  {
+    vocabId: 'v_3_sister',
+    speakerAId: 'v_3_sister',
+    speakerAName: 'Alya',
+    speakerALine: 'Hold my hand when we walk!',
+    speakerAHints: { hold: 'pegang', hand: 'tangan', walk: 'berjalan' },
+    speakerBId: 'v_1_girl',
+    speakerBName: 'Nadia',
+    correctReply: 'Okay, big sister!',
+    distractorReplies: ['Okay, grandfather!', 'Yes, I am your husband.'],
+    translationNote: 'Baik, kakak perempuan!',
+  },
+  {
+    vocabId: 'v_3_brother',
+    speakerAId: 'v_3_brother',
+    speakerAName: 'Ilham',
+    speakerALine: 'Great teamwork today, little buddy!',
+    speakerAHints: { teamwork: 'kerja sama', little: 'kecil' },
+    speakerBId: 'v_1_boy',
+    speakerBName: 'Rama',
+    correctReply: 'Fist bump, big brother!',
+    distractorReplies: ['Fist bump, grandmother!', 'See you, daughter!'],
+    translationNote: 'Tos, kakak laki-laki!',
+  },
+  {
+    vocabId: 'v_3_cousin',
+    speakerAId: 'v_3_cousin',
+    speakerAName: 'Salsa',
+    speakerALine: 'Hey! Wave from your window!',
+    speakerAHints: { wave: 'melambai', window: 'jendela' },
+    speakerBId: 'v_1_boy',
+    speakerBName: 'Damar',
+    correctReply: 'Hi, cousin! Nice to see you!',
+    distractorReplies: ['Hi, wife! Good night!', 'One hundred parents!'],
+    translationNote: 'Hai, sepupu! Senang melihatmu!',
   },
 ];
 
@@ -687,14 +1280,15 @@ const PEOPLE_DIALOGUE_SEEDS: DialogueSeed[] = [
 // 4. LISTEN WORD BANK CHALLENGES (PILIH YANG KAMU DENGAR)
 // ============================================================================
 interface ListenSeed {
-  vocabId: PeopleVocabId;
+  vocabId: DesaVocabId;
   sentence: string;
   tokens: string[];
   distractors: string[];
   translationNote: string;
 }
 
-const PEOPLE_LISTEN_SEEDS: ListenSeed[] = [
+const LISTEN_SEEDS: ListenSeed[] = [
+  // ---- PEOPLE ----
   {
     vocabId: 'v_1_man',
     sentence: 'Hello, friendly man!',
@@ -793,24 +1387,197 @@ const PEOPLE_LISTEN_SEEDS: ListenSeed[] = [
     distractors: ['Mister', 'People'],
     translationNote: 'Selamat tinggal, Nona Rani!',
   },
+
+  // ---- FAMILY ----
+  {
+    vocabId: 'v_3_parent',
+    sentence: 'Love your parents.',
+    tokens: ['Love', 'your', 'parents.'],
+    distractors: ['cousin', 'baby'],
+    translationNote: 'Sayangi orang tuamu.',
+  },
+  {
+    vocabId: 'v_3_father',
+    sentence: 'My father is strong.',
+    tokens: ['My', 'father', 'is', 'strong.'],
+    distractors: ['mother', 'sister'],
+    translationNote: 'Ayah saya kuat.',
+  },
+  {
+    vocabId: 'v_3_mother',
+    sentence: 'Thank you, Mother!',
+    tokens: ['Thank', 'you,', 'Mother!'],
+    distractors: ['Father!', 'Uncle!'],
+    translationNote: 'Terima kasih, Ibu!',
+  },
+  {
+    vocabId: 'v_3_dad',
+    sentence: 'Play with me, Dad!',
+    tokens: ['Play', 'with', 'me,', 'Dad!'],
+    distractors: ['Mom!', 'Aunt!'],
+    translationNote: 'Bermainlah denganku, Papa!',
+  },
+  {
+    vocabId: 'v_3_mom',
+    sentence: 'I love you, Mom!',
+    tokens: ['I', 'love', 'you,', 'Mom!'],
+    distractors: ['Dad!', 'Nephew!'],
+    translationNote: 'Aku sayang kamu, Mama!',
+  },
+  {
+    vocabId: 'v_3_wife',
+    sentence: 'She is his wife.',
+    tokens: ['She', 'is', 'his', 'wife.'],
+    distractors: ['husband', 'aunt'],
+    translationNote: 'Dia adalah istrinya.',
+  },
+  {
+    vocabId: 'v_3_husband',
+    sentence: 'He is my husband.',
+    tokens: ['He', 'is', 'my', 'husband.'],
+    distractors: ['wife', 'brother'],
+    translationNote: 'Dia adalah suami saya.',
+  },
+  {
+    vocabId: 'v_3_child',
+    sentence: 'One happy child.',
+    tokens: ['One', 'happy', 'child.'],
+    distractors: ['parent', 'uncle'],
+    translationNote: 'Satu anak yang bahagia.',
+  },
+  {
+    vocabId: 'v_3_son',
+    sentence: 'That is my son.',
+    tokens: ['That', 'is', 'my', 'son.'],
+    distractors: ['daughter', 'mother'],
+    translationNote: 'Itu adalah anak laki-laki saya.',
+  },
+  {
+    vocabId: 'v_3_daughter',
+    sentence: 'That is my daughter.',
+    tokens: ['That', 'is', 'my', 'daughter.'],
+    distractors: ['son', 'father'],
+    translationNote: 'Itu adalah anak perempuan saya.',
+  },
+  {
+    vocabId: 'v_3_sister',
+    sentence: 'My sister smiles.',
+    tokens: ['My', 'sister', 'smiles.'],
+    distractors: ['brother', 'uncle'],
+    translationNote: 'Saudara perempuan saya tersenyum.',
+  },
+  {
+    vocabId: 'v_3_brother',
+    sentence: 'My brother is cool.',
+    tokens: ['My', 'brother', 'is', 'cool.'],
+    distractors: ['sister', 'grandmother'],
+    translationNote: 'Saudara laki-laki saya keren.',
+  },
+  {
+    vocabId: 'v_3_family',
+    sentence: 'My big happy family.',
+    tokens: ['My', 'big', 'happy', 'family.'],
+    distractors: ['friend', 'baby'],
+    translationNote: 'Keluarga besar saya yang bahagia.',
+  },
+  {
+    vocabId: 'v_3_grandmother',
+    sentence: 'Kind old grandmother.',
+    tokens: ['Kind', 'old', 'grandmother.'],
+    distractors: ['grandfather', 'child'],
+    translationNote: 'Nenek tua yang baik hati.',
+  },
+  {
+    vocabId: 'v_3_grandfather',
+    sentence: 'Hello, Grandfather!',
+    tokens: ['Hello,', 'Grandfather!'],
+    distractors: ['Grandmother!', 'Cousin!'],
+    translationNote: 'Halo, Kakek!',
+  },
+  {
+    vocabId: 'v_3_grandchild',
+    sentence: 'The cute grandchild.',
+    tokens: ['The', 'cute', 'grandchild.'],
+    distractors: ['husband', 'aunt'],
+    translationNote: 'Cucu yang lucu.',
+  },
+  {
+    vocabId: 'v_3_aunt',
+    sentence: 'Welcome, Aunt Maya!',
+    tokens: ['Welcome,', 'Aunt', 'Maya!'],
+    distractors: ['Uncle', 'Son'],
+    translationNote: 'Selamat datang, Bibi Maya!',
+  },
+  {
+    vocabId: 'v_3_uncle',
+    sentence: 'My funny uncle.',
+    tokens: ['My', 'funny', 'uncle.'],
+    distractors: ['aunt', 'niece'],
+    translationNote: 'Paman saya yang lucu.',
+  },
+  {
+    vocabId: 'v_3_niece',
+    sentence: 'She is my niece.',
+    tokens: ['She', 'is', 'my', 'niece.'],
+    distractors: ['nephew', 'wife'],
+    translationNote: 'Dia adalah keponakan perempuan saya.',
+  },
+  {
+    vocabId: 'v_3_nephew',
+    sentence: 'He is my nephew.',
+    tokens: ['He', 'is', 'my', 'nephew.'],
+    distractors: ['niece', 'dad'],
+    translationNote: 'Dia adalah keponakan laki-laki saya.',
+  },
+  {
+    vocabId: 'v_3_cousin',
+    sentence: 'Wave to my cousin!',
+    tokens: ['Wave', 'to', 'my', 'cousin!'],
+    distractors: ['parent', 'wife'],
+    translationNote: 'Lambaikan tangan ke sepupu saya!',
+  },
 ];
 
 // ============================================================================
 // BUILDERS FOR EACH OF THE 6 CHALLENGE TYPES
 // ============================================================================
 
-export function buildPeoplePictureChoice(targetId?: PeopleVocabId): DuolingoChallenge {
-  const target = targetId ?? pickRandom(PEOPLE_VOCAB_IDS);
+export function buildPeoplePictureChoice(targetId?: DesaVocabId): DuolingoChallenge {
+  const target = targetId ?? pickRandom(DESA_ILLUSTRATED_VOCAB_IDS);
   const entry = VOCAB_BY_ID[target]!;
-  const others = shuffle(PEOPLE_VOCAB_IDS.filter((id) => id !== target)).slice(0, 2);
-  const optionIds = shuffle([target, ...others]);
+  const targetImg = VOCAB_IMAGE_BY_ID[target];
+  const tag = getCategoryTag(target);
+
+  // Prefer same-category distractors first, ensuring distinct images so cards are unambiguous
+  const sameCatPool = target.startsWith('v_3_') ? FAMILY_VOCAB_IDS : PEOPLE_VOCAB_IDS;
+  const distinctSameCat = shuffle(
+    sameCatPool.filter((id) => id !== target && VOCAB_IMAGE_BY_ID[id] !== targetImg),
+  );
+  const distinctAll = shuffle(
+    DESA_ILLUSTRATED_VOCAB_IDS.filter(
+      (id) => id !== target && VOCAB_IMAGE_BY_ID[id] !== targetImg,
+    ),
+  );
+
+  const chosenOthers: string[] = [];
+  const usedImgs = new Set<string>([targetImg]);
+  for (const id of [...distinctSameCat, ...distinctAll]) {
+    if (chosenOthers.length >= 2) break;
+    const img = VOCAB_IMAGE_BY_ID[id];
+    if (!usedImgs.has(img)) {
+      usedImgs.add(img);
+      chosenOthers.push(id);
+    }
+  }
+
+  const optionIds = shuffle([target, ...chosenOthers]);
   const correctIndex = optionIds.indexOf(target);
 
   return {
     type: 'picture_choice',
     id: `pic_${target}_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
     vocabId: target,
-    kicker: 'KOSAKATA BARU · PEOPLE',
+    kicker: `KOSAKATA BARU · ${tag.upper}`,
     prompt: `Mana yang artinya “${entry.meaningId}”?`,
     audioWord: entry.word,
     options: optionIds.map((id) => ({
@@ -823,23 +1590,24 @@ export function buildPeoplePictureChoice(targetId?: PeopleVocabId): DuolingoChal
   };
 }
 
-export function buildPeopleWordBankTranslate(targetId?: PeopleVocabId): DuolingoChallenge {
+export function buildPeopleWordBankTranslate(targetId?: DesaVocabId): DuolingoChallenge {
   const candidates = targetId
-    ? PEOPLE_WORD_BANK_SEEDS.filter((s) => s.vocabId === targetId)
-    : PEOPLE_WORD_BANK_SEEDS;
-  const seed = pickRandom(candidates.length > 0 ? candidates : PEOPLE_WORD_BANK_SEEDS);
+    ? WORD_BANK_SEEDS.filter((s) => s.vocabId === targetId)
+    : WORD_BANK_SEEDS;
+  const seed = pickRandom(candidates.length > 0 ? candidates : WORD_BANK_SEEDS);
   const speakerEntry = VOCAB_BY_ID[seed.speakerId];
+  const tag = getCategoryTag(seed.vocabId);
 
   return {
     type: 'word_bank_translate',
     id: `wb_${seed.vocabId}_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
     vocabId: seed.vocabId,
-    kicker: 'SUSUN KATA · PEOPLE',
+    kicker: `SUSUN KATA · ${tag.upper}`,
     promptTitle:
       seed.direction === 'en_to_id'
         ? 'Tuliskan dalam bahasa Indonesia'
         : 'Tuliskan dalam bahasa Inggris',
-    categoryLabel: 'People',
+    categoryLabel: tag.title,
     speakerImage: VOCAB_IMAGE_BY_ID[seed.speakerId],
     speakerName: speakerEntry?.word ?? 'Warga Desa',
     sourceText: seed.sourceText,
@@ -853,18 +1621,17 @@ export function buildPeopleWordBankTranslate(targetId?: PeopleVocabId): Duolingo
   };
 }
 
-export function buildPeopleSpeak(targetId?: PeopleVocabId): DuolingoChallenge {
-  const candidates = targetId
-    ? PEOPLE_SPEAK_SEEDS.filter((s) => s.vocabId === targetId)
-    : PEOPLE_SPEAK_SEEDS;
-  const seed = pickRandom(candidates.length > 0 ? candidates : PEOPLE_SPEAK_SEEDS);
+export function buildPeopleSpeak(targetId?: DesaVocabId): DuolingoChallenge {
+  const candidates = targetId ? SPEAK_SEEDS.filter((s) => s.vocabId === targetId) : SPEAK_SEEDS;
+  const seed = pickRandom(candidates.length > 0 ? candidates : SPEAK_SEEDS);
   const speakerEntry = VOCAB_BY_ID[seed.speakerId];
+  const tag = getCategoryTag(seed.vocabId);
 
   return {
     type: 'speak',
     id: `spk_${seed.vocabId}_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
     vocabId: seed.vocabId,
-    kicker: 'UCAPKAN · PEOPLE',
+    kicker: `UCAPKAN · ${tag.upper}`,
     promptTitle: 'Ucapkan kalimat ini',
     speakerImage: VOCAB_IMAGE_BY_ID[seed.speakerId],
     speakerName: speakerEntry?.word ?? 'Warga Desa',
@@ -874,20 +1641,33 @@ export function buildPeopleSpeak(targetId?: PeopleVocabId): DuolingoChallenge {
   };
 }
 
-export function buildPeopleDialogueComplete(targetId?: PeopleVocabId): DuolingoChallenge {
+export function buildPeopleDialogueComplete(targetId?: DesaVocabId): DuolingoChallenge {
   const candidates = targetId
-    ? PEOPLE_DIALOGUE_SEEDS.filter((s) => s.vocabId === targetId)
-    : PEOPLE_DIALOGUE_SEEDS;
-  const seed = pickRandom(candidates.length > 0 ? candidates : PEOPLE_DIALOGUE_SEEDS);
+    ? DIALOGUE_SEEDS.filter((s) => s.vocabId === targetId)
+    : DIALOGUE_SEEDS;
+  const sameCategoryFallback =
+    targetId && targetId.startsWith('v_3_')
+      ? DIALOGUE_SEEDS.filter((s) => s.vocabId.startsWith('v_3_'))
+      : targetId
+      ? DIALOGUE_SEEDS.filter((s) => s.vocabId.startsWith('v_1_'))
+      : DIALOGUE_SEEDS;
+  const seed = pickRandom(
+    candidates.length > 0
+      ? candidates
+      : sameCategoryFallback.length > 0
+      ? sameCategoryFallback
+      : DIALOGUE_SEEDS,
+  );
   const rawChoices = [seed.correctReply, ...seed.distractorReplies.slice(0, 2)];
   const indexed = shuffle(rawChoices.map((c, idx) => ({ text: c, ok: idx === 0 })));
   const correctIndex = indexed.findIndex((i) => i.ok);
+  const tag = getCategoryTag(seed.vocabId);
 
   return {
     type: 'dialogue_complete',
     id: `dlg_${seed.vocabId}_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
     vocabId: seed.vocabId,
-    kicker: 'PERCAKAPAN · PEOPLE',
+    kicker: `PERCAKAPAN · ${tag.upper}`,
     promptTitle: 'Lengkapi kalimatnya',
     speakerAImage: VOCAB_IMAGE_BY_ID[seed.speakerAId],
     speakerAName: seed.speakerAName,
@@ -901,17 +1681,16 @@ export function buildPeopleDialogueComplete(targetId?: PeopleVocabId): DuolingoC
   };
 }
 
-export function buildPeopleListenWordBank(targetId?: PeopleVocabId): DuolingoChallenge {
-  const candidates = targetId
-    ? PEOPLE_LISTEN_SEEDS.filter((s) => s.vocabId === targetId)
-    : PEOPLE_LISTEN_SEEDS;
-  const seed = pickRandom(candidates.length > 0 ? candidates : PEOPLE_LISTEN_SEEDS);
+export function buildPeopleListenWordBank(targetId?: DesaVocabId): DuolingoChallenge {
+  const candidates = targetId ? LISTEN_SEEDS.filter((s) => s.vocabId === targetId) : LISTEN_SEEDS;
+  const seed = pickRandom(candidates.length > 0 ? candidates : LISTEN_SEEDS);
+  const tag = getCategoryTag(seed.vocabId);
 
   return {
     type: 'listen_word_bank',
     id: `lst_${seed.vocabId}_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
     vocabId: seed.vocabId,
-    kicker: 'DENGARKAN · PEOPLE',
+    kicker: `DENGARKAN · ${tag.upper}`,
     promptTitle: 'Pilih yang kamu dengar',
     audioSentence: seed.sentence,
     targetTokens: seed.tokens,
@@ -920,16 +1699,19 @@ export function buildPeopleListenWordBank(targetId?: PeopleVocabId): DuolingoCha
   };
 }
 
-export function buildPeopleMatchPairs(preferredId?: PeopleVocabId): DuolingoChallenge {
-  const rest = shuffle(PEOPLE_VOCAB_IDS.filter((id) => id !== preferredId));
-  const picked = preferredId ? [preferredId, ...rest.slice(0, 4)] : rest.slice(0, 5);
+export function buildPeopleMatchPairs(preferredId?: DesaVocabId): DuolingoChallenge {
+  const target = preferredId ?? pickRandom(DESA_ILLUSTRATED_VOCAB_IDS);
+  const samePool = target.startsWith('v_3_') ? FAMILY_VOCAB_IDS : PEOPLE_VOCAB_IDS;
+  const rest = shuffle(samePool.filter((id) => id !== target));
+  const picked = [target, ...rest.slice(0, 4)];
   const primaryId = picked[0];
+  const tag = getCategoryTag(primaryId);
 
   return {
     type: 'match_pairs',
     id: `mat_${primaryId}_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
     vocabId: primaryId,
-    kicker: 'PASANGKAN · PEOPLE',
+    kicker: `PASANGKAN · ${tag.upper}`,
     promptTitle: 'Pilih pasangan yang cocok',
     pairs: picked.map((id) => {
       const entry = VOCAB_BY_ID[id]!;
@@ -954,7 +1736,7 @@ export const ALL_DUOLINGO_TYPES: DuolingoChallengeType[] = [
 
 export function buildChallengeOfType(
   type: DuolingoChallengeType,
-  targetVocabId?: PeopleVocabId,
+  targetVocabId?: DesaVocabId,
 ): DuolingoChallenge {
   switch (type) {
     case 'picture_choice':
@@ -975,9 +1757,9 @@ export function buildChallengeOfType(
 export function pickSmartPeopleVocabId(
   progress: Record<string, WordProgress> = {},
   excludeVocabId?: string | null,
-): PeopleVocabId {
-  const pool = PEOPLE_VOCAB_IDS.filter((id) => id !== excludeVocabId);
-  const scored = (pool.length > 0 ? pool : PEOPLE_VOCAB_IDS).map((id) => ({
+): DesaVocabId {
+  const pool = DESA_ILLUSTRATED_VOCAB_IDS.filter((id) => id !== excludeVocabId);
+  const scored = (pool.length > 0 ? pool : DESA_ILLUSTRATED_VOCAB_IDS).map((id) => ({
     id,
     score: (progress[id]?.b || 0) + Math.random() * 2.5,
   }));
@@ -1011,8 +1793,9 @@ export function pickRandomPeopleChallenge(options?: {
 }
 
 /**
- * Builds a balanced deck of N People Duolingo challenges ensuring all 6 challenge types
- * appear randomly in the session (no two consecutive challenges of the same type).
+ * Builds a balanced deck of N Desa Sapaan (People + Family) Duolingo challenges
+ * ensuring all 6 challenge types appear randomly in the session
+ * (no two consecutive challenges of the same type).
  */
 export function buildPeopleDuolingoDeck(
   count = 10,
@@ -1026,7 +1809,7 @@ export function buildPeopleDuolingoDeck(
 
   // Ensure every enabled type appears at least once in the first batch
   const guaranteed = shuffle(baseTypes);
-  const vocabCycle = shuffle(PEOPLE_VOCAB_IDS);
+  const vocabCycle = shuffle(DESA_ILLUSTRATED_VOCAB_IDS);
 
   for (let i = 0; i < count; i++) {
     let type: DuolingoChallengeType;
@@ -1042,7 +1825,7 @@ export function buildPeopleDuolingoDeck(
       type = pickRandom(choices.length > 0 ? choices : baseTypes);
     }
 
-    const vocabId: PeopleVocabId =
+    const vocabId: DesaVocabId =
       vocabCycle[i % vocabCycle.length] === prevVocab
         ? vocabCycle[(i + 1) % vocabCycle.length]
         : vocabCycle[i % vocabCycle.length];
@@ -1095,6 +1878,7 @@ const SPEECH_SYNONYMS: Record<string, string> = {
   dont: 'do not',
   cant: 'can not',
   cannot: 'can not',
+  lets: 'let us',
 };
 
 function tokenizeSpoken(text: string): string[] {
@@ -1151,4 +1935,3 @@ export function isSpeakingTemporarilyDisabled(): boolean {
 export function disableSpeakingTemporarily(minutes = 15): void {
   speakingDisabledUntilMs = Date.now() + minutes * 60 * 1000;
 }
-

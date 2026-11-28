@@ -774,7 +774,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
         const nextMatched = [...matchedVocabIds, leftId];
         setMatchedVocabIds(nextMatched);
         if (nextMatched.length >= challenge.pairs.length) {
-          finishOutcome(true, false, 'Semua 5 pasangan kosakata People cocok!', matchMistakes);
+          finishOutcome(true, false, 'Semua 5 pasangan kosakata cocok!', matchMistakes);
         }
       } else {
         soundEngine.playWrongAnswer();
