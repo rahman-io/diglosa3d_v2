@@ -24,7 +24,7 @@ import {
   OwlMessengerRig,
   setHeroFacialExpression,
 } from '../three/rpgModels';
-import { CharacterPresetId, MonsterType } from '../types/game';
+import { CaptiveMemberSpec, CharacterPresetId, MonsterType } from '../types/game';
 
 export type DialogueSpeakerKind = 'hero' | 'npc' | 'captive' | 'owl' | 'villagers' | 'boss';
 
@@ -35,6 +35,7 @@ interface DialoguePortraitCanvasProps {
   villagerArchetypes?: string[];
   captiveKind?: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
   captiveColor?: number;
+  captiveMembers?: CaptiveMemberSpec[];
   monsterType?: MonsterType;
   heroExpression?: 'neutral' | 'fierce';
   bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry';
@@ -51,6 +52,7 @@ interface CachedPortraitEntry {
   npcMesh: THREE.Group | null;
   villagerRigs: DiverseNpcRigResult[];
   captiveMesh: THREE.Group | null;
+  captiveMeshes: THREE.Group[];
   owlRig: OwlMessengerRig | null;
   bossMesh: THREE.Group | null;
   bossType?: MonsterType;
@@ -142,6 +144,7 @@ function getOrBuildPortraitEntry(
     villagerArchetypes?: string[];
     captiveKind: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
     captiveColor: number;
+    captiveMembers?: CaptiveMemberSpec[];
     monsterType?: MonsterType;
   },
 ): CachedPortraitEntry {
@@ -156,6 +159,7 @@ function getOrBuildPortraitEntry(
   let npcMesh: THREE.Group | null = null;
   const villagerRigs: DiverseNpcRigResult[] = [];
   let captiveMesh: THREE.Group | null = null;
+  const captiveMeshes: THREE.Group[] = [];
   let owlRig: OwlMessengerRig | null = null;
   let bossMesh: THREE.Group | null = null;
   const bossType: MonsterType | undefined = opts.monsterType;
@@ -193,14 +197,59 @@ function getOrBuildPortraitEntry(
     });
     targetRoot = pair;
   } else if (opts.speakerKind === 'captive') {
-    const mesh = createCaptiveMesh(opts.captiveKind, opts.captiveColor, studio.palette);
-    mesh.traverse((obj) => {
-      if (obj instanceof THREE.Mesh && obj.geometry instanceof THREE.CircleGeometry) {
-        obj.visible = false;
-      }
-    });
-    captiveMesh = mesh;
-    targetRoot = mesh;
+    if (opts.captiveMembers && opts.captiveMembers.length > 1) {
+      const grp = new THREE.Group();
+      const count = opts.captiveMembers.length;
+      opts.captiveMembers.forEach((m, idx) => {
+        const mesh = createCaptiveMesh(m.kind, m.color, studio.palette, {
+          hairColor: m.hairColor,
+          scale: m.scale,
+          hideRibbon: m.hideRibbon,
+        });
+        mesh.traverse((obj) => {
+          if (obj instanceof THREE.Mesh && obj.geometry instanceof THREE.CircleGeometry) {
+            obj.visible = false;
+          }
+        });
+        if (count === 2) {
+          mesh.position.set(idx === 0 ? -0.44 : 0.44, 0, idx === 0 ? 0.04 : -0.04);
+          mesh.rotation.y = idx === 0 ? 0.14 : -0.14;
+        } else if (count === 4) {
+          const isFront = idx < 2;
+          const col = idx % 2;
+          mesh.position.set(
+            isFront ? (col === 0 ? -0.48 : 0.48) : col === 0 ? -0.82 : 0.82,
+            isFront ? 0 : 0.14,
+            isFront ? 0.25 : -0.45,
+          );
+          mesh.rotation.y = col === 0 ? 0.12 : -0.12;
+        } else {
+          const isFront = idx < 2;
+          if (isFront) {
+            mesh.position.set(idx === 0 ? -0.52 : 0.52, 0, 0.28);
+            mesh.rotation.y = idx === 0 ? 0.12 : -0.12;
+          } else {
+            const backIdx = idx - 2;
+            mesh.position.set((backIdx - 1) * 0.82, 0.16, -0.48);
+            mesh.rotation.y = backIdx === 0 ? 0.14 : backIdx === 2 ? -0.14 : 0;
+          }
+        }
+        captiveMeshes.push(mesh);
+        grp.add(mesh);
+      });
+      captiveMesh = captiveMeshes[0] ?? null;
+      targetRoot = grp;
+    } else {
+      const mesh = createCaptiveMesh(opts.captiveKind, opts.captiveColor, studio.palette);
+      mesh.traverse((obj) => {
+        if (obj instanceof THREE.Mesh && obj.geometry instanceof THREE.CircleGeometry) {
+          obj.visible = false;
+        }
+      });
+      captiveMesh = mesh;
+      captiveMeshes.push(mesh);
+      targetRoot = mesh;
+    }
   } else if (opts.speakerKind === 'owl') {
     const owl = createOwlMessengerRig(studio.palette);
     owl.envelope.visible = false;
@@ -248,9 +297,10 @@ function getOrBuildPortraitEntry(
       : opts.speakerKind === 'boss'
         ? box.max.y - safeH * 0.36
         : box.max.y - safeH * 0.34;
+  const isMultiCaptive = opts.speakerKind === 'captive' && captiveMeshes.length > 1;
   const dist =
-    opts.speakerKind === 'villagers'
-      ? Math.max(3.15, safeH * 1.48, size.x * 2.18)
+    opts.speakerKind === 'villagers' || isMultiCaptive
+      ? Math.max(3.15, safeH * 1.48, size.x * 2.05)
       : opts.speakerKind === 'boss'
         ? Math.max(2.75, safeH * 1.5, size.x * 1.48)
         : opts.speakerKind === 'owl' || opts.captiveKind === 'fox_kit' || opts.captiveKind === 'spirit'
@@ -265,10 +315,11 @@ function getOrBuildPortraitEntry(
     npcMesh,
     villagerRigs,
     captiveMesh,
+    captiveMeshes,
     owlRig,
     bossMesh,
     bossType,
-    camX: opts.speakerKind === 'villagers' ? 0.0 : opts.speakerKind === 'boss' ? 0.16 : 0.08,
+    camX: opts.speakerKind === 'villagers' || isMultiCaptive ? 0.0 : opts.speakerKind === 'boss' ? 0.16 : 0.08,
     camY: bustFocusY + safeH * 0.04,
     camZ: dist,
     lookX: center.x,
@@ -296,6 +347,7 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
   villagerArchetypes,
   captiveKind = 'girl',
   captiveColor = 0xf472b6,
+  captiveMembers,
   monsterType,
   heroExpression = 'neutral',
   bossExpression,
@@ -313,7 +365,8 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
   const captiveExprRef = useRef<'neutral' | 'sad_injured' | 'happy' | undefined>(captiveExpression);
   captiveExprRef.current = captiveExpression;
   const villagerKey = villagerArchetypes?.join(',') ?? '';
-  const entryKey = `${speakerKind}|${characterId}|${npcId}|${villagerKey}|${captiveKind}|${captiveColor}|${monsterType ?? ''}`;
+  const captiveMembersKey = captiveMembers?.map((m) => `${m.id}:${m.color}`).join(',') ?? '';
+  const entryKey = `${speakerKind}|${characterId}|${npcId}|${villagerKey}|${captiveKind}|${captiveColor}|${captiveMembersKey}|${monsterType ?? ''}`;
   const elapsedRef = useRef(0);
 
   useEffect(() => {
@@ -330,6 +383,7 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
       villagerArchetypes,
       captiveKind,
       captiveColor,
+      captiveMembers,
       monsterType,
     });
 
@@ -401,14 +455,16 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
               vRig.baseRightArmX - 0.35 + Math.sin(elapsed * 5.4 + idx) * 0.14;
           }
         });
-      } else if (entry.kind === 'captive' && entry.captiveMesh) {
+      } else if (entry.kind === 'captive' && entry.captiveMeshes.length > 0) {
         const cMood =
           captiveExprRef.current === 'sad_injured'
             ? 'sad_injured'
             : captiveExprRef.current === 'happy'
               ? true
               : talking;
-        animateCaptiveMesh(entry.captiveMesh, elapsed, cMood);
+        entry.captiveMeshes.forEach((cm, idx) => {
+          animateCaptiveMesh(cm, elapsed + idx * 0.35, cMood);
+        });
       } else if (entry.kind === 'owl' && entry.owlRig) {
         const flap = Math.sin(elapsed * (talking ? 8.5 : 3.2)) * 0.22;
         entry.owlRig.leftWing.rotation.z = 0.2 + flap;
@@ -417,8 +473,11 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
       }
 
       studio.pivot.rotation.y =
-        (entry.kind === 'villagers' ? 0.12 : entry.kind === 'boss' ? 0.24 : 0.34) +
-        Math.sin(elapsed * 1.1) * 0.03;
+        (entry.kind === 'villagers' || entry.captiveMeshes.length > 1
+          ? 0.08
+          : entry.kind === 'boss'
+            ? 0.24
+            : 0.34) + Math.sin(elapsed * 1.1) * 0.03;
       studio.camera.position.set(entry.camX, entry.camY, entry.camZ);
       studio.camera.lookAt(entry.lookX, entry.lookY, 0);
       studio.renderer.render(studio.scene, studio.camera);

@@ -368,6 +368,22 @@ export interface CaveSealContext {
   vocabId: string;
 }
 
+export interface CaptiveMemberSpec {
+  id: string;
+  name: string;
+  kind: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
+  color: number;
+  scale?: number;
+  hairColor?: number;
+  hideRibbon?: boolean;
+}
+
+export interface CavePrisonCellHudState {
+  id: string;
+  label: string;
+  unlocked: boolean;
+}
+
 export interface DungeonZoneState {
   zoneId: ZoneId;
   zoneName: string;
@@ -382,6 +398,9 @@ export interface DungeonZoneState {
   prisonKeySpawned: boolean;
   prisonKeyCollected: boolean;
   prisonUnlocked: boolean;
+  prisonCells?: CavePrisonCellHudState[];
+  nearPrisonCellId?: string | null;
+  nearPrisonCellLabel?: string | null;
   captiveName: string;
   guardianName: string;
   liberated: boolean;
@@ -477,6 +496,7 @@ export interface StoryDialogState {
   villagerArchetypes?: string[];
   captiveKind?: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
   captiveColor?: number;
+  captiveMembers?: CaptiveMemberSpec[];
   speakerSide?: 'npc' | 'hero';
   ribbonName?: string;
   ribbonQuote?: string;

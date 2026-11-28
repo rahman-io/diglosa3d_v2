@@ -1181,12 +1181,15 @@ export const RpgHud: React.FC<RpgHudProps> = ({
             <div className="pointer-events-auto flex w-full items-center justify-between gap-1.5 rounded-full border border-white/15 bg-slate-950/88 px-2.5 py-0.5 text-white shadow-md">
               <span className="min-w-0 truncate font-mono-nums text-[10px] font-extrabold text-amber-200">
                 {hud.dungeonState.zoneName} · Pintu {hud.dungeonState.doorsCleared.length}/5
+                {hud.dungeonState.prisonCells && hud.dungeonState.prisonCells.length > 0
+                  ? ` · Sel ${hud.dungeonState.prisonCells.filter((c) => c.unlocked).length}/${hud.dungeonState.prisonCells.length}`
+                  : ''}
                 {hud.dungeonState.bossSpawned && !hud.dungeonState.bossDefeated
                   ? ' · BOS!'
                   : hud.dungeonState.bossDefeated && !hud.dungeonState.prisonKeyCollected
                   ? ' · Ambil Kunci'
                   : hud.dungeonState.prisonKeyCollected && !hud.dungeonState.prisonUnlocked
-                  ? ` · Bebaskan ${hud.dungeonState.captiveName}`
+                  ? ` · Bebaskan ${hud.dungeonState.prisonCells ? '3 Sel' : hud.dungeonState.captiveName}`
                   : hud.dungeonState.prisonUnlocked && !hud.dungeonState.caveRibbonCollected
                   ? ' · Cari Pita 3D'
                   : hud.dungeonState.prisonUnlocked
@@ -2737,18 +2740,20 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         {hud.worldMode === 'dungeon' &&
           hud.nearHiddenPrison &&
           hud.dungeonState &&
-          !hud.dungeonState.prisonUnlocked && (
+          !hud.dungeonState.prisonUnlocked && (() => {
+            const cellLabel = hud.dungeonState.nearPrisonCellLabel || hud.dungeonState.captiveName;
+            return (
             <button
               type="button"
               onClick={onPrimaryAction}
               title={
                 hud.dungeonState.prisonKeyCollected
-                  ? `Bebaskan ${hud.dungeonState.captiveName}`
-                  : 'Penjara Terkunci (Butuh Kunci)'
+                  ? `Bebaskan ${cellLabel}`
+                  : `${cellLabel} Terkunci (Butuh Kunci)`
               }
               aria-label={
                 hud.dungeonState.prisonKeyCollected
-                  ? `Bebaskan ${hud.dungeonState.captiveName}`
+                  ? `Bebaskan ${cellLabel}`
                   : 'Terkunci'
               }
               className={`relative flex h-[54px] w-[54px] items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-90 sm:h-[62px] sm:w-[62px] ${
@@ -2769,7 +2774,8 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                 </span>
               )}
             </button>
-          )}
+            );
+          })()}
 
         {hud.worldMode === 'dungeon' &&
           hud.nearbyDungeonGuardian &&

@@ -57,7 +57,9 @@ import {
   AreaMonsterStats,
   BattleContext,
   CameraMode,
+  CaptiveMemberSpec,
   CarHudState,
+  CavePrisonCellHudState,
   CaveSealContext,
   CharacterPresetId,
   DayPhaseId,
@@ -194,6 +196,7 @@ import {
   createZoneNpc,
   DarkCloudPortalRig,
   DungeonArenaRig,
+  DungeonPrisonCellRig,
   FirstPersonViewRig,
   getWeaponPoseClass,
   getZoneForPosition,
@@ -515,6 +518,8 @@ interface SavedStatePayload {
   introDone: boolean;
   caveIntrosSeen?: ZoneId[];
   prisonPleaSeenZones?: ZoneId[];
+  prisonPleaSeenCells?: string[];
+  unlockedPrisonCells?: string[];
   defeatedBossZones?: ZoneId[];
   zoneCaveProgress?: Partial<Record<ZoneId, { defeated: number; remaining: number; total: number }>>;
   zoneCaveDetails?: Partial<Record<ZoneId, SavedZoneCaveDetail>>;
@@ -1456,8 +1461,16 @@ export class RpgWorldEngine {
     sparkAccum: number;
   } | null = null;
   private prisonPleaSeenZones = new Set<ZoneId>();
+  private prisonPleaSeenCells = new Set<string>();
+  private unlockedPrisonCells = new Set<string>();
   private dungeonPrisonPleaCutscene: {
     zoneId: ZoneId;
+    cellId?: string;
+    cellLabel?: string;
+    cellVariant?: 'siblings' | 'children' | 'adults';
+    facingDir?: THREE.Vector3;
+    captiveMembers?: CaptiveMemberSpec[];
+    captiveMeshes?: THREE.Group[];
     beat: 'discover' | 'captive_cry_plea' | 'hero_promise' | 'captive_hope';
     timer: number;
     prisonPos: THREE.Vector3;
@@ -1601,12 +1614,20 @@ export class RpgWorldEngine {
   private nearbyDungeonGuardian = false;
   private nearPrisonKey = false;
   private nearHiddenPrison = false;
+  private nearPrisonCellId: string | null = null;
+  private nearPrisonCellLabel: string | null = null;
+  private activeRescueCellId: string | null = null;
   private nearPortal = false;
   private nearDungeonExit = false;
   private nearCaveRibbon = false;
   private dungeonCaptivePos = new THREE.Vector3();
   private rescueCaptiveStartPos = new THREE.Vector3();
   private rescueCaptiveEndPos = new THREE.Vector3();
+  private dungeonCellRescueTargets: Map<
+    string,
+    { mesh: THREE.Group; startPos: THREE.Vector3; endPos: THREE.Vector3 }
+  > = new Map();
+  private dungeonCaptiveTrailPositions: Map<string, THREE.Vector3> = new Map();
   private bannerMessage: string | null = null;
   private bannerTimer = 0;
   private caveCountdownTimer = 0;
@@ -2230,6 +2251,8 @@ export class RpgWorldEngine {
         introDone: this.introDone,
         caveIntrosSeen: Array.from(this.caveIntrosSeen),
         prisonPleaSeenZones: Array.from(this.prisonPleaSeenZones),
+        prisonPleaSeenCells: Array.from(this.prisonPleaSeenCells),
+        unlockedPrisonCells: Array.from(this.unlockedPrisonCells),
         defeatedBossZones: Array.from(this.defeatedBossZones),
         zoneCaveProgress: { ...this.zoneCaveProgress },
         zoneCaveDetails: this.zoneCaveDetails,
@@ -2366,6 +2389,8 @@ export class RpgWorldEngine {
       this.introDone = Boolean(data.introDone);
       this.caveIntrosSeen = new Set(data.caveIntrosSeen || []);
       this.prisonPleaSeenZones = new Set(data.prisonPleaSeenZones || []);
+      this.prisonPleaSeenCells = new Set(data.prisonPleaSeenCells || []);
+      this.unlockedPrisonCells = new Set(data.unlockedPrisonCells || []);
       this.defeatedBossZones = new Set(data.defeatedBossZones || []);
       this.zoneCaveProgress = data.zoneCaveProgress ? { ...data.zoneCaveProgress } : {};
       this.zoneCaveDetails = data.zoneCaveDetails ? { ...data.zoneCaveDetails } : {};
@@ -4369,7 +4394,11 @@ export class RpgWorldEngine {
       for (const blk of this.dungeonRig.caveBlocks) {
         if (blk.alive) this.camOccluderScratch.push(blk.mesh);
       }
-      if (this.dungeonRig.prisonBars.visible) {
+      if (this.dungeonRig.prisonCells) {
+        for (const c of this.dungeonRig.prisonCells) {
+          if (c.bars.visible) this.camOccluderScratch.push(c.bars);
+        }
+      } else if (this.dungeonRig.prisonBars.visible) {
         this.camOccluderScratch.push(this.dungeonRig.prisonBars);
       }
 
@@ -6056,6 +6085,8 @@ export class RpgWorldEngine {
     this.introDone = false;
     this.caveIntrosSeen.clear();
     this.prisonPleaSeenZones.clear();
+    this.prisonPleaSeenCells.clear();
+    this.unlockedPrisonCells.clear();
     this.defeatedBossZones.clear();
     this.zoneCaveProgress = {};
     this.zoneCaveDetails = {};
@@ -8050,22 +8081,68 @@ export class RpgWorldEngine {
       const nextStep = this.storyDialog.step + 1;
 
       if (nextStep === 1) {
+        if (this.dungeonRig?.prisonCells && this.activeRescueCellId) {
+          const cells = this.dungeonRig.prisonCells;
+          const allUnlocked = cells.every((c) => c.unlocked);
+          const lockedLeft = cells.filter((c) => !c.unlocked).length;
+          const cellCfg = this.getDesaPrisonCellStoryConfig(this.activeRescueCellId);
+          if (!allUnlocked) {
+            this.diamonds += 2;
+            this.gainXp(60);
+            this.addScore(400);
+            this.emitProgressSync();
+            this.saveProgress();
+            const stepEn = `Thank you, ${pName}! Please keep using the Golden Key to rescue the remaining ${lockedLeft} locked cell(s) in this cave!`;
+            const stepId = `Terima kasih ${pName}! Kami akan terus mengikutimu—ayo bawa Kunci Emasmu untuk membuka ${lockedLeft} sel penjara tersisa di gua ini!`;
+            this.storyDialog = {
+              kind: 'dungeon_rescue',
+              step: 1,
+              maxStep: 1,
+              zoneId: zId,
+              speakerName: cellCfg.speakerName,
+              speakerRole: `Sel Terbuka (${cells.length - lockedLeft}/${cells.length}) · Misi Penyelamatan Berlanjut`,
+              textEn: stepEn,
+              textId: stepId,
+              accentColor: '#10b981',
+              speakerKind: 'captive',
+              captiveKind: cellCfg.captiveMembers[0]?.kind ?? story.captiveKind,
+              captiveColor: cellCfg.captiveMembers[0]?.color ?? story.captiveColor,
+              captiveMembers: cellCfg.captiveMembers,
+              speakerSide: 'npc',
+              rewardSummary: `${cellCfg.speakerName} Bebas! · +2 💎 · +60 XP · Sisa ${lockedLeft} Sel Terkunci`,
+            };
+            soundEngine.playPick();
+            soundEngine.speakEnglish(stepEn);
+            this.pushHud(true);
+            return;
+          }
+        }
+
         this.grantDungeonCaptiveRescueRewards(zId);
         const clueEn = personalizePlayerText(story.caveRibbonClueEn, pName);
         const clueId = personalizePlayerText(story.caveRibbonClueId, pName);
+        const finalCaptives =
+          this.dungeonRig?.prisonCells && this.activeRescueCellId
+            ? this.getDesaPrisonCellStoryConfig(this.activeRescueCellId).captiveMembers
+            : undefined;
+        const finalSpeakerName =
+          this.dungeonRig?.prisonCells && this.activeRescueCellId
+            ? `${this.getDesaPrisonCellStoryConfig(this.activeRescueCellId).speakerName} & Semua Warga`
+            : story.captiveName;
         this.storyDialog = {
           kind: 'dungeon_rescue',
           step: 1,
           maxStep: 1,
           zoneId: zId,
-          speakerName: story.captiveName,
-          speakerRole: `Petunjuk ${story.captiveName} · Pita Merah 3D Tersembunyi`,
+          speakerName: finalSpeakerName,
+          speakerRole: `Semua Sel Terbuka! · Petunjuk Pita Merah 3D`,
           textEn: clueEn,
           textId: clueId,
           accentColor: '#e11d48',
           speakerKind: 'captive',
           captiveKind: story.captiveKind,
           captiveColor: story.captiveColor,
+          captiveMembers: finalCaptives,
           speakerSide: 'npc',
           rewardSummary: `Bos ${boss.name} Kalah! · ${RELICS[boss.rewardRelic].name} · ${wDef.name} (+Peluru) · +5 💎 · +180 XP`,
         };
@@ -8917,7 +8994,7 @@ export class RpgWorldEngine {
     );
   }
 
-  private startDungeonRescueCutscene(zoneId: ZoneId): void {
+  private startDungeonRescueCutscene(zoneId: ZoneId, cellId?: string): void {
     const story = ZONE_CAVE_STORIES[zoneId];
     const pName = this.getPlayerDisplayName();
     if (this.cameraMode === 'first_person') {
@@ -8927,8 +9004,78 @@ export class RpgWorldEngine {
     this.heldKeys.clear();
     this.applyCameraVisibilityAndControls();
     this.storyTimer = 0;
+    this.dungeonCellRescueTargets.clear();
 
-    if (this.dungeonRig) {
+    let dialogSpeaker = story.captiveName;
+    let dialogRole = `${story.captiveRole} · Terbebas dari Penjara!`;
+    let dialogEn = personalizePlayerText(story.rescueCaptiveEn, pName);
+    let dialogId = personalizePlayerText(story.rescueCaptiveId, pName);
+    let dialogMembers: CaptiveMemberSpec[] | undefined;
+
+    const targetCell =
+      cellId && this.dungeonRig?.prisonCells
+        ? this.dungeonRig.prisonCells.find((c) => c.id === cellId)
+        : undefined;
+
+    if (this.dungeonRig && targetCell) {
+      this.activeRescueCellId = targetCell.id;
+      targetCell.bars.visible = true;
+      targetCell.bars.position.y = 0;
+
+      const openSignX = targetCell.facingDir.x >= 0 ? 1 : -1;
+      const pPos = targetCell.pos;
+      const heroStandX = pPos.x + openSignX * 6.4;
+      this.heroPos.set(heroStandX, pPos.y, pPos.z);
+
+      const capCount = targetCell.captives.length;
+      targetCell.captives.forEach((cap, idx) => {
+        this.dungeonRig!.group.add(cap.mesh);
+        const startPos = pPos.clone().add(cap.localPos);
+        const spreadZ =
+          capCount === 1
+            ? 0
+            : THREE.MathUtils.lerp(-1.6, 1.6, idx / Math.max(1, capCount - 1));
+        const endPos = new THREE.Vector3(
+          pPos.x + openSignX * (4.1 + (idx % 2) * 0.65),
+          pPos.y,
+          pPos.z + spreadZ,
+        );
+        cap.mesh.position.copy(startPos);
+        cap.mesh.rotation.y = Math.atan2(
+          this.heroPos.x - startPos.x,
+          this.heroPos.z - startPos.z,
+        );
+        this.dungeonCellRescueTargets.set(cap.id, {
+          mesh: cap.mesh,
+          startPos,
+          endPos,
+        });
+        this.dungeonCaptiveTrailPositions.set(cap.id, startPos.clone());
+      });
+
+      this.dungeonCaptivePos.set(pPos.x + openSignX * 4.2, pPos.y, pPos.z);
+      this.heroYaw = Math.atan2(pPos.x - this.heroPos.x, pPos.z - this.heroPos.z);
+      this.hero.root.position.copy(this.heroPos);
+      this.hero.body.rotation.y = this.heroYaw;
+      this.camera.position.set(
+        this.heroPos.x + openSignX * 2.8,
+        pPos.y + 4.4,
+        this.heroPos.z + 6.2,
+      );
+      this.controls.target.set(
+        (this.heroPos.x + pPos.x) * 0.5,
+        pPos.y + 1.5,
+        pPos.z,
+      );
+      this.controls.update();
+
+      const cellCfg = this.getDesaPrisonCellStoryConfig(targetCell.id);
+      dialogSpeaker = cellCfg.speakerName;
+      dialogRole = `${targetCell.label} · Terbebas!`;
+      dialogEn = personalizePlayerText(cellCfg.rescueEn, pName);
+      dialogId = personalizePlayerText(cellCfg.rescueId, pName);
+      dialogMembers = cellCfg.captiveMembers;
+    } else if (this.dungeonRig) {
       const pPos = this.dungeonRig.prisonPos;
       this.dungeonRig.prisonBars.visible = true;
       this.dungeonRig.prisonBars.position.y = 0;
@@ -8972,24 +9119,24 @@ export class RpgWorldEngine {
       this.controls.update();
     }
 
-    const captiveEn = personalizePlayerText(story.rescueCaptiveEn, pName);
     this.storyDialog = {
       kind: 'dungeon_rescue',
       step: 0,
       maxStep: 1,
       zoneId,
-      speakerName: story.captiveName,
-      speakerRole: `${story.captiveRole} · Terbebas dari Penjara!`,
-      textEn: captiveEn,
-      textId: personalizePlayerText(story.rescueCaptiveId, pName),
+      speakerName: dialogSpeaker,
+      speakerRole: dialogRole,
+      textEn: dialogEn,
+      textId: dialogId,
       accentColor: story.accentColor,
       speakerKind: 'captive',
-      captiveKind: story.captiveKind,
-      captiveColor: story.captiveColor,
+      captiveKind: dialogMembers?.[0]?.kind ?? story.captiveKind,
+      captiveColor: dialogMembers?.[0]?.color ?? story.captiveColor,
+      captiveMembers: dialogMembers,
       speakerSide: 'npc',
     };
     soundEngine.playFanfare();
-    soundEngine.speakEnglish(captiveEn);
+    soundEngine.speakEnglish(dialogEn);
     this.pushHud(true);
   }
 
@@ -9027,6 +9174,7 @@ export class RpgWorldEngine {
       this.dungeonState.prisonUnlocked = true;
       this.dungeonState.liberated = true;
       this.dungeonState.caveRibbonCollected = this.ribbons.has(zoneId);
+      this.syncDungeonPrisonCellsHud();
     }
     if (this.dungeonRig) {
       this.dungeonRig.prisonKeyGroup.visible = false;
@@ -9040,7 +9188,12 @@ export class RpgWorldEngine {
 
   private finishDungeonRescueCutscene(zoneId?: ZoneId): void {
     const zId = zoneId || this.storyDialog?.zoneId || this.dungeonState?.zoneId;
-    if (zId) {
+    const isMultiCell = Boolean(this.dungeonRig?.prisonCells && this.dungeonRig.prisonCells.length > 0);
+    const allCellsUnlocked = isMultiCell
+      ? this.dungeonRig!.prisonCells!.every((c) => c.unlocked)
+      : true;
+
+    if (zId && allCellsUnlocked) {
       this.grantDungeonCaptiveRescueRewards(zId);
     }
     this.storyDialog = null;
@@ -9048,7 +9201,30 @@ export class RpgWorldEngine {
     if (this.cameraMode === 'first_person') {
       this.cameraMode = 'third_back';
     }
-    if (this.dungeonRig) {
+
+    if (this.dungeonRig && isMultiCell && this.activeRescueCellId) {
+      const targetCell = this.dungeonRig.prisonCells!.find((c) => c.id === this.activeRescueCellId);
+      if (targetCell) {
+        targetCell.bars.visible = false;
+        targetCell.bars.position.y = 4.2;
+        for (const cap of targetCell.captives) {
+          const entry = this.dungeonCellRescueTargets.get(cap.id);
+          const pos = entry?.endPos ?? this.heroPos;
+          this.dungeonRig.group.add(cap.mesh);
+          cap.mesh.position.copy(pos);
+          cap.mesh.rotation.y = Math.atan2(
+            this.heroPos.x - pos.x,
+            this.heroPos.z - pos.z,
+          );
+          this.dungeonCaptiveTrailPositions.set(cap.id, pos.clone());
+        }
+      }
+      this.dungeonCellRescueTargets.clear();
+      this.syncDungeonPrisonCellsHud();
+      if (zId && allCellsUnlocked) {
+        this.dungeonRig.ribbonGroup.visible = !this.ribbons.has(zId);
+      }
+    } else if (this.dungeonRig) {
       this.dungeonRig.prisonBars.visible = false;
       this.dungeonRig.prisonBars.position.y = 3.6;
       this.dungeonRig.group.add(this.dungeonRig.captiveMesh);
@@ -9062,6 +9238,7 @@ export class RpgWorldEngine {
         this.dungeonRig.ribbonGroup.visible = !this.ribbons.has(zId);
       }
     }
+
     this.heroVel.set(0, 0, 0);
     this.heroVelY = 0;
     this.heroOnGround = true;
@@ -9069,14 +9246,31 @@ export class RpgWorldEngine {
     this.applyCameraVisibilityAndControls();
     this.snapCameraBehindHero();
     this.saveProgress();
+
+    if (zId && isMultiCell && !allCellsUnlocked) {
+      const rem = this.dungeonRig!.prisonCells!.filter((c) => !c.unlocked).length;
+      const cellCfg = this.activeRescueCellId
+        ? this.getDesaPrisonCellStoryConfig(this.activeRescueCellId)
+        : null;
+      this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.8, this.heroPos.z, 0x34d399, 28);
+      this.showBanner(
+        `✅ ${cellCfg?.speakerName || 'Tawanan'} bebas & mengikutimu! Tersisa ${rem} sel penjara lagi di gua ini—selamatkan semuanya!`,
+        5.5,
+      );
+      this.activeRescueCellId = null;
+      this.pushHud(true);
+      return;
+    }
+
+    this.activeRescueCellId = null;
     if (zId) {
       const st = ZONE_CAVE_STORIES[zId];
       const hasRibbon = this.ribbons.has(zId);
       this.spawnBurst(this.dungeonCaptivePos.x, 1.8, this.dungeonCaptivePos.z, 0x34d399, 32);
       this.showBanner(
         hasRibbon
-          ? `✅ ${st.captiveName} selamat & terus mengikutimu! Bawa keluar gua menemui ${st.guardianName}!`
-          : `🎀 ${st.captiveName} bebas & terus mengikutimu! Cari Pita Merah 3D tersembunyi di sudut gua, lalu bawa ${st.captiveName} keluar menemui ${st.guardianName}!`,
+          ? `✅ ${isMultiCell ? 'Rani, Kakak Raka, 4 Anak & 5 Warga Desa' : st.captiveName} selamat & terus mengikutimu! Bawa keluar gua menemui ${st.guardianName}!`
+          : `🎀 ${isMultiCell ? 'Semua tawanan Desa Sapaan bebas & terus mengikutimu!' : `${st.captiveName} bebas & terus mengikutimu!`} Cari Pita Merah 3D tersembunyi di sudut gua, lalu bawa mereka keluar menemui ${st.guardianName}!`,
         6.0,
       );
     }
@@ -10051,6 +10245,11 @@ export class RpgWorldEngine {
     this.nearbyDungeonGuardian = false;
     this.nearPrisonKey = false;
     this.nearHiddenPrison = false;
+    this.nearPrisonCellId = null;
+    this.nearPrisonCellLabel = null;
+    this.activeRescueCellId = null;
+    this.dungeonCellRescueTargets.clear();
+    this.dungeonCaptiveTrailPositions.clear();
     this.tapMoveTarget = null;
     this.caveCountdownTimer = 0;
     this.caveCountdownStep = null;
@@ -10194,6 +10393,13 @@ export class RpgWorldEngine {
       rig.prisonKeyGroup,
       rig.ribbonGroup,
     );
+    if (rig.prisonCells) {
+      rig.prisonCells.forEach((cell) => {
+        if (cell.group !== rig.prisonGroup) {
+          this.dungeonClickables.push(cell.group);
+        }
+      });
+    }
     if (rig.hasInsideGuardian) {
       this.dungeonClickables.push(rig.guardianMesh);
     }
@@ -10704,6 +10910,17 @@ export class RpgWorldEngine {
     const wordMobs = this.dungeonMonsters.filter((m) => this.isDoor5WordGuardian(m));
     const aliveCount = wordMobs.filter((m) => m.alive).length;
     const keyCollected = rescued || (bossBeaten && Boolean(detail.prisonKeyCollected));
+    const multiCells = rig.prisonCells && rig.prisonCells.length > 0 ? rig.prisonCells : null;
+    if (multiCells) {
+      for (const cell of multiCells) {
+        const cellKey = `${zoneId}:${cell.id}`;
+        cell.unlocked = rescued || this.unlockedPrisonCells.has(cellKey);
+        cell.bars.visible = !cell.unlocked;
+      }
+    }
+    const allMultiCellsUnlocked = multiCells ? multiCells.every((c) => c.unlocked) : false;
+    const prisonFullyUnlocked = rescued || allMultiCellsUnlocked;
+
     this.dungeonState = {
       zoneId,
       zoneName: ZONE_INFO[zoneId].name,
@@ -10715,9 +10932,9 @@ export class RpgWorldEngine {
       allEnemiesTotal: 0,
       bossSpawned: bossBeaten,
       bossDefeated: bossBeaten,
-      prisonKeySpawned: bossBeaten && !rescued,
+      prisonKeySpawned: bossBeaten && !prisonFullyUnlocked,
       prisonKeyCollected: keyCollected,
-      prisonUnlocked: rescued,
+      prisonUnlocked: prisonFullyUnlocked,
       captiveName: caveStory.captiveName,
       guardianName: caveStory.guardianName,
       liberated: rescued,
@@ -10725,7 +10942,30 @@ export class RpgWorldEngine {
       isMixedChallenge,
     };
 
-    if (rescued) {
+    if (multiCells) {
+      this.syncDungeonPrisonCellsHud();
+      rig.prisonKeyGroup.visible = bossBeaten && !keyCollected && !prisonFullyUnlocked;
+      rig.ribbonGroup.visible = prisonFullyUnlocked && !this.ribbons.has(zoneId);
+      if (prisonFullyUnlocked && rig.hasInsideGuardian) {
+        rig.guardianAuraMat.color.setHex(0x22c55e);
+      }
+      const sp = rig.spawnPos;
+      for (const cell of multiCells) {
+        if (!cell.unlocked) continue;
+        for (const cap of cell.captives) {
+          rig.group.add(cap.mesh);
+          const pos = new THREE.Vector3(
+            sp.x + cap.followOffset.x,
+            sp.y,
+            sp.z - cap.followOffset.z * 0.55,
+          );
+          cap.mesh.position.copy(pos);
+          cap.mesh.rotation.y = Math.PI;
+          this.dungeonCaptiveTrailPositions.set(cap.id, pos.clone());
+        }
+      }
+      this.dungeonCaptivePos.set(sp.x + 1.8, sp.y, sp.z);
+    } else if (rescued) {
       rig.prisonBars.visible = false;
       rig.prisonKeyGroup.visible = false;
       rig.ribbonGroup.visible = !this.ribbons.has(zoneId);
@@ -10808,6 +11048,9 @@ export class RpgWorldEngine {
     this.nearbyDungeonGuardian = false;
     this.nearPrisonKey = false;
     this.nearHiddenPrison = false;
+    this.nearPrisonCellId = null;
+    this.nearPrisonCellLabel = null;
+    this.activeRescueCellId = null;
     this.nearCaveRibbon = false;
     this.nearPortal = false;
     this.nearDungeonExit = false;
@@ -11332,6 +11575,15 @@ export class RpgWorldEngine {
     this.hero.root.position.copy(this.heroPos);
     this.hero.body.rotation.y = this.heroYaw;
 
+    const rescuedDisplayName =
+      zoneId === 'desa_sapaan'
+        ? 'Rani, Kakak Raka, 4 Anak & 5 Warga Desa'
+        : story.captiveName;
+    const rescuedDisplayEn =
+      zoneId === 'desa_sapaan'
+        ? 'Rani, Kakak Raka, the 4 children, and the 5 villagers'
+        : story.captiveName;
+
     const ribbonReminderEn = !hasRibbon
       ? ` (Remember that the hidden 3D Red Ribbon is still inside the cave if you want to collect it!)`
       : '';
@@ -11341,13 +11593,13 @@ export class RpgWorldEngine {
 
     const missionTextEn =
       remOutside > 0
-        ? `${personalizePlayerText(story.rescueGuardianEn, gAddr)} ${story.captiveName} is safely back and ${boss.name} is defeated! Your final mission is to defeat the remaining ${remOutside} monster(s) around ${ZONE_INFO[zoneId].name} so the island fog lifts forever!${ribbonReminderEn}`
-        : `${personalizePlayerText(story.rescueGuardianEn, gAddr)} ${story.captiveName} is safe, ${boss.name} is defeated, and every monster in ${ZONE_INFO[zoneId].name} is gone so the island fog has completely lifted!${ribbonReminderEn}`;
+        ? `${personalizePlayerText(story.rescueGuardianEn, gAddr)} ${rescuedDisplayEn} are safely back and ${boss.name} is defeated! Your final mission is to defeat the remaining ${remOutside} monster(s) around ${ZONE_INFO[zoneId].name} so the island fog lifts forever!${ribbonReminderEn}`
+        : `${personalizePlayerText(story.rescueGuardianEn, gAddr)} ${rescuedDisplayEn} are safe, ${boss.name} is defeated, and every monster in ${ZONE_INFO[zoneId].name} is gone so the island fog has completely lifted!${ribbonReminderEn}`;
 
     const missionTextId =
       remOutside > 0
-        ? `${story.captiveName} berhasil kembali dengan selamat dan Bos ${boss.name} di ${ZONE_INFO[zoneId].name} telah dikalahkan! Misi terakhirmu adalah menghabisi ${remOutside} monster tersisa di luar gua di pulau ${ZONE_INFO[zoneId].name} agar kabut pulau ini hilang sepenuhnya!${ribbonReminderId}`
-        : `${story.captiveName} selamat, Bos ${boss.name} kalah, dan seluruh monster di pulau ${ZONE_INFO[zoneId].name} telah habis sehingga kabut pulau pun menghilang cerah!${ribbonReminderId}`;
+        ? `${rescuedDisplayName} berhasil kembali dengan selamat dan Bos ${boss.name} di ${ZONE_INFO[zoneId].name} telah dikalahkan! Misi terakhirmu adalah menghabisi ${remOutside} monster tersisa di luar gua di pulau ${ZONE_INFO[zoneId].name} agar kabut pulau ini hilang sepenuhnya!${ribbonReminderId}`
+        : `${rescuedDisplayName} selamat, Bos ${boss.name} kalah, dan seluruh monster di pulau ${ZONE_INFO[zoneId].name} telah habis sehingga kabut pulau pun menghilang cerah!${ribbonReminderId}`;
 
     this.reunionCutscene = {
       zoneId,
@@ -11400,12 +11652,12 @@ export class RpgWorldEngine {
       step: 0,
       maxStep: 1,
       zoneId,
-      speakerName: `${ZONE_INFO[zoneId].name} · Kebebasan ${story.captiveName}`,
+      speakerName: `${ZONE_INFO[zoneId].name} · Kebebasan ${rescuedDisplayName}`,
       speakerRole: 'Gerbang Gua Terbuka',
-      textEn: `${pName} and ${story.captiveName} emerge through the cave gate toward ${activeDef.name}!`,
+      textEn: `${pName} and ${rescuedDisplayEn} emerge through the cave gate toward ${activeDef.name}!`,
       textId:
         zoneId === 'desa_sapaan'
-          ? `Gerbang gua terbuka lebar! ${pName} dan ${story.captiveName} keluar bersama disambut ${activeDef.name}...`
+          ? `Gerbang gua terbuka lebar! ${pName} bersama Rani, Kakak Raka, 4 Anak, dan 5 Warga Desa keluar bersama disambut ${activeDef.name}...`
           : `${pName} dan ${story.captiveName} keluar bersama dari gua disambut ${activeDef.name}...`,
       accentColor: '#10b981',
       speakerKind: 'captive',
@@ -16316,20 +16568,68 @@ export class RpgWorldEngine {
     const keySpot = this.dungeonRig.bossSpawnPos;
     this.spawnBurst(keySpot.x, keySpot.y + 1.6, keySpot.z, 0xfacc15, 28);
     soundEngine.playPick();
-    const cornerLabel =
-      ZONE_CAVE_STORIES[this.dungeonState.zoneId].prisonCorner === 'nw'
-        ? 'Kiri Atas (Barat Laut)'
-        : 'Kanan Atas (Timur Laut)';
-    this.showBanner(
-      `🔑 Kunci Penjara Emas didapat! Gali batu sudut ${cornerLabel} & buka sel untuk menyelamatkan ${this.dungeonState.captiveName}!`,
-      5.2,
-    );
+    if (this.dungeonRig.prisonCells && this.dungeonRig.prisonCells.length > 0) {
+      const remCells = this.dungeonRig.prisonCells.filter((c) => !c.unlocked).length;
+      this.showBanner(
+        `🔑 Kunci Penjara Emas didapat! Buka ${remCells} Sel Tawanan di Tebing Timur Laut, Tebing Barat & Sayap Tenggara gua!`,
+        5.5,
+      );
+    } else {
+      const cornerLabel =
+        ZONE_CAVE_STORIES[this.dungeonState.zoneId].prisonCorner === 'nw'
+          ? 'Kiri Atas (Barat Laut)'
+          : 'Kanan Atas (Timur Laut)';
+      this.showBanner(
+        `🔑 Kunci Penjara Emas didapat! Gali batu sudut ${cornerLabel} & buka sel untuk menyelamatkan ${this.dungeonState.captiveName}!`,
+        5.2,
+      );
+    }
     this.saveProgress();
     this.pushHud(true);
   }
 
-  private interactWithHiddenPrison(): void {
+  private interactWithHiddenPrison(explicitCellId?: string): void {
     if (!this.dungeonRig || !this.dungeonState || this.dungeonState.prisonUnlocked) return;
+    const cells = this.dungeonRig.prisonCells;
+    if (cells && cells.length > 0) {
+      const targetId = explicitCellId ?? this.nearPrisonCellId;
+      const cell =
+        (targetId ? cells.find((c) => c.id === targetId && !c.unlocked) : undefined) ??
+        cells.find((c) => !c.unlocked);
+      if (!cell) return;
+      const cellKey = `${this.dungeonState.zoneId}:${cell.id}`;
+      if (!this.prisonPleaSeenCells.has(cellKey)) {
+        this.startDesaPrisonCellPleaCutscene(this.dungeonState.zoneId, cell);
+        return;
+      }
+      if (!this.dungeonState.prisonKeyCollected) {
+        soundEngine.playNo();
+        this.showBanner(
+          this.dungeonState.bossDefeated
+            ? `${cell.label} masih terkunci! Ambil Kunci Emas di arena bos atas dulu!`
+            : `${cell.label} terkunci rapat! Buka 5 Pintu & kalahkan Bos untuk merebut Kunci Emasnya!`,
+          3.8,
+        );
+        return;
+      }
+      cell.unlocked = true;
+      this.unlockedPrisonCells.add(cellKey);
+      this.nearHiddenPrison = false;
+      this.nearPrisonCellId = null;
+      this.nearPrisonCellLabel = null;
+      this.syncDungeonPrisonCellsHud();
+      const openSignX = cell.facingDir.x >= 0 ? 1 : -1;
+      this.spawnBurst(
+        cell.pos.x + openSignX * 2.8,
+        cell.pos.y + 1.8,
+        cell.pos.z,
+        0x34d399,
+        42,
+      );
+      this.startDungeonRescueCutscene(this.dungeonState.zoneId, cell.id);
+      return;
+    }
+
     if (!this.dungeonState.prisonKeyCollected) {
       soundEngine.playNo();
       this.showBanner(
@@ -18892,6 +19192,29 @@ export class RpgWorldEngine {
           this.dungeonRig &&
           this.dungeonState
         ) {
+          const clickedCellId = obj.userData.prisonCellId as string | undefined;
+          if (this.dungeonRig.prisonCells && clickedCellId) {
+            const cell = this.dungeonRig.prisonCells.find((c) => c.id === clickedCellId);
+            if (cell && !cell.unlocked) {
+              const openSignX = cell.facingDir.x >= 0 ? 1 : -1;
+              const halfX = cell.id === 'cell_1' ? 3.2 : cell.id === 'cell_2' ? 3.7 : 3.9;
+              const gateX = cell.pos.x + openSignX * (halfX - 0.18);
+              if (
+                Math.hypot(gateX - this.heroPos.x, cell.pos.z - this.heroPos.z) < 7.2 &&
+                Math.abs(cell.pos.y - this.heroPos.y) < 3.5
+              ) {
+                const cellKey = `${this.dungeonState.zoneId}:${cell.id}`;
+                if (!this.prisonPleaSeenCells.has(cellKey)) {
+                  this.startDesaPrisonCellPleaCutscene(this.dungeonState.zoneId, cell);
+                } else {
+                  this.interactWithHiddenPrison(cell.id);
+                }
+              } else {
+                this.showBanner(`🗝️ Dekati ${cell.label} terlebih dahulu!`, 2.2);
+              }
+            }
+            return;
+          }
           if (
             Math.hypot(
               this.dungeonRig.prisonPos.x - this.heroPos.x,
@@ -21879,8 +22202,287 @@ export class RpgWorldEngine {
     this.controls.target.lerp(_v2, camLerp);
   }
 
+  private getDesaPrisonCellStoryConfig(cellId: string): {
+    variant: 'siblings' | 'children' | 'adults';
+    speakerName: string;
+    speakerRole: string;
+    captiveMembers: CaptiveMemberSpec[];
+    discoverEn: string;
+    discoverId: string;
+    pleaBossDownEn: string;
+    pleaBossDownId: string;
+    pleaBossAliveEn: string;
+    pleaBossAliveId: string;
+    promiseBossDownEn: string;
+    promiseBossDownId: string;
+    promiseBossAliveEn: string;
+    promiseBossAliveId: string;
+    hopeEn: string;
+    hopeId: string;
+    rescueEn: string;
+    rescueId: string;
+    discoverBubble: string;
+    cryBubble: string;
+    hopeBubble: string;
+    heroPromiseBubble: string;
+  } {
+    if (cellId === 'cell_2') {
+      return {
+        variant: 'children',
+        speakerName: '4 Anak Desa (Bimo, Sinta, Tobi & Naya)',
+        speakerRole: 'Sel 2 (Tebing Barat) · 4 Anak Desa',
+        captiveMembers: [
+          { id: 'child_1', name: 'Bimo', kind: 'student', color: 0xf97316 },
+          { id: 'child_2', name: 'Sinta', kind: 'girl', color: 0xa855f7 },
+          { id: 'child_3', name: 'Tobi', kind: 'student', color: 0x10b981 },
+          { id: 'child_4', name: 'Naya', kind: 'girl', color: 0xec4899 },
+        ],
+        discoverEn:
+          'From behind the iron bars along the dark western cliff, {player} hears four little village children weeping softly and clinging to one another...',
+        discoverId:
+          'Di balik jeruji besi di tebing barat gua yang dingin, {player} mendengar isak tangis empat anak desa yang saling berpelukan gemetar ketakutan...',
+        pleaBossDownEn:
+          'Hiks... Kak {player}! Naya is shivering and Tobi bruised his knee... The monster boss is gone—please use the Golden Key and take the four of us home!',
+        pleaBossDownId:
+          'Hiks... Kak {player}...! Aku Sinta bersama Bimo, Tobi, dan Naya... Naya menggigil kedinginan dan lutut Tobi terluka. Tolong pakai Kunci Emas itu dan keluarkan kami berempat!',
+        pleaBossAliveEn:
+          'Hiks... Kak {player}, please help us! We four kids miss our mothers so much... Please defeat the monster boss in this cave and rescue us!',
+        pleaBossAliveId:
+          'Hiks... Kak {player}, tolooong kami berempat...! Bimo, Sinta, Tobi, dan Naya takut sekali di gua gelap ini... Kami rindu Ibu... Kalahkan bos monster itu dan bebaskan kami!',
+        promiseBossDownEn:
+          "Don't cry anymore, Bimo, Sinta, Tobi, and Naya! I have the Golden Key and I won't leave without bringing all four of you safely home!",
+        promiseBossDownId:
+          'Jangan menangis lagi, Bimo, Sinta, Tobi, dan Naya! Aku sudah memegang Kunci Emas dan bersumpah akan membawa kalian berempat keluar dengan selamat!',
+        promiseBossAliveEn:
+          "Hold hands and stay brave, kids! I promise I will defeat every monster here, take the Golden Key, and bring all four of you home!",
+        promiseBossAliveId:
+          'Berpegangan tanganlah dan tetap kuat, adik-adik! Aku berjanji akan menumpas semua monster beserta bosnya, merebut Kunci Emas, dan menjemput kalian berempat!',
+        hopeEn:
+          'Hiks... did you hear that, Naya? Kak {player} promised to come back for us... We will stay strong and wait together right here!',
+        hopeId:
+          'Hiks... dengar tidak, Naya, Tobi? Kak {player} berjanji tidak akan meninggalkan kita... Kami berempat akan saling menjaga sampai Kakak kembali!',
+        rescueEn:
+          'Hooray!! Thank you so much, Kak {player}! We four kids were so scared—now we will follow close behind you all the way out!',
+        rescueId:
+          'Hiks... akhirnya pintu sel terbuka!! Terima kasih banyak Kak {player}! Kami berempat sangat bersyukur—sekarang kami ikut Kakak sampai keluar gua!',
+        discoverBubble: '💧 Hiks... Kak... tolong kami berempat takut di sini...',
+        cryBubble: '😭 Sinta, Bimo, Tobi & Naya menangis memanggil Ibu...',
+        hopeBubble: '💧 Kami berpegangan tangan menunggu Kakak membebaskan kami...',
+        heroPromiseBubble: 'Bertahanlah Bimo, Sinta, Tobi & Naya! Aku pasti kembali!',
+      };
+    }
+
+    if (cellId === 'cell_3') {
+      return {
+        variant: 'adults',
+        speakerName: '5 Warga Desa (Pak Darma, Bu Sari, Bang Jaka, Mbak Wulan & Pak Tono)',
+        speakerRole: 'Sel 3 (Sayap Tenggara) · 5 Warga Dewasa',
+        captiveMembers: [
+          { id: 'adult_1', name: 'Pak Darma', kind: 'mother', color: 0x0f766e },
+          { id: 'adult_2', name: 'Bu Sari', kind: 'mother', color: 0xe11d48 },
+          { id: 'adult_3', name: 'Bang Jaka', kind: 'student', color: 0x2563eb },
+          { id: 'adult_4', name: 'Mbak Wulan', kind: 'mother', color: 0xd97706 },
+          { id: 'adult_5', name: 'Pak Tono', kind: 'mother', color: 0x4d7c0f },
+        ],
+        discoverEn:
+          'In the deep southeastern wing of the cavern, {player} sees five exhausted village elders and parents locked inside a massive iron cage...',
+        discoverId:
+          'Di sayap tenggara gua yang sunyi, {player} melihat lima warga dewasa desa—Pak Darma, Bu Sari, Bang Jaka, Mbak Wulan, dan Pak Tono—terkurung kelelahan dalam sel besi besar...',
+        pleaBossDownEn:
+          'Oh heavens, {player}! Pak Darma and Pak Tono were injured fighting to shield the village children... Please unlock this gate with the Golden Key so we can help rebuild Desa Sapaan!',
+        pleaBossDownId:
+          'Ya Tuhan... {player}! Pak Darma dan Pak Tono terluka parah saat mencoba melindungi anak-anak waktu penyerangan... Tolong buka sel ini dengan Kunci Emasnya, nak!',
+        pleaBossAliveEn:
+          '{player}... thank goodness someone survived! Please be careful—defeat the terrible Boss above, and please protect our children in this cave before rescuing the five of us!',
+        pleaBossAliveId:
+          'Hiks... {player}... syukurlah kamu selamat! Kami berlima sudah kehabisan tenaga... Pak Darma luka parah, dan kami sangat mencemaskan nasib anak-anak... Kumohon kalahkan bos gua itu!',
+        promiseBossDownEn:
+          'Stay strong, Pak Darma, Bu Sari, Bang Jaka, Mbak Wulan, and Pak Tono! The whole village is waiting for you—I will unlock this cell right now!',
+        promiseBossDownId:
+          'Bertahanlah Pak Darma, Bu Sari, Bang Jaka, Mbak Wulan, dan Pak Tono! Seluruh Desa Sapaan menantikan kepulangan kalian. Aku akan membebaskan kalian sekarang juga!',
+        promiseBossAliveEn:
+          'Please hold on, elders and neighbors! I swear I will defeat the Cave Boss, seize the Golden Key, and bring all five of you safely back into the sunlight!',
+        promiseBossAliveId:
+          'Tetap tegar, Bapak dan Ibu sekalian! Aku bersumpah akan menumbangkan Bos Gua itu, merebut Kunci Emasnya, dan membawa kalian berlima kembali melihat matahari Desa Sapaan!',
+        hopeEn:
+          'Hiks... look at that courage... Thank you, young hero {player}. All five of our prayers will guard every step you take in this cave...',
+        hopeId:
+          'Hiks... lihatlah keteguhan hatimu, {player}... Doa tulus kami berlima akan selalu mengiringi setiap langkahmu. Cepatlah kembali, pahlawan muda...',
+        rescueEn:
+          'With tears of gratitude, the five of us thank you from the bottom of our hearts, {player}! Let us stand behind you and walk back home together!',
+        rescueId:
+          'Dengan air mata haru, kami berlima berterima kasih sedalam-dalamnya padamu, {player}! Desa Sapaan takkan pernah melupakan jasamu hari ini!',
+        discoverBubble: '💧 Rintihan pilu 5 warga desa terdengar dari balik jeruji...',
+        cryBubble: '😭 Pak Darma terluka... Bu Sari menangis cemas...',
+        hopeBubble: '💧 Doa kami berlima selalu menyertaimu, pahlawan muda...',
+        heroPromiseBubble: 'Pak Darma, Bu Sari, semuanya—aku bersumpah membebaskan kalian!',
+      };
+    }
+
+    return {
+      variant: 'siblings',
+      speakerName: 'Rani & Kakak Raka',
+      speakerRole: 'Sel 1 (Tebing Timur Laut) · 2 Bersaudara',
+      captiveMembers: [
+        { id: 'rani', name: 'Rani', kind: 'girl', color: 0xf43f5e },
+        { id: 'raka', name: 'Kakak Raka', kind: 'student', color: 0x0284c7 },
+      ],
+      discoverEn:
+        'Atop the mist-shrouded northeastern cliff, {player} spots Rani huddled beside her wounded older brother Kakak Raka behind cold iron bars...',
+      discoverId:
+        'Di puncak tebing timur laut yang berkabut, {player} melihat Rani menangis memeluk Kakak Raka yang tubuhnya penuh luka di balik jeruji besi dingin...',
+      pleaBossDownEn:
+        'Hiks... {player}! Kak Raka took every monster blow trying to protect me! The Boss has fallen—please use the Golden Key to free both of us!',
+      pleaBossDownId:
+        'Hiks... {player}...! Kak Raka menahan semua serangan monster demi melindungiku hingga terluka parah! Tolong pakai Kunci Emasnya dan bebaskan kami berdua sekarang...',
+      pleaBossAliveEn:
+        'Hiks... please save my little sister Rani first, {player}! Even if my wounds ache, I just want Rani to see home again... Defeat the Cave Boss and free us!',
+      pleaBossAliveId:
+        'Hiks... tolong selamatkan adikku Rani dulu, {player}... Meski lukaku perih sekali, aku rela asalkan Rani bisa pulang... Kalahkan bos jahat itu dan bebaskan kami berdua...',
+      promiseBossDownEn:
+        "Don't cry anymore, Rani and Kakak Raka! Your courage saved each other—now I'm taking the Golden Key to free you both!",
+      promiseBossDownId:
+        'Jangan menangis lagi, Rani dan Kakak Raka! Kasih sayang kalian membuatku terharu—aku akan segera membuka jeruji ini untuk kalian berdua!',
+      promiseBossAliveEn:
+        "Hold on, Rani and Kakak Raka! Nobody is leaving either sibling behind—I promise I will crush the Boss and bring you both home!",
+      promiseBossAliveId:
+        'Bertahanlah, Rani dan Kakak Raka! Aku takkan membiarkan satu pun dari kalian tertinggal—aku bersumpah akan mengalahkan Bos dan membawa kalian berdua pulang!',
+      hopeEn:
+        'Hiks... Kak Raka, {player} really came for us... Please be careful against those monsters, {player}—we will wait together right here!',
+      hopeId:
+        'Hiks... dengar Kak Raka? {player} benar-benar datang menolong kita... Hati-hatilah menghadapi monster di luar sana, kami berdua menunggumu...',
+      rescueEn:
+        'Thank you, {player}! Kakak Raka and I never thought we would walk free together again—let us rescue the rest of the villagers!',
+      rescueId:
+        'Terima kasih, {player}! Rani dan Kak Raka akhirnya bebas! Ayo kita selamatkan warga dan anak-anak lain yang masih terkurung di gua ini!',
+      discoverBubble: '💧 Hiks... Kak Raka... ada seseorang di luar sel!',
+      cryBubble: '😭 Rani & Kakak Raka saling berpelukan penuh luka...',
+      hopeBubble: '💧 Kami berdua menunggumu... hati-hatilah, penyelamat kami...',
+      heroPromiseBubble: 'Rani dan Kakak Raka, bertahanlah—aku akan membebaskan kalian!',
+    };
+  }
+
+  private syncDungeonPrisonCellsHud(): void {
+    if (!this.dungeonState || !this.dungeonRig?.prisonCells) return;
+    const cells: CavePrisonCellHudState[] = this.dungeonRig.prisonCells.map((c) => ({
+      id: c.id,
+      label: c.label,
+      unlocked: c.unlocked,
+      captiveCount: c.captives.length,
+    }));
+    this.dungeonState.prisonCells = cells;
+    this.dungeonState.nearPrisonCellId = this.nearPrisonCellId;
+    this.dungeonState.nearPrisonCellLabel = this.nearPrisonCellLabel;
+    this.dungeonState.prisonUnlocked = cells.every((c) => c.unlocked);
+    const unlockedCount = cells.filter((c) => c.unlocked).length;
+    this.dungeonState.captiveName =
+      unlockedCount === cells.length
+        ? 'Rani, Kakak Raka, 4 Anak & 5 Warga'
+        : `Sel Bebas ${unlockedCount}/${cells.length}`;
+  }
+
   private clearDungeonPrisonPleaCutscene(): void {
     this.dungeonPrisonPleaCutscene = null;
+  }
+
+  private startDesaPrisonCellPleaCutscene(zoneId: ZoneId, cell: DungeonPrisonCellRig): void {
+    if (!this.dungeonRig || !this.dungeonState) return;
+    this.clearDungeonPrisonPleaCutscene();
+    this.prisonPleaSeenCells.add(`${zoneId}:${cell.id}`);
+    this.saveProgress();
+
+    if (this.cameraMode === 'first_person') {
+      this.cameraMode = 'third_back';
+    }
+    this.phase = 'story';
+    this.heldKeys.clear();
+    this.tapMoveTarget = null;
+    this.nearHiddenPrison = false;
+    this.nearPrisonCellId = null;
+    this.nearPrisonCellLabel = null;
+    this.applyCameraVisibilityAndControls();
+    this.storyTimer = 0;
+
+    const cfg = this.getDesaPrisonCellStoryConfig(cell.id);
+    const pName = this.getPlayerDisplayName();
+    const prisonPos = cell.pos.clone();
+    const openSignX = cell.facingDir.x >= 0 ? 1 : -1;
+    const halfX = cell.id === 'cell_1' ? 3.2 : cell.id === 'cell_2' ? 3.7 : 3.9;
+    const captiveWorldPos = new THREE.Vector3();
+    cell.captives.forEach((c) => {
+      captiveWorldPos.add(prisonPos).add(c.localPos);
+    });
+    captiveWorldPos.divideScalar(Math.max(1, cell.captives.length));
+
+    const heroStandPos = new THREE.Vector3(
+      prisonPos.x + openSignX * (halfX + 3.65),
+      prisonPos.y,
+      prisonPos.z + 0.55,
+    );
+
+    this.heroPos.copy(heroStandPos);
+    this.heroYaw = Math.atan2(
+      captiveWorldPos.x - heroStandPos.x,
+      captiveWorldPos.z - heroStandPos.z,
+    );
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.body.rotation.y = this.heroYaw;
+    this.playerCaveLight.position.set(heroStandPos.x, heroStandPos.y + 2.8, heroStandPos.z);
+
+    cell.captives.forEach((cap) => {
+      if (cap.mesh.parent === cell.group) {
+        const wPos = prisonPos.clone().add(cap.localPos);
+        cap.mesh.rotation.y = Math.atan2(heroStandPos.x - wPos.x, heroStandPos.z - wPos.z);
+      }
+    });
+
+    for (const m of this.dungeonMonsters) {
+      m.mesh.visible = false;
+    }
+    for (const s of this.shooters) {
+      s.mesh.visible = false;
+    }
+
+    this.dungeonPrisonPleaCutscene = {
+      zoneId,
+      cellId: cell.id,
+      cellLabel: cell.label,
+      cellVariant: cfg.variant,
+      facingDir: cell.facingDir.clone(),
+      captiveMembers: cfg.captiveMembers,
+      captiveMeshes: cell.captives.map((c) => c.mesh),
+      beat: 'discover',
+      timer: 0,
+      prisonPos,
+      captiveWorldPos,
+      heroStandPos,
+      tearSparkAccum: 0,
+      crySoundPlayed: false,
+    };
+
+    const discoverEn = personalizePlayerText(cfg.discoverEn, pName);
+    const discoverId = personalizePlayerText(cfg.discoverId, pName);
+    this.storyDialog = {
+      kind: 'dungeon_prison_plea',
+      step: 0,
+      maxStep: 3,
+      zoneId,
+      dungeonPrisonPleaBeat: 'discover',
+      speakerName: cfg.speakerName,
+      speakerRole: cfg.speakerRole,
+      speakerKind: 'captive',
+      captiveKind: cfg.captiveMembers[0]?.kind ?? 'girl',
+      captiveColor: cfg.captiveMembers[0]?.color ?? 0xf43f5e,
+      captiveMembers: cfg.captiveMembers,
+      captiveExpression: 'sad_injured',
+      speakerSide: 'npc',
+      textEn: discoverEn,
+      textId: discoverId,
+      accentColor: '#38bdf8',
+    };
+    soundEngine.playSadPlea(cfg.variant);
+    this.spawnBurst(captiveWorldPos.x, captiveWorldPos.y + 1.5, captiveWorldPos.z, 0xbae6fd, 22);
+    this.pushHud(true);
   }
 
   private startDungeonPrisonPleaCutscene(zoneId: ZoneId): void {
@@ -21978,12 +22580,22 @@ export class RpgWorldEngine {
     const story = ZONE_CAVE_STORIES[pc.zoneId];
     const boss = BOSSES[pc.zoneId];
     const bossDown = Boolean(this.dungeonState?.bossDefeated);
-    const pleaEn = bossDown
-      ? `Hiks... please help me, {player}! I am hurt and aching inside this cold cage... ${boss.name} has fallen, please pick up the Golden Key and unlock these bars!`
-      : `Hiks... please help me, {player}! My body is bruised and aching inside this cold cage... Please finish this cave's mission, defeat ${boss.name} and those evil monsters, and set me free!`;
-    const pleaId = bossDown
-      ? `Hiks... tolooong aku, {player}... Aku ${story.captiveName}, ${story.captiveRole}... Badanku penuh luka dan perih sekali di sel dingin ini. Ambil Kunci Emasnya dan bebaskan aku sekarang...`
-      : `Hiks... tolooong... {player}...! Aku ${story.captiveName}, ${story.captiveRole}... Badanku terluka dan kesakitan dikurung di sel gelap ini. Tolong selesaikan misi gua ini, kalahkan ${boss.name} serta monster-monster jahatnya, lalu bebaskan aku...`;
+    const cellCfg = pc.cellId ? this.getDesaPrisonCellStoryConfig(pc.cellId) : null;
+
+    const pleaEn = cellCfg
+      ? bossDown
+        ? cellCfg.pleaBossDownEn
+        : cellCfg.pleaBossAliveEn
+      : bossDown
+        ? `Hiks... please help me, {player}! I am hurt and aching inside this cold cage... ${boss.name} has fallen, please pick up the Golden Key and unlock these bars!`
+        : `Hiks... please help me, {player}! My body is bruised and aching inside this cold cage... Please finish this cave's mission, defeat ${boss.name} and those evil monsters, and set me free!`;
+    const pleaId = cellCfg
+      ? bossDown
+        ? cellCfg.pleaBossDownId
+        : cellCfg.pleaBossAliveId
+      : bossDown
+        ? `Hiks... tolooong aku, {player}... Aku ${story.captiveName}, ${story.captiveRole}... Badanku penuh luka dan perih sekali di sel dingin ini. Ambil Kunci Emasnya dan bebaskan aku sekarang...`
+        : `Hiks... tolooong... {player}...! Aku ${story.captiveName}, ${story.captiveRole}... Badanku terluka dan kesakitan dikurung di sel gelap ini. Tolong selesaikan misi gua ini, kalahkan ${boss.name} serta monster-monster jahatnya, lalu bebaskan aku...`;
 
     this.storyDialog = {
       kind: 'dungeon_prison_plea',
@@ -21991,18 +22603,19 @@ export class RpgWorldEngine {
       maxStep: 3,
       zoneId: pc.zoneId,
       dungeonPrisonPleaBeat: 'captive_cry_plea',
-      speakerName: story.captiveName,
-      speakerRole: `${story.captiveRole} · Terluka & Menangis`,
+      speakerName: cellCfg ? cellCfg.speakerName : story.captiveName,
+      speakerRole: cellCfg ? `${cellCfg.speakerRole} · Terluka & Menangis` : `${story.captiveRole} · Terluka & Menangis`,
       speakerKind: 'captive',
-      captiveKind: story.captiveKind,
-      captiveColor: story.captiveColor,
+      captiveKind: cellCfg?.captiveMembers[0]?.kind ?? story.captiveKind,
+      captiveColor: cellCfg?.captiveMembers[0]?.color ?? story.captiveColor,
+      captiveMembers: cellCfg?.captiveMembers,
       captiveExpression: 'sad_injured',
       speakerSide: 'npc',
       textEn: pleaEn,
       textId: pleaId,
       accentColor: '#38bdf8',
     };
-    soundEngine.playSadPlea();
+    soundEngine.playSadPlea(pc.cellVariant ?? 'siblings');
     soundEngine.speakEnglish(personalizePlayerText(pleaEn, this.getPlayerDisplayName()), 0.85, 1.15);
     this.pushHud(true);
   }
@@ -22016,12 +22629,22 @@ export class RpgWorldEngine {
     const story = ZONE_CAVE_STORIES[pc.zoneId];
     const boss = BOSSES[pc.zoneId];
     const bossDown = Boolean(this.dungeonState?.bossDefeated);
-    const promiseEn = bossDown
-      ? `Hold on, ${story.captiveName}! Don't cry anymore—I will grab the Golden Key right now and open this prison for you!`
-      : `Hold on, ${story.captiveName}! Wipe your tears—I promise I will crush every evil monster here, defeat ${boss.name}, take the key, and rescue you safely!`;
-    const promiseId = bossDown
-      ? `Bertahanlah, ${story.captiveName}! Jangan menangis lagi—aku akan segera mengambil Kunci Emasnya dan membuka jeruji ini untuk membebaskanmu!`
-      : `Bertahanlah, ${story.captiveName}! Jangan takut lagi—aku berjanji akan menuntaskan misi gua ini, menumpas semua monster jahat beserta ${boss.name}, merebut kuncinya, dan membebaskanmu dengan selamat!`;
+    const cellCfg = pc.cellId ? this.getDesaPrisonCellStoryConfig(pc.cellId) : null;
+
+    const promiseEn = cellCfg
+      ? bossDown
+        ? cellCfg.promiseBossDownEn
+        : cellCfg.promiseBossAliveEn
+      : bossDown
+        ? `Hold on, ${story.captiveName}! Don't cry anymore—I will grab the Golden Key right now and open this prison for you!`
+        : `Hold on, ${story.captiveName}! Wipe your tears—I promise I will crush every evil monster here, defeat ${boss.name}, take the key, and rescue you safely!`;
+    const promiseId = cellCfg
+      ? bossDown
+        ? cellCfg.promiseBossDownId
+        : cellCfg.promiseBossAliveId
+      : bossDown
+        ? `Bertahanlah, ${story.captiveName}! Jangan menangis lagi—aku akan segera mengambil Kunci Emasnya dan membuka jeruji ini untuk membebaskanmu!`
+        : `Bertahanlah, ${story.captiveName}! Jangan takut lagi—aku berjanji akan menuntaskan misi gua ini, menumpas semua monster jahat beserta ${boss.name}, merebut kuncinya, dan membebaskanmu dengan selamat!`;
 
     this.storyDialog = {
       kind: 'dungeon_prison_plea',
@@ -22034,6 +22657,7 @@ export class RpgWorldEngine {
       speakerKind: 'hero',
       speakerSide: 'hero',
       heroExpression: 'fierce',
+      captiveMembers: cellCfg?.captiveMembers,
       captiveExpression: 'sad_injured',
       textEn: promiseEn,
       textId: promiseId,
@@ -22051,8 +22675,13 @@ export class RpgWorldEngine {
     pc.timer = 0;
 
     const story = ZONE_CAVE_STORIES[pc.zoneId];
-    const hopeEn = `Hiks... thank you, {player}... Even though the wounds hurt so much, seeing you gives me hope. Please hurry back once those evil monsters are gone...`;
-    const hopeId = `Hiks... terima kasih banyak, {player}... Meski lukaku masih terasa perih sekali, kehadiranmu membuatku kuat bertahan. Kumohon kalahkan semua monster jahat itu dan cepatlah kembali membebaskanku...`;
+    const cellCfg = pc.cellId ? this.getDesaPrisonCellStoryConfig(pc.cellId) : null;
+    const hopeEn = cellCfg
+      ? cellCfg.hopeEn
+      : `Hiks... thank you, {player}... Even though the wounds hurt so much, seeing you gives me hope. Please hurry back once those evil monsters are gone...`;
+    const hopeId = cellCfg
+      ? cellCfg.hopeId
+      : `Hiks... terima kasih banyak, {player}... Meski lukaku masih terasa perih sekali, kehadiranmu membuatku kuat bertahan. Kumohon kalahkan semua monster jahat itu dan cepatlah kembali membebaskanku...`;
 
     this.storyDialog = {
       kind: 'dungeon_prison_plea',
@@ -22060,18 +22689,19 @@ export class RpgWorldEngine {
       maxStep: 3,
       zoneId: pc.zoneId,
       dungeonPrisonPleaBeat: 'captive_hope',
-      speakerName: story.captiveName,
-      speakerRole: `${story.captiveRole} · Menahan Sakit`,
+      speakerName: cellCfg ? cellCfg.speakerName : story.captiveName,
+      speakerRole: cellCfg ? `${cellCfg.speakerRole} · Menahan Haru` : `${story.captiveRole} · Menahan Sakit`,
       speakerKind: 'captive',
-      captiveKind: story.captiveKind,
-      captiveColor: story.captiveColor,
+      captiveKind: cellCfg?.captiveMembers[0]?.kind ?? story.captiveKind,
+      captiveColor: cellCfg?.captiveMembers[0]?.color ?? story.captiveColor,
+      captiveMembers: cellCfg?.captiveMembers,
       captiveExpression: 'sad_injured',
       speakerSide: 'npc',
       textEn: hopeEn,
       textId: hopeId,
       accentColor: '#38bdf8',
     };
-    soundEngine.playSadPlea();
+    soundEngine.playSadPlea(pc.cellVariant ?? 'siblings');
     soundEngine.speakEnglish(personalizePlayerText(hopeEn, this.getPlayerDisplayName()), 0.85, 1.15);
     this.pushHud(true);
   }
@@ -22079,6 +22709,8 @@ export class RpgWorldEngine {
   private finishDungeonPrisonPleaCutscene(): void {
     const pc = this.dungeonPrisonPleaCutscene;
     const zId = pc?.zoneId ?? this.dungeonState?.zoneId;
+    const seenCellLabel = pc?.cellLabel;
+    const seenCellId = pc?.cellId;
     if (pc) {
       this.heroPos.copy(pc.heroStandPos);
       this.heroYaw = Math.atan2(
@@ -22089,13 +22721,24 @@ export class RpgWorldEngine {
     }
 
     if (this.dungeonRig && zId) {
-      const story = ZONE_CAVE_STORIES[zId];
-      this.dungeonRig.captiveMesh.rotation.y =
-        zId === 'desa_sapaan'
-          ? -Math.PI / 2
-          : story.prisonCorner === 'nw'
-            ? 0.75
-            : -0.75;
+      if (seenCellId && this.dungeonRig.prisonCells) {
+        const cell = this.dungeonRig.prisonCells.find((c) => c.id === seenCellId);
+        if (cell) {
+          const openSignX = cell.facingDir.x >= 0 ? 1 : -1;
+          const restYaw = openSignX > 0 ? Math.PI / 2 : -Math.PI / 2;
+          cell.captives.forEach((cap) => {
+            cap.mesh.rotation.y = restYaw;
+          });
+        }
+      } else {
+        const story = ZONE_CAVE_STORIES[zId];
+        this.dungeonRig.captiveMesh.rotation.y =
+          zId === 'desa_sapaan'
+            ? -Math.PI / 2
+            : story.prisonCorner === 'nw'
+              ? 0.75
+              : -0.75;
+      }
     }
 
     for (const m of this.dungeonMonsters) {
@@ -22114,9 +22757,11 @@ export class RpgWorldEngine {
     this.snapCameraBehindHero();
 
     if (zId) {
-      const capName = ZONE_CAVE_STORIES[zId].captiveName;
+      const capName = seenCellLabel || ZONE_CAVE_STORIES[zId].captiveName;
       this.showBanner(
-        `💧 ${capName} menangis memohon pertolongan! Selesaikan misi gua & kalahkan monster-monster jahat untuk membebaskannya!`,
+        this.dungeonState?.prisonKeyCollected
+          ? `💧 ${capName} menangis memohon pertolongan! Dekati jeruji untuk membuka sel dengan Kunci Emas!`
+          : `💧 ${capName} menangis memohon pertolongan! Kalahkan monster & Bos Gua untuk merebut Kunci Emas!`,
         5.0,
       );
     }
@@ -22153,26 +22798,58 @@ export class RpgWorldEngine {
       idleDuration: 0,
     });
 
-    // Captive trembles, wipes sparkling tears, and looks toward hero inside bars
-    animateCaptiveMesh(this.dungeonRig.captiveMesh, this.elapsed, 'sad_injured', false);
+    // Captives tremble, wipe sparkling tears, and look toward hero inside bars
+    if (pc.captiveMeshes && pc.captiveMeshes.length > 0) {
+      pc.captiveMeshes.forEach((mesh, idx) => {
+        animateCaptiveMesh(mesh, this.elapsed + idx * 0.45, 'sad_injured', false);
+      });
+    } else {
+      animateCaptiveMesh(this.dungeonRig.captiveMesh, this.elapsed, 'sad_injured', false);
+    }
 
     if (pc.tearSparkAccum >= 0.42) {
       pc.tearSparkAccum = 0;
-      this.spawnBurst(
-        pc.captiveWorldPos.x + (Math.random() - 0.5) * 0.45,
-        pc.captiveWorldPos.y + 1.35 + Math.random() * 0.35,
-        pc.captiveWorldPos.z + (Math.random() - 0.5) * 0.45,
-        Math.random() < 0.5 ? 0xe0f2fe : 0x7dd3fc,
-        5,
-      );
+      if (pc.captiveMeshes && pc.captiveMeshes.length > 0 && pc.cellId && this.dungeonRig.prisonCells) {
+        const cell = this.dungeonRig.prisonCells.find((c) => c.id === pc.cellId);
+        if (cell) {
+          cell.captives.forEach((cap) => {
+            if (Math.random() < 0.72) {
+              this.spawnBurst(
+                pc.prisonPos.x + cap.localPos.x + (Math.random() - 0.5) * 0.35,
+                pc.prisonPos.y + cap.localPos.y + 1.32 + Math.random() * 0.3,
+                pc.prisonPos.z + cap.localPos.z + (Math.random() - 0.5) * 0.35,
+                Math.random() < 0.5 ? 0xe0f2fe : 0x7dd3fc,
+                4,
+              );
+            }
+          });
+        }
+      } else {
+        this.spawnBurst(
+          pc.captiveWorldPos.x + (Math.random() - 0.5) * 0.45,
+          pc.captiveWorldPos.y + 1.35 + Math.random() * 0.35,
+          pc.captiveWorldPos.z + (Math.random() - 0.5) * 0.45,
+          Math.random() < 0.5 ? 0xe0f2fe : 0x7dd3fc,
+          5,
+        );
+      }
     }
 
+    const isMultiCell = Boolean(pc.cellId && pc.facingDir);
+    const openSignX = isMultiCell ? (pc.facingDir!.x >= 0 ? 1 : -1) : -1;
+    const halfX = pc.cellId === 'cell_1' ? 3.2 : pc.cellId === 'cell_2' ? 3.7 : 3.9;
     const isDesa = pc.zoneId === 'desa_sapaan';
     const cornerDirX = ZONE_CAVE_STORIES[pc.zoneId].prisonCorner === 'nw' ? 1 : -1;
 
     if (pc.beat === 'discover') {
       const p = THREE.MathUtils.clamp(t / 1.9, 0, 1);
-      if (isDesa) {
+      if (isMultiCell) {
+        _v1.set(
+          THREE.MathUtils.lerp(pc.heroStandPos.x + openSignX * 1.4, pc.prisonPos.x + openSignX * (halfX + 4.8), p),
+          pc.prisonPos.y + 2.7,
+          THREE.MathUtils.lerp(pc.heroStandPos.z + 2.4, pc.prisonPos.z + 1.9, p),
+        );
+      } else if (isDesa) {
         _v1.set(
           THREE.MathUtils.lerp(pc.heroStandPos.x - 1.6, pc.prisonPos.x - 4.75, p),
           pc.prisonPos.y + 2.15,
@@ -22185,13 +22862,19 @@ export class RpgWorldEngine {
           THREE.MathUtils.lerp(pc.heroStandPos.z + 1.9, pc.prisonPos.z + 4.35, p),
         );
       }
-      _v2.set(pc.captiveWorldPos.x, pc.captiveWorldPos.y + 1.2, pc.captiveWorldPos.z);
+      _v2.set(pc.captiveWorldPos.x, pc.captiveWorldPos.y + 1.25, pc.captiveWorldPos.z);
       if (t >= 2.35) {
         this.transitionDungeonPrisonPleaToCry();
         return;
       }
     } else if (pc.beat === 'captive_cry_plea' || pc.beat === 'captive_hope') {
-      if (isDesa) {
+      if (isMultiCell) {
+        _v1.set(
+          pc.prisonPos.x + openSignX * (halfX + 3.9),
+          pc.prisonPos.y + 2.35,
+          pc.prisonPos.z - 1.85,
+        );
+      } else if (isDesa) {
         _v1.set(pc.prisonPos.x - 4.25, pc.prisonPos.y + 1.85, pc.prisonPos.z - 1.05);
       } else {
         _v1.set(
@@ -22203,7 +22886,13 @@ export class RpgWorldEngine {
       _v2.set(pc.captiveWorldPos.x, pc.captiveWorldPos.y + 1.22, pc.captiveWorldPos.z);
     } else {
       // hero_promise: frame hero determinedly facing the cage
-      if (isDesa) {
+      if (isMultiCell) {
+        _v1.set(
+          pc.heroStandPos.x - openSignX * 1.45,
+          pc.heroStandPos.y + 1.85,
+          pc.heroStandPos.z + 2.6,
+        );
+      } else if (isDesa) {
         _v1.set(pc.heroStandPos.x + 1.2, pc.heroStandPos.y + 1.75, pc.heroStandPos.z + 2.55);
       } else {
         _v1.set(
@@ -22470,7 +23159,17 @@ export class RpgWorldEngine {
       }
       this.hero.body.rotation.y = this.heroYaw;
       this.playerCaveLight.position.set(this.heroPos.x, 2.8, this.heroPos.z);
-      animateCaptiveMesh(this.dungeonRig.captiveMesh, this.elapsed, 'sad_injured');
+      if (this.dungeonRig.prisonCells) {
+        for (const cell of this.dungeonRig.prisonCells) {
+          if (!cell.unlocked) {
+            for (const cap of cell.captives) {
+              animateCaptiveMesh(cap.mesh, this.elapsed, 'sad_injured');
+            }
+          }
+        }
+      } else {
+        animateCaptiveMesh(this.dungeonRig.captiveMesh, this.elapsed, 'sad_injured');
+      }
 
       if (hasInsideGuardian) {
         animateZoneNpc(this.dungeonRig.guardianMesh, this.elapsed, 0.5, true, dt);
@@ -22494,6 +23193,71 @@ export class RpgWorldEngine {
     }
 
     if (this.storyDialog?.kind === 'dungeon_rescue' && this.dungeonRig) {
+      if (this.dungeonRig.prisonCells && this.activeRescueCellId) {
+        const cell = this.dungeonRig.prisonCells.find((c) => c.id === this.activeRescueCellId);
+        if (cell) {
+          const barP = Math.min(1, this.storyTimer / 1.05);
+          cell.bars.position.y = barP * 4.2;
+          cell.bars.visible = barP < 1;
+
+          const walkP = THREE.MathUtils.clamp((this.storyTimer - 0.35) / 1.3, 0, 1);
+          const easeWalk = 1 - Math.pow(1 - walkP, 2);
+          const isSteppingOut = walkP > 0 && walkP < 1;
+          let sumX = 0;
+          let sumY = 0;
+          let sumZ = 0;
+          let count = 0;
+          cell.captives.forEach((cap, idx) => {
+            const entry = this.dungeonCellRescueTargets.get(cap.id);
+            if (!entry) return;
+            const cur = _v3.lerpVectors(entry.startPos, entry.endPos, easeWalk);
+            const hop = isSteppingOut
+              ? Math.abs(Math.sin(this.elapsed * 12 + idx * 0.6)) * 0.14
+              : walkP >= 1
+              ? Math.abs(Math.sin(this.elapsed * 5.8 + idx * 0.7)) * 0.15
+              : 0;
+            cap.mesh.position.set(cur.x, cur.y + hop, cur.z);
+            cap.mesh.rotation.y = Math.atan2(this.heroPos.x - cur.x, this.heroPos.z - cur.z);
+            animateCaptiveMesh(cap.mesh, this.elapsed + idx * 0.35, walkP >= 1, isSteppingOut);
+            this.dungeonCaptiveTrailPositions.set(cap.id, cur.clone());
+            sumX += cur.x;
+            sumY += cur.y;
+            sumZ += cur.z;
+            count += 1;
+          });
+          if (count > 0) {
+            this.dungeonCaptivePos.set(sumX / count, sumY / count, sumZ / count);
+          }
+
+          const hBlink = computeBlinkScale(this.elapsed, 0.25);
+          this.hero.leftEye.scale.y = hBlink;
+          this.hero.rightEye.scale.y = hBlink;
+          const breathSy = 1 + Math.sin(this.elapsed * 2.5) * 0.042;
+          const breathSxz = 1 / Math.sqrt(breathSy);
+          this.hero.body.scale.set(breathSxz, breathSy, breathSxz);
+          this.hero.leftLeg.rotation.x *= 0.8;
+          this.hero.rightLeg.rotation.x *= 0.8;
+          this.hero.body.position.y = 0;
+          this.heroYaw = Math.atan2(
+            this.dungeonCaptivePos.x - this.heroPos.x,
+            this.dungeonCaptivePos.z - this.heroPos.z,
+          );
+          this.hero.body.rotation.y = this.heroYaw;
+          this.playerCaveLight.position.set(this.heroPos.x, this.heroPos.y + 2.8, this.heroPos.z);
+
+          this.updateHarvestDialogueCamera(
+            this.heroPos.x,
+            this.heroPos.y,
+            this.heroPos.z,
+            this.dungeonCaptivePos.x,
+            this.dungeonCaptivePos.y,
+            this.dungeonCaptivePos.z,
+            dt,
+          );
+          return;
+        }
+      }
+
       const barP = Math.min(1, this.storyTimer / 1.05);
       this.dungeonRig.prisonBars.position.y = barP * 3.6;
       this.dungeonRig.prisonBars.visible = barP < 1;
@@ -22965,7 +23729,62 @@ export class RpgWorldEngine {
           );
           animateZoneNpc(this.dungeonRig.guardianMesh, this.elapsed, 0.5, gDist < 4.5, dt);
         }
-        if (!this.dungeonState?.prisonUnlocked) {
+        if (this.dungeonRig.prisonCells && this.dungeonRig.prisonCells.length > 0) {
+          if (this.dungeonState?.prisonUnlocked && this.dungeonRig.hasInsideGuardian) {
+            this.dungeonRig.guardianMesh.position.y = Math.abs(Math.sin(this.elapsed * 4.2)) * 0.1;
+          }
+          const sinY = Math.sin(this.heroYaw);
+          const cosY = Math.cos(this.heroYaw);
+          for (const cell of this.dungeonRig.prisonCells) {
+            if (!cell.unlocked) {
+              cell.captives.forEach((cap, idx) => {
+                animateCaptiveMesh(cap.mesh, this.elapsed + idx * 0.4, 'sad_injured', false);
+              });
+            } else if (this.phase !== 'story') {
+              cell.captives.forEach((cap, idx) => {
+                let trail = this.dungeonCaptiveTrailPositions.get(cap.id);
+                if (!trail) {
+                  trail = cap.mesh.position.clone();
+                  this.dungeonCaptiveTrailPositions.set(cap.id, trail);
+                }
+                const targetX = this.heroPos.x - sinY * cap.followOffset.z + cosY * cap.followOffset.x;
+                const targetZ = this.heroPos.z - cosY * cap.followOffset.z - sinY * cap.followOffset.x;
+                const dx = targetX - trail.x;
+                const dz = targetZ - trail.z;
+                const dist = Math.hypot(dx, dz);
+                let isMoving = false;
+                if (dist > 0.35) {
+                  const step = Math.min(dist - 0.15, Math.max(5.0, dist * 3.8) * dt);
+                  if (step > 0.005) {
+                    isMoving = true;
+                    trail.x += (dx / dist) * step;
+                    trail.z += (dz / dist) * step;
+                    this.resolveDungeonCircleColliders(
+                      trail,
+                      0.44,
+                      trail.y,
+                      1.5,
+                      this.getDungeonHalfBound() - 0.3,
+                      { skipGuardian: true },
+                    );
+                  }
+                }
+                const supY = this.getDungeonSupportHeight(trail.x, trail.z, trail.y + 0.7);
+                trail.y = THREE.MathUtils.lerp(trail.y, supY, 1 - Math.exp(-10 * dt));
+                const hop = isMoving
+                  ? Math.abs(Math.sin(this.elapsed * 11 + idx * 0.55)) * 0.11
+                  : Math.abs(Math.sin(this.elapsed * 4.5 + idx * 0.6)) * 0.07;
+                cap.mesh.position.set(trail.x, trail.y + hop, trail.z);
+                const faceDx = this.heroPos.x - trail.x;
+                const faceDz = this.heroPos.z - trail.z;
+                if (faceDx * faceDx + faceDz * faceDz > 0.04) {
+                  cap.mesh.rotation.y = Math.atan2(faceDx, faceDz);
+                }
+                animateCaptiveMesh(cap.mesh, this.elapsed + idx * 0.3, !isMoving, isMoving);
+              });
+            }
+          }
+        } else if (!this.dungeonState?.prisonUnlocked) {
           animateCaptiveMesh(this.dungeonRig.captiveMesh, this.elapsed, 'sad_injured', false);
         } else {
           if (this.dungeonRig.hasInsideGuardian) {
@@ -27291,6 +28110,8 @@ export class RpgWorldEngine {
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
       this.nearHiddenPrison = false;
+      this.nearPrisonCellId = null;
+      this.nearPrisonCellLabel = null;
       this.nearCaveRibbon = false;
       const pp = OVERWORLD_ANCHORS.portal;
       this.nearPortal =
@@ -27330,41 +28151,88 @@ export class RpgWorldEngine {
         this.collectPrisonKey();
       }
 
-      const prisonDist = this.dungeonRig
-        ? Math.hypot(
-            this.heroPos.x - this.dungeonRig.prisonPos.x,
-            this.heroPos.z - this.dungeonRig.prisonPos.z,
-          )
-        : 99;
-      const prisonSameFloor =
-        !this.dungeonRig || Math.abs(this.heroPos.y - this.dungeonRig.prisonPos.y) < 3.2;
-      this.nearHiddenPrison =
-        Boolean(this.dungeonRig && !this.dungeonState.prisonUnlocked) &&
-        prisonDist < 4.8 &&
-        prisonSameFloor;
-      if (
-        this.dungeonRig &&
-        !this.dungeonState.prisonUnlocked &&
-        !this.dungeonState.prisonKeyCollected &&
-        !this.prisonPleaSeenZones.has(this.dungeonState.zoneId) &&
-        !this.dungeonBossIntro &&
-        !this.dungeonBossSummonCutscene &&
-        !this.dungeonBossSoloCutscene &&
-        !this.dungeonPrisonPleaCutscene &&
-        prisonDist < 5.2 &&
-        prisonSameFloor
-      ) {
-        this.startDungeonPrisonPleaCutscene(this.dungeonState.zoneId);
-        return;
-      }
-      if (
-        this.nearHiddenPrison &&
-        this.dungeonState.prisonKeyCollected &&
-        !this.dungeonState.prisonUnlocked &&
-        prisonDist < 3.45
-      ) {
-        this.interactWithHiddenPrison();
-        return;
+      if (this.dungeonRig?.prisonCells && this.dungeonRig.prisonCells.length > 0) {
+        let nearestCell: DungeonPrisonCellRig | null = null;
+        let nearestGateDist = 99;
+        for (const cell of this.dungeonRig.prisonCells) {
+          if (cell.unlocked) continue;
+          if (Math.abs(this.heroPos.y - cell.pos.y) >= 3.4) continue;
+          const openSignX = cell.facingDir.x >= 0 ? 1 : -1;
+          const halfX = cell.id === 'cell_1' ? 3.2 : cell.id === 'cell_2' ? 3.7 : 3.9;
+          const gateX = cell.pos.x + openSignX * (halfX - 0.18);
+          const dGate = Math.hypot(this.heroPos.x - gateX, this.heroPos.z - cell.pos.z);
+          if (dGate < nearestGateDist) {
+            nearestGateDist = dGate;
+            nearestCell = cell;
+          }
+        }
+        this.nearHiddenPrison = Boolean(nearestCell && nearestGateDist < 4.5);
+        this.nearPrisonCellId = this.nearHiddenPrison && nearestCell ? nearestCell.id : null;
+        this.nearPrisonCellLabel = this.nearHiddenPrison && nearestCell ? nearestCell.label : null;
+        this.syncDungeonPrisonCellsHud();
+
+        if (
+          nearestCell &&
+          nearestGateDist < 6.0 &&
+          !this.prisonPleaSeenCells.has(`${this.dungeonState.zoneId}:${nearestCell.id}`) &&
+          !this.dungeonBossIntro &&
+          !this.dungeonBossSummonCutscene &&
+          !this.dungeonBossSoloCutscene &&
+          !this.dungeonPrisonPleaCutscene &&
+          !this.isCaveCountdownBlocking()
+        ) {
+          this.startDesaPrisonCellPleaCutscene(this.dungeonState.zoneId, nearestCell);
+          return;
+        }
+        if (
+          nearestCell &&
+          this.nearHiddenPrison &&
+          this.dungeonState.prisonKeyCollected &&
+          this.prisonPleaSeenCells.has(`${this.dungeonState.zoneId}:${nearestCell.id}`) &&
+          nearestGateDist < 3.4
+        ) {
+          this.interactWithHiddenPrison(nearestCell.id);
+          return;
+        }
+      } else {
+        const prisonDist = this.dungeonRig
+          ? Math.hypot(
+              this.heroPos.x - this.dungeonRig.prisonPos.x,
+              this.heroPos.z - this.dungeonRig.prisonPos.z,
+            )
+          : 99;
+        const prisonSameFloor =
+          !this.dungeonRig || Math.abs(this.heroPos.y - this.dungeonRig.prisonPos.y) < 3.2;
+        this.nearHiddenPrison =
+          Boolean(this.dungeonRig && !this.dungeonState.prisonUnlocked) &&
+          prisonDist < 4.8 &&
+          prisonSameFloor;
+        this.nearPrisonCellId = null;
+        this.nearPrisonCellLabel = null;
+        if (
+          this.dungeonRig &&
+          !this.dungeonState.prisonUnlocked &&
+          !this.dungeonState.prisonKeyCollected &&
+          !this.prisonPleaSeenZones.has(this.dungeonState.zoneId) &&
+          !this.dungeonBossIntro &&
+          !this.dungeonBossSummonCutscene &&
+          !this.dungeonBossSoloCutscene &&
+          !this.dungeonPrisonPleaCutscene &&
+          prisonDist < 5.2 &&
+          prisonSameFloor
+        ) {
+          this.startDungeonPrisonPleaCutscene(this.dungeonState.zoneId);
+          return;
+        }
+        if (
+          this.nearHiddenPrison &&
+          this.dungeonState.prisonKeyCollected &&
+          !this.dungeonState.prisonUnlocked &&
+          prisonDist < 3.45
+        ) {
+          this.interactWithHiddenPrison();
+          return;
+        }
       }
 
       const caveRibbonDist = this.dungeonRig
@@ -27456,6 +28324,8 @@ export class RpgWorldEngine {
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
       this.nearHiddenPrison = false;
+      this.nearPrisonCellId = null;
+      this.nearPrisonCellLabel = null;
       this.nearPortal = false;
       this.nearCraftingTable = false;
       this.nearDungeonExit =
@@ -27479,6 +28349,8 @@ export class RpgWorldEngine {
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
       this.nearHiddenPrison = false;
+      this.nearPrisonCellId = null;
+      this.nearPrisonCellLabel = null;
       this.nearPortal = false;
       this.nearCraftingTable = false;
       this.nearDungeonExit =
@@ -27494,6 +28366,8 @@ export class RpgWorldEngine {
       this.nearbyDungeonGuardian = false;
       this.nearPrisonKey = false;
       this.nearHiddenPrison = false;
+      this.nearPrisonCellId = null;
+      this.nearPrisonCellLabel = null;
     }
 
     // Word Monster Contact -> Duel Rebutan (skip cave mobs & 40% combatOnly brawlers!)
@@ -27978,16 +28852,29 @@ export class RpgWorldEngine {
         pushBox(this.dungeonRig.guardianPos.x, this.dungeonRig.guardianPos.z, 0.7, 0.7);
       }
 
-      const prisonY = this.dungeonRig.prisonPos.y ?? 0;
-      if (
-        !this.dungeonState?.prisonUnlocked &&
-        entityY >= prisonY - 1.2 &&
-        entityY < prisonY + 4.5
-      ) {
-        if (this.dungeonState?.zoneId === 'desa_sapaan') {
-          pushBox(this.dungeonRig.prisonPos.x - 1.75, this.dungeonRig.prisonPos.z, 0.35, 2.0);
-        } else {
-          pushBox(this.dungeonRig.prisonPos.x, this.dungeonRig.prisonPos.z, 1.8, 1.8);
+      if (this.dungeonRig.prisonCells && this.dungeonRig.prisonCells.length > 0) {
+        for (const cell of this.dungeonRig.prisonCells) {
+          if (cell.unlocked) continue;
+          const cellY = cell.pos.y ?? 0;
+          if (entityY < cellY - 1.2 || entityY >= cellY + 4.8) continue;
+          const openSignX = cell.facingDir.x >= 0 ? 1 : -1;
+          const halfX = cell.id === 'cell_1' ? 3.2 : cell.id === 'cell_2' ? 3.7 : 3.9;
+          const halfZ = cell.id === 'cell_1' ? 3.4 : cell.id === 'cell_2' ? 3.9 : 4.5;
+          const gateX = cell.pos.x + openSignX * (halfX - 0.18);
+          pushBox(gateX, cell.pos.z, 0.36, halfZ);
+        }
+      } else {
+        const prisonY = this.dungeonRig.prisonPos.y ?? 0;
+        if (
+          !this.dungeonState?.prisonUnlocked &&
+          entityY >= prisonY - 1.2 &&
+          entityY < prisonY + 4.5
+        ) {
+          if (this.dungeonState?.zoneId === 'desa_sapaan') {
+            pushBox(this.dungeonRig.prisonPos.x - 1.75, this.dungeonRig.prisonPos.z, 0.35, 2.0);
+          } else {
+            pushBox(this.dungeonRig.prisonPos.x, this.dungeonRig.prisonPos.z, 1.8, 1.8);
+          }
         }
       }
 
@@ -29514,22 +30401,23 @@ export class RpgWorldEngine {
     if (this.dungeonPrisonPleaCutscene && this.storyDialog?.kind === 'dungeon_prison_plea') {
       const pc = this.dungeonPrisonPleaCutscene;
       const story = ZONE_CAVE_STORIES[pc.zoneId];
+      const cellCfg = pc.cellId ? this.getDesaPrisonCellStoryConfig(pc.cellId) : null;
       const cp = projectPoint(
         pc.captiveWorldPos.x,
         pc.captiveWorldPos.y + 2.35,
         pc.captiveWorldPos.z,
       );
       if (cp) {
-        let cTitle = `💧 ${story.captiveName}`;
+        let cTitle = `💧 ${cellCfg ? cellCfg.speakerName : story.captiveName}`;
         let cKind: 'speech' | 'npc_alert' = 'npc_alert';
         if (pc.beat === 'discover') {
-          cTitle = '💧 Hiks... tolooong... ada orang di luar?';
+          cTitle = cellCfg ? cellCfg.discoverBubble : '💧 Hiks... tolooong... ada orang di luar?';
           cKind = 'speech';
         } else if (pc.beat === 'captive_cry_plea') {
-          cTitle = '😭 Badanku terluka... tolong bebaskan aku!';
+          cTitle = cellCfg ? cellCfg.cryBubble : '😭 Badanku terluka... tolong bebaskan aku!';
           cKind = 'speech';
         } else if (pc.beat === 'captive_hope') {
-          cTitle = '💧 Hiks... aku menunggumu, tolong kalahkan mereka...';
+          cTitle = cellCfg ? cellCfg.hopeBubble : '💧 Hiks... aku menunggumu, tolong kalahkan mereka...';
           cKind = 'speech';
         }
         if (pc.beat !== 'hero_promise') {
@@ -29550,8 +30438,10 @@ export class RpgWorldEngine {
           y: hp.y,
           title:
             pc.beat === 'hero_promise'
-              ? 'Jangan menangis lagi, aku akan menyelamatkanmu!'
-              : 'Melihat tawanan yang terluka di dalam sel',
+              ? cellCfg
+                ? cellCfg.heroPromiseBubble
+                : 'Jangan menangis lagi, aku akan menyelamatkanmu!'
+              : 'Melihat para tawanan menangis di balik sel besi',
           kind: pc.beat === 'hero_promise' ? 'speech' : 'thought',
         });
       }
@@ -29854,7 +30744,53 @@ export class RpgWorldEngine {
             }
           }
         }
-        if (this.dungeonState.prisonUnlocked && this.phase === 'playing') {
+        if (this.dungeonRig.prisonCells && this.dungeonRig.prisonCells.length > 0 && this.phase === 'playing') {
+          for (const cell of this.dungeonRig.prisonCells) {
+            if (!cell.unlocked) {
+              const dCell = Math.hypot(cell.pos.x - this.heroPos.x, cell.pos.z - this.heroPos.z);
+              if (dCell < 18) {
+                const cp = projectPoint(cell.pos.x, cell.pos.y + 4.5, cell.pos.z);
+                if (cp) {
+                  labels.push({
+                    id: `cell_lbl_${cell.id}`,
+                    x: cp.x,
+                    y: cp.y,
+                    title: `🔒 ${cell.label}`,
+                    subtext: this.dungeonState.prisonKeyCollected
+                      ? 'Dekati untuk membuka dengan Kunci Emas!'
+                      : 'Terkunci · Kalahkan Bos & ambil Kunci Emas',
+                    kind: 'door',
+                  });
+                }
+              }
+            } else {
+              const leadCap = cell.captives[0];
+              const leadPos = leadCap ? this.dungeonCaptiveTrailPositions.get(leadCap.id) : null;
+              if (leadPos) {
+                const cp = projectPoint(leadPos.x, leadPos.y + 2.4, leadPos.z);
+                if (cp) {
+                  labels.push({
+                    id: `cell_follow_${cell.id}`,
+                    x: cp.x,
+                    y: cp.y,
+                    title:
+                      cell.id === 'cell_1'
+                        ? 'Rani & Kak Raka'
+                        : cell.id === 'cell_2'
+                        ? '4 Anak Desa'
+                        : '5 Warga Desa',
+                    subtext: this.dungeonState.prisonUnlocked
+                      ? this.ribbons.has(this.dungeonState.zoneId)
+                        ? `Ayo keluar ke ${this.dungeonState.guardianName}!`
+                        : 'Mengikutimu · Cari Pita Merah 3D!'
+                      : 'Bebas · Masih ada sel terkunci!',
+                    kind: 'speech',
+                  });
+                }
+              }
+            }
+          }
+        } else if (this.dungeonState.prisonUnlocked && this.phase === 'playing') {
           const cp = projectPoint(
             this.dungeonCaptivePos.x,
             this.dungeonCaptivePos.y + 2.35,
@@ -31335,19 +32271,38 @@ export class RpgWorldEngine {
             needsHelp: true,
           });
         }
-        blips.push({
-          id: 'hidden_prison',
-          x: this.dungeonRig.prisonPos.x,
-          z: this.dungeonRig.prisonPos.z,
-          kind: 'prison',
-          color: this.dungeonState.prisonUnlocked
-            ? '#22c55e'
-            : this.dungeonState.prisonKeyCollected
-            ? '#facc15'
-            : '#fb7185',
-          liberated: this.dungeonState.prisonUnlocked,
-          needsHelp: this.dungeonState.prisonKeyCollected && !this.dungeonState.prisonUnlocked,
-        });
+        if (this.dungeonRig.prisonCells && this.dungeonRig.prisonCells.length > 0) {
+          for (const cell of this.dungeonRig.prisonCells) {
+            blips.push({
+              id: cell.id,
+              x: cell.pos.x,
+              z: cell.pos.z,
+              kind: 'prison',
+              color: cell.unlocked
+                ? '#22c55e'
+                : this.dungeonState.prisonKeyCollected
+                ? '#facc15'
+                : '#fb7185',
+              liberated: cell.unlocked,
+              needsHelp: !cell.unlocked,
+              label: cell.label,
+            });
+          }
+        } else {
+          blips.push({
+            id: 'hidden_prison',
+            x: this.dungeonRig.prisonPos.x,
+            z: this.dungeonRig.prisonPos.z,
+            kind: 'prison',
+            color: this.dungeonState.prisonUnlocked
+              ? '#22c55e'
+              : this.dungeonState.prisonKeyCollected
+              ? '#facc15'
+              : '#fb7185',
+            liberated: this.dungeonState.prisonUnlocked,
+            needsHelp: this.dungeonState.prisonKeyCollected && !this.dungeonState.prisonUnlocked,
+          });
+        }
         blips.push({
           id: 'craft',
           x: this.dungeonRig.craftingTablePos.x,
@@ -31924,7 +32879,14 @@ export class RpgWorldEngine {
       nearDungeonExit: this.nearDungeonExit,
       portalUnlocked:
         !IELTS_TEMPORARILY_LOCKED && (!this.settings.storyLocked || this.ribbons.size >= 6),
-      dungeonState: this.dungeonState ? { ...this.dungeonState } : null,
+      dungeonState: this.dungeonState
+        ? {
+            ...this.dungeonState,
+            prisonCells: this.dungeonState.prisonCells
+              ? this.dungeonState.prisonCells.map((c) => ({ ...c }))
+              : undefined,
+          }
+        : null,
       areaMonsterStats: this.buildAreaMonsterStats(zoneId),
       liberatedZones: Array.from(this.liberatedZones),
       captiveRescuedZones: Array.from(this.captiveRescuedZones),
@@ -32354,10 +33316,11 @@ export class RpgWorldEngine {
           d: 0,
         };
       } else if (this.dungeonRig) {
+        const lockedCell = this.dungeonRig.prisonCells?.find((c) => !c.unlocked);
         best = {
-          x: this.dungeonRig.prisonPos.x,
-          z: this.dungeonRig.prisonPos.z,
-          name: this.dungeonState?.captiveName || 'Penjara Rahasia',
+          x: lockedCell ? lockedCell.pos.x : this.dungeonRig.prisonPos.x,
+          z: lockedCell ? lockedCell.pos.z : this.dungeonRig.prisonPos.z,
+          name: lockedCell ? lockedCell.label : this.dungeonState?.captiveName || 'Penjara Rahasia',
           d: 0,
         };
       }
@@ -32420,11 +33383,11 @@ export class RpgWorldEngine {
 
     if (target === 'prison') {
       if (this.worldMode === 'dungeon' && this.dungeonRig) {
-        moveTo(
-          this.dungeonRig.prisonPos.x,
-          this.dungeonRig.prisonPos.z,
-          `Menuju Penjara (${this.dungeonState?.captiveName || 'Tawanan'})...`,
-        );
+        const lockedCell = this.dungeonRig.prisonCells?.find((c) => !c.unlocked);
+        const px = lockedCell ? lockedCell.pos.x : this.dungeonRig.prisonPos.x;
+        const pz = lockedCell ? lockedCell.pos.z : this.dungeonRig.prisonPos.z;
+        const pLabel = lockedCell ? lockedCell.label : this.dungeonState?.captiveName || 'Tawanan';
+        moveTo(px, pz, `Menuju ${pLabel}...`);
       } else {
         this.showBanner('🎙️ Masuk ke dalam gua terlebih dahulu.', 1.8);
       }

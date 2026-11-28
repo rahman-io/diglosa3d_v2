@@ -260,6 +260,29 @@ export interface CaveWeaponChestRig {
   collected: boolean;
 }
 
+export interface DungeonPrisonCaptiveEntry {
+  id: string;
+  name: string;
+  kind: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
+  color: number;
+  mesh: THREE.Group;
+  localPos: THREE.Vector3;
+  worldPos: THREE.Vector3;
+  followOffset: THREE.Vector3;
+}
+
+export interface DungeonPrisonCellRig {
+  id: string;
+  label: string;
+  group: THREE.Group;
+  pos: THREE.Vector3;
+  facingDir: THREE.Vector3;
+  bars: THREE.Group;
+  lockMat: SurfaceMaterial;
+  captives: DungeonPrisonCaptiveEntry[];
+  unlocked: boolean;
+}
+
 export interface DungeonArenaRig {
   group: THREE.Group;
   animatables: THREE.Object3D[];
@@ -290,6 +313,7 @@ export interface DungeonArenaRig {
   prisonBars: THREE.Group;
   prisonLockMat: SurfaceMaterial;
   captiveMesh: THREE.Group;
+  prisonCells?: DungeonPrisonCellRig[];
   prisonKeyGroup: THREE.Group;
   ribbonPos: THREE.Vector3;
   ribbonGroup: THREE.Group;
@@ -4329,6 +4353,7 @@ export function createCaptiveMesh(
   kind: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit',
   colorHex: number,
   palette: MaterialPalette,
+  opts?: { hairColor?: number; scale?: number; hideRibbon?: boolean },
 ): THREE.Group {
   const root = new THREE.Group();
   addShadow(root, palette, 0.72);
@@ -4495,7 +4520,7 @@ export function createCaptiveMesh(
     return root;
   }
 
-  const heightScale = kind === 'girl' ? 0.86 : 0.98;
+  const heightScale = opts?.scale ?? (kind === 'girl' ? 0.86 : 0.98);
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.88, 0.46), outfit);
   torso.position.y = 0.88;
   torso.castShadow = true;
@@ -4507,7 +4532,7 @@ export function createCaptiveMesh(
   head.castShadow = true;
   const hair = new THREE.Mesh(
     new THREE.BoxGeometry(0.68, 0.24, 0.68),
-    palette.getMat(kind === 'mother' ? 0x57534e : 0x3b2008, 'matte'),
+    palette.getMat(opts?.hairColor ?? (kind === 'mother' ? 0x57534e : 0x3b2008), 'matte'),
   );
   hair.position.y = 0.62;
   const eyeL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.06), darkEye);
@@ -4516,7 +4541,7 @@ export function createCaptiveMesh(
   eyeR.position.set(0.15, 0.32, 0.33);
   headGroup.add(head, hair, eyeL, eyeR);
   attachEyeSadVisuals(headGroup, 0.15, 0.32, 0.33, 0.49, true);
-  if (kind === 'girl') {
+  if (kind === 'girl' && !opts?.hideRibbon) {
     const ribbon = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.14, 0.14), palette.getMat(0xe11d48, 'matte'));
     ribbon.position.set(0.24, 0.72, 0.12);
     headGroup.add(ribbon);

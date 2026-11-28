@@ -638,6 +638,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
         villagerArchetypes={story.villagerArchetypes}
         captiveKind={captiveKind}
         captiveColor={captiveColor}
+        captiveMembers={story.captiveMembers}
         monsterType={story.speakerMonsterType}
         heroExpression={story.heroExpression}
         bossExpression={story.bossExpression}

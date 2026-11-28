@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ChevronRight, Languages, Volume2 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
-import { CharacterPresetId, MonsterType } from '../types/game';
+import { CaptiveMemberSpec, CharacterPresetId, MonsterType } from '../types/game';
 import { DialoguePortraitCanvas, DialogueSpeakerKind } from './DialoguePortraitCanvas';
 
 export interface HarvestDialogueBoxProps {
@@ -13,6 +13,7 @@ export interface HarvestDialogueBoxProps {
   villagerArchetypes?: string[];
   captiveKind?: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
   captiveColor?: number;
+  captiveMembers?: CaptiveMemberSpec[];
   monsterType?: MonsterType;
   heroExpression?: 'neutral' | 'fierce';
   bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry';
@@ -36,6 +37,7 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
   villagerArchetypes,
   captiveKind,
   captiveColor,
+  captiveMembers,
   monsterType,
   heroExpression = 'neutral',
   bossExpression,
@@ -151,8 +153,8 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
         {/* 3D Bust-Up Portrait sitting cleanly above the left edge of the dialogue box */}
         <div
           className={`pointer-events-none relative z-10 -mb-7 ml-1 sm:-mb-9 sm:ml-2 ${
-            speakerKind === 'villagers'
-              ? 'h-[132px] w-[148px] sm:h-[170px] sm:w-[192px]'
+            speakerKind === 'villagers' || (captiveMembers && captiveMembers.length > 1)
+              ? 'h-[132px] w-[156px] sm:h-[170px] sm:w-[206px]'
               : 'h-[126px] w-[112px] sm:h-[164px] sm:w-[144px]'
           }`}
         >
@@ -163,6 +165,7 @@ export const HarvestDialogueBox: React.FC<HarvestDialogueBoxProps> = ({
             villagerArchetypes={villagerArchetypes}
             captiveKind={captiveKind}
             captiveColor={captiveColor}
+            captiveMembers={captiveMembers}
             monsterType={monsterType}
             heroExpression={heroExpression}
             bossExpression={bossExpression}

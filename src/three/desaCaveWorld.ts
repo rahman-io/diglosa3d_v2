@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import type { MaterialPalette } from './materials';
-import { createPixelVoxelTexture } from './rpgModels';
+import type { MaterialPalette, SurfaceMaterial } from './materials';
+import { createCaptiveMesh, createPixelVoxelTexture } from './rpgModels';
 import { createWeaponMesh } from './weaponModels';
 import type { CaveBlockKind } from '../types/game';
 import type {
@@ -12,6 +12,8 @@ import type {
   CaveWeaponChestRig,
   DungeonArenaRig,
   DungeonDoorRig,
+  DungeonPrisonCaptiveEntry,
+  DungeonPrisonCellRig,
 } from './rpgModels';
 
 interface VoxelBoxSpec {
@@ -150,10 +152,12 @@ export function isInCrystalRiverChannel(x: number, z: number): boolean {
 const FLAT_DECKS: RectZone[] = [
   // North High Boss Courtyard (y = 9.5)
   { minX: -16.5, maxX: 28.5, minZ: -49.0, maxZ: -22.0, y: 9.5 },
-  // NE Hanging Cliff Prison Shelf & Walkway (y = 9.5)
-  { minX: 24.0, maxX: 41.5, minZ: -37.0, maxZ: -23.0, y: 9.5 },
+  // NE Hanging Cliff Prison Shelf & Walkway — Sel 1 (y = 9.5)
+  { minX: 24.0, maxX: 46.5, minZ: -38.0, maxZ: -22.0, y: 9.5 },
   // Upper NW Back Door Terrace (y = 9.5)
   { minX: -20.5, maxX: -11.5, minZ: -49.0, maxZ: -39.0, y: 9.5 },
+  // West Cliff Prison Alcove — Sel 2 (y = 3.5, joins NW Diamond Chest Alcove seamlessly at X = -34.5)
+  { minX: -47.5, maxX: -34.0, minZ: -36.5, maxZ: -22.0, y: 3.5 },
   // NW Diamond Ore & Golden Weapon Chest Alcove (y = 3.5)
   { minX: -34.5, maxX: -17.5, minZ: -37.0, maxZ: -17.0, y: 3.5 },
   // Exit Portal Terrace (y = 3.5)
@@ -170,8 +174,8 @@ const FLAT_DECKS: RectZone[] = [
   { minX: -41.5, maxX: -32.5, minZ: -16.0, maxZ: -9.0, y: 2.0 },
   // South Lower Entrance Plaza & Forge/Well Deck (y = 0)
   { minX: -14.0, maxX: 16.5, minZ: 30.0, maxZ: 49.0, y: 0.0 },
-  // SE Base Shelf below East Stairs (y = 0)
-  { minX: 23.0, maxX: 46.0, minZ: 32.0, maxZ: 47.0, y: 0.0 },
+  // SE Base Shelf below East Stairs & Sel 3 Courtyard Wing (y = 0)
+  { minX: 23.0, maxX: 47.0, minZ: 29.0, maxZ: 47.0, y: 0.0 },
 ];
 
 // Terraced grass/earth hills between Central Promontory/Labyrinths and High Boss Plateau
@@ -767,7 +771,7 @@ export function createDesaCaveEnvironment(
 
   // Lower Courtyard & SE Base (y = 0) — carve out the sunken Crystal River gorge cleanly!
   addTierBlock(-14, 16.5, 30, 49, 0.0, -3.5, STONE_SHADES, DARK_SHADES, true, true);
-  addTierBlock(23, 46, 32, 47, 0.0, -3.5, STONE_SHADES, DARK_SHADES, true, true);
+  addTierBlock(23, 47, 29, 47, 0.0, -3.5, STONE_SHADES, DARK_SHADES, true, true);
 
   // Exit Portal Terrace (y = 3.5) & Solid West Rocky Cliff Bastion behind Door 3 (-22.2, 3.5, 25.5)
   addTierBlock(-22.6, -6.5, 20.5, 34.5, 3.5, -2.5, STONE_SHADES, DARK_SHADES, true);
@@ -828,8 +832,9 @@ export function createDesaCaveEnvironment(
   // East Labyrinth & Guardhouse Deck (y = 3.5)
   addTierBlock(14.5, 46.5, -8.5, 24.5, 3.5, -2.5, STONE_SHADES, DARK_SHADES, true);
 
-  // NW Diamond Ore & Chest Alcove (y = 3.5)
+  // NW Diamond Ore & Chest Alcove (y = 3.5) + West Cliff Prison Alcove — Sel 2 (y = 3.5)
   addTierBlock(-34.5, -17.5, -37.0, -17.0, 3.5, -2.5, STONE_SHADES, DARK_SHADES, false);
+  addTierBlock(-47.5, -34.0, -36.5, -22.0, 3.5, -2.5, STONE_SHADES, DARK_SHADES, false);
 
   // Terraced Green & Earth Hills between Mid-Tier & Boss Plateau
   addTierBlock(-21.0, -6.0, -25.0, -13.0, 5.5, 0.0, GRASS_SHADES, DIRT_SHADES, false);
@@ -850,9 +855,9 @@ export function createDesaCaveEnvironment(
   // Solid rock cliff wall flush behind Upper NW Decor Door (-16.0, 9.5, -48.0)
   addWallBox(-16.0, 12.8, -49.4, 5.2, 6.8, 2.8, 0x262d3b, true);
 
-  // NE Hanging Cliff Prison Shelf (y = 9.5) with jagged crystal-studded rock cliff underside!
-  addTierBlock(24.0, 41.5, -37.0, -23.0, 9.5, 4.2, STONE_SHADES, DARK_SHADES, false);
-  addWallBox(35.0, 1.5, -31.0, 9.5, 6.2, 8.5, 0x262d3b, true);
+  // NE Hanging Cliff Prison Shelf — Sel 1 (y = 9.5) with jagged crystal-studded rock cliff underside!
+  addTierBlock(24.0, 46.5, -38.0, -22.0, 9.5, 4.2, STONE_SHADES, DARK_SHADES, false);
+  addWallBox(36.0, 1.5, -30.5, 11.5, 6.2, 10.5, 0x262d3b, true);
   // Glowing Cyan & Purple Crystal Clusters under the NE Prison Overhang (as seen in image!)
   glowCyanSpecs.push(
     { x: 24.5, y: 6.2, z: -20.5, sx: 1.1, sy: 1.1, sz: 1.1, color: 0x22d3ee },
@@ -1770,35 +1775,358 @@ export function createDesaCaveEnvironment(
     collected: false,
   };
 
-  // NE Hanging Cliff Prison Cell (y = 9.5, X=37.5, Z=-31.5)
-  const prisonPos = new THREE.Vector3(37.5, 9.5, -31.5);
-  const prisonGroup = new THREE.Group();
-  prisonGroup.position.copy(prisonPos);
-  prisonGroup.userData.hiddenPrison = true;
-  const cellPad = new THREE.Mesh(new THREE.BoxGeometry(4.0, 0.24, 4.0), palette.getMat(0x334155, 'matte'));
-  cellPad.position.y = 0.12;
-  const cellRoof = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.2, 4.4), palette.getMat(0x374151, 'matte'));
-  cellRoof.position.y = 3.9;
-  const cellBack = new THREE.Mesh(new THREE.BoxGeometry(0.6, 3.6, 4.2), palette.getMat(0x262d3b, 'matte'));
-  cellBack.position.set(1.9, 1.8, 0);
-  const cellSideN = new THREE.Mesh(new THREE.BoxGeometry(4.0, 3.6, 0.5), palette.getMat(0x262d3b, 'matte'));
-  cellSideN.position.set(0, 1.8, -1.9);
-  const cellSideS = cellSideN.clone();
-  cellSideS.position.z = 1.9;
-  // Torch at prison corner
-  const pTorchPost = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.85, 0.22), palette.getMat(0x713f12, 'matte'));
-  pTorchPost.position.set(-2.05, 1.8, 1.95);
-  const pTorchFlame = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.34, 0.28), brazierGlowMat);
-  pTorchFlame.position.set(-2.05, 2.35, 1.95);
-  prisonGroup.add(cellPad, cellRoof, cellBack, cellSideN, cellSideS, pTorchPost, pTorchFlame, sharedRigTools.prisonBars);
-  sharedRigTools.captiveMesh.position.set(0.15, 0.24, 0);
-  sharedRigTools.captiveMesh.rotation.y = -Math.PI / 2;
-  prisonGroup.add(sharedRigTools.captiveMesh);
-  group.add(prisonGroup);
-  caveColliders.push({ x: 39.4, z: -31.5, halfW: 0.4, halfD: 2.1, minY: 9.5, maxY: 14.0 });
-  caveColliders.push({ x: 37.5, z: -33.4, halfW: 2.1, halfD: 0.35, minY: 9.5, maxY: 14.0 });
-  caveColliders.push({ x: 37.5, z: -29.6, halfW: 2.1, halfD: 0.35, minY: 9.5, maxY: 14.0 });
-  caveColliders.push({ x: 37.5, z: -31.5, halfW: 2.2, halfD: 2.2, minY: 12.8, maxY: 14.4 });
+  // 3 Distinct Oversized Prison Cells at Different Cave Locations
+  const buildLargePrisonCell = (opts: {
+    id: string;
+    label: string;
+    pos: THREE.Vector3;
+    facingDir: THREE.Vector3; // (-1,0,0) = gate on -X side facing West; (1,0,0) = gate on +X side facing East
+    depthX: number;
+    widthZ: number;
+    heightY: number;
+    captives: Array<{
+      id: string;
+      name: string;
+      kind: 'girl' | 'mother' | 'fox_kit' | 'student' | 'spirit';
+      color: number;
+      hairColor?: number;
+      scale?: number;
+      hideRibbon?: boolean;
+      existingMesh?: THREE.Group;
+      localPos: THREE.Vector3;
+      followOffset: THREE.Vector3;
+    }>;
+  }): DungeonPrisonCellRig => {
+    const { id, label, pos, facingDir, depthX, widthZ, heightY } = opts;
+    const cellGroup = new THREE.Group();
+    cellGroup.position.copy(pos);
+
+    const ironMat = palette.getMat(0x475569, 'metal');
+    const padMat = palette.getMat(0x334155, 'matte');
+    const roofMat = palette.getMat(0x374151, 'matte');
+    const wallMat = palette.getMat(0x262d3b, 'matte');
+    const torchWoodMat = palette.getMat(0x713f12, 'matte');
+    const lockMat = palette.createSurfaceMat({
+      color: 0xef4444,
+      emissive: 0xdc2626,
+      emissiveIntensity: 1.15,
+      roughness: 0.25,
+    });
+    disposables.push(lockMat);
+
+    const halfX = depthX * 0.5;
+    const halfZ = widthZ * 0.5;
+    const openSignX = facingDir.x >= 0 ? 1 : -1;
+    const backSignX = -openSignX;
+
+    // Floor pad & overhanging roof (always visibly taller & roomier than captives inside)
+    const cellPad = new THREE.Mesh(new THREE.BoxGeometry(depthX, 0.24, widthZ), padMat);
+    cellPad.position.y = 0.12;
+    cellPad.receiveShadow = true;
+    const cellRoof = new THREE.Mesh(
+      new THREE.BoxGeometry(depthX + 0.6, 1.0, widthZ + 0.6),
+      roofMat,
+    );
+    cellRoof.position.y = heightY + 0.5;
+    cellRoof.castShadow = true;
+
+    // Back wall & North / South side walls
+    const backWallThick = 0.6;
+    const sideWallThick = 0.55;
+    const cellBack = new THREE.Mesh(
+      new THREE.BoxGeometry(backWallThick, heightY, widthZ + 0.2),
+      wallMat,
+    );
+    cellBack.position.set(backSignX * (halfX - backWallThick * 0.5), heightY * 0.5, 0);
+    cellBack.castShadow = true;
+    cellBack.receiveShadow = true;
+
+    const cellSideN = new THREE.Mesh(
+      new THREE.BoxGeometry(depthX, heightY, sideWallThick),
+      wallMat,
+    );
+    cellSideN.position.set(0, heightY * 0.5, -halfZ + sideWallThick * 0.5);
+    cellSideN.castShadow = true;
+    const cellSideS = cellSideN.clone();
+    cellSideS.position.z = halfZ - sideWallThick * 0.5;
+
+    // Corner torches & warm light outside the iron bars
+    const torchFrontX = openSignX * (halfX + 0.18);
+    [-halfZ + 0.25, halfZ - 0.25].forEach((tz) => {
+      const pTorchPost = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.9, 0.22), torchWoodMat);
+      pTorchPost.position.set(torchFrontX, 2.0, tz);
+      const pTorchFlame = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.36, 0.3), brazierGlowMat);
+      pTorchFlame.position.set(torchFrontX, 2.58, tz);
+      cellGroup.add(pTorchPost, pTorchFlame);
+    });
+    const cellLight = new THREE.PointLight(0xf97316, 1.7, 22, 1.3);
+    cellLight.position.set(openSignX * (halfX + 1.8), heightY * 0.85, 0);
+    cellGroup.add(cellLight);
+
+    // Wide Iron Bar Gate on the facing side
+    const barsGroup = new THREE.Group();
+    const gateX = openSignX * (halfX - 0.18);
+    const barSpan = Math.max(2.0, widthZ - 1.2);
+    const barCount = Math.max(7, Math.round(barSpan / 0.58));
+    for (let i = 0; i < barCount; i++) {
+      const bz = THREE.MathUtils.lerp(-barSpan * 0.5, barSpan * 0.5, i / (barCount - 1));
+      const vBar = new THREE.Mesh(new THREE.CylinderGeometry(0.065, 0.065, heightY - 0.25, 8), ironMat);
+      vBar.position.set(gateX, heightY * 0.5, bz);
+      barsGroup.add(vBar);
+    }
+    [0.95, 2.05, heightY - 0.7].forEach((hy) => {
+      const hBar = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, barSpan + 0.35), ironMat);
+      hBar.position.set(gateX, hy, 0);
+      barsGroup.add(hBar);
+    });
+    const lockPlate = new THREE.Mesh(
+      new THREE.BoxGeometry(0.28, 0.62, 0.56),
+      lockMat as unknown as THREE.Material,
+    );
+    lockPlate.position.set(gateX + openSignX * 0.12, 1.75, 0);
+    barsGroup.add(lockPlate);
+
+    cellGroup.add(cellPad, cellRoof, cellBack, cellSideN, cellSideS, barsGroup);
+
+    // Attach captives cleanly inside the roomy cell, facing the gate
+    const captiveYaw = openSignX > 0 ? Math.PI / 2 : -Math.PI / 2;
+    const captiveEntries: DungeonPrisonCaptiveEntry[] = opts.captives.map((c) => {
+      const mesh =
+        c.existingMesh ??
+        createCaptiveMesh(c.kind, c.color, palette, {
+          hairColor: c.hairColor,
+          scale: c.scale,
+          hideRibbon: c.hideRibbon,
+        });
+      mesh.position.copy(c.localPos);
+      mesh.rotation.y = captiveYaw;
+      cellGroup.add(mesh);
+      return {
+        id: c.id,
+        name: c.name,
+        kind: c.kind,
+        color: c.color,
+        mesh,
+        localPos: c.localPos.clone(),
+        worldPos: pos.clone().add(c.localPos),
+        followOffset: c.followOffset.clone(),
+      };
+    });
+
+    // Tag all meshes in the cell so clicking anywhere on the bars/cell identifies which cell it is
+    cellGroup.traverse((obj) => {
+      obj.userData.hiddenPrison = true;
+      obj.userData.prisonCellId = id;
+    });
+    group.add(cellGroup);
+    cameraOccluders.push(cellRoof, cellBack);
+
+    // Colliders for back wall, north/south side walls, and roof (front gate handled dynamically when locked!)
+    caveColliders.push(
+      {
+        x: pos.x + backSignX * (halfX - backWallThick * 0.5),
+        z: pos.z,
+        halfW: backWallThick * 0.5 + 0.12,
+        halfD: halfZ + 0.1,
+        minY: pos.y,
+        maxY: pos.y + heightY + 1.0,
+      },
+      {
+        x: pos.x,
+        z: pos.z - halfZ + sideWallThick * 0.5,
+        halfW: halfX + 0.1,
+        halfD: sideWallThick * 0.5 + 0.12,
+        minY: pos.y,
+        maxY: pos.y + heightY + 1.0,
+      },
+      {
+        x: pos.x,
+        z: pos.z + halfZ - sideWallThick * 0.5,
+        halfW: halfX + 0.1,
+        halfD: sideWallThick * 0.5 + 0.12,
+        minY: pos.y,
+        maxY: pos.y + heightY + 1.0,
+      },
+      {
+        x: pos.x,
+        z: pos.z,
+        halfW: halfX + 0.3,
+        halfD: halfZ + 0.3,
+        minY: pos.y + heightY - 0.1,
+        maxY: pos.y + heightY + 1.1,
+      },
+    );
+
+    return {
+      id,
+      label,
+      group: cellGroup,
+      pos: pos.clone(),
+      facingDir: facingDir.clone(),
+      bars: barsGroup,
+      lockMat: lockMat as unknown as SurfaceMaterial,
+      captives: captiveEntries,
+      unlocked: false,
+    };
+  };
+
+  // Sel 1 (NE Hanging Cliff Shelf, y = 9.5): Rani & Kakak Raka (2 bersaudara dalam 1 sel luas 6.4x6.8x4.2m)
+  const cell1 = buildLargePrisonCell({
+    id: 'cell_1',
+    label: 'Sel 1: Rani & Kakak Raka',
+    pos: new THREE.Vector3(38.5, 9.5, -30.5),
+    facingDir: new THREE.Vector3(-1, 0, 0),
+    depthX: 6.4,
+    widthZ: 6.8,
+    heightY: 4.2,
+    captives: [
+      {
+        id: 'rani',
+        name: 'Rani',
+        kind: 'girl',
+        color: 0xf43f5e,
+        existingMesh: sharedRigTools.captiveMesh,
+        localPos: new THREE.Vector3(-0.35, 0.24, -1.05),
+        followOffset: new THREE.Vector3(-1.1, 0, 1.3),
+      },
+      {
+        id: 'raka',
+        name: 'Kakak Raka',
+        kind: 'student',
+        color: 0x0284c7,
+        hairColor: 0x1e293b,
+        scale: 1.05,
+        hideRibbon: true,
+        localPos: new THREE.Vector3(0.45, 0.24, 1.05),
+        followOffset: new THREE.Vector3(1.1, 0, 1.4),
+      },
+    ],
+  });
+
+  // Sel 2 (West Cliff Prison Alcove, y = 3.5): 4 Orang Anak Desa (sel luas 7.4x7.8x4.2m)
+  const cell2 = buildLargePrisonCell({
+    id: 'cell_2',
+    label: 'Sel 2: 4 Anak Desa',
+    pos: new THREE.Vector3(-41.5, 3.5, -29.5),
+    facingDir: new THREE.Vector3(1, 0, 0),
+    depthX: 7.4,
+    widthZ: 7.8,
+    heightY: 4.2,
+    captives: [
+      {
+        id: 'child_1',
+        name: 'Bimo',
+        kind: 'student',
+        color: 0xf97316,
+        hairColor: 0x451a03,
+        scale: 0.78,
+        hideRibbon: true,
+        localPos: new THREE.Vector3(0.95, 0.24, -1.55),
+        followOffset: new THREE.Vector3(-2.1, 0, 2.5),
+      },
+      {
+        id: 'child_2',
+        name: 'Sinta',
+        kind: 'girl',
+        color: 0xa855f7,
+        hairColor: 0x1e293b,
+        scale: 0.76,
+        localPos: new THREE.Vector3(0.95, 0.24, 1.55),
+        followOffset: new THREE.Vector3(-0.7, 0, 2.7),
+      },
+      {
+        id: 'child_3',
+        name: 'Tobi',
+        kind: 'student',
+        color: 0x10b981,
+        hairColor: 0x713f12,
+        scale: 0.74,
+        hideRibbon: true,
+        localPos: new THREE.Vector3(-0.95, 0.24, -1.35),
+        followOffset: new THREE.Vector3(0.7, 0, 2.7),
+      },
+      {
+        id: 'child_4',
+        name: 'Naya',
+        kind: 'girl',
+        color: 0xec4899,
+        hairColor: 0x3b0764,
+        scale: 0.72,
+        localPos: new THREE.Vector3(-0.95, 0.24, 1.35),
+        followOffset: new THREE.Vector3(2.1, 0, 2.5),
+      },
+    ],
+  });
+
+  // Sel 3 (SE Courtyard Wing, y = 0.0): 5 Orang Dewasa (sel sangat luas 7.8x9.0x4.5m)
+  const cell3 = buildLargePrisonCell({
+    id: 'cell_3',
+    label: 'Sel 3: 5 Warga Dewasa',
+    pos: new THREE.Vector3(41.5, 0.0, 35.0),
+    facingDir: new THREE.Vector3(-1, 0, 0),
+    depthX: 7.8,
+    widthZ: 9.0,
+    heightY: 4.5,
+    captives: [
+      {
+        id: 'adult_1',
+        name: 'Pak Darma',
+        kind: 'mother',
+        color: 0x0f766e,
+        hairColor: 0x1e293b,
+        scale: 1.06,
+        hideRibbon: true,
+        localPos: new THREE.Vector3(-1.2, 0.24, -1.75),
+        followOffset: new THREE.Vector3(-2.5, 0, 3.8),
+      },
+      {
+        id: 'adult_2',
+        name: 'Bu Sari',
+        kind: 'mother',
+        color: 0xe11d48,
+        hairColor: 0x451a03,
+        scale: 1.02,
+        localPos: new THREE.Vector3(-1.2, 0.24, 1.75),
+        followOffset: new THREE.Vector3(-1.2, 0, 4.1),
+      },
+      {
+        id: 'adult_3',
+        name: 'Bang Jaka',
+        kind: 'student',
+        color: 0x2563eb,
+        hairColor: 0x0f172a,
+        scale: 1.08,
+        hideRibbon: true,
+        localPos: new THREE.Vector3(1.1, 0.24, -2.5),
+        followOffset: new THREE.Vector3(0.0, 0, 4.2),
+      },
+      {
+        id: 'adult_4',
+        name: 'Mbak Wulan',
+        kind: 'mother',
+        color: 0xd97706,
+        hairColor: 0x27272a,
+        scale: 1.0,
+        localPos: new THREE.Vector3(1.1, 0.24, 0.0),
+        followOffset: new THREE.Vector3(1.2, 0, 4.1),
+      },
+      {
+        id: 'adult_5',
+        name: 'Pak Tono',
+        kind: 'mother',
+        color: 0x4d7c0f,
+        hairColor: 0x64748b,
+        scale: 1.05,
+        hideRibbon: true,
+        localPos: new THREE.Vector3(1.1, 0.24, 2.5),
+        followOffset: new THREE.Vector3(2.5, 0, 3.8),
+      },
+    ],
+  });
+
+  const prisonCells: DungeonPrisonCellRig[] = [cell1, cell2, cell3];
+  const prisonPos = cell1.pos.clone();
+  const prisonGroup = cell1.group;
 
   // Boss Spawn & Prison Key Drop Position right in center of High Boss Courtyard (y = 9.5)
   const bossSpawnPos = new THREE.Vector3(2.0, 9.5, -33.5);
@@ -1840,9 +2168,10 @@ export function createDesaCaveEnvironment(
     guardianAuraMat: sharedRigTools.guardianAuraMat,
     prisonPos,
     prisonGroup,
-    prisonBars: sharedRigTools.prisonBars,
-    prisonLockMat: sharedRigTools.prisonLockMat as DungeonArenaRig['prisonLockMat'],
+    prisonBars: cell1.bars,
+    prisonLockMat: cell1.lockMat as DungeonArenaRig['prisonLockMat'],
     captiveMesh: sharedRigTools.captiveMesh,
+    prisonCells,
     prisonKeyGroup: sharedRigTools.prisonKeyGroup,
     ribbonPos,
     ribbonGroup: sharedRigTools.ribbonGroup,

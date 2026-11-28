@@ -839,8 +839,24 @@ class SoundEngine {
     this.beep(659.25, 0.22, 'sine', 0.095, 740, 0.16);
   }
 
-  public playSadPlea(): void {
-    // Gentle descending minor notes evoking sorrow and vulnerability
+  public playSadPlea(variant: 'siblings' | 'children' | 'adults' = 'siblings'): void {
+    if (variant === 'children') {
+      // High, fragile descending notes evoking young crying children
+      this.beep(659.25, 0.24, 'sine', 0.055, 622.25, 0.0);
+      this.beep(587.33, 0.28, 'sine', 0.055, 523.25, 0.2);
+      this.beep(523.25, 0.34, 'triangle', 0.05, 466.16, 0.44);
+      this.beep(440.0, 0.52, 'sine', 0.055, 392.0, 0.72);
+      return;
+    }
+    if (variant === 'adults') {
+      // Deep, solemn minor lament for exhausted adult villagers
+      this.beep(392.0, 0.32, 'triangle', 0.055, 369.99, 0.0);
+      this.beep(349.23, 0.36, 'sine', 0.06, 329.63, 0.28);
+      this.beep(311.13, 0.42, 'triangle', 0.055, 293.66, 0.6);
+      this.beep(261.63, 0.62, 'sine', 0.065, 233.08, 0.96);
+      return;
+    }
+    // Gentle descending minor notes evoking sorrow and vulnerability (siblings)
     this.beep(523.25, 0.28, 'sine', 0.06, 493.88, 0.0);
     this.beep(440.0, 0.32, 'sine', 0.06, 415.3, 0.24);
     this.beep(392.0, 0.38, 'triangle', 0.055, 349.23, 0.52);
