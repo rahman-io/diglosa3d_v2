@@ -140,6 +140,12 @@ export const ResumeSessionModal: React.FC<ResumeSessionModalProps> = ({
             </button>
           </div>
 
+          <div className="mb-3 rounded-xl border border-cyan-400/45 bg-cyan-950/60 px-3.5 py-2.5 text-xs leading-relaxed text-cyan-100 shadow-inner">
+            <span className="font-black text-amber-200">ℹ️ Melanjutkan Permainan:</span>{' '}
+            Menekan tombol <strong>Lanjutkan</strong> akan meneruskan petualangan dari{' '}
+            <strong>progres terakhir yang tersimpan</strong> (bukan mengulang dari awal).
+          </div>
+
           {errorMsg && (
             <div className="mb-3 rounded-xl border border-rose-400/50 bg-rose-950/75 px-3 py-2 text-xs font-bold text-rose-100">
               ⚠️ {errorMsg}

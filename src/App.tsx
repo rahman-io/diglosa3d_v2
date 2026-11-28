@@ -25,6 +25,7 @@ import {
 } from './components/PwaControls';
 import { ResumeCountdownOverlay } from './components/ResumeCountdownOverlay';
 import { ResumeSessionModal } from './components/ResumeSessionModal';
+import { RetryConfirmModal } from './components/RetryConfirmModal';
 import { RpgHud } from './components/RpgHud';
 import { RpgSideModals, SideModalTab } from './components/RpgSideModals';
 import { StoryOverlayModal } from './components/StoryOverlayModal';
@@ -299,6 +300,7 @@ function DiglosaRpgApp() {
   const [sideTab, setSideTab] = useState<SideModalTab>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [resumePromptOpen, setResumePromptOpen] = useState(false);
+  const [retryConfirmOpen, setRetryConfirmOpen] = useState(false);
   const [resumeCountdown, setResumeCountdown] = useState<{
     label: string;
     isMultiplayer?: boolean;
@@ -952,6 +954,10 @@ function DiglosaRpgApp() {
 
       if (e.code === 'Escape') {
         if (resumeCountdown) return;
+        if (retryConfirmOpen) {
+          setRetryConfirmOpen(false);
+          return;
+        }
         if (profileOpen) {
           setProfileOpen(false);
           return;
@@ -1011,6 +1017,7 @@ function DiglosaRpgApp() {
         (e.code === 'KeyM' || e.code === 'KeyH') &&
         hud.phase === 'playing' &&
         !resumeCountdown &&
+        !retryConfirmOpen &&
         !profileOpen &&
         !resumePromptOpen &&
         !activeBattle &&
@@ -1028,6 +1035,7 @@ function DiglosaRpgApp() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [
     resumeCountdown,
+    retryConfirmOpen,
     profileOpen,
     resumePromptOpen,
     vsIntroData,
@@ -2069,6 +2077,66 @@ function DiglosaRpgApp() {
     }
   }, [hud.settings.difficulty, user?.uid, user?.emailVerified, activeRoom, resumableRoom]);
 
+  const handleConfirmRetryAndStartNew = useCallback(() => {
+    if (getAlwaysFullscreenPref()) void requestAppFullscreen();
+    setRetryConfirmOpen(false);
+    setResumePromptOpen(false);
+
+    if (activeRoom) {
+      void handleLeaveMultiplayerRoom(false).catch(() => undefined);
+    } else if (resumableRoom) {
+      const oldRoomId = resumableRoom.room.roomId;
+      setResumableRoom(null);
+      clearLastActiveRoomSession();
+      void leaveMultiplayerRoom(oldRoomId).catch(() => undefined);
+    }
+
+    setIsMultiplayerPlaying(false);
+    quickLearnStandaloneRef.current = false;
+    setActiveBattle(null);
+    setActiveLearning(null);
+    setActiveAcademySkill(null);
+    setActiveCaveSeal(null);
+    setCraftingOpen(false);
+    setDialogueNpcId(null);
+    setSideTab(null);
+    setVsIntroData(null);
+    setDismissedVictorySeed(0);
+    setCloudSyncNote(null);
+    setSyncStatus(null);
+
+    engineRef.current?.clearSavedProgress(true);
+    clearActiveSessionStage();
+
+    setRestoredLobbyDraft(null);
+    setLobbyDraft({
+      wizardStep: 'character',
+      playMode: 'solo',
+      difficulty: hud.settings.difficulty,
+      joinCode: '',
+    });
+    setPendingDifficulty(hud.settings.difficulty);
+    setDifficultyPromptOpen(true);
+  }, [
+    activeRoom,
+    resumableRoom,
+    handleLeaveMultiplayerRoom,
+    hud.settings.difficulty,
+  ]);
+
+  const handleRequestRetry = useCallback(() => {
+    if (
+      hud.hasSavedGame ||
+      hud.phase !== 'title' ||
+      Boolean(activeRoom) ||
+      Boolean(resumableRoom)
+    ) {
+      setRetryConfirmOpen(true);
+      return;
+    }
+    handleConfirmRetryAndStartNew();
+  }, [hud.hasSavedGame, hud.phase, activeRoom, resumableRoom, handleConfirmRetryAndStartNew]);
+
   const handlePlayMenu = useCallback(() => {
     if (getAlwaysFullscreenPref()) void requestAppFullscreen();
     if (hud.hasSavedGame || Boolean(resumableRoom)) {
@@ -2459,6 +2527,7 @@ function DiglosaRpgApp() {
     ((hud.phase === 'title' || !activeRoom || !isMultiplayerPlaying) &&
       (difficultyPromptOpen ||
         resumePromptOpen ||
+        retryConfirmOpen ||
         profileOpen ||
         leaderboardOpen ||
         Boolean(sideTab) ||
@@ -2774,7 +2843,7 @@ function DiglosaRpgApp() {
           hasSavedGame={hud.hasSavedGame}
           hasResumableRoom={Boolean(resumableRoom)}
           onContinue={handleContinue}
-          onStartNew={handleStartNew}
+          onStartNew={handleRequestRetry}
           onPlayMenu={handlePlayMenu}
           onQuickLearn={(mode) => {
             if (getAlwaysFullscreenPref()) void requestAppFullscreen();
@@ -2795,6 +2864,7 @@ function DiglosaRpgApp() {
             showAssetDownloader ||
             difficultyPromptOpen ||
             resumePromptOpen ||
+            retryConfirmOpen ||
             profileOpen ||
             leaderboardOpen ||
             Boolean(sideTab) ||
@@ -2886,6 +2956,7 @@ function DiglosaRpgApp() {
             Boolean(sideTab) ||
             profileOpen ||
             resumePromptOpen ||
+            retryConfirmOpen ||
             leaderboardOpen ||
             difficultyPromptOpen ||
             showAssetDownloader ||
@@ -3050,7 +3121,7 @@ function DiglosaRpgApp() {
           hud={hud}
           playerName={playerName}
           onResume={() => engineRef.current?.setPhase('playing')}
-          onRestart={handleStartNew}
+          onRestart={handleRequestRetry}
           onQuitToTitle={() => {
             clearActiveSessionStage();
             quickLearnStandaloneRef.current = false;
@@ -3108,6 +3179,14 @@ function DiglosaRpgApp() {
         onDismissResumableRoom={handleDismissResumableRoom}
         onOpenNewModeLobby={handleStartNew}
         onClose={() => setResumePromptOpen(false)}
+      />
+
+      <RetryConfirmModal
+        open={retryConfirmOpen}
+        hasSavedGame={hud.hasSavedGame}
+        inActiveRun={hud.phase !== 'title'}
+        onConfirm={handleConfirmRetryAndStartNew}
+        onCancel={() => setRetryConfirmOpen(false)}
       />
 
       <PlayLobbyModal

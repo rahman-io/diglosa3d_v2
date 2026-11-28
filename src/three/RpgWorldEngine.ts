@@ -2291,6 +2291,29 @@ export class RpgWorldEngine {
     }
   }
 
+  public clearSavedProgress(returnToTitle = false): void {
+    try {
+      localStorage.removeItem(SAVE_KEY);
+    } catch {
+      // ignore storage errors
+    }
+    this.hasSave = false;
+    if (returnToTitle) {
+      this.multiplayerActive = false;
+      this.clearSubScenes();
+      this.clearVillageAmbushRig();
+      this.clearOverworldNightMonsters();
+      this.worldMode = 'overworld';
+      this.overworldGroup.visible = true;
+      this.storyDialog = null;
+      this.owlRig.root.visible = false;
+      this.owlState = 'hidden';
+      this.setPhase('title');
+      return;
+    }
+    this.pushHud(true);
+  }
+
   private getOrCreateZoneCaveDetail(zoneId: ZoneId): SavedZoneCaveDetail {
     if (!this.zoneCaveDetails[zoneId]) {
       this.zoneCaveDetails[zoneId] = {
