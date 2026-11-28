@@ -1023,6 +1023,8 @@ export class RpgWorldEngine {
   private camRaycaster = new THREE.Raycaster();
   private camOccluderScratch: THREE.Object3D[] = [];
   private currentCamDist = 7.8;
+  private orbitDesiredDist = 22;
+  private orbitCurrentDist = 22;
   private lookPointer: {
     id: number;
     startX: number;
@@ -1764,10 +1766,11 @@ export class RpgWorldEngine {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = !this.isSoftwareGl;
     this.controls.dampingFactor = 0.07;
-    this.controls.maxPolarAngle = Math.PI * 0.42;
-    this.controls.minPolarAngle = 0.35;
-    this.controls.minDistance = 14;
+    this.controls.maxPolarAngle = Math.PI * 0.48;
+    this.controls.minPolarAngle = 0.22;
+    this.controls.minDistance = 2.2;
     this.controls.maxDistance = 128;
+    this.controls.enablePan = false;
     this.controls.target.set(6, 7, -4);
     this.controls.enabled = false;
 
@@ -4184,7 +4187,15 @@ export class RpgWorldEngine {
     const inFirstPerson = isPlaying && this.cameraMode === 'first_person';
     this.hero.body.visible = !inFirstPerson;
     this.fpViewRig.root.visible = inFirstPerson && this.carMode === 'none' && this.planeMode === 'none';
-    this.controls.enabled = isPlaying && this.cameraMode === 'orbit';
+    const isOrbitPlaying = isPlaying && this.cameraMode === 'orbit';
+    this.controls.enabled = isOrbitPlaying;
+    if (isOrbitPlaying) {
+      this.controls.minDistance = 2.2;
+      this.controls.maxDistance = this.worldMode === 'dungeon' ? 36 : 128;
+      this.controls.maxPolarAngle = Math.PI * 0.48;
+      this.controls.minPolarAngle = 0.22;
+      this.controls.enablePan = false;
+    }
   }
 
   private rayIntersectAabbDist(
@@ -4296,33 +4307,55 @@ export class RpgWorldEngine {
 
     let minCamY = 0.78;
     if (this.worldMode === 'overworld') {
-      for (const frac of [0.25, 0.5, 0.75, 1.0]) {
-        const sx = originX + dirX * safeDist * frac;
-        const sz = originZ + dirZ * safeDist * frac;
+      const isDeepSwim = this.isSwimming && this.heroPos.y < -1.55;
+      const steps = Math.min(32, Math.max(6, Math.ceil(safeDist / 1.8)));
+      for (let i = 1; i <= steps; i++) {
+        const dist = (safeDist * i) / steps;
+        const sx = originX + dirX * dist;
+        const sz = originZ + dirZ * dist;
         const tSamp = sampleArchipelagoTerrain(sx, sz);
-        if (tSamp.isLandOrBridge) {
-          const neededY = tSamp.groundY + 0.85;
-          minCamY = Math.max(minCamY, neededY);
-          const curY = originY + dirY * safeDist * frac;
-          if (curY < neededY) {
-            if (dirY < -0.01) {
-              safeDist = Math.min(safeDist, Math.max(1.2, (neededY - originY) / (dirY * frac)));
-            } else {
-              safeDist = Math.min(safeDist, Math.max(1.2, safeDist * frac * 0.75));
-            }
+        const surfaceY = tSamp.isLandOrBridge ? tSamp.groundY : 0;
+        if (isDeepSwim && !tSamp.isLandOrBridge) continue;
+        const neededY = surfaceY + 0.85;
+        minCamY = Math.max(minCamY, neededY);
+        const curY = originY + dirY * dist;
+        if (curY < neededY) {
+          if (dirY < -0.01) {
+            safeDist = Math.min(safeDist, Math.max(1.25, (neededY - originY) / dirY));
+          } else {
+            safeDist = Math.min(safeDist, Math.max(1.25, dist - 0.85));
           }
+          break;
         }
       }
     }
     if (dirY < -0.01 && originY + dirY * safeDist < minCamY) {
-      safeDist = Math.min(safeDist, Math.max(1.2, (minCamY - originY) / dirY));
+      safeDist = Math.min(safeDist, Math.max(1.25, (minCamY - originY) / dirY));
     }
 
     if (this.worldMode === 'dungeon' && this.dungeonRig) {
-      // Keep camera cleanly below cavern ceiling
+      // Keep camera cleanly below cavern ceiling and above cave floors/terraces
       const maxCamY = this.dungeonRig ? Math.max(8.95, this.dungeonRig.ceilingY - 1.8) : 8.95;
       if (dirY > 0.01 && originY + dirY * safeDist > maxCamY) {
-        safeDist = Math.min(safeDist, Math.max(1.2, (maxCamY - originY) / dirY));
+        safeDist = Math.min(safeDist, Math.max(1.25, (maxCamY - originY) / dirY));
+      }
+
+      const caveSteps = Math.min(18, Math.max(5, Math.ceil(safeDist / 1.6)));
+      for (let i = 1; i <= caveSteps; i++) {
+        const dist = (safeDist * i) / caveSteps;
+        const sx = originX + dirX * dist;
+        const sz = originZ + dirZ * dist;
+        const caveSupportY = this.getDungeonSupportHeight(sx, sz, originY + 2.0);
+        const neededY = Math.max(0.75, caveSupportY + 0.72);
+        const curY = originY + dirY * dist;
+        if (curY < neededY) {
+          if (dirY < -0.01) {
+            safeDist = Math.min(safeDist, Math.max(1.25, (neededY - originY) / dirY));
+          } else {
+            safeDist = Math.min(safeDist, Math.max(1.25, dist - 0.75));
+          }
+          break;
+        }
       }
 
       this.camOccluderScratch.length = 0;
@@ -4345,6 +4378,31 @@ export class RpgWorldEngine {
       const hits = this.camRaycaster.intersectObjects(this.camOccluderScratch, true);
       if (hits.length > 0) {
         safeDist = Math.min(safeDist, Math.max(1.15, hits[0].distance - 0.52));
+      }
+
+      for (const col of this.dungeonRig.caveColliders) {
+        const halfD = col.halfD ?? col.halfW;
+        const minY = col.minY ?? -4;
+        const maxY = col.maxY ?? 14;
+        const hit = this.rayIntersectObbDist(
+          originX,
+          originY,
+          originZ,
+          dirX,
+          dirY,
+          dirZ,
+          safeDist + 0.45,
+          col.x,
+          col.z,
+          col.halfW + 0.35,
+          halfD + 0.35,
+          minY,
+          maxY + 0.35,
+          col.rotY ?? 0,
+        );
+        if (hit !== null) {
+          safeDist = Math.min(safeDist, Math.max(1.15, hit - 0.5));
+        }
       }
     } else if (this.worldMode === 'ocean' && this.oceanRig) {
       if (dirY > 0.01 && originY + dirY * safeDist > -0.35) {
@@ -4435,8 +4493,8 @@ export class RpgWorldEngine {
       for (const obs of this.villageRig.obstacles) {
         if (obs.halfW < 0.55 && obs.halfD < 0.55) continue;
         const baseY = obs.minY ?? getArchipelagoGroundY(obs.x, obs.z);
-        const h = obs.maxY ?? baseY + (obs.halfW >= 2.4 ? 7.2 : 4.2);
-        const hit = this.rayIntersectAabbDist(
+        const h = obs.maxY ?? baseY + (obs.halfW >= 2.4 ? 7.8 : 4.6);
+        const hit = this.rayIntersectObbDist(
           originX,
           originY,
           originZ,
@@ -4444,12 +4502,13 @@ export class RpgWorldEngine {
           dirY,
           dirZ,
           safeDist + 0.5,
-          obs.x - obs.halfW,
-          obs.x + obs.halfW,
+          obs.x,
+          obs.z,
+          obs.halfW + 0.35,
+          obs.halfD + 0.35,
           baseY,
-          h,
-          obs.z - obs.halfD,
-          obs.z + obs.halfD,
+          h + 0.35,
+          obs.rotY ?? 0,
         );
         if (hit !== null) {
           safeDist = Math.min(safeDist, Math.max(1.25, hit - 0.5));
@@ -4483,6 +4542,119 @@ export class RpgWorldEngine {
     }
 
     return safeDist;
+  }
+
+  private getCameraMinFloorY(x: number, z: number): number {
+    const offsets: Array<[number, number]> = [
+      [0, 0],
+      [0.45, 0],
+      [-0.45, 0],
+      [0, 0.45],
+      [0, -0.45],
+    ];
+    if (this.worldMode === 'ocean') {
+      let minFloor = -22;
+      for (const [ox, oz] of offsets) {
+        minFloor = Math.max(minFloor, getOceanFloorY(x + ox, z + oz) + 0.75);
+      }
+      return minFloor;
+    }
+    if (this.worldMode === 'dungeon') {
+      let minFloor = 0.75;
+      for (const [ox, oz] of offsets) {
+        const sy = this.getDungeonSupportHeight(x + ox, z + oz, this.heroPos.y + 2.0);
+        minFloor = Math.max(minFloor, sy + 0.72);
+      }
+      return minFloor;
+    }
+    if (this.worldMode === 'academy') {
+      return 0.78;
+    }
+    const isDeepSwim = this.isSwimming && this.heroPos.y < -1.55;
+    let minFloor = isDeepSwim ? -18 : 0.78;
+    for (const [ox, oz] of offsets) {
+      const samp = sampleArchipelagoTerrain(x + ox, z + oz);
+      if (samp.isLandOrBridge) {
+        minFloor = Math.max(minFloor, samp.groundY + 0.85);
+      } else if (!isDeepSwim) {
+        minFloor = Math.max(minFloor, 0.85);
+      }
+    }
+    return minFloor;
+  }
+
+  private enterOrbitCameraMode(): void {
+    const activePlane = this.planeMode !== 'none' ? this.getActivePlane() : undefined;
+    const focusX = activePlane ? activePlane.pos.x : this.carMode !== 'none' ? this.carPos.x : this.heroPos.x;
+    const focusZ = activePlane ? activePlane.pos.z : this.carMode !== 'none' ? this.carPos.z : this.heroPos.z;
+    const focusY = activePlane
+      ? activePlane.pos.y + 1.95
+      : this.carMode !== 'none'
+      ? this.carPos.y + 2.25
+      : this.heroPos.y + 1.92;
+    this.controls.target.set(focusX, focusY, focusZ);
+    const defaultDist = this.worldMode === 'dungeon' ? 14 : 24;
+    this.orbitDesiredDist = defaultDist;
+    this.orbitCurrentDist = defaultDist;
+    const sinY = Math.sin(this.cameraYaw);
+    const cosY = Math.cos(this.cameraYaw);
+    this.camera.position.set(
+      focusX + sinY * defaultDist * 0.82,
+      focusY + defaultDist * 0.45,
+      focusZ + cosY * defaultDist * 0.82,
+    );
+    this.controls.update();
+    this.applyOrbitCameraConstraints(1 / 60, true);
+  }
+
+  private applyOrbitCameraConstraints(dt: number, immediate = false): void {
+    const tx = this.controls.target.x;
+    const ty = this.controls.target.y;
+    const tz = this.controls.target.z;
+    const ox = this.camera.position.x - tx;
+    const oy = this.camera.position.y - ty;
+    const oz = this.camera.position.z - tz;
+    const len = Math.hypot(ox, oy, oz);
+    if (len < 0.001) return;
+
+    this.orbitDesiredDist = THREE.MathUtils.clamp(
+      len,
+      this.controls.minDistance,
+      this.controls.maxDistance,
+    );
+    const dx = ox / len;
+    const dy = oy / len;
+    const dz = oz / len;
+
+    const blockedDist = Math.max(
+      2.0,
+      this.computeSpringArmDist(tx, ty, tz, dx, dy, dz, this.orbitDesiredDist),
+    );
+    if (immediate || blockedDist < this.orbitCurrentDist) {
+      this.orbitCurrentDist = blockedDist;
+    } else {
+      this.orbitCurrentDist += (blockedDist - this.orbitCurrentDist) * (1 - Math.exp(-8.5 * dt));
+    }
+
+    let cx = tx + dx * this.orbitCurrentDist;
+    let cy = ty + dy * this.orbitCurrentDist;
+    let cz = tz + dz * this.orbitCurrentDist;
+
+    const minFloorY = this.getCameraMinFloorY(cx, cz);
+    if (cy < minFloorY) {
+      cy = minFloorY;
+    }
+    if (this.worldMode === 'dungeon' && this.dungeonRig) {
+      const maxCamY = Math.max(8.95, this.dungeonRig.ceilingY - 1.8);
+      if (cy > maxCamY) cy = maxCamY;
+    } else if (this.worldMode === 'ocean') {
+      cy = Math.min(-0.35, cy);
+    } else if (this.worldMode === 'overworld' && this.isSwimming && this.heroPos.y < -1.55) {
+      cy = Math.min(-0.35, cy);
+    }
+
+    this.camera.position.set(cx, cy, cz);
+    this.camera.lookAt(tx, ty, tz);
   }
 
   private snapCameraBehindHero(targetYaw?: number): void {
@@ -11511,11 +11683,7 @@ export class RpgWorldEngine {
     this.cameraMode = order[nextIdx];
     this.applyCameraVisibilityAndControls();
     if (this.cameraMode === 'orbit') {
-      this.controls.target.set(this.heroPos.x, 2.0, this.heroPos.z);
-      if (this.camera.position.distanceTo(this.controls.target) < 12) {
-        this.camera.position.set(this.heroPos.x, 18, this.heroPos.z + 22);
-      }
-      this.controls.update();
+      this.enterOrbitCameraMode();
     }
     const labels: Record<CameraMode, string> = {
       third_back: 'Sudut Pandang Kamera Belakang (Orbit 360°)',
@@ -12466,8 +12634,7 @@ export class RpgWorldEngine {
       const distDoor = Math.hypot(this.heroPos.x - doorPt.x, this.heroPos.z - doorPt.z);
       const reachRadius = target.kind === 'bus' ? 7.4 : 6.0;
       if (distCenter > reachRadius && distDoor > 4.4) {
-        this.tapMoveTarget = doorPt;
-        this.showBanner(`🚗 Berjalan menuju ${target.name}...`, 2.2);
+        this.showBanner(`🚗 Dekati ${target.name} terlebih dahulu untuk masuk!`, 2.2);
         return;
       }
 
@@ -12807,8 +12974,7 @@ export class RpgWorldEngine {
       const distCenter = Math.hypot(this.heroPos.x - target.pos.x, this.heroPos.z - target.pos.z);
       const distBoard = Math.hypot(this.heroPos.x - boardPt.x, this.heroPos.z - boardPt.z);
       if (distCenter > 7.8 && distBoard > 5.2) {
-        this.tapMoveTarget = boardPt;
-        this.showBanner(`✈️ Berjalan menuju kokpit ${target.name}...`, 2.2);
+        this.showBanner(`✈️ Dekati kokpit ${target.name} terlebih dahulu untuk naik!`, 2.2);
         return;
       }
 
@@ -18641,8 +18807,7 @@ export class RpgWorldEngine {
           ) {
             this.exitDungeon();
           } else {
-            this.tapMoveTarget = this.oceanRig.buoyPos.clone();
-            this.showBanner('🫧 Berenang menuju Pelampung Naik ke Permukaan...', 2.2);
+            this.showBanner('🫧 Dekati Pelampung dengan tombol/joystick jalan untuk naik ke permukaan!', 2.2);
           }
           return;
         }
@@ -18658,8 +18823,7 @@ export class RpgWorldEngine {
             if (Math.hypot(this.heroPos.x - ch.x, this.heroPos.z - ch.z) < 5.0) {
               this.interactWithOceanChest(ch);
             } else {
-              this.tapMoveTarget = new THREE.Vector3(ch.x, ch.y, ch.z);
-              this.showBanner(`🧰 Menuju ${ch.label}...`, 2.0);
+              this.showBanner(`🧰 Dekati ${ch.label} terlebih dahulu untuk membukanya!`, 2.0);
             }
           }
           return;
@@ -18672,9 +18836,8 @@ export class RpgWorldEngine {
             if (Math.hypot(this.heroPos.x - node.x, this.heroPos.z - node.z) < 5.2) {
               this.interactWithBiotaNode(node);
             } else {
-              this.tapMoveTarget = new THREE.Vector3(node.x, node.y, node.z);
               const entry = SEA_BIOTA_BY_ID[node.speciesId];
-              this.showBanner(`🐠 Mendekati ${entry?.indoName ?? 'Biota Laut'}...`, 1.8);
+              this.showBanner(`🐠 Dekati ${entry?.indoName ?? 'Biota Laut'} terlebih dahulu!`, 1.8);
             }
           }
           return;
@@ -18683,8 +18846,7 @@ export class RpgWorldEngine {
           if (Math.hypot(this.heroPos.x, this.heroPos.z + 9) < 6.5) {
             this.collectPrisonKey();
           } else {
-            this.tapMoveTarget = new THREE.Vector3(0, 0, -9);
-            this.showBanner('Menuju Kunci Penjara Emas...', 2.0);
+            this.showBanner('🔑 Dekati Kunci Penjara Emas terlebih dahulu untuk mengambilnya!', 2.0);
           }
           return;
         }
@@ -18702,8 +18864,10 @@ export class RpgWorldEngine {
           ) {
             this.interactWithHiddenPrison();
           } else {
-            this.tapMoveTarget = this.dungeonRig.prisonPos.clone();
-            this.showBanner(`Menuju Penjara Tersembunyi (${this.dungeonState.captiveName})...`, 2.2);
+            this.showBanner(
+              `🗝️ Dekati Penjara Tersembunyi (${this.dungeonState.captiveName}) terlebih dahulu!`,
+              2.2,
+            );
           }
           return;
         }
@@ -18721,8 +18885,10 @@ export class RpgWorldEngine {
           ) {
             this.talkToCaveGuardian();
           } else {
-            this.tapMoveTarget = new THREE.Vector3(2.8, 0, 12.2);
-            this.showBanner(`Menuju ${this.dungeonState?.guardianName || 'Penjaga Gua'}...`, 2.0);
+            this.showBanner(
+              `🗣️ Dekati ${this.dungeonState?.guardianName || 'Penjaga Gua'} terlebih dahulu!`,
+              2.0,
+            );
           }
           return;
         }
@@ -18832,19 +18998,16 @@ export class RpgWorldEngine {
           if (Math.hypot(rPos.x - this.heroPos.x, rPos.z - this.heroPos.z) < 6.0) {
             this.collectCaveRibbon(this.dungeonState.zoneId);
           } else {
-            this.tapMoveTarget = rPos.clone();
-            this.showBanner('Menuju Pita Merah 3D tersembunyi...', 2.2);
+            this.showBanner('🎀 Dekati Pita Merah 3D terlebih dahulu untuk mengambilnya!', 2.2);
           }
           return;
         }
         if (obj.userData.starterPickup && this.worldMode === 'overworld' && !this.starterWeaponPicked) {
-          const sw = OVERWORLD_ANCHORS.starterWeapon;
-          this.tapMoveTarget = new THREE.Vector3(sw.x, getArchipelagoGroundY(sw.x, sw.z), sw.z);
-          this.showBanner('Menuju ke Senjata Pertamamu...', 2.0);
+          this.showBanner('🏹 Dekati Senjata Pertamamu dengan tombol/joystick jalan!', 2.0);
           return;
         }
         if (obj.userData.swimSuitPickup && this.worldMode === 'overworld' && !this.swimSuitPicked) {
-          this.walkToSwimSuit();
+          this.showBanner('🩱 Dekati Pakaian Renang di Desa Sapaan dengan tombol/joystick jalan!', 2.0);
           return;
         }
         if (obj.userData.academyTip && this.worldMode === 'academy') {
@@ -18905,7 +19068,7 @@ export class RpgWorldEngine {
     }
 
     // With an armed weapon in Bidik Bebas TPS, clicking empty view fires at crosshair;
-    // in Bidik Otomatis mode, clicking empty ground performs classic Tap-to-Move.
+    // clicking/tapping empty surfaces never triggers auto-walk (movement requires keyboard or joystick).
     if (
       this.settings.aimMode === 'manual' &&
       hasArmedWeapon &&
@@ -18913,32 +19076,6 @@ export class RpgWorldEngine {
       e.button === 0
     ) {
       this.fireActiveWeapon(false);
-      return;
-    }
-
-    if (this.worldMode === 'overworld' && this.archipelagoRig) {
-      const groundHits = this.raycaster.intersectObjects(this.archipelagoRig.walkableTargets, false);
-      if (groundHits.length > 0) {
-        const pt = groundHits[0].point.clone();
-        constrainHeroToWorldBounds(pt, 1.0);
-        const s = sampleArchipelagoTerrain(pt.x, pt.z);
-        pt.y = s.isLandOrBridge ? s.groundY : 0;
-        this.tapMoveTarget = pt;
-        this.spawnBurst(pt.x, pt.y + 0.3, pt.z, s.isLandOrBridge ? 0x38bdf8 : 0xbae6fd, 6);
-        return;
-      }
-    }
-
-    const groundHit = new THREE.Vector3();
-    this.groundPlane.constant = this.worldMode === 'overworld' ? -Math.max(0, this.heroPos.y) : 0;
-    if (this.raycaster.ray.intersectPlane(this.groundPlane, groundHit)) {
-      if (this.worldMode === 'overworld') {
-        constrainHeroToWorldBounds(groundHit, 1.0);
-        const s = sampleArchipelagoTerrain(groundHit.x, groundHit.z);
-        groundHit.y = s.isLandOrBridge ? s.groundY : 0;
-      }
-      this.tapMoveTarget = groundHit;
-      this.spawnBurst(groundHit.x, groundHit.y + 0.3, groundHit.z, 0x38bdf8, 6);
     }
   };
 
@@ -19076,10 +19213,12 @@ export class RpgWorldEngine {
       this.updatePlaying(dt);
       if (this.cameraMode === 'orbit') {
         this.controls.update();
+        this.applyOrbitCameraConstraints(dt);
       }
     } else {
       if (this.cameraMode === 'orbit') {
         this.controls.update();
+        this.applyOrbitCameraConstraints(dt);
       }
     }
     this.updateRemotePeers(dt);
@@ -26921,10 +27060,17 @@ export class RpgWorldEngine {
         0.14 + walkBob * 0.05,
       );
     } else {
-      _v1.set(this.heroPos.x, 2.0, this.heroPos.z);
-      _v2.subVectors(_v1, this.controls.target).multiplyScalar(1 - Math.exp(-7 * dt));
+      _v1.set(focusX, targetY, focusZ);
+      _v2.subVectors(_v1, this.controls.target).multiplyScalar(1 - Math.exp(-9 * dt));
       this.controls.target.add(_v2);
       this.camera.position.add(_v2);
+      // Restore user's desired orbit distance before OrbitControls.update() applies drag/zoom
+      _v3.subVectors(this.camera.position, this.controls.target);
+      const curOrbitLen = _v3.length();
+      if (curOrbitLen > 0.001 && Math.abs(curOrbitLen - this.orbitDesiredDist) > 0.01) {
+        _v3.multiplyScalar(this.orbitDesiredDist / curOrbitLen);
+        this.camera.position.copy(this.controls.target).add(_v3);
+      }
     }
 
     this.crosshairOnEnemy =
@@ -32014,11 +32160,7 @@ export class RpgWorldEngine {
     this.cameraMode = mode;
     this.applyCameraVisibilityAndControls();
     if (mode === 'orbit') {
-      this.controls.target.set(this.heroPos.x, 2.0, this.heroPos.z);
-      if (this.camera.position.distanceTo(this.controls.target) < 12) {
-        this.camera.position.set(this.heroPos.x, 18, this.heroPos.z + 22);
-      }
-      this.controls.update();
+      this.enterOrbitCameraMode();
     }
     const labels: Record<CameraMode, string> = {
       third_back: '🎙️ Kamera Belakang (TPS)',

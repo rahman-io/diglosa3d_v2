@@ -37,10 +37,9 @@ function createFirestoreInstance(): Firestore {
     return getFirestore(app, databaseId);
   }
   try {
-    const settings = {
-      experimentalForceLongPolling: true,
-      useFetchStreams: false,
-    } as FirestoreSettings & { useFetchStreams?: boolean };
+    const settings: FirestoreSettings = {
+      experimentalAutoDetectLongPolling: true,
+    };
     return initializeFirestore(app, settings, databaseId);
   } catch {
     return getFirestore(app, databaseId);
@@ -120,9 +119,14 @@ export function handleFirestoreError(
 
 let reachabilityPromise: Promise<boolean> | null = null;
 let lastReachableAt = 0;
+let restConfigVerified = false;
 const REACHABILITY_CACHE_MS = 5 * 60 * 1000;
 
 export async function probeFirestoreReachable(timeoutMs = 4500): Promise<boolean> {
+  if (!firebaseConfig?.projectId || !firebaseConfig?.apiKey) {
+    restConfigVerified = false;
+    return false;
+  }
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     return false;
   }
@@ -140,10 +144,11 @@ export async function probeFirestoreReachable(timeoutMs = 4500): Promise<boolean
         ? window.setTimeout(() => controller.abort(), timeoutMs)
         : null;
     try {
+      const databaseId = firebaseConfig.firestoreDatabaseId || '(default)';
       const url = `https://firestore.googleapis.com/v1/projects/${encodeURIComponent(
         firebaseConfig.projectId,
       )}/databases/${encodeURIComponent(
-        firebaseConfig.firestoreDatabaseId,
+        databaseId,
       )}/documents:runQuery?key=${encodeURIComponent(firebaseConfig.apiKey)}`;
       const res = await fetch(url, {
         method: 'POST',
@@ -167,9 +172,13 @@ export async function probeFirestoreReachable(timeoutMs = 4500): Promise<boolean
         }),
         signal: controller?.signal,
       });
-      if (res.status > 0 && res.status < 500) {
+      if (res.ok || res.status === 403) {
         lastReachableAt = Date.now();
+        restConfigVerified = true;
         return true;
+      }
+      if (res.status === 400 || res.status === 404) {
+        restConfigVerified = false;
       }
       return false;
     } catch {
@@ -187,6 +196,7 @@ export async function probeFirestoreReachable(timeoutMs = 4500): Promise<boolean
 
 let connectionTested = false;
 let onlineRetryBound = false;
+let visibleRetryBound = false;
 
 function scheduleOnlineConnectionRetry(): void {
   if (typeof window === 'undefined' || onlineRetryBound) return;
@@ -201,10 +211,27 @@ function scheduleOnlineConnectionRetry(): void {
   );
 }
 
+function scheduleVisibleConnectionRetry(): void {
+  if (typeof document === 'undefined' || visibleRetryBound) return;
+  visibleRetryBound = true;
+  const onVisible = () => {
+    if (document.visibilityState === 'visible') {
+      document.removeEventListener('visibilitychange', onVisible);
+      visibleRetryBound = false;
+      void testConnection();
+    }
+  };
+  document.addEventListener('visibilitychange', onVisible);
+}
+
 export async function testConnection(): Promise<void> {
   if (connectionTested) return;
   if (typeof navigator !== 'undefined' && !navigator.onLine) {
     scheduleOnlineConnectionRetry();
+    return;
+  }
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    scheduleVisibleConnectionRetry();
     return;
   }
   const reachable = await probeFirestoreReachable();
@@ -219,7 +246,9 @@ export async function testConnection(): Promise<void> {
   } catch (error) {
     const msg = error instanceof Error ? error.message : String(error);
     if (msg.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
+      if (!restConfigVerified) {
+        console.error('Please check your Firebase configuration.');
+      }
       connectionTested = false;
       lastReachableAt = 0;
       scheduleOnlineConnectionRetry();
@@ -238,6 +267,10 @@ function scheduleInitialConnectionTest(): void {
   if (typeof window === 'undefined') return;
   const run = () => {
     window.setTimeout(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        scheduleVisibleConnectionRetry();
+        return;
+      }
       if (typeof navigator === 'undefined' || navigator.onLine) {
         void testConnection();
       } else {

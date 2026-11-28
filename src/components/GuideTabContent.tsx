@@ -276,7 +276,7 @@ export const GuideTabContent: React.FC<GuideTabContentProps> = ({ hud, playerNam
                 📱 HP / Layar Sentuh
               </div>
               <ul className="mt-1.5 space-y-1 text-[11px] leading-relaxed text-slate-200">
-                <li>• <strong>Jalan (Floating Joystick)</strong> cukup dengan sentuh &amp; geser di <strong>mana saja area kiri layar</strong>, lalu joystick langsung muncul di bawah jarimu (atau ketuk lantai sisi kanan).</li>
+                <li>• <strong>Jalan (Floating Joystick)</strong> cukup dengan sentuh &amp; geser di <strong>mana saja area kiri layar</strong>, lalu joystick langsung muncul di bawah jarimu.</li>
                 <li>• <strong>Putar Kamera</strong> dengan menggeser jari di <strong>area kanan layar</strong> (bisa bersamaan sambil berjalan!).</li>
                 <li>• <strong>Lompat &amp; Aksi Cepat</strong> memakai tombol <strong>⬆️ Lompat</strong> untuk naik tebing/menyeberangi jurang, dan tombol bulat biru kanan bawah untuk <strong>Tembak / Gali / Obor / Pasang / TNT</strong>.</li>
                 <li>• <strong>Pilih Alat/Senjata</strong> dengan mengetuk kotak Hotbar bawah (<strong>1–8</strong>, <strong>⛏️</strong>, <strong>🔦</strong>, <strong>🧱</strong>, <strong>🧨</strong>).</li>
