@@ -900,6 +900,25 @@ class SoundEngine {
     });
   }
 
+  public playMistClear(): void {
+    // Soft airy breeze shimmer + uplifting sunrise harp arpeggio as island fog lifts
+    this.noise(0.85, 0.06, 0.0, 1450);
+    [523.25, 659.25, 783.99, 987.77, 1174.66, 1567.98].forEach((freq, i) => {
+      this.beep(freq, 0.42, 'sine', 0.065, freq * 1.02, i * 0.14);
+      if (i % 2 === 0) {
+        this.beep(freq * 0.5, 0.36, 'triangle', 0.045, undefined, i * 0.14);
+      }
+    });
+  }
+
+  public playIslandLiberationFanfare(): void {
+    // Heartfelt triumphant village celebration chord progression
+    [392.0, 493.88, 587.33, 783.99, 987.77, 1174.66, 1567.98].forEach((freq, i) => {
+      this.beep(freq, 0.28, 'triangle', 0.065, freq * 1.02, i * 0.09);
+      this.beep(freq * 0.5, 0.28, 'sine', 0.045, undefined, i * 0.09);
+    });
+  }
+
   public playDialogueBlip(pitchOffset = 0): void {
     if (this.muted) return;
     const nowMs = Date.now();

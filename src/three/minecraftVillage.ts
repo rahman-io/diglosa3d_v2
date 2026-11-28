@@ -1,8 +1,10 @@
 import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
+import { ZoneId } from '../types/game';
 import {
   constrainToWalkableArchipelago,
   getArchipelagoGroundY,
+  ISLAND_DISKS,
   isWalkableArchipelago,
   OVERWORLD_ANCHORS,
   sampleArchipelagoTerrain,
@@ -98,6 +100,7 @@ export interface VillagerActor {
   fleeDirZ: number;
   drivingVehicleId: string | null;
   vehicleCooldown: number;
+  zoneId: ZoneId | 'hub';
   interactable?: VillageInteractable;
 }
 
@@ -646,6 +649,7 @@ export function createVillagerMesh(
     fleeDirZ: 1,
     drivingVehicleId: null,
     vehicleCooldown: 0,
+    zoneId: 'hub',
   };
 }
 
@@ -1690,6 +1694,17 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     v.fleeDirZ = 1;
     v.drivingVehicleId = null;
     v.vehicleCooldown = 0;
+    let nearestZone: ZoneId | 'hub' = 'hub';
+    let bestZoneDist = Infinity;
+    for (let di = 0; di < ISLAND_DISKS.length; di++) {
+      const disk = ISLAND_DISKS[di];
+      const dz = Math.hypot(cp.homeDoor[0] - disk.cx, cp.homeDoor[1] - disk.cz);
+      if (dz < bestZoneDist) {
+        bestZoneDist = dz;
+        nearestZone = disk.id;
+      }
+    }
+    v.zoneId = nearestZone;
     v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z), v.z);
     v.root.visible = false;
     const id = `villager_${cp.archetype}_${idx}`;
@@ -2538,6 +2553,8 @@ export function updateMinecraftVillage(
   camZ?: number,
   allowVisibilityCull = false,
   vehicleHazards: VehicleHazard[] = [],
+  liberatedZones?: ReadonlySet<ZoneId>,
+  cutsceneControlledVillagers?: ReadonlySet<VillagerActor>,
 ): void {
   _villageAnimCounter = (_villageAnimCounter + 1) & 0xffff;
   const hasHeroDist = heroX !== undefined && heroZ !== undefined;
@@ -2601,7 +2618,7 @@ export function updateMinecraftVillage(
     mesh.instanceMatrix.needsUpdate = true;
   }
 
-  const shouldGoHome = true;
+  const allSixLiberated = Boolean(liberatedZones && liberatedZones.size >= 6);
 
   // 1. Villagers & Citizens: 60fps nearby animation + 8x distance-throttled movement on outer islands
   for (let i = 0; i < rig.villagers.length; i++) {
@@ -2617,6 +2634,19 @@ export function updateMinecraftVillage(
       continue;
     }
 
+    if (cutsceneControlledVillagers?.has(v)) {
+      if (inter) {
+        inter.x = 9999;
+        inter.z = 9999;
+      }
+      continue;
+    }
+
+    const shouldGoHome =
+      v.zoneId === 'hub'
+        ? !allSixLiberated
+        : !Boolean(liberatedZones && liberatedZones.has(v.zoneId));
+
     if (v.vehicleCooldown > 0) {
       v.vehicleCooldown = Math.max(0, v.vehicleCooldown - dt);
     }
@@ -2630,10 +2660,13 @@ export function updateMinecraftVillage(
     }
 
     if (!shouldGoHome && v.isInsideHouse) {
-      // Pagi tiba -> keluar dari pintu rumah kembali beraktivitas
+      // Pulau telah bebas -> semua warga keluar dari pintu rumah kembali beraktivitas bahagia
       v.isInsideHouse = false;
-      v.x = v.homeDoor[0];
-      v.z = v.homeDoor[1];
+      _moveScratch.x = v.homeDoor[0];
+      _moveScratch.z = v.homeDoor[1];
+      pushOutFromBoxes(_moveScratch, 0.56, rig.obstacles, getArchipelagoGroundY(_moveScratch.x, _moveScratch.z), 2.0);
+      v.x = _moveScratch.x;
+      v.z = _moveScratch.z;
       v.pauseTimer = 0.15;
       v.stuckTimer = 0;
       v.fleeTimer = 0;

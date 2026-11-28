@@ -466,6 +466,7 @@ export interface StoryDialogState {
     | 'dungeon_rescue'
     | 'dungeon_ribbon_reunion'
     | 'dungeon_reunion_exit'
+    | 'island_liberation'
     | 'cave_guardian';
   step: number;
   maxStep?: number;
@@ -515,6 +516,12 @@ export interface StoryDialogState {
     | 'grateful_reunion'
     | 'garden_transform'
     | 'exit_ready';
+  islandLiberationBeat?:
+    | 'mist_clearing'
+    | 'villagers_emerge'
+    | 'gather_thanks'
+    | 'hero_motivate'
+    | 'return_to_life';
   bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry' | 'remorse';
   heroExpression?: 'neutral' | 'fierce';
   captiveExpression?: 'neutral' | 'sad_injured' | 'happy';

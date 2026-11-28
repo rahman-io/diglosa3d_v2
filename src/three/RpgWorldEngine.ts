@@ -1598,6 +1598,48 @@ export class RpgWorldEngine {
     doorSoundFired: boolean;
     cutsceneLight: THREE.PointLight;
   } | null = null;
+  private zoneMistFade: Partial<Record<ZoneId, number>> = {};
+  private pendingLiberationCutsceneZone: ZoneId | null = null;
+  private islandLiberationCutscene: {
+    zoneId: ZoneId;
+    beat:
+      | 'mist_clearing'
+      | 'villagers_emerge'
+      | 'gather_thanks'
+      | 'hero_motivate'
+      | 'return_to_life';
+    timer: number;
+    islandCenterX: number;
+    islandCenterZ: number;
+    islandRadius: number;
+    guardianId: string;
+    guardianOrigX: number;
+    guardianOrigY: number;
+    guardianOrigZ: number;
+    guardianOrigYaw: number;
+    guardianGatherX: number;
+    guardianGatherZ: number;
+    controlledVillagers: Set<VillagerActor>;
+    allZoneVillagers: Array<{
+      actor: VillagerActor;
+      emergeX: number;
+      emergeZ: number;
+      homeYaw: number;
+    }>;
+    delegates: Array<{
+      actor: VillagerActor;
+      gatherX: number;
+      gatherZ: number;
+      returnX: number;
+      returnZ: number;
+      arrived: boolean;
+      phaseOffset: number;
+    }>;
+    sparkAccum: number;
+    mistSfxFired: boolean;
+    emergeSfxFired: boolean;
+    cheerSfxFired: boolean;
+  } | null = null;
 
   // RPG Progression State
   private phase: GamePhase = 'title';
@@ -2461,6 +2503,11 @@ export class RpgWorldEngine {
       this.ownedRelics = new Set(data.ownedRelics || []);
       this.ribbons = new Set(data.ribbons || []);
       this.liberatedZones = new Set(data.liberatedZones || []);
+      this.zoneMistFade = {};
+      this.liberatedZones.forEach((zId) => {
+        this.zoneMistFade[zId] = 0;
+      });
+      this.pendingLiberationCutsceneZone = null;
       this.captiveRescuedZones = new Set(data.captiveRescuedZones ?? data.liberatedZones ?? []);
       this.guardianReunitedZones = new Set(data.guardianReunitedZones ?? data.liberatedZones ?? []);
       this.areaTrophies = new Set(data.areaTrophies || []);
@@ -2889,9 +2936,18 @@ export class RpgWorldEngine {
       q.claimed = true;
     }
     this.checkAreaTrophy(zoneId);
-    this.refreshAreaMists();
     this.localMabarStats.zonesCleared = this.liberatedZones.size;
     this.emitProgressSync();
+
+    if (announce && this.worldMode === 'overworld' && this.phase === 'playing') {
+      this.zoneMistFade[zoneId] = 1.0;
+      this.saveProgress();
+      this.startIslandLiberationCutscene(zoneId);
+      return true;
+    }
+
+    this.zoneMistFade[zoneId] = 0;
+    this.refreshAreaMists();
     if (announce) {
       soundEngine.playFanfare();
       this.spawnBurst(this.heroPos.x, this.heroPos.y + 2.0, this.heroPos.z, 0x34d399, 40);
@@ -4278,18 +4334,25 @@ export class RpgWorldEngine {
 
   private refreshAreaMists(): void {
     this.areaMists.forEach((mist, zId) => {
-      mist.visible = !this.liberatedZones.has(zId);
+      const fade = this.zoneMistFade[zId] ?? (this.liberatedZones.has(zId) ? 0 : 1);
+      mist.visible = fade > 0.01;
+      const mat = mist.material as THREE.MeshBasicMaterial;
+      mat.opacity = 0.2 * fade;
+      mist.scale.setScalar(1 + (1 - fade) * 0.55);
     });
     if (this.worldMistMesh && this.worldMistSeeds.length > 0) {
       for (let i = 0; i < this.worldMistSeeds.length; i++) {
         const s = this.worldMistSeeds[i];
-        const hidden = Boolean(s.zoneId && s.zoneId !== 'hub' && this.liberatedZones.has(s.zoneId));
-        _cloudPos.set(s.baseX, s.baseY, s.baseZ);
+        const fade =
+          s.zoneId && s.zoneId !== 'hub'
+            ? this.zoneMistFade[s.zoneId] ?? (this.liberatedZones.has(s.zoneId) ? 0 : 1)
+            : 1;
+        _cloudPos.set(s.baseX, s.baseY + (1 - fade) * 4.5, s.baseZ);
         _cloudQuat.setFromAxisAngle(_v3.set(0, 1, 0), s.rotY);
-        if (hidden) {
+        if (fade <= 0.01) {
           _cloudScale.set(0, 0, 0);
         } else {
-          _cloudScale.set(s.sx, s.sy, s.sz);
+          _cloudScale.set(s.sx * fade, s.sy * fade, s.sz * fade);
         }
         _cloudMat.compose(_cloudPos, _cloudQuat, _cloudScale);
         this.worldMistMesh.setMatrixAt(i, _cloudMat);
@@ -6211,9 +6274,12 @@ export class RpgWorldEngine {
     this.ownedRelics.clear();
     this.ribbons.clear();
     this.liberatedZones.clear();
+    this.zoneMistFade = {};
+    this.pendingLiberationCutsceneZone = null;
     this.captiveRescuedZones.clear();
     this.guardianReunitedZones.clear();
     this.guidedOutsideZoneId = null;
+    this.clearIslandLiberationCutscene();
     this.clearDungeonRibbonReunionCutscene();
     this.clearReunionCutscene();
     this.syncReunitedCaptivesAndGates();
@@ -8393,6 +8459,34 @@ export class RpgWorldEngine {
       }
       return;
     }
+
+    if (this.storyDialog.kind === 'island_liberation') {
+      const lc = this.islandLiberationCutscene;
+      if (!lc) {
+        this.finishIslandLiberationCutscene();
+        return;
+      }
+      if (lc.beat === 'mist_clearing') {
+        this.transitionIslandLiberationToEmerge();
+        return;
+      }
+      if (lc.beat === 'villagers_emerge') {
+        this.transitionIslandLiberationToGatherThanks();
+        return;
+      }
+      if (lc.beat === 'gather_thanks') {
+        this.transitionIslandLiberationToHeroMotivate();
+        return;
+      }
+      if (lc.beat === 'hero_motivate') {
+        this.transitionIslandLiberationToReturnToLife();
+        return;
+      }
+      if (lc.beat === 'return_to_life') {
+        this.finishIslandLiberationCutscene();
+        return;
+      }
+    }
   }
 
   public skipStory(): void {
@@ -8436,6 +8530,8 @@ export class RpgWorldEngine {
       } else {
         this.finishDungeonReunionCutscene();
       }
+    } else if (this.storyDialog.kind === 'island_liberation') {
+      this.finishIslandLiberationCutscene();
     } else if (this.storyDialog.kind === 'area_cleared') {
       const guidedZone = this.guidedOutsideZoneId;
       this.storyDialog = null;
@@ -11136,32 +11232,59 @@ export class RpgWorldEngine {
       this.storyDialog.step === 1;
     const stormMistT = inPrologueScene2 ? THREE.MathUtils.clamp((this.storyTimer - 4.8) / 4.8, 0, 1) : 0;
 
-    if (daylight >= 0.5) {
+    let islandClearRatio = 0;
+    if (this.islandLiberationCutscene) {
+      const lzId = this.islandLiberationCutscene.zoneId;
+      islandClearRatio = 1 - (this.zoneMistFade[lzId] ?? 0);
+    } else {
+      for (let di = 0; di < ISLAND_DISKS.length; di++) {
+        const disk = ISLAND_DISKS[di];
+        const dist = Math.hypot(this.heroPos.x - disk.cx, this.heroPos.z - disk.cz);
+        if (dist <= disk.radius + 14) {
+          if (disk.id === 'hub') {
+            if (this.liberatedZones.size >= 6) islandClearRatio = 1;
+          } else if (this.liberatedZones.has(disk.id)) {
+            islandClearRatio = 1 - (this.zoneMistFade[disk.id] ?? 0);
+          }
+          break;
+        }
+      }
+    }
+    const effectiveDaylight = Math.max(daylight, islandClearRatio * 0.85);
+    const mistBlend = 1 - islandClearRatio;
+
+    if (effectiveDaylight >= 0.5) {
       _skyColorScratch
         .copy(isDawn ? _skyDawnCol : _skyDuskCol)
-        .lerp(_skyDayCol, (daylight - 0.5) * 2);
+        .lerp(_skyDayCol, (effectiveDaylight - 0.5) * 2);
     } else {
       _skyColorScratch
         .copy(_skyNightCol)
-        .lerp(isDawn ? _skyDawnCol : _skyDuskCol, daylight * 2);
+        .lerp(isDawn ? _skyDawnCol : _skyDuskCol, effectiveDaylight * 2);
     }
-    _skyColorScratch.lerp(isDawn ? _skyDawnCol : _skyDuskCol, twilightGlow * 0.28);
+    _skyColorScratch.lerp(isDawn ? _skyDawnCol : _skyDuskCol, twilightGlow * 0.28 * mistBlend);
     if (inPrologueScene2) {
       _skyColorScratch.lerp(_hemiGndNightCol, 0.35 + stormMistT * 0.45);
     } else if (!inProloguePeaceful) {
-      // Kabut tebal menyelimuti seluruh kepulauan pada malam, pagi, siang, hingga sore
-      _skyColorScratch.lerp(_skyDayMistCol, daylight * 0.62);
-      _skyColorScratch.lerp(_skyTenseMistCol, THREE.MathUtils.lerp(0.42, 0.36, daylight));
+      // Kabut tebal menyelimuti pulau yang belum dibebaskan; pulau yang bebas bersinar cerah
+      _skyColorScratch.lerp(_skyDayMistCol, effectiveDaylight * 0.62 * mistBlend);
+      _skyColorScratch.lerp(
+        _skyTenseMistCol,
+        THREE.MathUtils.lerp(0.42, 0.36, effectiveDaylight) * mistBlend,
+      );
     }
 
     (this.scene.background as THREE.Color).copy(_skyColorScratch);
     if (this.scene.fog instanceof THREE.FogExp2) {
       this.scene.fog.color.copy(_skyColorScratch);
+      const mistFogDensity =
+        THREE.MathUtils.lerp(0.042, 0.029, daylight) + twilightGlow * 0.005;
+      const clearFogDensity = THREE.MathUtils.lerp(0.0068, 0.0042, effectiveDaylight);
       this.scene.fog.density = inPrologueScene2
         ? THREE.MathUtils.lerp(0.014, this.storyTimer >= 10.2 ? 0.028 : 0.036, stormMistT)
         : inProloguePeaceful
         ? THREE.MathUtils.lerp(0.0068, 0.003, daylight)
-        : THREE.MathUtils.lerp(0.042, 0.029, daylight) + twilightGlow * 0.005;
+        : THREE.MathUtils.lerp(mistFogDensity, clearFogDensity, islandClearRatio);
     }
 
     if (this.worldMistMesh && this.worldMistMat) {
@@ -11172,24 +11295,26 @@ export class RpgWorldEngine {
         : THREE.MathUtils.lerp(0.36, 0.27, daylight) + twilightGlow * 0.04;
     }
 
-    const moodLightFactor = inProloguePeaceful ? 1.0 : THREE.MathUtils.lerp(0.92, 0.78, daylight);
+    const moodLightFactor = inProloguePeaceful
+      ? 1.0
+      : THREE.MathUtils.lerp(THREE.MathUtils.lerp(0.92, 0.78, daylight), 1.06, islandClearRatio);
     _hemiSkyScratch
       .copy(_hemiSkyNightCol)
-      .lerp(_hemiSkyDayCol, daylight)
-      .lerp(_hemiSkyDuskCol, twilightGlow * 0.35);
-    _hemiGndScratch.copy(_hemiGndNightCol).lerp(_hemiGndDayCol, daylight);
+      .lerp(_hemiSkyDayCol, effectiveDaylight)
+      .lerp(_hemiSkyDuskCol, twilightGlow * 0.35 * mistBlend);
+    _hemiGndScratch.copy(_hemiGndNightCol).lerp(_hemiGndDayCol, effectiveDaylight);
     this.hemiLight.color.copy(_hemiSkyScratch);
     this.hemiLight.groundColor.copy(_hemiGndScratch);
     this.hemiLight.intensity =
-      (THREE.MathUtils.lerp(0.34, 0.98, daylight) + (this.preferLiteShader ? 0.2 : 0)) *
+      (THREE.MathUtils.lerp(0.34, 0.98, effectiveDaylight) + (this.preferLiteShader ? 0.2 : 0)) *
       (inPrologueScene2 ? 1 - stormMistT * 0.42 : moodLightFactor);
 
     _sunColorScratch
       .copy(_sunNightCol)
-      .lerp(isDawn ? _sunDawnCol : _sunDayCol, THREE.MathUtils.clamp(daylight * 1.15, 0, 1));
+      .lerp(isDawn ? _sunDawnCol : _sunDayCol, THREE.MathUtils.clamp(effectiveDaylight * 1.15, 0, 1));
     this.sunLight.color.copy(_sunColorScratch);
     this.sunLight.intensity =
-      (THREE.MathUtils.lerp(0.46, 1.95, daylight) + twilightGlow * 0.22) *
+      (THREE.MathUtils.lerp(0.46, 1.95, effectiveDaylight) + twilightGlow * 0.22 * mistBlend) *
       (inPrologueScene2 ? 1 - stormMistT * 0.48 : moodLightFactor);
 
     const activeScene2Raid =
@@ -11535,6 +11660,7 @@ export class RpgWorldEngine {
     this.clearDungeonBossSoloCutscene();
     this.clearDungeonBossDefeatCutscene();
     this.clearDungeonPrisonPleaCutscene();
+    this.clearIslandLiberationCutscene();
     this.clearBossGuardShields();
     this.bossSummonedWaveIds.clear();
     this.bossGuardWaitPositions.clear();
@@ -12610,6 +12736,12 @@ export class RpgWorldEngine {
       const fogJustCleared = this.checkZoneFogClear(exitedZoneId, false);
       const hasRibbon = this.ribbons.has(exitedZoneId);
 
+      if (fogJustCleared) {
+        this.zoneMistFade[exitedZoneId] = 1.0;
+        this.pendingLiberationCutsceneZone = exitedZoneId;
+        this.refreshAreaMists();
+      }
+
       if (!fogJustCleared && remOutside > 0) {
         this.guidedOutsideZoneId = exitedZoneId;
       } else if (this.guidedOutsideZoneId === exitedZoneId) {
@@ -13076,6 +13208,13 @@ export class RpgWorldEngine {
     this.hero.body.position.y = 0;
     this.applyCameraVisibilityAndControls();
     this.snapCameraBehindHero();
+    if (this.pendingLiberationCutsceneZone) {
+      const libZone = this.pendingLiberationCutsceneZone;
+      this.pendingLiberationCutsceneZone = null;
+      this.saveProgress();
+      this.startIslandLiberationCutscene(libZone);
+      return;
+    }
     if (this.guidedOutsideZoneId && this.getZoneIslandCounts(this.guidedOutsideZoneId).alive > 0) {
       this.guidePlayerTowardRemainingOutsideMonster(this.guidedOutsideZoneId);
     }
@@ -25559,6 +25698,828 @@ export class RpgWorldEngine {
     this.controls.target.lerp(_v2, camLerp);
   }
 
+  private clearIslandLiberationCutscene(): void {
+    const lc = this.islandLiberationCutscene;
+    if (!lc) return;
+    lc.controlledVillagers.clear();
+    this.hero.body.scale.set(1, 1, 1);
+    setHeroFacialExpression(this.hero, 'neutral', this.elapsed, false);
+    this.islandLiberationCutscene = null;
+  }
+
+  private startIslandLiberationCutscene(zoneId: ZoneId): void {
+    this.clearIslandLiberationCutscene();
+
+    // Dismount vehicle or plane cleanly so Hero stands on the island where the final victory took place
+    if (this.carMode !== 'none') {
+      const av = this.getActiveVehicle();
+      if (av) {
+        av.driverKind = 'none';
+        av.speed = 0;
+        av.doorAngle = 0;
+      }
+      this.carMode = 'none';
+      this.carSpeed = 0;
+      this.clearCarControls();
+      soundEngine.setCarEngine(false, 0);
+    }
+    if (this.planeMode !== 'none') {
+      this.resetPlanesToParked(false);
+    }
+    this.hero.root.visible = true;
+
+    const disk = ISLAND_DISKS.find((d) => d.id === zoneId) ?? {
+      id: zoneId,
+      cx: OVERWORLD_ANCHORS.zones[zoneId].x,
+      cz: OVERWORLD_ANCHORS.zones[zoneId].z,
+      radius: 58,
+      groundY: 2.6,
+    };
+
+    // Keep Hero at their exact victory spot if standing on the island; gently bring onto shore if airborne/off-disk
+    const distFromDisk = Math.hypot(this.heroPos.x - disk.cx, this.heroPos.z - disk.cz);
+    if (distFromDisk > disk.radius + 6 || !isWalkableArchipelago(this.heroPos.x, this.heroPos.z, 0.8)) {
+      const clampedDist = Math.min(distFromDisk, Math.max(8, disk.radius - 8));
+      const ang = distFromDisk > 0.5 ? Math.atan2(this.heroPos.z - disk.cz, this.heroPos.x - disk.cx) : 0;
+      this.heroPos.set(disk.cx + Math.cos(ang) * clampedDist, disk.groundY, disk.cz + Math.sin(ang) * clampedDist);
+      constrainToWalkableArchipelago(this.heroPos, 0.7);
+      resolveObstacleBoxes(this.heroPos, 0.7, this.villageRig.obstacles, getArchipelagoGroundY(this.heroPos.x, this.heroPos.z), 2.2);
+    }
+    this.heroPos.y = getArchipelagoGroundY(this.heroPos.x, this.heroPos.z);
+    this.heroVel.set(0, 0, 0);
+    this.heroVelY = 0;
+    this.heroOnGround = true;
+    this.isSwimming = false;
+    this.hero.root.position.copy(this.heroPos);
+
+    if (this.cameraMode === 'first_person') {
+      this.cameraMode = 'third_back';
+    }
+    this.phase = 'story';
+    this.heldKeys.clear();
+    this.tapMoveTarget = null;
+    this.storyTimer = 0;
+    this.zoneMistFade[zoneId] = 1.0;
+    this.applyCameraVisibilityAndControls();
+
+    const activeDef = getActiveZoneNpcDef(zoneId, this.getCurrentDayPhase() === 'malam');
+    const guardianNpc = this.npcs.get(activeDef.id);
+    const guardianOrigX = guardianNpc?.x ?? activeDef.x;
+    const guardianOrigZ = guardianNpc?.z ?? activeDef.z;
+    const guardianOrigY = getArchipelagoGroundY(guardianOrigX, guardianOrigZ);
+    const guardianOrigYaw = guardianNpc?.standRotY ?? activeDef.rotationY;
+
+    const toHeroX = this.heroPos.x - guardianOrigX;
+    const toHeroZ = this.heroPos.z - guardianOrigZ;
+    const baseAngleToHero =
+      Math.hypot(toHeroX, toHeroZ) > 0.5
+        ? Math.atan2(toHeroZ, toHeroX)
+        : Math.atan2(this.heroPos.z - disk.cz, this.heroPos.x - disk.cx);
+
+    const controlledVillagers = new Set<VillagerActor>();
+    const allZoneVillagers: Array<{
+      actor: VillagerActor;
+      emergeX: number;
+      emergeZ: number;
+      homeYaw: number;
+    }> = [];
+    const zonePool: VillagerActor[] = [];
+
+    for (let i = 0; i < this.villageRig.villagers.length; i++) {
+      const v = this.villageRig.villagers[i];
+      if (!v.alive || v.zoneId !== zoneId) continue;
+      zonePool.push(v);
+      controlledVillagers.add(v);
+
+      const dirToCenterX = disk.cx - v.homeDoor[0];
+      const dirToCenterZ = disk.cz - v.homeDoor[1];
+      const lenC = Math.hypot(dirToCenterX, dirToCenterZ) || 1;
+      const spreadA = ((allZoneVillagers.length % 5) - 2) * 0.42;
+      const ux = (dirToCenterX / lenC) * Math.cos(spreadA) - (dirToCenterZ / lenC) * Math.sin(spreadA);
+      const uz = (dirToCenterX / lenC) * Math.sin(spreadA) + (dirToCenterZ / lenC) * Math.cos(spreadA);
+      const stepOutDist = 2.6 + (allZoneVillagers.length % 3) * 0.95;
+
+      _v3.set(v.homeDoor[0] + ux * stepOutDist, 0, v.homeDoor[1] + uz * stepOutDist);
+      const eGy = getArchipelagoGroundY(_v3.x, _v3.z);
+      resolveObstacleBoxes(_v3, 0.56, this.villageRig.obstacles, eGy, 2.0);
+      constrainToWalkableArchipelago(_v3, 0.56);
+
+      allZoneVillagers.push({
+        actor: v,
+        emergeX: _v3.x,
+        emergeZ: _v3.z,
+        homeYaw: Math.atan2(_v3.x - v.homeDoor[0], _v3.z - v.homeDoor[1]),
+      });
+    }
+
+    // Select diverse delegate villagers who run with Guardian to find Hero wherever Hero stands
+    const picked: VillagerActor[] = [];
+    const seenArchetypes = new Set<string>();
+    for (let i = 0; i < zonePool.length && picked.length < 5; i++) {
+      const v = zonePool[i];
+      if (!seenArchetypes.has(v.archetype)) {
+        seenArchetypes.add(v.archetype);
+        picked.push(v);
+      }
+    }
+    for (let i = 0; i < zonePool.length && picked.length < 5; i++) {
+      if (!picked.includes(zonePool[i])) {
+        picked.push(zonePool[i]);
+      }
+    }
+
+    // Compute semicircle facing Hero (Guardian in front-center, delegates flanking nicely)
+    const dirFromHeroToCenterAngle = Math.atan2(
+      disk.cz - this.heroPos.z,
+      disk.cx - this.heroPos.x,
+    );
+    const arcCenter =
+      Math.hypot(disk.cx - this.heroPos.x, disk.cz - this.heroPos.z) > 4.0
+        ? dirFromHeroToCenterAngle
+        : baseAngleToHero + Math.PI;
+
+    const gPt = _v3.set(
+      this.heroPos.x + Math.cos(arcCenter) * 3.1,
+      0,
+      this.heroPos.z + Math.sin(arcCenter) * 3.1,
+    );
+    resolveObstacleBoxes(gPt, 0.65, this.villageRig.obstacles, getArchipelagoGroundY(gPt.x, gPt.z), 2.0);
+    constrainToWalkableArchipelago(gPt, 0.65);
+    const guardianGatherX = gPt.x;
+    const guardianGatherZ = gPt.z;
+
+    const delegates: Array<{
+      actor: VillagerActor;
+      gatherX: number;
+      gatherZ: number;
+      returnX: number;
+      returnZ: number;
+      arrived: boolean;
+      phaseOffset: number;
+    }> = [];
+
+    const fanOffsets = [-0.62, 0.62, -1.12, 1.12, 0.0];
+    const fanRadii = [3.4, 3.4, 3.9, 3.9, 4.4];
+    picked.forEach((actor, idx) => {
+      const ang = arcCenter + (fanOffsets[idx] ?? 0);
+      const rad = fanRadii[idx] ?? 3.6;
+      _v3.set(this.heroPos.x + Math.cos(ang) * rad, 0, this.heroPos.z + Math.sin(ang) * rad);
+      resolveObstacleBoxes(_v3, 0.56, this.villageRig.obstacles, getArchipelagoGroundY(_v3.x, _v3.z), 2.0);
+      constrainToWalkableArchipelago(_v3, 0.56);
+      const wp0 = actor.waypoints[0] ?? [
+        actor.homeDoor[0] + Math.cos(ang) * 2.5,
+        actor.homeDoor[1] + Math.sin(ang) * 2.5,
+      ];
+      delegates.push({
+        actor,
+        gatherX: _v3.x,
+        gatherZ: _v3.z,
+        returnX: wp0[0],
+        returnZ: wp0[1],
+        arrived: false,
+        phaseOffset: idx * 0.55,
+      });
+    });
+
+    this.islandLiberationCutscene = {
+      zoneId,
+      beat: 'mist_clearing',
+      timer: 0,
+      islandCenterX: disk.cx,
+      islandCenterZ: disk.cz,
+      islandRadius: disk.radius,
+      guardianId: activeDef.id,
+      guardianOrigX,
+      guardianOrigY,
+      guardianOrigZ,
+      guardianOrigYaw,
+      guardianGatherX,
+      guardianGatherZ,
+      controlledVillagers,
+      allZoneVillagers,
+      delegates,
+      sparkAccum: 0,
+      mistSfxFired: false,
+      emergeSfxFired: false,
+      cheerSfxFired: false,
+    };
+
+    const pName = this.getPlayerDisplayName();
+    const zName = ZONE_INFO[zoneId].name;
+    const mistEn = `All monsters in ${zName} are defeated! Slowly, the dark mist begins to lift and golden sunlight pours over the island...`;
+    const mistId = `Seluruh monster di ${zName} telah kalah! Perlahan kabut tebal memudar dan sinar matahari cerah kembali menyinari seluruh pulau...`;
+
+    this.storyDialog = {
+      kind: 'island_liberation',
+      step: 0,
+      maxStep: 4,
+      zoneId,
+      islandLiberationBeat: 'mist_clearing',
+      speakerName: `${zName} · Fajar Kemenangan ${pName}`,
+      speakerRole: 'Kabut Pulau Perlahan Menghilang',
+      speakerKind: 'hero',
+      speakerSide: 'hero',
+      heroExpression: 'neutral',
+      textEn: mistEn,
+      textId: mistId,
+      accentColor: '#f59e0b',
+    };
+
+    soundEngine.playMistClear();
+    this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.9, this.heroPos.z, 0xfbbf24, 34);
+    this.pushHud(true);
+  }
+
+  private transitionIslandLiberationToEmerge(): void {
+    const lc = this.islandLiberationCutscene;
+    if (!lc || lc.beat !== 'mist_clearing') return;
+    lc.beat = 'villagers_emerge';
+    lc.timer = 0;
+    this.zoneMistFade[lc.zoneId] = 0;
+    this.refreshAreaMists();
+
+    // Every villager in the island steps out of their house door cheering
+    for (let i = 0; i < lc.allZoneVillagers.length; i++) {
+      const entry = lc.allZoneVillagers[i];
+      const v = entry.actor;
+      if (v.isInsideHouse) {
+        v.isInsideHouse = false;
+        _v3.set(v.homeDoor[0], 0, v.homeDoor[1]);
+        resolveObstacleBoxes(
+          _v3,
+          0.56,
+          this.villageRig.obstacles,
+          getArchipelagoGroundY(_v3.x, _v3.z),
+          2.0,
+        );
+        v.x = _v3.x;
+        v.z = _v3.z;
+      }
+      v.root.visible = true;
+      v.yaw = entry.homeYaw;
+      v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z), v.z);
+      v.root.rotation.y = v.yaw;
+      if (!lc.emergeSfxFired) {
+        this.spawnBurst(v.x, getArchipelagoGroundY(v.x, v.z) + 1.8, v.z, 0x34d399, 12);
+      }
+    }
+    lc.emergeSfxFired = true;
+
+    const zName = ZONE_INFO[lc.zoneId].name;
+    const emergeEn = `Seeing the bright blue sky return, every villager across ${zName} rushes joyfully out of their homes cheering!`;
+    const emergeId = `Melihat langit ${zName} kembali cerah, seluruh penduduk desa pun keluar dari rumah mereka dengan penuh haru dan sorak gembira!`;
+
+    this.storyDialog = {
+      kind: 'island_liberation',
+      step: 1,
+      maxStep: 4,
+      zoneId: lc.zoneId,
+      islandLiberationBeat: 'villagers_emerge',
+      speakerName: `Warga Pulau ${zName}`,
+      speakerRole: 'Seluruh Penduduk Keluar Rumah',
+      speakerKind: 'villagers',
+      villagerArchetypes: lc.delegates.map((d) => d.actor.archetype),
+      speakerSide: 'npc',
+      textEn: emergeEn,
+      textId: emergeId,
+      accentColor: '#10b981',
+    };
+
+    soundEngine.playIslandLiberationFanfare();
+    this.pushHud(true);
+  }
+
+  private transitionIslandLiberationToGatherThanks(): void {
+    const lc = this.islandLiberationCutscene;
+    if (!lc) return;
+    lc.beat = 'gather_thanks';
+    lc.timer = 0;
+
+    // Ensure every villager is visible outside
+    for (let i = 0; i < lc.allZoneVillagers.length; i++) {
+      const v = lc.allZoneVillagers[i].actor;
+      if (v.isInsideHouse) {
+        v.isInsideHouse = false;
+        v.x = lc.allZoneVillagers[i].emergeX;
+        v.z = lc.allZoneVillagers[i].emergeZ;
+      }
+      v.root.visible = true;
+      v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z), v.z);
+    }
+
+    const activeDef = getActiveZoneNpcDef(lc.zoneId, this.getCurrentDayPhase() === 'malam');
+    const story = ZONE_CAVE_STORIES[lc.zoneId];
+    const pName = this.getPlayerDisplayName();
+    const gName = activeDef.name || story.guardianName;
+    const gAddr = formatGuardianAddress(activeDef, pName, this.localCharacterId);
+    const zName = ZONE_INFO[lc.zoneId].name;
+
+    const thanksEn = `${gAddr}, thank you from the bottom of our hearts! Everyone on ${zName} ran straight here just to thank you—you lifted the dark fog and saved our entire community!`;
+    const thanksId = `Terima kasih sebesar-besarnya, ${gAddr}! Begitu melihat pulau ini cerah kembali, kami langsung mencarimu ke sini—kau telah mengembalikan kedamaian, harapan, dan kehidupan seluruh warga ${zName}!`;
+
+    this.storyDialog = {
+      kind: 'island_liberation',
+      step: 2,
+      maxStep: 4,
+      zoneId: lc.zoneId,
+      islandLiberationBeat: 'gather_thanks',
+      speakerName: `${gName} & Warga ${zName}`,
+      speakerRole: `Ucapan Terima Kasih Seluruh Warga Pulau`,
+      speakerKind: 'villagers',
+      villagerArchetypes: lc.delegates.map((d) => d.actor.archetype),
+      speakerNpcId: activeDef.id,
+      speakerSide: 'npc',
+      rewardSummary: `☀️ Pulau ${zName} Bebas Sepenuhnya · Kabut Sirna · Warga Aman`,
+      textEn: thanksEn,
+      textId: thanksId,
+      accentColor: '#10b981',
+    };
+
+    soundEngine.playPrisonersCheer();
+    soundEngine.speakEnglish(
+      `Thank you from the bottom of our hearts! You saved ${zName} and everyone on our island!`,
+      0.95,
+      1.02,
+    );
+    this.pushHud(true);
+  }
+
+  private transitionIslandLiberationToHeroMotivate(): void {
+    const lc = this.islandLiberationCutscene;
+    if (!lc) return;
+    lc.beat = 'hero_motivate';
+    lc.timer = 0;
+
+    // Snap delegates & Guardian cleanly onto their circle spots if player advanced early
+    const gNpc = this.npcs.get(lc.guardianId);
+    if (gNpc) {
+      gNpc.x = lc.guardianGatherX;
+      gNpc.z = lc.guardianGatherZ;
+      gNpc.yaw = Math.atan2(this.heroPos.x - gNpc.x, this.heroPos.z - gNpc.z);
+      gNpc.mesh.position.set(gNpc.x, getArchipelagoGroundY(gNpc.x, gNpc.z), gNpc.z);
+      gNpc.mesh.rotation.y = gNpc.yaw;
+    }
+    for (let i = 0; i < lc.delegates.length; i++) {
+      const d = lc.delegates[i];
+      d.actor.x = d.gatherX;
+      d.actor.z = d.gatherZ;
+      d.arrived = true;
+      d.actor.yaw = Math.atan2(this.heroPos.x - d.gatherX, this.heroPos.z - d.gatherZ);
+      d.actor.root.position.set(d.gatherX, getArchipelagoGroundY(d.gatherX, d.gatherZ), d.gatherZ);
+      d.actor.root.rotation.y = d.actor.yaw;
+      d.actor.leftLeg.rotation.x = 0;
+      d.actor.rightLeg.rotation.x = 0;
+    }
+
+    const pName = this.getPlayerDisplayName();
+    const zName = ZONE_INFO[lc.zoneId].name;
+    const motEn = `Take good care of yourselves and each other, everyone! Stay strong, keep kindness in your hearts, and never stop learning—together, ${zName} will always shine bright!`;
+    const motId = `Kalian semua hebat dan kuat! Tetaplah jaga diri baik-baik, saling menguatkan dan menolong sesama, jangan pernah takut menghadapi hari esok, serta teruslah belajar dengan tulus—selama kita bersatu, ${zName} akan selalu penuh kebahagiaan!`;
+
+    this.storyDialog = {
+      kind: 'island_liberation',
+      step: 3,
+      maxStep: 4,
+      zoneId: lc.zoneId,
+      islandLiberationBeat: 'hero_motivate',
+      speakerName: pName,
+      speakerRole: `Pesan Penguat & Motivasi untuk Warga ${zName}`,
+      speakerKind: 'hero',
+      heroExpression: 'neutral',
+      speakerSide: 'hero',
+      textEn: motEn,
+      textId: motId,
+      accentColor: '#f59e0b',
+    };
+
+    soundEngine.playPick();
+    soundEngine.speakEnglish(motEn, 0.94, 1.0);
+    this.spawnBurst(this.heroPos.x, this.heroPos.y + 1.8, this.heroPos.z, 0xfef08a, 28);
+    this.pushHud(true);
+  }
+
+  private transitionIslandLiberationToReturnToLife(): void {
+    const lc = this.islandLiberationCutscene;
+    if (!lc) return;
+    lc.beat = 'return_to_life';
+    lc.timer = 0;
+
+    const zName = ZONE_INFO[lc.zoneId].name;
+    const retEn = `Deeply moved and inspired, the villagers and guardian wave happily and return to their cheerful daily lives across sunny ${zName}!`;
+    const retId = `Dengan hati hangat dan penuh semangat baru, seluruh warga dan penjaga pun melambaikan tangan lalu kembali beraktivitas sehari-hari di ${zName} dengan riang gembira!`;
+
+    this.storyDialog = {
+      kind: 'island_liberation',
+      step: 4,
+      maxStep: 4,
+      zoneId: lc.zoneId,
+      islandLiberationBeat: 'return_to_life',
+      speakerName: `Kehidupan Damai di ${zName}`,
+      speakerRole: 'Pulau Kembali Cerah, Aman & Bahagia',
+      speakerKind: 'villagers',
+      villagerArchetypes: lc.delegates.map((d) => d.actor.archetype),
+      speakerSide: 'npc',
+      textEn: retEn,
+      textId: retId,
+      accentColor: '#10b981',
+    };
+
+    soundEngine.playIslandLiberationFanfare();
+    this.pushHud(true);
+  }
+
+  private finishIslandLiberationCutscene(): void {
+    const lc = this.islandLiberationCutscene;
+    const zId = lc?.zoneId ?? this.storyDialog?.zoneId;
+    if (lc && zId) {
+      this.zoneMistFade[zId] = 0;
+      const gNpc = this.npcs.get(lc.guardianId);
+      if (gNpc) {
+        gNpc.x = lc.guardianOrigX;
+        gNpc.z = lc.guardianOrigZ;
+        gNpc.yaw = lc.guardianOrigYaw;
+        gNpc.poseMode = 'stand';
+        gNpc.mesh.position.set(lc.guardianOrigX, lc.guardianOrigY, lc.guardianOrigZ);
+        gNpc.mesh.rotation.y = lc.guardianOrigYaw;
+      }
+      for (let i = 0; i < lc.allZoneVillagers.length; i++) {
+        const entry = lc.allZoneVillagers[i];
+        const v = entry.actor;
+        v.isInsideHouse = false;
+        v.root.visible = true;
+        v.leftLeg.rotation.x = 0;
+        v.rightLeg.rotation.x = 0;
+        v.leftArm.rotation.x = v.baseLeftArmX;
+        v.rightArm.rotation.x = v.baseRightArmX;
+        v.leftArm.rotation.z = v.baseLeftArmZ;
+        v.rightArm.rotation.z = v.baseRightArmZ;
+        v.bodyPivot.position.y = 0;
+        v.headGroup.rotation.x = 0;
+        v.headGroup.rotation.y = 0;
+        v.pauseTimer = 0.25 + (i % 4) * 0.3;
+        v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z), v.z);
+        if (v.interactable) {
+          v.interactable.x = v.x;
+          v.interactable.z = v.z;
+        }
+      }
+    }
+    this.clearIslandLiberationCutscene();
+    this.refreshAreaMists();
+    this.storyDialog = null;
+    this.phase = 'playing';
+    this.applyCameraVisibilityAndControls();
+    this.snapCameraBehindHero();
+    if (zId) {
+      this.showBanner(
+        `☀️ ${ZONE_INFO[zId].name} telah bebas dan cerah! Seluruh warga kembali beraktivitas bahagia.`,
+        5.5,
+      );
+    }
+    this.saveProgress();
+    this.pushHud(true);
+  }
+
+  private updateIslandLiberationCutscene(dt: number): void {
+    const lc = this.islandLiberationCutscene;
+    if (!lc) return;
+    lc.timer += dt;
+    const t = lc.timer;
+    const gNpc = this.npcs.get(lc.guardianId);
+
+    if (lc.beat === 'mist_clearing') {
+      const fade = Math.max(0, 1 - t / 2.75);
+      this.zoneMistFade[lc.zoneId] = fade;
+      this.refreshAreaMists();
+      this.updateOverworldDayNightAtmosphere(0, false);
+
+      lc.sparkAccum += dt;
+      if (lc.sparkAccum >= 0.24) {
+        lc.sparkAccum = 0;
+        const sx = this.heroPos.x + (Math.random() - 0.5) * 14;
+        const sz = this.heroPos.z + (Math.random() - 0.5) * 14;
+        this.spawnBurst(sx, getArchipelagoGroundY(sx, sz) + 1.8, sz, 0xfef08a, 8);
+      }
+
+      this.animateHeroConversation(false, dt);
+      const orbitA = this.heroYaw + 0.35 + t * 0.26;
+      const dist = 10.5 + t * 3.8;
+      _v1.set(
+        this.heroPos.x + Math.sin(orbitA) * dist,
+        this.heroPos.y + 5.2 + t * 2.1,
+        this.heroPos.z + Math.cos(orbitA) * dist,
+      );
+      _v2.set(
+        THREE.MathUtils.lerp(this.heroPos.x, lc.islandCenterX, 0.28),
+        this.heroPos.y + 2.2,
+        THREE.MathUtils.lerp(this.heroPos.z, lc.islandCenterZ, 0.28),
+      );
+      const camLerp = 1 - Math.exp(-3.6 * dt);
+      this.camera.position.lerp(_v1, camLerp);
+      this.controls.target.lerp(_v2, camLerp);
+
+      if (t >= 3.05) {
+        this.transitionIslandLiberationToEmerge();
+      }
+      return;
+    }
+
+    if (lc.beat === 'villagers_emerge') {
+      const emergeP = THREE.MathUtils.clamp(t / 1.9, 0, 1);
+      const ease = 1 - Math.pow(1 - emergeP, 2);
+      for (let i = 0; i < lc.allZoneVillagers.length; i++) {
+        const entry = lc.allZoneVillagers[i];
+        const v = entry.actor;
+        const startX = v.homeDoor[0];
+        const startZ = v.homeDoor[1];
+        const walking = emergeP < 0.94;
+        const nx = THREE.MathUtils.lerp(startX, entry.emergeX, ease);
+        const nz = THREE.MathUtils.lerp(startZ, entry.emergeZ, ease);
+        v.x = nx;
+        v.z = nz;
+        const gy = getArchipelagoGroundY(nx, nz);
+        const hop = walking
+          ? Math.abs(Math.sin(this.elapsed * 12 + i)) * 0.1
+          : Math.abs(Math.sin(this.elapsed * 6.5 + i * 0.7)) * 0.22;
+        v.root.visible = true;
+        v.root.position.set(nx, gy + hop, nz);
+        v.yaw = entry.homeYaw;
+        v.root.rotation.y = v.yaw;
+        const vBlink = computeBlinkScale(this.elapsed, i * 1.3);
+        v.leftEye.scale.y = vBlink;
+        v.rightEye.scale.y = vBlink;
+        if (walking) {
+          const swing = Math.sin(this.elapsed * 11 + i) * 0.56;
+          v.leftLeg.rotation.x = swing;
+          v.rightLeg.rotation.x = -swing;
+          v.leftArm.rotation.x = -1.75 + Math.sin(this.elapsed * 9 + i) * 0.35;
+          v.rightArm.rotation.x = -1.75 - Math.sin(this.elapsed * 9 + i) * 0.35;
+        } else {
+          v.leftLeg.rotation.x = 0;
+          v.rightLeg.rotation.x = 0;
+          v.leftArm.rotation.x = -2.45 + Math.sin(this.elapsed * 9 + i) * 0.38;
+          v.rightArm.rotation.x = -2.45 - Math.sin(this.elapsed * 9 + i) * 0.38;
+        }
+        v.leftArm.rotation.z = 0.25;
+        v.rightArm.rotation.z = -0.25;
+      }
+
+      if (gNpc) {
+        gNpc.mesh.position.y = lc.guardianOrigY + Math.abs(Math.sin(this.elapsed * 5.8)) * 0.14;
+        gNpc.mesh.rotation.y = Math.atan2(this.heroPos.x - gNpc.x, this.heroPos.z - gNpc.z);
+        animateZoneNpc(gNpc.mesh, this.elapsed, 0.8, true, dt, 'stand');
+      }
+
+      this.animateHeroConversation(false, dt);
+      const focusIdx = lc.allZoneVillagers[0];
+      const fx = focusIdx ? focusIdx.emergeX : lc.islandCenterX;
+      const fz = focusIdx ? focusIdx.emergeZ : lc.islandCenterZ;
+      const fy = getArchipelagoGroundY(fx, fz);
+      const sweep = THREE.MathUtils.clamp(t / 2.6, 0, 1);
+      _v1.set(
+        THREE.MathUtils.lerp(fx - 7.5, this.heroPos.x - 8.5, sweep),
+        THREE.MathUtils.lerp(fy + 6.8, this.heroPos.y + 6.2, sweep),
+        THREE.MathUtils.lerp(fz + 9.0, this.heroPos.z + 9.5, sweep),
+      );
+      _v2.set(
+        THREE.MathUtils.lerp(fx, this.heroPos.x, sweep * 0.72),
+        THREE.MathUtils.lerp(fy + 1.5, this.heroPos.y + 1.5, sweep),
+        THREE.MathUtils.lerp(fz, this.heroPos.z, sweep * 0.72),
+      );
+      const camLerp = 1 - Math.exp(-3.8 * dt);
+      this.camera.position.lerp(_v1, camLerp);
+      this.controls.target.lerp(_v2, camLerp);
+
+      if (t >= 2.85) {
+        this.transitionIslandLiberationToGatherThanks();
+      }
+      return;
+    }
+
+    if (lc.beat === 'gather_thanks') {
+      // Guardian & delegates hurry cleanly across island ground to surround Hero wherever Hero stands
+      if (gNpc) {
+        const gdx = lc.guardianGatherX - gNpc.x;
+        const gdz = lc.guardianGatherZ - gNpc.z;
+        const gDist = Math.hypot(gdx, gdz);
+        if (gDist > 0.25) {
+          const gSpd = Math.min(28, Math.max(7.0, gDist / Math.max(0.35, 2.0 - t)));
+          const step = Math.min(gDist, gSpd * dt);
+          _v3.set(gNpc.x + (gdx / gDist) * step, 0, gNpc.z + (gdz / gDist) * step);
+          resolveObstacleBoxes(_v3, 0.65, this.villageRig.obstacles, getArchipelagoGroundY(_v3.x, _v3.z), 2.0);
+          constrainToWalkableArchipelago(_v3, 0.65);
+          gNpc.yaw = Math.atan2(_v3.x - gNpc.x, _v3.z - gNpc.z);
+          gNpc.x = _v3.x;
+          gNpc.z = _v3.z;
+          const gy = getArchipelagoGroundY(gNpc.x, gNpc.z);
+          gNpc.mesh.position.set(gNpc.x, gy + Math.abs(Math.sin(this.elapsed * 12)) * 0.08, gNpc.z);
+          gNpc.mesh.rotation.y = gNpc.yaw;
+          animateZoneNpc(gNpc.mesh, this.elapsed, 0.65, true, dt, 'stand');
+        } else {
+          gNpc.yaw = Math.atan2(this.heroPos.x - gNpc.x, this.heroPos.z - gNpc.z);
+          gNpc.mesh.rotation.y = gNpc.yaw;
+          gNpc.mesh.position.set(
+            gNpc.x,
+            getArchipelagoGroundY(gNpc.x, gNpc.z) + Math.abs(Math.sin(this.elapsed * 4.5)) * 0.07,
+            gNpc.z,
+          );
+          animateZoneNpc(gNpc.mesh, this.elapsed, 0.9, true, dt, 'stand');
+        }
+      }
+
+      for (let i = 0; i < lc.delegates.length; i++) {
+        const d = lc.delegates[i];
+        const v = d.actor;
+        const dx = d.gatherX - v.x;
+        const dz = d.gatherZ - v.z;
+        const dist = Math.hypot(dx, dz);
+        const vBlink = computeBlinkScale(this.elapsed, i * 1.4 + 0.4);
+        v.leftEye.scale.y = vBlink;
+        v.rightEye.scale.y = vBlink;
+
+        if (!d.arrived && dist > 0.28) {
+          const spd = Math.min(28, Math.max(6.8, dist / Math.max(0.35, 2.0 - t)));
+          const step = Math.min(dist, spd * dt);
+          _v3.set(v.x + (dx / dist) * step, 0, v.z + (dz / dist) * step);
+          const gy = getArchipelagoGroundY(_v3.x, _v3.z);
+          resolveObstacleBoxes(_v3, 0.56, this.villageRig.obstacles, gy, 2.0);
+          constrainToWalkableArchipelago(_v3, 0.56);
+          v.yaw = Math.atan2(_v3.x - v.x, _v3.z - v.z);
+          v.x = _v3.x;
+          v.z = _v3.z;
+          v.walkPhase += dt * 13.5;
+          const swing = Math.sin(v.walkPhase) * 0.58;
+          v.leftLeg.rotation.x = swing;
+          v.rightLeg.rotation.x = -swing;
+          v.leftArm.rotation.x = -swing * 0.55;
+          v.rightArm.rotation.x = swing * 0.55;
+          v.leftArm.rotation.z = v.baseLeftArmZ;
+          v.rightArm.rotation.z = v.baseRightArmZ;
+          v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z) + Math.abs(Math.sin(v.walkPhase)) * 0.08, v.z);
+          v.root.rotation.y = v.yaw;
+        } else {
+          d.arrived = true;
+          v.leftLeg.rotation.x = THREE.MathUtils.damp(v.leftLeg.rotation.x, 0, 12, dt);
+          v.rightLeg.rotation.x = THREE.MathUtils.damp(v.rightLeg.rotation.x, 0, 12, dt);
+          v.yaw = Math.atan2(this.heroPos.x - v.x, this.heroPos.z - v.z);
+          v.root.rotation.y = v.yaw;
+          const gy = getArchipelagoGroundY(v.x, v.z);
+          const hop = Math.abs(Math.sin(this.elapsed * 5.2 + d.phaseOffset)) * 0.14;
+          v.root.position.set(v.x, gy + hop, v.z);
+          v.leftArm.rotation.x = -2.25 + Math.sin(this.elapsed * 7.5 + d.phaseOffset) * 0.35;
+          v.rightArm.rotation.x = -2.25 - Math.sin(this.elapsed * 7.5 + d.phaseOffset) * 0.35;
+          v.leftArm.rotation.z = 0.24;
+          v.rightArm.rotation.z = -0.24;
+          v.headGroup.rotation.x = Math.sin(this.elapsed * 3.8 + d.phaseOffset) * 0.12;
+        }
+      }
+
+      // Non-delegate villagers celebrate back at village plaza
+      for (let i = 0; i < lc.allZoneVillagers.length; i++) {
+        const entry = lc.allZoneVillagers[i];
+        const isDelegate = lc.delegates.some((d) => d.actor === entry.actor);
+        if (isDelegate) continue;
+        const v = entry.actor;
+        const gy = getArchipelagoGroundY(v.x, v.z);
+        v.root.position.set(v.x, gy + Math.abs(Math.sin(this.elapsed * 5.8 + i)) * 0.15, v.z);
+        v.leftArm.rotation.x = -2.3 + Math.sin(this.elapsed * 8 + i) * 0.34;
+        v.rightArm.rotation.x = -2.3 - Math.sin(this.elapsed * 8 + i) * 0.34;
+      }
+
+      const lookTargetX = gNpc ? gNpc.x : lc.guardianGatherX;
+      const lookTargetZ = gNpc ? gNpc.z : lc.guardianGatherZ;
+      this.heroYaw = Math.atan2(lookTargetX - this.heroPos.x, lookTargetZ - this.heroPos.z);
+      this.hero.body.rotation.y = this.heroYaw;
+      this.hero.root.position.copy(this.heroPos);
+      this.animateHeroConversation(false, dt);
+      this.updateHarvestDialogueCamera(
+        this.heroPos.x,
+        this.heroPos.y,
+        this.heroPos.z,
+        lookTargetX,
+        getArchipelagoGroundY(lookTargetX, lookTargetZ),
+        lookTargetZ,
+        dt,
+      );
+      return;
+    }
+
+    if (lc.beat === 'hero_motivate') {
+      const lookTargetX = gNpc ? gNpc.x : lc.guardianGatherX;
+      const lookTargetZ = gNpc ? gNpc.z : lc.guardianGatherZ;
+      this.heroYaw = Math.atan2(lookTargetX - this.heroPos.x, lookTargetZ - this.heroPos.z);
+      this.hero.body.rotation.y = this.heroYaw;
+      this.hero.root.position.copy(this.heroPos);
+      this.animateHeroConversation(true, dt);
+
+      if (gNpc) {
+        gNpc.mesh.rotation.y = Math.atan2(this.heroPos.x - gNpc.x, this.heroPos.z - gNpc.z);
+        gNpc.mesh.position.y = getArchipelagoGroundY(gNpc.x, gNpc.z);
+        animateZoneNpc(gNpc.mesh, this.elapsed, 0.35, true, dt, 'stand');
+      }
+      for (let i = 0; i < lc.delegates.length; i++) {
+        const d = lc.delegates[i];
+        const v = d.actor;
+        v.yaw = Math.atan2(this.heroPos.x - v.x, this.heroPos.z - v.z);
+        v.root.rotation.y = v.yaw;
+        v.root.position.y = getArchipelagoGroundY(v.x, v.z);
+        v.headGroup.rotation.x = 0.08 + Math.sin(this.elapsed * 2.8 + d.phaseOffset) * 0.1;
+        v.leftArm.rotation.x = THREE.MathUtils.damp(v.leftArm.rotation.x, v.baseLeftArmX - 0.18, 10, dt);
+        v.rightArm.rotation.x = THREE.MathUtils.damp(v.rightArm.rotation.x, v.baseRightArmX - 0.18, 10, dt);
+        v.leftArm.rotation.z = THREE.MathUtils.damp(v.leftArm.rotation.z, v.baseLeftArmZ, 10, dt);
+        v.rightArm.rotation.z = THREE.MathUtils.damp(v.rightArm.rotation.z, v.baseRightArmZ, 10, dt);
+      }
+
+      lc.sparkAccum += dt;
+      if (lc.sparkAccum >= 0.45) {
+        lc.sparkAccum = 0;
+        this.spawnBurst(this.heroPos.x, this.heroPos.y + 2.1, this.heroPos.z, 0xfef08a, 10);
+      }
+
+      // Frame Hero warmly from behind the grateful crowd
+      this.updateHarvestDialogueCamera(
+        lookTargetX,
+        getArchipelagoGroundY(lookTargetX, lookTargetZ),
+        lookTargetZ,
+        this.heroPos.x,
+        this.heroPos.y,
+        this.heroPos.z,
+        dt,
+      );
+      return;
+    }
+
+    if (lc.beat === 'return_to_life') {
+      // Everyone walks happily back to village activities, waving & cheering!
+      if (gNpc) {
+        const gdx = lc.guardianOrigX - gNpc.x;
+        const gdz = lc.guardianOrigZ - gNpc.z;
+        const gDist = Math.hypot(gdx, gdz);
+        if (gDist > 0.25) {
+          const step = Math.min(gDist, 4.2 * dt);
+          _v3.set(gNpc.x + (gdx / gDist) * step, 0, gNpc.z + (gdz / gDist) * step);
+          resolveObstacleBoxes(_v3, 0.65, this.villageRig.obstacles, getArchipelagoGroundY(_v3.x, _v3.z), 2.0);
+          constrainToWalkableArchipelago(_v3, 0.65);
+          gNpc.yaw = Math.atan2(_v3.x - gNpc.x, _v3.z - gNpc.z);
+          gNpc.x = _v3.x;
+          gNpc.z = _v3.z;
+          gNpc.mesh.position.set(gNpc.x, getArchipelagoGroundY(gNpc.x, gNpc.z), gNpc.z);
+          gNpc.mesh.rotation.y = gNpc.yaw;
+        }
+        animateZoneNpc(gNpc.mesh, this.elapsed, 0.75, true, dt, 'stand');
+      }
+
+      for (let i = 0; i < lc.delegates.length; i++) {
+        const d = lc.delegates[i];
+        const v = d.actor;
+        const dx = d.returnX - v.x;
+        const dz = d.returnZ - v.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist > 0.35) {
+          const step = Math.min(dist, v.speed * 1.6 * dt);
+          _v3.set(v.x + (dx / dist) * step, 0, v.z + (dz / dist) * step);
+          resolveObstacleBoxes(_v3, 0.56, this.villageRig.obstacles, getArchipelagoGroundY(_v3.x, _v3.z), 2.0);
+          constrainToWalkableArchipelago(_v3, 0.56);
+          v.yaw = Math.atan2(_v3.x - v.x, _v3.z - v.z);
+          v.x = _v3.x;
+          v.z = _v3.z;
+          v.walkPhase += dt * 9.5;
+          const swing = Math.sin(v.walkPhase) * 0.54;
+          v.leftLeg.rotation.x = swing;
+          v.rightLeg.rotation.x = -swing;
+          v.leftArm.rotation.x = -swing * 0.45;
+          v.rightArm.rotation.x = t < 1.2 ? -2.2 + Math.sin(this.elapsed * 8 + i) * 0.35 : swing * 0.45;
+          v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z) + Math.abs(Math.sin(v.walkPhase)) * 0.06, v.z);
+          v.root.rotation.y = v.yaw;
+        } else {
+          v.leftLeg.rotation.x = 0;
+          v.rightLeg.rotation.x = 0;
+          v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z), v.z);
+        }
+      }
+
+      this.animateHeroConversation(false, dt);
+      const panP = THREE.MathUtils.clamp(t / 3.2, 0, 1);
+      _v1.set(
+        this.heroPos.x - 8.0,
+        this.heroPos.y + THREE.MathUtils.lerp(5.2, 13.5, panP),
+        this.heroPos.z + THREE.MathUtils.lerp(9.5, 16.5, panP),
+      );
+      _v2.set(
+        THREE.MathUtils.lerp(this.heroPos.x, lc.islandCenterX, panP * 0.48),
+        this.heroPos.y + 1.8,
+        THREE.MathUtils.lerp(this.heroPos.z, lc.islandCenterZ, panP * 0.48),
+      );
+      const camLerp = 1 - Math.exp(-3.4 * dt);
+      this.camera.position.lerp(_v1, camLerp);
+      this.controls.target.lerp(_v2, camLerp);
+
+      if (t >= 3.45) {
+        this.finishIslandLiberationCutscene();
+      }
+    }
+  }
+
   private updateStoryAnimations(dt: number): void {
     this.storyTimer += dt;
 
@@ -25780,6 +26741,11 @@ export class RpgWorldEngine {
 
     if (this.storyDialog?.kind === 'dungeon_ribbon_reunion' && this.dungeonRibbonReunionCutscene) {
       this.updateDungeonRibbonReunionCutscene(dt);
+      return;
+    }
+
+    if (this.storyDialog?.kind === 'island_liberation' && this.islandLiberationCutscene) {
+      this.updateIslandLiberationCutscene(dt);
       return;
     }
 
@@ -27993,20 +28959,28 @@ export class RpgWorldEngine {
     if (this.worldMode !== 'overworld') return;
 
     this.areaMists.forEach((mist, zId) => {
+      const fade = this.zoneMistFade[zId] ?? (this.liberatedZones.has(zId) ? 0 : 1);
+      const mat = mist.material as THREE.MeshBasicMaterial;
       if (this.storyDialog?.kind === 'prologue') {
         mist.visible =
           this.storyDialog.step >= 2 ||
           (this.storyDialog.step === 1 && this.storyTimer >= 10.2);
-      } else if (this.liberatedZones.has(zId)) {
+        mat.opacity = 0.2;
+        mist.scale.setScalar(1);
+      } else if (fade <= 0.01) {
         mist.visible = false;
       } else if (!canVisCull) {
         mist.visible = true;
+        mat.opacity = 0.2 * fade;
+        mist.scale.setScalar(1 + (1 - fade) * 0.55);
       } else {
         const dxH = this.heroPos.x - mist.position.x;
         const dzH = this.heroPos.z - mist.position.z;
         const dxC = camX - mist.position.x;
         const dzC = camZ - mist.position.z;
         mist.visible = Math.min(dxH * dxH + dzH * dzH, dxC * dxC + dzC * dzC) <= 145 * 145;
+        mat.opacity = 0.2 * fade;
+        mist.scale.setScalar(1 + (1 - fade) * 0.55);
       }
     });
 
@@ -28111,6 +29085,8 @@ export class RpgWorldEngine {
       this.camera.position.z,
       canVisCull,
       this.activeVehicleHazards,
+      this.liberatedZones,
+      this.islandLiberationCutscene?.controlledVillagers,
     );
     if (inPrologue) {
       for (const p of this.villageRig.pillagers) {
@@ -28140,16 +29116,19 @@ export class RpgWorldEngine {
       if (this.worldMistMesh && this.worldMistMesh.visible) {
         for (let i = 0; i < this.worldMistSeeds.length; i++) {
           const s = this.worldMistSeeds[i];
-          const cleared = Boolean(s.zoneId && s.zoneId !== 'hub' && this.liberatedZones.has(s.zoneId));
+          const fade =
+            s.zoneId && s.zoneId !== 'hub'
+              ? this.zoneMistFade[s.zoneId] ?? (this.liberatedZones.has(s.zoneId) ? 0 : 1)
+              : 1;
           const mx = s.baseX + Math.sin(this.elapsed * 0.24 + s.phase) * s.driftX;
-          const my = s.baseY + Math.cos(this.elapsed * 0.35 + s.phase) * 0.22;
+          const my = s.baseY + (1 - fade) * 4.5 + Math.cos(this.elapsed * 0.35 + s.phase) * 0.22;
           const mz = s.baseZ + Math.cos(this.elapsed * 0.21 + s.phase) * s.driftZ;
           _cloudPos.set(mx, my, mz);
           _cloudQuat.setFromAxisAngle(_v3.set(0, 1, 0), s.rotY + this.elapsed * 0.06);
-          if (cleared) {
+          if (fade <= 0.01) {
             _cloudScale.set(0, 0, 0);
           } else {
-            _cloudScale.set(s.sx, s.sy, s.sz);
+            _cloudScale.set(s.sx * fade, s.sy * fade, s.sz * fade);
           }
           _cloudMat.compose(_cloudPos, _cloudQuat, _cloudScale);
           this.worldMistMesh.setMatrixAt(i, _cloudMat);
@@ -33490,6 +34469,92 @@ export class RpgWorldEngine {
             title: '🦋 Gua Berubah Menjadi Taman Asri & Kupu-Kupu!',
             kind: 'npc_alert',
           });
+        }
+      }
+      return labels;
+    }
+
+    if (
+      this.islandLiberationCutscene &&
+      this.storyDialog?.kind === 'island_liberation'
+    ) {
+      const lc = this.islandLiberationCutscene;
+      const activeDef = getActiveZoneNpcDef(lc.zoneId, this.getCurrentDayPhase() === 'malam');
+      const gNpc = this.npcs.get(lc.guardianId);
+      if (lc.beat === 'villagers_emerge') {
+        const cheers = [
+          '☀️ Kabutnya hilang!!',
+          '🎉 Kita bebas!!',
+          '✨ Langit cerah kembali!',
+          '🙌 Hidup Pahlawan!!',
+        ];
+        for (let i = 0; i < Math.min(4, lc.allZoneVillagers.length); i++) {
+          const v = lc.allZoneVillagers[i].actor;
+          const vp = projectPoint(v.x, getArchipelagoGroundY(v.x, v.z) + 2.45, v.z);
+          if (vp) {
+            labels.push({
+              id: `lib_emerge_${i}`,
+              x: vp.x,
+              y: vp.y,
+              title: cheers[i % cheers.length],
+              kind: 'speech',
+            });
+          }
+        }
+      } else if (lc.beat === 'gather_thanks') {
+        if (gNpc) {
+          const gp = projectPoint(
+            gNpc.x,
+            getArchipelagoGroundY(gNpc.x, gNpc.z) + 2.9,
+            gNpc.z,
+          );
+          if (gp) {
+            labels.push({
+              id: 'lib_guardian_thanks',
+              x: gp.x,
+              y: gp.y,
+              title: `🥹 ${activeDef.name}: "Terima kasih telah menyelamatkan seluruh pulau!"`,
+              kind: 'speech',
+            });
+          }
+        }
+        for (let i = 0; i < Math.min(2, lc.delegates.length); i++) {
+          const d = lc.delegates[i].actor;
+          const vp = projectPoint(d.x, getArchipelagoGroundY(d.x, d.z) + 2.4, d.z);
+          if (vp) {
+            labels.push({
+              id: `lib_del_thanks_${i}`,
+              x: vp.x,
+              y: vp.y,
+              title: i === 0 ? '💖 Hidup Pahlawan kita!' : '🙏 Kami sangat bersyukur!',
+              kind: 'speech',
+            });
+          }
+        }
+      } else if (lc.beat === 'hero_motivate') {
+        const hp = projectPoint(this.heroPos.x, this.heroPos.y + 2.95, this.heroPos.z);
+        if (hp) {
+          labels.push({
+            id: 'lib_hero_motivate',
+            x: hp.x,
+            y: hp.y,
+            title: '✨ "Tetap jaga diri & saling menguatkan!"',
+            kind: 'speech',
+          });
+        }
+      } else if (lc.beat === 'return_to_life') {
+        for (let i = 0; i < Math.min(3, lc.delegates.length); i++) {
+          const d = lc.delegates[i].actor;
+          const vp = projectPoint(d.x, getArchipelagoGroundY(d.x, d.z) + 2.45, d.z);
+          if (vp) {
+            labels.push({
+              id: `lib_return_${i}`,
+              x: vp.x,
+              y: vp.y,
+              title: i === 0 ? '👋 Sampai jumpa, Pahlawan!' : '🌸 Mari bekerja dengan riang!',
+              kind: 'speech',
+            });
+          }
         }
       }
       return labels;

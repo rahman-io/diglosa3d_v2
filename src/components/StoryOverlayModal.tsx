@@ -407,6 +407,12 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     (story.dungeonRibbonReunionBeat === 'walk_to_guardian' ||
       story.dungeonRibbonReunionBeat === 'garden_transform');
 
+  const isIslandLiberationCinema =
+    story.kind === 'island_liberation' &&
+    (story.islandLiberationBeat === 'mist_clearing' ||
+      story.islandLiberationBeat === 'villagers_emerge' ||
+      story.islandLiberationBeat === 'return_to_life');
+
   if (
     (story.kind === 'dungeon_intro' &&
       (story.dungeonIntroBeat === 'emerge' || story.dungeonIntroBeat === 'retreat')) ||
@@ -416,7 +422,8 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     (story.kind === 'dungeon_boss_solo_rage' && story.dungeonBossSoloBeat === 'rage_erupt') ||
     (story.kind === 'dungeon_prison_plea' && story.dungeonPrisonPleaBeat === 'discover') ||
     isBossDefeatCinema ||
-    isRibbonReunionCinema
+    isRibbonReunionCinema ||
+    isIslandLiberationCinema
   ) {
     const isPrisonPleaDiscover = story.kind === 'dungeon_prison_plea';
     const isPrisonerCelebrate =
@@ -431,8 +438,20 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     const isWalkToGuardian =
       story.kind === 'dungeon_ribbon_reunion' &&
       story.dungeonRibbonReunionBeat === 'walk_to_guardian';
+    const isLibMist =
+      story.kind === 'island_liberation' && story.islandLiberationBeat === 'mist_clearing';
+    const isLibEmerge =
+      story.kind === 'island_liberation' && story.islandLiberationBeat === 'villagers_emerge';
+    const isLibReturn =
+      story.kind === 'island_liberation' && story.islandLiberationBeat === 'return_to_life';
     const cinemaBadge =
-      isGardenTransform
+      isLibMist
+        ? 'Kabut Pulau Menghilang Cerah'
+        : isLibEmerge
+        ? 'Seluruh Warga Desa Keluar Bersorak'
+        : isLibReturn
+        ? 'Warga Kembali Beraktivitas Bahagia'
+        : isGardenTransform
         ? 'Taman Asri & Kupu-Kupu'
         : isWalkToGuardian
         ? 'Menuju Pintu Depan Gua'
@@ -453,6 +472,13 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
         : story.dungeonIntroBeat === 'emerge'
           ? 'Pusaran Kabut Hitam'
           : 'Kembalinya Sang Bos';
+    const isJoyfulCinema =
+      isPrisonerCelebrate ||
+      isGardenTransform ||
+      isWalkToGuardian ||
+      isLibEmerge ||
+      isLibReturn;
+    const isGoldenCinema = isKeyEmerge || isLibMist;
     return (
       <>
         {projectedLabels && projectedLabels.length > 0 && (
@@ -463,9 +489,9 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
                 style={{ transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)` }}
                 className={`absolute left-0 top-0 whitespace-nowrap shadow-lg ${
                   lbl.kind === 'speech'
-                    ? isPrisonerCelebrate || isGardenTransform || isWalkToGuardian
+                    ? isJoyfulCinema
                       ? 'rounded-2xl border-2 border-emerald-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-emerald-100'
-                      : isKeyEmerge
+                      : isGoldenCinema
                       ? 'rounded-2xl border-2 border-amber-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-amber-100'
                       : isPrisonPleaDiscover
                       ? 'rounded-2xl border-2 border-sky-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-sky-100'
@@ -483,9 +509,9 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
           <div className="flex min-w-0 items-center gap-2">
             <span
               className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider sm:text-xs ${
-                isPrisonerCelebrate || isGardenTransform || isWalkToGuardian
+                isJoyfulCinema
                   ? 'border-emerald-300/80 bg-emerald-950/90 text-emerald-100'
-                  : isKeyEmerge
+                  : isGoldenCinema
                   ? 'border-amber-300/80 bg-amber-950/90 text-amber-100'
                   : isPrisonPleaDiscover
                   ? 'border-sky-300/75 bg-sky-950/90 text-sky-100'
@@ -560,7 +586,8 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     story.kind === 'cave_guardian' ||
     story.kind === 'dungeon_rescue' ||
     story.kind === 'dungeon_ribbon_reunion' ||
-    story.kind === 'dungeon_reunion_exit';
+    story.kind === 'dungeon_reunion_exit' ||
+    story.kind === 'island_liberation';
 
   const caveStory = story.zoneId ? ZONE_CAVE_STORIES[story.zoneId] : null;
 
@@ -668,7 +695,8 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
         story.kind === 'dungeon_boss_solo_rage' ||
         story.kind === 'dungeon_boss_defeat' ||
         story.kind === 'dungeon_prison_plea' ||
-        story.kind === 'dungeon_ribbon_reunion') &&
+        story.kind === 'dungeon_ribbon_reunion' ||
+        story.kind === 'island_liberation') &&
         projectedLabels &&
         projectedLabels.length > 0 && (
         <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden">
@@ -678,16 +706,20 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
               style={{ transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)` }}
               className={`absolute left-0 top-0 whitespace-nowrap shadow-lg ${
                 lbl.kind === 'speech'
-                  ? story.kind === 'dungeon_prison_plea' ||
-                    (story.kind === 'dungeon_prison_torment' && lbl.id.includes('captive'))
-                    ? 'rounded-2xl border-2 border-sky-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-sky-100'
-                    : story.kind === 'dungeon_door_guide'
-                      ? 'rounded-2xl border-2 border-emerald-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-emerald-100'
-                      : story.kind === 'dungeon_boss_defeat'
-                        ? lbl.id.includes('hero')
-                          ? 'rounded-2xl border-2 border-sky-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-sky-100'
-                          : 'rounded-2xl border-2 border-amber-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-amber-100'
-                        : 'rounded-2xl border-2 border-rose-400 bg-slate-950/95 px-3 py-1 text-xs font-black text-rose-100'
+                  ? story.kind === 'island_liberation'
+                    ? lbl.id.includes('hero')
+                      ? 'rounded-2xl border-2 border-amber-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-amber-100'
+                      : 'rounded-2xl border-2 border-emerald-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-emerald-100'
+                    : story.kind === 'dungeon_prison_plea' ||
+                      (story.kind === 'dungeon_prison_torment' && lbl.id.includes('captive'))
+                      ? 'rounded-2xl border-2 border-sky-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-sky-100'
+                      : story.kind === 'dungeon_door_guide'
+                        ? 'rounded-2xl border-2 border-emerald-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-emerald-100'
+                        : story.kind === 'dungeon_boss_defeat'
+                          ? lbl.id.includes('hero')
+                            ? 'rounded-2xl border-2 border-sky-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-sky-100'
+                            : 'rounded-2xl border-2 border-amber-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-amber-100'
+                          : 'rounded-2xl border-2 border-rose-400 bg-slate-950/95 px-3 py-1 text-xs font-black text-rose-100'
                   : 'rounded-xl border border-amber-300/80 bg-slate-950/90 px-2.5 py-1 text-[11px] font-extrabold text-amber-100'
               }`}
             >
