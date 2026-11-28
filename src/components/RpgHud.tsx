@@ -2232,10 +2232,10 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                       inspectedHotbar.id === 'pickaxe'
                         ? {
                             slot: 8,
-                            title: 'Beliung Tambang',
+                            title: 'Kapak & Beliung',
                             badge: `Tier ${hud.pickaxeTier}`,
                             icon: './assets/ui/icon_pickaxe.png',
-                            desc: 'Gali batu gua, bongkar blok pelindung, atau serang jarak dekat.',
+                            desc: 'Hancurkan tumpukan kotak persegi, gali batu gua, atau serang jarak dekat.',
                           }
                         : inspectedHotbar.id === 'torch'
                         ? {
@@ -2379,7 +2379,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                     setInspectedHotbar({ kind: 'tool', id: 'pickaxe' });
                     onSelectHotbar(8);
                   }}
-                  title={`9. Beliung Tier ${hud.pickaxeTier}`}
+                  title={`9. Kapak / Beliung Tier ${hud.pickaxeTier}`}
                   className={`relative flex flex-col items-center justify-between gap-1 rounded-xl border px-1.5 py-1.5 text-center transition ${
                     hud.activeHotbarSlot === 8
                       ? 'border-emerald-300/90 bg-emerald-950/28 text-emerald-100 ring-1 ring-emerald-300/80'
@@ -2393,12 +2393,12 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                   </span>
                   <img
                     src="./assets/ui/icon_pickaxe.png"
-                    alt="Beliung"
+                    alt="Kapak / Beliung"
                     className="h-9 w-9 object-contain sm:h-10 sm:w-10"
                     draggable={false}
                   />
                   <span className="line-clamp-1 w-full text-[9px] font-extrabold leading-tight [text-shadow:0_1px_2px_rgba(0,0,0,0.9)] sm:text-[10px]">
-                    Beliung
+                    Kapak/Beliung
                   </span>
                 </button>
 

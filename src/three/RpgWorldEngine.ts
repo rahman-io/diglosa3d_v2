@@ -1463,6 +1463,28 @@ export class RpgWorldEngine {
     eruptBurstFired: boolean;
     sparkAccum: number;
   } | null = null;
+  private dungeonBossDefeatCutscene: {
+    zoneId: ZoneId;
+    beat:
+      | 'boss_apology'
+      | 'hero_forgive_advise'
+      | 'boss_remorse_crumble'
+      | 'key_emerge'
+      | 'prisoners_celebrate';
+    timer: number;
+    bossMesh: THREE.Group | null;
+    bossBaseScale: number;
+    bossPos: THREE.Vector3;
+    keyPos: THREE.Vector3;
+    heroStandPos: THREE.Vector3;
+    cutsceneLight: THREE.PointLight;
+    crumbleBurstFired: boolean;
+    crumbleSoundFired: boolean;
+    keySoundFired: boolean;
+    celebrateSoundFired: boolean;
+    celebrateCellIdx: number;
+    sparkAccum: number;
+  } | null = null;
   private prisonPleaSeenZones = new Set<ZoneId>();
   private prisonPleaSeenCells = new Set<string>();
   private unlockedPrisonCells = new Set<string>();
@@ -2862,7 +2884,7 @@ export class RpgWorldEngine {
     }
     this.spawnBurst(
       this.dungeonRig.ribbonPos.x,
-      1.35,
+      this.dungeonRig.ribbonPos.y + 1.35,
       this.dungeonRig.ribbonPos.z,
       0xf43f5e,
       34,
@@ -8073,6 +8095,34 @@ export class RpgWorldEngine {
       }
     }
 
+    if (this.storyDialog.kind === 'dungeon_boss_defeat') {
+      const dc = this.dungeonBossDefeatCutscene;
+      if (!dc) {
+        this.finishDungeonBossDefeatCutscene();
+        return;
+      }
+      if (dc.beat === 'boss_apology') {
+        this.transitionBossDefeatToHeroAdvice();
+        return;
+      }
+      if (dc.beat === 'hero_forgive_advise') {
+        this.transitionBossDefeatToCrumble();
+        return;
+      }
+      if (dc.beat === 'boss_remorse_crumble') {
+        this.transitionBossDefeatToKeyEmerge();
+        return;
+      }
+      if (dc.beat === 'key_emerge') {
+        this.transitionBossDefeatToPrisonersCelebrate();
+        return;
+      }
+      if (dc.beat === 'prisoners_celebrate') {
+        this.finishDungeonBossDefeatCutscene();
+        return;
+      }
+    }
+
     if (this.storyDialog.kind === 'dungeon_prison_plea') {
       const pc = this.dungeonPrisonPleaCutscene;
       if (!pc) {
@@ -8257,6 +8307,8 @@ export class RpgWorldEngine {
       this.finishDungeonBossSummonCutscene();
     } else if (this.storyDialog.kind === 'dungeon_boss_solo_rage') {
       this.finishDungeonBossSoloRageCutscene();
+    } else if (this.storyDialog.kind === 'dungeon_boss_defeat') {
+      this.finishDungeonBossDefeatCutscene();
     } else if (this.storyDialog.kind === 'dungeon_prison_plea') {
       this.finishDungeonPrisonPleaCutscene();
     } else if (this.storyDialog.kind === 'dungeon_rescue') {
@@ -10243,12 +10295,18 @@ export class RpgWorldEngine {
     }
     if (this.dungeonRig) {
       this.dungeonRig.prisonKeyGroup.visible = false;
-      this.dungeonRig.ribbonGroup.visible = !this.ribbons.has(zoneId);
+      this.dungeonRig.ribbonGroup.visible =
+        !this.ribbons.has(zoneId) && this.isRibbonCrateBroken();
       if (this.dungeonRig.hasInsideGuardian) {
         this.dungeonRig.guardianAuraMat.color.setHex(0x22c55e);
       }
     }
     this.applyAtmosphere('dungeon', zoneId, true);
+  }
+
+  private isRibbonCrateBroken(): boolean {
+    const ribbonCrate = this.dungeonRig?.caveBlocks.find((b) => b.isRibbonCrate);
+    return ribbonCrate ? !ribbonCrate.alive : true;
   }
 
   private finishDungeonRescueCutscene(zoneId?: ZoneId): void {
@@ -10287,7 +10345,8 @@ export class RpgWorldEngine {
       this.dungeonCellRescueTargets.clear();
       this.syncDungeonPrisonCellsHud();
       if (zId && allCellsUnlocked) {
-        this.dungeonRig.ribbonGroup.visible = !this.ribbons.has(zId);
+        this.dungeonRig.ribbonGroup.visible =
+          !this.ribbons.has(zId) && this.isRibbonCrateBroken();
       }
     } else if (this.dungeonRig) {
       this.dungeonRig.prisonBars.visible = false;
@@ -10300,7 +10359,8 @@ export class RpgWorldEngine {
         this.heroPos.z - this.dungeonCaptivePos.z,
       );
       if (zId) {
-        this.dungeonRig.ribbonGroup.visible = !this.ribbons.has(zId);
+        this.dungeonRig.ribbonGroup.visible =
+          !this.ribbons.has(zId) && this.isRibbonCrateBroken();
       }
     }
 
@@ -10331,12 +10391,15 @@ export class RpgWorldEngine {
     if (zId) {
       const st = ZONE_CAVE_STORIES[zId];
       const hasRibbon = this.ribbons.has(zId);
+      const crateReady = this.isRibbonCrateBroken();
       this.spawnBurst(this.dungeonCaptivePos.x, 1.8, this.dungeonCaptivePos.z, 0x34d399, 32);
       this.showBanner(
         hasRibbon
           ? `✅ ${isMultiCell ? 'Rani, Kakak Raka, 4 Anak & 5 Warga Desa' : st.captiveName} selamat & terus mengikutimu! Bawa keluar gua menemui ${st.guardianName}!`
-          : `🎀 ${isMultiCell ? 'Semua tawanan Desa Sapaan bebas & terus mengikutimu!' : `${st.captiveName} bebas & terus mengikutimu!`} Cari Pita Merah 3D tersembunyi di sudut gua, lalu bawa mereka keluar menemui ${st.guardianName}!`,
-        6.0,
+          : crateReady
+          ? `🎀 ${isMultiCell ? 'Semua tawanan bebas & mengikutimu!' : `${st.captiveName} bebas & mengikutimu!`} Ambil Pita Merah 3D yang bersinar di sudut gua, lalu keluar menemui ${st.guardianName}!`
+          : `📦 ${isMultiCell ? 'Semua tawanan bebas! Rani (si cucu) memandumu' : `${st.captiveName} bebas & memandumu`} mencari Pita Merah 3D: hancurkan tumpukan box persegi dengan Kapak / Beliung (Slot 9)!`,
+        6.5,
       );
     }
     this.pushHud(true);
@@ -11326,6 +11389,7 @@ export class RpgWorldEngine {
     this.clearDungeonBossSpawnCloud();
     this.clearDungeonBossSummonCutscene();
     this.clearDungeonBossSoloCutscene();
+    this.clearDungeonBossDefeatCutscene();
     this.clearDungeonPrisonPleaCutscene();
     this.clearBossGuardShields();
     this.bossSummonedWaveIds.clear();
@@ -12012,7 +12076,8 @@ export class RpgWorldEngine {
     if (multiCells) {
       this.syncDungeonPrisonCellsHud();
       rig.prisonKeyGroup.visible = bossBeaten && !keyCollected && !prisonFullyUnlocked;
-      rig.ribbonGroup.visible = prisonFullyUnlocked && !this.ribbons.has(zoneId);
+      rig.ribbonGroup.visible =
+        prisonFullyUnlocked && !this.ribbons.has(zoneId) && this.isRibbonCrateBroken();
       if (prisonFullyUnlocked && rig.hasInsideGuardian) {
         rig.guardianAuraMat.color.setHex(0x22c55e);
       }
@@ -12035,7 +12100,8 @@ export class RpgWorldEngine {
     } else if (rescued) {
       rig.prisonBars.visible = false;
       rig.prisonKeyGroup.visible = false;
-      rig.ribbonGroup.visible = !this.ribbons.has(zoneId);
+      rig.ribbonGroup.visible =
+        !this.ribbons.has(zoneId) && this.isRibbonCrateBroken();
       if (rig.hasInsideGuardian) {
         rig.guardianAuraMat.color.setHex(0x22c55e);
       }
@@ -17170,10 +17236,13 @@ export class RpgWorldEngine {
         ).length;
 
         if (!bossStillAlive && guardsRemaining === 0) {
+          const bossMobForFilm = this.dungeonMonsters.find(
+            (dm) => dm.isBoss && dm.zoneId === zId,
+          );
           this.defeatedBossZones.add(zId);
           this.emitProgressSync();
           this.dungeonState.bossDefeated = true;
-          this.dungeonState.prisonKeySpawned = true;
+          this.dungeonState.prisonKeySpawned = false;
           this.dungeonState.monstersRemaining = 0;
           this.bossSummonShieldActive = false;
           this.bossSummonedWaveIds.clear();
@@ -17187,27 +17256,24 @@ export class RpgWorldEngine {
           });
           this.dungeonMonsters.forEach((dm) => {
             dm.alive = false;
-            dm.mesh.visible = false;
+            if (dm !== bossMobForFilm) {
+              dm.mesh.visible = false;
+            }
             dm.respawnTimer = 0;
             this.markDungeonEnemyDefeated(zId, dm.id);
           });
-          this.applyAtmosphere('dungeon', zId, true);
           if (this.dungeonRig) {
-            this.dungeonRig.prisonKeyGroup.visible = true;
+            this.dungeonRig.prisonKeyGroup.visible = false;
           }
           this.hp = Math.min(this.maxHp, this.hp + 2);
           this.gainXp(80);
           this.addScore(500);
-          const keySpot = this.dungeonRig?.bossSpawnPos ?? new THREE.Vector3(0, 0, -9);
-          this.spawnBurst(keySpot.x, keySpot.y + 2.0, keySpot.z, 0xfacc15, 42);
-          this.spawnBurst(this.heroPos.x, this.heroPos.y + 2.4, this.heroPos.z, 0xfef08a, 24);
-          soundEngine.playFanfare();
-          const cornerHint =
-            caveStory.prisonCorner === 'nw' ? 'Kiri Atas (Barat Laut)' : 'Kanan Atas (Timur Laut)';
-          this.showBanner(
-            `✨ Bos ${boss.name} dan kedua anak buahnya kalah! Gua terang! Ambil Kunci Penjara Emas di tengah gua lalu gali sudut ${cornerHint} untuk menyelamatkan ${caveStory.captiveName}!`,
-            6.0,
-          );
+          this.syncDungeonMonsterStats();
+          this.checkAreaTrophy(zId);
+          this.startDungeonBossDefeatCutscene(zId, bossMobForFilm);
+          this.saveProgress();
+          this.pushHud(true);
+          return;
         } else {
           if (m?.isBossMinion) {
             this.diamonds += m.rewardDiamonds;
@@ -17666,6 +17732,9 @@ export class RpgWorldEngine {
         cells.find((c) => !c.unlocked);
       if (!cell) return;
       const cellKey = `${this.dungeonState.zoneId}:${cell.id}`;
+      if (this.dungeonState.bossDefeated || this.dungeonState.prisonKeyCollected) {
+        this.prisonPleaSeenCells.add(cellKey);
+      }
       if (!this.prisonPleaSeenCells.has(cellKey)) {
         this.startDesaPrisonCellPleaCutscene(this.dungeonState.zoneId, cell);
         return;
@@ -17898,13 +17967,17 @@ export class RpgWorldEngine {
     }
     const frac = 1 - blk.hp / Math.max(1, blk.maxHp);
     const stage = Math.min(3, Math.max(0, Math.floor(frac * 4)));
+    const scaleX = blk.halfW / 1.0;
+    const scaleY = (blk.halfH ?? 1.1) / 1.1;
     if (!blk.crackMesh) {
       const cMesh = new THREE.Mesh(rig.crackGeo, rig.crackMaterials[stage]);
       cMesh.position.set(blk.x, blk.y, blk.z);
+      cMesh.scale.set(scaleX, scaleY, scaleX);
       rig.group.add(cMesh);
       blk.crackMesh = cMesh;
     } else {
       blk.crackMesh.position.set(blk.x, blk.y, blk.z);
+      blk.crackMesh.scale.set(scaleX, scaleY, scaleX);
       blk.crackMesh.material = rig.crackMaterials[stage];
       blk.crackMesh.visible = true;
     }
@@ -17935,13 +18008,54 @@ export class RpgWorldEngine {
         ? 0xfb7185
         : blk.kind === 'word_seal'
         ? 0xc084fc
+        : blk.kind === 'wood_crate'
+        ? 0xd97706
         : blk.kind === 'moss_dirt'
         ? 0x22c55e
         : 0x94a3b8;
-    this.spawnBurst(blk.x, 1.2, blk.z, burstColor, 20);
+    this.spawnBurst(blk.x, blk.y + 0.25, blk.z, burstColor, 20);
     soundEngine.playBoom();
 
-    if (blk.kind === 'diamond_ore') {
+    if (blk.kind === 'wood_crate') {
+      this.gainXp(4);
+      this.addScore(50);
+      if (blk.isRibbonCrate && this.dungeonRig && this.dungeonState) {
+        const canReveal =
+          this.dungeonState.prisonUnlocked && !this.ribbons.has(this.dungeonState.zoneId);
+        this.dungeonRig.ribbonGroup.visible = canReveal;
+        if (canReveal) {
+          const rp = this.dungeonRig.ribbonPos;
+          this.spawnBurst(rp.x, rp.y + 1.35, rp.z, 0xf43f5e, 34);
+          this.spawnBurst(rp.x, rp.y + 1.65, rp.z, 0xfacc15, 22);
+          soundEngine.playFanfare();
+          this.showBanner(
+            '🎀 Kotak persegi hancur! Pita Merah 3D ditemukan bersinar di dalamnya—ambil segera!',
+            4.8,
+          );
+        } else {
+          this.showBanner(
+            '📦 Kotak persegi hancur! Bebaskan dulu semua tawanan penjara agar Pita Merah 3D bersinar di sini!',
+            3.6,
+          );
+        }
+      } else if (
+        this.dungeonState?.prisonUnlocked &&
+        !this.ribbons.has(this.dungeonState.zoneId)
+      ) {
+        if (this.ownedWeapons.size > 0 && Math.random() < 0.45) {
+          this.weaponAmmo[this.activeWeapon] = Math.min(
+            MAX_AMMO,
+            this.weaponAmmo[this.activeWeapon] + 1,
+          );
+        }
+        this.showBanner(
+          '📦 Kotak kayu persegi hancur! Coba hancurkan kotak lain di tumpukan untuk menemukan Pita Merah 3D!',
+          3.2,
+        );
+      } else {
+        this.showBanner('📦 Kotak kayu persegi hancur! +4 XP!', 2.2);
+      }
+    } else if (blk.kind === 'diamond_ore') {
       this.diamonds += 1;
       this.gainXp(10);
       this.addScore(120);
@@ -18483,14 +18597,20 @@ export class RpgWorldEngine {
         ? 0xfb7185
         : blk.kind === 'word_seal'
         ? 0xc084fc
+        : blk.kind === 'wood_crate'
+        ? 0xd97706
         : 0x94a3b8;
     this.spawnBurst(blk.x, blk.y + 0.2, blk.z, chipHex, 8);
 
     if (blk.hp <= 0) {
       this.shatterCaveBlock(blk, false);
     } else {
+      const baseScaleX = blk.halfW / 1.0;
+      const baseScaleY = (blk.halfH ?? 1.1) / 1.1;
       blk.mesh.scale.setScalar(0.92);
-      if (blk.crackMesh) blk.crackMesh.scale.setScalar(0.92);
+      if (blk.crackMesh) {
+        blk.crackMesh.scale.set(baseScaleX * 0.92, baseScaleY * 0.92, baseScaleX * 0.92);
+      }
       this.updateBlockCrackVisual(blk);
     }
     this.saveProgress();
@@ -18605,7 +18725,7 @@ export class RpgWorldEngine {
     for (const blk of this.dungeonRig.caveBlocks) {
       if (!blk.alive) continue;
       if (Math.abs(x - blk.x) <= blk.halfW + 0.35 && Math.abs(z - blk.z) <= blk.halfW + 0.35) {
-        const topY = blk.y + 1.1;
+        const topY = blk.y + (blk.halfH ?? 1.1);
         if (refY >= topY - 0.65) {
           supportY = Math.max(supportY, topY);
         }
@@ -20385,7 +20505,12 @@ export class RpgWorldEngine {
             } else if (this.activeHotbarSlot === 11) {
               this.placeAndTriggerTnt();
             } else {
-              this.showBanner(`Pilih Slot 9 (⛏️ Beliung) untuk menggali ${blk.label}!`, 2.2);
+              this.showBanner(
+                blk.kind === 'wood_crate'
+                  ? `🪓 Pilih Slot 9 (Kapak / Beliung) untuk menghancurkan ${blk.label}!`
+                  : `Pilih Slot 9 (🪓 Kapak / Beliung) untuk menggali ${blk.label}!`,
+                2.5,
+              );
             }
             return;
           }
@@ -23271,6 +23396,606 @@ export class RpgWorldEngine {
     this.controls.target.lerp(_v2, camLerp);
   }
 
+  private clearDungeonBossDefeatCutscene(): void {
+    const dc = this.dungeonBossDefeatCutscene;
+    if (!dc) return;
+    if (dc.cutsceneLight.parent) {
+      dc.cutsceneLight.parent.remove(dc.cutsceneLight);
+    }
+    this.dungeonBossDefeatCutscene = null;
+  }
+
+  private startDungeonBossDefeatCutscene(zoneId: ZoneId, bossMob?: RoamingMonster): void {
+    this.clearDungeonBossDefeatCutscene();
+    if (this.cameraMode === 'first_person') {
+      this.cameraMode = 'third_back';
+    }
+    this.phase = 'story';
+    this.heldKeys.clear();
+    this.tapMoveTarget = null;
+    this.applyCameraVisibilityAndControls();
+    this.storyTimer = 0;
+
+    const boss = BOSSES[zoneId];
+    const isDesa = zoneId === 'desa_sapaan';
+    const keyPos = this.dungeonRig
+      ? this.dungeonRig.bossSpawnPos.clone()
+      : new THREE.Vector3(isDesa ? 2.0 : 0, isDesa ? 9.5 : 0, isDesa ? -33.5 : -9.0);
+    const bossPos = keyPos.clone();
+    const heroStandPos = new THREE.Vector3(keyPos.x, keyPos.y, keyPos.z + 5.8);
+
+    const bossMesh = bossMob?.mesh ?? null;
+    const bossBaseScale = bossMesh ? Math.max(1.2, bossMesh.scale.x || 1.65) : 1.65;
+    if (bossMesh) {
+      bossMesh.position.copy(bossPos);
+      bossMesh.scale.setScalar(bossBaseScale);
+      bossMesh.rotation.set(
+        0,
+        Math.atan2(heroStandPos.x - bossPos.x, heroStandPos.z - bossPos.z),
+        0,
+      );
+      bossMesh.visible = true;
+    }
+
+    for (const m of this.dungeonMonsters) {
+      if (!bossMesh || m.mesh !== bossMesh) {
+        m.mesh.visible = false;
+      }
+    }
+    for (const s of this.shooters) {
+      s.mesh.visible = false;
+    }
+    if (this.dungeonRig) {
+      this.dungeonRig.prisonKeyGroup.visible = false;
+      this.dungeonRig.prisonKeyGroup.position.copy(keyPos);
+    }
+
+    this.heroPos.copy(heroStandPos);
+    this.heroYaw = Math.atan2(bossPos.x - heroStandPos.x, bossPos.z - heroStandPos.z);
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.body.rotation.y = this.heroYaw;
+    this.playerCaveLight.position.set(heroStandPos.x, heroStandPos.y + 2.8, heroStandPos.z);
+
+    const cutsceneLight = new THREE.PointLight(0xfef3c7, 4.4, 30, 1.4);
+    cutsceneLight.position.set(bossPos.x, bossPos.y + 4.2, bossPos.z + 2.5);
+    if (this.dungeonRig) {
+      this.dungeonRig.group.add(cutsceneLight);
+    } else {
+      this.scene.add(cutsceneLight);
+    }
+
+    this.dungeonBossDefeatCutscene = {
+      zoneId,
+      beat: 'boss_apology',
+      timer: 0,
+      bossMesh,
+      bossBaseScale,
+      bossPos,
+      keyPos,
+      heroStandPos,
+      cutsceneLight,
+      crumbleBurstFired: false,
+      crumbleSoundFired: false,
+      keySoundFired: false,
+      celebrateSoundFired: false,
+      celebrateCellIdx: 0,
+      sparkAccum: 0,
+    };
+
+    const pName = this.getPlayerDisplayName();
+    const apologyEn = `Ugh... I admit defeat, ${pName}... You are truly strong and noble. Forgive me for everything I did—for locking up innocent villagers and bringing fear into ${ZONE_INFO[zoneId].name}...`;
+    const apologyId = `Ugh... aku mengakui kehebatanmu, ${pName}... Kamu sungguh tangguh dan berhati mulia. Maafkan aku atas semua yang telah kulakukan—menawan warga dan menebar ketakutan di ${ZONE_INFO[zoneId].name}...`;
+
+    this.storyDialog = {
+      kind: 'dungeon_boss_defeat',
+      step: 0,
+      maxStep: 4,
+      zoneId,
+      dungeonBossDefeatBeat: 'boss_apology',
+      speakerName: boss.name,
+      speakerRole: `Pengakuan Kekalahan & Permohonan Maaf Bos`,
+      speakerKind: 'boss',
+      speakerMonsterType: boss.monsterType,
+      speakerSide: 'npc',
+      bossExpression: 'remorse',
+      heroExpression: 'neutral',
+      textEn: apologyEn,
+      textId: apologyId,
+      accentColor: '#f59e0b',
+    };
+
+    soundEngine.playSadPlea('adults');
+    soundEngine.speakEnglish(apologyEn, 0.86, 0.88);
+    this.spawnBurst(bossPos.x, bossPos.y + 1.8, bossPos.z, 0xfbbf24, 18);
+    this.pushHud(true);
+  }
+
+  private transitionBossDefeatToHeroAdvice(): void {
+    const dc = this.dungeonBossDefeatCutscene;
+    if (!dc || dc.beat !== 'boss_apology') return;
+    dc.beat = 'hero_forgive_advise';
+    dc.timer = 0;
+
+    const boss = BOSSES[dc.zoneId];
+    const pName = this.getPlayerDisplayName();
+    const adviseEn = `I forgive you, ${boss.name}. Never do evil things like this again—if you had chosen to live a better, kinder life, none of this tragedy would ever have happened.`;
+    const adviseId = `Aku memaafkanmu, ${boss.name}. Jangan lakukan hal buruk seperti ini lagi—seandainya kamu hidup lebih baik dan berbuat kebaikan, tidak akan pernah terjadi hal seperti ini.`;
+
+    this.storyDialog = {
+      kind: 'dungeon_boss_defeat',
+      step: 1,
+      maxStep: 4,
+      zoneId: dc.zoneId,
+      dungeonBossDefeatBeat: 'hero_forgive_advise',
+      speakerName: pName,
+      speakerRole: 'Memaafkan & Memberi Nasihat',
+      speakerKind: 'hero',
+      speakerSide: 'hero',
+      heroExpression: 'neutral',
+      bossExpression: 'remorse',
+      textEn: adviseEn,
+      textId: adviseId,
+      accentColor: '#0ea5e9',
+    };
+
+    soundEngine.playPick();
+    soundEngine.speakEnglish(adviseEn, 0.96, 1.0);
+    this.pushHud(true);
+  }
+
+  private transitionBossDefeatToCrumble(): void {
+    const dc = this.dungeonBossDefeatCutscene;
+    if (!dc || dc.beat !== 'hero_forgive_advise') return;
+    dc.beat = 'boss_remorse_crumble';
+    dc.timer = 0;
+
+    const boss = BOSSES[dc.zoneId];
+    const pName = this.getPlayerDisplayName();
+    const crumbleEn = `Your words are true... I am filled with deep regret... If only I had lived a better life... Farewell, ${pName}...`;
+    const crumbleId = `Kata-katamu benar sekali... Penyesalan ini sungguh dalam... Seandainya dulu aku hidup lebih baik... Selamat tinggal, ${pName}...`;
+
+    this.storyDialog = {
+      kind: 'dungeon_boss_defeat',
+      step: 2,
+      maxStep: 4,
+      zoneId: dc.zoneId,
+      dungeonBossDefeatBeat: 'boss_remorse_crumble',
+      speakerName: boss.name,
+      speakerRole: 'Penyesalan Mendalam Sang Bos',
+      speakerKind: 'boss',
+      speakerMonsterType: boss.monsterType,
+      speakerSide: 'npc',
+      bossExpression: 'remorse',
+      heroExpression: 'neutral',
+      textEn: crumbleEn,
+      textId: crumbleId,
+      accentColor: '#a855f7',
+    };
+
+    this.applyAtmosphere('dungeon', dc.zoneId, true);
+    soundEngine.playBossCrumble();
+    dc.crumbleSoundFired = true;
+    soundEngine.speakEnglish(crumbleEn, 0.84, 0.85);
+    this.pushHud(true);
+  }
+
+  private transitionBossDefeatToKeyEmerge(): void {
+    const dc = this.dungeonBossDefeatCutscene;
+    if (!dc) return;
+    dc.beat = 'key_emerge';
+    dc.timer = 0;
+
+    if (dc.bossMesh) {
+      dc.bossMesh.visible = false;
+    }
+    if (this.dungeonRig) {
+      this.dungeonRig.prisonKeyGroup.position.set(dc.keyPos.x, dc.keyPos.y - 0.5, dc.keyPos.z);
+      this.dungeonRig.prisonKeyGroup.visible = true;
+    }
+
+    const keyEn = `As the boss crumbles into golden dust of remorse, the Golden Prison Key slowly rises in the center arena!`;
+    const keyId = `Setelah sang bos hancur dalam penyesalannya, Kunci Penjara Emas muncul perlahan bersinar di tengah arena!`;
+
+    this.storyDialog = {
+      kind: 'dungeon_boss_defeat',
+      step: 3,
+      maxStep: 4,
+      zoneId: dc.zoneId,
+      dungeonBossDefeatBeat: 'key_emerge',
+      speakerName: 'Kunci Penjara Emas',
+      speakerRole: 'Cahaya Harapan di Arena Gua',
+      speakerSide: 'npc',
+      textEn: keyEn,
+      textId: keyId,
+      accentColor: '#f59e0b',
+    };
+
+    if (!dc.keySoundFired) {
+      dc.keySoundFired = true;
+      soundEngine.playFanfare();
+    }
+    this.spawnBurst(dc.keyPos.x, dc.keyPos.y + 1.1, dc.keyPos.z, 0xfacc15, 32);
+    this.pushHud(true);
+  }
+
+  private transitionBossDefeatToPrisonersCelebrate(): void {
+    const dc = this.dungeonBossDefeatCutscene;
+    if (!dc) return;
+    dc.beat = 'prisoners_celebrate';
+    dc.timer = 0;
+    dc.celebrateCellIdx = 0;
+
+    if (this.dungeonRig) {
+      this.dungeonRig.prisonKeyGroup.position.copy(dc.keyPos);
+      this.dungeonRig.prisonKeyGroup.visible = true;
+      if (this.dungeonRig.prisonCells && this.dungeonRig.prisonCells.length > 0) {
+        const c0 = this.dungeonRig.prisonCells[0];
+        const openSignX = c0.facingDir.x >= 0 ? 1 : -1;
+        const halfX = c0.id === 'cell_1' ? 3.2 : c0.id === 'cell_2' ? 3.7 : 3.9;
+        dc.cutsceneLight.position.set(
+          c0.pos.x + openSignX * (halfX + 2.8),
+          c0.pos.y + 3.4,
+          c0.pos.z,
+        );
+        this.camera.position.set(
+          c0.pos.x + openSignX * (halfX + 4.4),
+          c0.pos.y + 2.35,
+          c0.pos.z + 1.45,
+        );
+        this.controls.target.set(c0.pos.x, c0.pos.y + 1.25, c0.pos.z);
+        this.controls.update();
+      } else {
+        const pPos = this.dungeonRig.prisonPos;
+        const cornerDirX = ZONE_CAVE_STORIES[dc.zoneId].prisonCorner === 'nw' ? 1 : -1;
+        dc.cutsceneLight.position.set(pPos.x + cornerDirX * 2.2, pPos.y + 3.0, pPos.z + 2.4);
+        this.camera.position.set(pPos.x + cornerDirX * 2.75, pPos.y + 2.1, pPos.z + 4.15);
+        this.controls.target.set(pPos.x, pPos.y + 1.25, pPos.z);
+        this.controls.update();
+      }
+    }
+
+    const celebEn = `Hooray!! The prisoners leap with tears of joy, hug each other tightly, and cheer in gratitude! Take the Golden Key now and free them one by one!`;
+    const celebId = `Horeee!! Para tahanan riang gembira, haru, meloncat-loncat senang, dan saling berpelukan penuh rasa syukur! Ayo ambil Kunci Emas dan bebaskan mereka satu per satu!`;
+
+    this.storyDialog = {
+      kind: 'dungeon_boss_defeat',
+      step: 4,
+      maxStep: 4,
+      zoneId: dc.zoneId,
+      dungeonBossDefeatBeat: 'prisoners_celebrate',
+      speakerName: 'Para Tahanan Gua',
+      speakerRole: 'Bersukacita, Haru & Penuh Syukur',
+      speakerKind: 'villagers',
+      speakerSide: 'npc',
+      textEn: celebEn,
+      textId: celebId,
+      accentColor: '#10b981',
+    };
+
+    if (!dc.celebrateSoundFired) {
+      dc.celebrateSoundFired = true;
+      soundEngine.playPrisonersCheer();
+    }
+    soundEngine.speakEnglish(celebEn, 0.98, 1.06);
+    this.pushHud(true);
+  }
+
+  private finishDungeonBossDefeatCutscene(): void {
+    const dc = this.dungeonBossDefeatCutscene;
+    const zId = dc?.zoneId || this.storyDialog?.zoneId || this.dungeonState?.zoneId;
+    if (dc) {
+      if (dc.bossMesh) {
+        dc.bossMesh.visible = false;
+        dc.bossMesh.scale.setScalar(dc.bossBaseScale);
+        dc.bossMesh.rotation.set(0, 0, 0);
+      }
+      this.heroPos.copy(dc.heroStandPos);
+      this.heroYaw = Math.atan2(
+        dc.keyPos.x - dc.heroStandPos.x,
+        dc.keyPos.z - dc.heroStandPos.z,
+      );
+      this.clearDungeonBossDefeatCutscene();
+    }
+
+    if (this.dungeonRig) {
+      if (this.dungeonRig.prisonCells) {
+        for (const cell of this.dungeonRig.prisonCells) {
+          if (!cell.unlocked) {
+            for (const cap of cell.captives) {
+              cap.mesh.position.copy(cap.localPos);
+            }
+          }
+        }
+      } else if (!this.dungeonState?.prisonUnlocked) {
+        this.dungeonRig.captiveMesh.position.set(0, 0.22, 0);
+      }
+      const spawnPos = this.dungeonRig.bossSpawnPos;
+      this.dungeonRig.prisonKeyGroup.position.copy(spawnPos);
+      this.dungeonRig.prisonKeyGroup.visible = !this.dungeonState?.prisonKeyCollected;
+    }
+
+    if (zId) {
+      this.defeatedBossZones.add(zId);
+      if (this.dungeonState && this.dungeonState.zoneId === zId) {
+        this.dungeonState.bossDefeated = true;
+        this.dungeonState.prisonKeySpawned = true;
+        this.dungeonState.monstersRemaining = 0;
+      }
+      this.applyAtmosphere('dungeon', zId, true);
+    }
+
+    for (const m of this.dungeonMonsters) {
+      m.mesh.visible = m.alive;
+    }
+    for (const s of this.shooters) {
+      s.mesh.visible = s.alive;
+    }
+
+    setHeroFacialExpression(this.hero, 'neutral', this.elapsed, false);
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.body.rotation.y = this.heroYaw;
+    this.storyDialog = null;
+    this.phase = 'playing';
+    this.applyCameraVisibilityAndControls();
+    this.snapCameraBehindHero();
+    this.saveProgress();
+    soundEngine.playPick();
+    this.showBanner(
+      '🔑 Kunci Penjara Emas sudah muncul! Ambil kuncinya lalu bebaskan semua tahanan satu per satu!',
+      5.2,
+    );
+    this.pushHud(true);
+  }
+
+  private updateDungeonBossDefeatCutscene(dt: number): void {
+    const dc = this.dungeonBossDefeatCutscene;
+    if (!dc) return;
+    dc.timer += dt;
+    dc.sparkAccum += dt;
+    const t = dc.timer;
+
+    this.hero.root.position.copy(dc.heroStandPos);
+    this.hero.body.rotation.y = Math.atan2(
+      dc.bossPos.x - dc.heroStandPos.x,
+      dc.bossPos.z - dc.heroStandPos.z,
+    );
+    this.playerCaveLight.position.set(
+      dc.heroStandPos.x,
+      dc.heroStandPos.y + 2.8,
+      dc.heroStandPos.z,
+    );
+
+    const hBlink = computeBlinkScale(this.elapsed, 0.22);
+    this.hero.leftEye.scale.y = hBlink;
+    this.hero.rightEye.scale.y = hBlink;
+    const isHeroSpeaking = dc.beat === 'hero_forgive_advise';
+    setHeroFacialExpression(
+      this.hero,
+      'neutral',
+      this.elapsed,
+      isHeroSpeaking,
+    );
+    const hasEquippedWeapon =
+      isWeaponHotbarSlot(this.activeHotbarSlot) && this.ownedWeapons.has(this.activeWeapon);
+    applyHeroWeaponPose(this.hero, this.activeWeapon, hasEquippedWeapon, {
+      speed: 0,
+      walkCycle: this.walkCycle,
+      aimAlpha: isHeroSpeaking ? 0.25 : 0.05,
+      recoil: 0,
+      dt,
+      elapsed: this.elapsed,
+      idleDuration: 0,
+    });
+
+    if (dc.beat === 'boss_apology' || dc.beat === 'hero_forgive_advise') {
+      if (dc.bossMesh) {
+        dc.bossMesh.visible = true;
+        dc.bossMesh.position.copy(dc.bossPos);
+        dc.bossMesh.scale.setScalar(dc.bossBaseScale);
+        dc.bossMesh.rotation.y = Math.atan2(
+          dc.heroStandPos.x - dc.bossPos.x,
+          dc.heroStandPos.z - dc.bossPos.z,
+        );
+        animateMonsterRig(dc.bossMesh, {
+          mode: 'remorse',
+          elapsed: this.elapsed,
+          phase: 0.2,
+          dt,
+        });
+        animateBossCutsceneTraits(
+          dc.bossMesh,
+          'remorse',
+          this.elapsed,
+          dc.beat === 'boss_apology',
+        );
+      }
+      dc.cutsceneLight.position.set(
+        (dc.bossPos.x + dc.heroStandPos.x) * 0.5,
+        dc.bossPos.y + 3.8,
+        (dc.bossPos.z + dc.heroStandPos.z) * 0.5,
+      );
+      if (dc.beat === 'boss_apology') {
+        _v1.set(dc.bossPos.x + 2.4, dc.bossPos.y + 2.15, dc.bossPos.z + 4.1);
+        _v2.set(dc.bossPos.x, dc.bossPos.y + 1.75, dc.bossPos.z);
+      } else {
+        _v1.set(dc.heroStandPos.x - 2.3, dc.heroStandPos.y + 1.9, dc.heroStandPos.z - 2.9);
+        _v2.set(dc.heroStandPos.x, dc.heroStandPos.y + 1.3, dc.heroStandPos.z);
+      }
+    } else if (dc.beat === 'boss_remorse_crumble') {
+      const p = THREE.MathUtils.clamp(t / 2.8, 0, 1);
+      if (dc.bossMesh) {
+        dc.bossMesh.visible = p < 0.96;
+        const shrink = Math.max(0.02, 1 - p * p);
+        dc.bossMesh.scale.setScalar(dc.bossBaseScale * shrink);
+        const shakeX = Math.sin(this.elapsed * 38) * 0.14 * (1 - p * 0.4);
+        dc.bossMesh.position.set(
+          dc.bossPos.x + shakeX,
+          dc.bossPos.y - p * 0.45,
+          dc.bossPos.z,
+        );
+        dc.bossMesh.rotation.z = Math.sin(this.elapsed * 22) * 0.12;
+        animateMonsterRig(dc.bossMesh, {
+          mode: 'remorse',
+          elapsed: this.elapsed,
+          phase: 0.4,
+          dt,
+        });
+        animateBossCutsceneTraits(dc.bossMesh, 'remorse', this.elapsed, true);
+      }
+      if (dc.sparkAccum >= 0.16 && p < 0.94) {
+        dc.sparkAccum = 0;
+        this.spawnBurst(
+          dc.bossPos.x + (Math.random() - 0.5) * 1.3,
+          dc.bossPos.y + 0.8 + Math.random() * 1.4,
+          dc.bossPos.z + (Math.random() - 0.5) * 1.3,
+          Math.random() < 0.5 ? 0xa855f7 : 0xfbbf24,
+          8,
+        );
+      }
+      if (!dc.crumbleBurstFired && p >= 0.92) {
+        dc.crumbleBurstFired = true;
+        if (dc.bossMesh) dc.bossMesh.visible = false;
+        soundEngine.playDarkCloudVanish();
+        this.spawnBurst(dc.bossPos.x, dc.bossPos.y + 1.4, dc.bossPos.z, 0xfacc15, 34);
+        this.spawnBurst(dc.bossPos.x, dc.bossPos.y + 1.1, dc.bossPos.z, 0xc084fc, 26);
+      }
+      dc.cutsceneLight.position.set(dc.bossPos.x, dc.bossPos.y + 3.6, dc.bossPos.z + 2.2);
+      _v1.set(dc.bossPos.x + 2.8, dc.bossPos.y + 2.4, dc.bossPos.z + 4.7);
+      _v2.set(dc.bossPos.x, dc.bossPos.y + 1.45, dc.bossPos.z);
+      if (t >= 3.15) {
+        this.transitionBossDefeatToKeyEmerge();
+        return;
+      }
+    } else if (dc.beat === 'key_emerge') {
+      const p = THREE.MathUtils.clamp(t / 1.9, 0, 1);
+      const easeOut = 1 - Math.pow(1 - p, 3);
+      if (this.dungeonRig) {
+        const keyMesh = this.dungeonRig.prisonKeyGroup;
+        keyMesh.visible = true;
+        keyMesh.position.set(
+          dc.keyPos.x,
+          THREE.MathUtils.lerp(dc.keyPos.y - 0.5, dc.keyPos.y + 0.35, easeOut) +
+            Math.sin(this.elapsed * 3.8) * 0.08,
+          dc.keyPos.z,
+        );
+        keyMesh.rotation.y += dt * 2.4;
+      }
+      if (dc.sparkAccum >= 0.24) {
+        dc.sparkAccum = 0;
+        this.spawnBurst(dc.keyPos.x, dc.keyPos.y + 1.1, dc.keyPos.z, 0xfacc15, 7);
+      }
+      dc.cutsceneLight.position.set(dc.keyPos.x, dc.keyPos.y + 3.2, dc.keyPos.z + 2.0);
+      _v1.set(
+        dc.keyPos.x + Math.sin(t * 0.55) * 1.4,
+        dc.keyPos.y + 2.2,
+        dc.keyPos.z + THREE.MathUtils.lerp(4.6, 3.3, easeOut),
+      );
+      _v2.set(dc.keyPos.x, dc.keyPos.y + 1.0, dc.keyPos.z);
+      if (t >= 2.75) {
+        this.transitionBossDefeatToPrisonersCelebrate();
+        return;
+      }
+    } else if (dc.beat === 'prisoners_celebrate' && this.dungeonRig) {
+      if (this.dungeonRig.prisonCells && this.dungeonRig.prisonCells.length > 0) {
+        const cells = this.dungeonRig.prisonCells;
+        const nextIdx = Math.floor(t / 2.8) % cells.length;
+        const activeCell = cells[nextIdx] ?? cells[0];
+        const prevIdx = dc.celebrateCellIdx;
+        dc.celebrateCellIdx = nextIdx;
+
+        for (const cell of cells) {
+          const openSignX = cell.facingDir.x >= 0 ? 1 : -1;
+          const restYaw = openSignX > 0 ? Math.PI / 2 : -Math.PI / 2;
+          cell.captives.forEach((cap, idx) => {
+            const hop = Math.abs(Math.sin(this.elapsed * 6.8 + idx * 0.9)) * 0.28;
+            cap.mesh.position.set(cap.localPos.x, cap.localPos.y + hop, cap.localPos.z);
+            const partner = cell.captives[(idx + 1) % cell.captives.length];
+            const hugTurn = Math.sin(this.elapsed * 2.3) > 0.1 && partner && partner !== cap;
+            if (hugTurn) {
+              cap.mesh.rotation.y = Math.atan2(
+                partner.localPos.x - cap.localPos.x,
+                partner.localPos.z - cap.localPos.z,
+              );
+            } else {
+              cap.mesh.rotation.y = restYaw + Math.sin(this.elapsed * 4.5 + idx) * 0.22;
+            }
+            animateCaptiveMesh(cap.mesh, this.elapsed + idx * 0.42, 'celebrate_hug', false);
+          });
+        }
+
+        if (dc.sparkAccum >= 0.28) {
+          dc.sparkAccum = 0;
+          const cap = activeCell.captives[Math.floor(Math.random() * activeCell.captives.length)];
+          if (cap) {
+            this.spawnBurst(
+              activeCell.pos.x + cap.localPos.x,
+              activeCell.pos.y + cap.localPos.y + 1.65,
+              activeCell.pos.z + cap.localPos.z,
+              Math.random() < 0.5 ? 0x34d399 : 0xfacc15,
+              8,
+            );
+          }
+        }
+
+        const openSignX = activeCell.facingDir.x >= 0 ? 1 : -1;
+        const halfX = activeCell.id === 'cell_1' ? 3.2 : activeCell.id === 'cell_2' ? 3.7 : 3.9;
+        const captiveCenter = new THREE.Vector3();
+        activeCell.captives.forEach((c) => {
+          captiveCenter.add(activeCell.pos).add(c.localPos);
+        });
+        captiveCenter.divideScalar(Math.max(1, activeCell.captives.length));
+
+        dc.cutsceneLight.position.set(
+          activeCell.pos.x + openSignX * (halfX + 2.8),
+          activeCell.pos.y + 3.4,
+          activeCell.pos.z,
+        );
+        _v1.set(
+          activeCell.pos.x + openSignX * (halfX + 4.4),
+          activeCell.pos.y + 2.35,
+          activeCell.pos.z + 1.35 + Math.sin(this.elapsed * 0.85) * 0.55,
+        );
+        _v2.set(captiveCenter.x, captiveCenter.y + 1.25, captiveCenter.z);
+
+        if (prevIdx !== nextIdx) {
+          this.camera.position.copy(_v1);
+          this.controls.target.copy(_v2);
+          this.controls.update();
+          soundEngine.playPrisonersCheer();
+          return;
+        }
+      } else {
+        const pPos = this.dungeonRig.prisonPos;
+        const cornerDirX = ZONE_CAVE_STORIES[dc.zoneId].prisonCorner === 'nw' ? 1 : -1;
+        const hop = Math.abs(Math.sin(this.elapsed * 6.8)) * 0.28;
+        this.dungeonRig.captiveMesh.position.set(0, 0.22 + hop, 0);
+        this.dungeonRig.captiveMesh.rotation.y = Math.sin(this.elapsed * 3.2) * 0.35;
+        animateCaptiveMesh(this.dungeonRig.captiveMesh, this.elapsed, 'celebrate_hug', false);
+        if (dc.sparkAccum >= 0.3) {
+          dc.sparkAccum = 0;
+          this.spawnBurst(
+            pPos.x,
+            pPos.y + 1.7,
+            pPos.z,
+            Math.random() < 0.5 ? 0x34d399 : 0xfacc15,
+            8,
+          );
+        }
+        dc.cutsceneLight.position.set(pPos.x + cornerDirX * 2.2, pPos.y + 3.0, pPos.z + 2.4);
+        _v1.set(
+          pPos.x + cornerDirX * 2.75 + Math.sin(this.elapsed * 0.7) * 0.4,
+          pPos.y + 2.1,
+          pPos.z + 4.15,
+        );
+        _v2.set(pPos.x, pPos.y + 1.25, pPos.z);
+      }
+    }
+
+    const camLerp = 1 - Math.exp(-5.4 * dt);
+    this.camera.position.lerp(_v1, camLerp);
+    this.controls.target.lerp(_v2, camLerp);
+  }
+
   private getDesaPrisonCellStoryConfig(cellId: string): {
     variant: 'siblings' | 'children' | 'adults';
     speakerName: string;
@@ -24182,6 +24907,11 @@ export class RpgWorldEngine {
       return;
     }
 
+    if (this.storyDialog?.kind === 'dungeon_boss_defeat' && this.dungeonBossDefeatCutscene) {
+      this.updateDungeonBossDefeatCutscene(dt);
+      return;
+    }
+
     if (this.storyDialog?.kind === 'dungeon_prison_torment' && this.dungeonPreBossPrisonFilm) {
       this.updatePreBossPrisonTormentFilm(dt);
       return;
@@ -24997,6 +25727,8 @@ export class RpgWorldEngine {
       this.worldMode === 'dungeon' ? this.dungeonBossSummonCutscene : null;
     const bossSoloCutscene =
       this.worldMode === 'dungeon' ? this.dungeonBossSoloCutscene : null;
+    const bossDefeatCutscene =
+      this.worldMode === 'dungeon' ? this.dungeonBossDefeatCutscene : null;
     const prisonPleaCutscene =
       this.worldMode === 'dungeon' ? this.dungeonPrisonPleaCutscene : null;
     for (let i = 0; i < this.bossGuardShieldMeshes.length; i++) {
@@ -25010,8 +25742,15 @@ export class RpgWorldEngine {
         hideCaveMobsForCutscene ||
         bossSummonCutscene ||
         bossSoloCutscene ||
+        bossDefeatCutscene ||
         prisonPleaCutscene
       ) {
+        if (bossDefeatCutscene) {
+          if (m.mesh !== bossDefeatCutscene.bossMesh) {
+            m.mesh.visible = false;
+          }
+          continue;
+        }
         if (bossSoloCutscene) {
           if (m.id !== BOSSES[bossSoloCutscene.zoneId].id) {
             m.mesh.visible = false;
@@ -29253,10 +29992,13 @@ export class RpgWorldEngine {
         if (
           nearestCell &&
           nearestGateDist < 6.0 &&
+          !this.dungeonState.bossDefeated &&
+          !this.dungeonState.prisonKeyCollected &&
           !this.prisonPleaSeenCells.has(`${this.dungeonState.zoneId}:${nearestCell.id}`) &&
           !this.dungeonBossIntro &&
           !this.dungeonBossSummonCutscene &&
           !this.dungeonBossSoloCutscene &&
+          !this.dungeonBossDefeatCutscene &&
           !this.dungeonPrisonPleaCutscene &&
           !this.isCaveCountdownBlocking()
         ) {
@@ -29267,7 +30009,8 @@ export class RpgWorldEngine {
           nearestCell &&
           this.nearHiddenPrison &&
           this.dungeonState.prisonKeyCollected &&
-          this.prisonPleaSeenCells.has(`${this.dungeonState.zoneId}:${nearestCell.id}`) &&
+          (this.dungeonState.bossDefeated ||
+            this.prisonPleaSeenCells.has(`${this.dungeonState.zoneId}:${nearestCell.id}`)) &&
           nearestGateDist < 3.4
         ) {
           this.interactWithHiddenPrison(nearestCell.id);
@@ -29291,11 +30034,13 @@ export class RpgWorldEngine {
         if (
           this.dungeonRig &&
           !this.dungeonState.prisonUnlocked &&
+          !this.dungeonState.bossDefeated &&
           !this.dungeonState.prisonKeyCollected &&
           !this.prisonPleaSeenZones.has(this.dungeonState.zoneId) &&
           !this.dungeonBossIntro &&
           !this.dungeonBossSummonCutscene &&
           !this.dungeonBossSoloCutscene &&
+          !this.dungeonBossDefeatCutscene &&
           !this.dungeonPrisonPleaCutscene &&
           prisonDist < 5.2 &&
           prisonSameFloor
@@ -29969,8 +30714,9 @@ export class RpgWorldEngine {
       if (!options?.skipBlocks) {
         for (const blk of this.dungeonRig.caveBlocks) {
           if (!blk.alive) continue;
-          const topY = blk.y + 1.1;
-          const botY = blk.y - 1.1;
+          const hh = blk.halfH ?? 1.1;
+          const topY = blk.y + hh;
+          const botY = blk.y - hh;
           if (entityY < topY - 0.55 && entityY + entityHeight > botY) {
             pushBox(blk.x, blk.z, blk.halfW, blk.halfW);
           }
@@ -30113,6 +30859,11 @@ export class RpgWorldEngine {
     this.targetedCaveBlock = bestBlock;
     if (bestBlock) {
       rig.blockHighlight.position.set(bestBlock.x, bestBlock.y, bestBlock.z);
+      rig.blockHighlight.scale.set(
+        bestBlock.halfW / 1.0,
+        (bestBlock.halfH ?? 1.1) / 1.1,
+        bestBlock.halfW / 1.0,
+      );
       rig.blockHighlight.visible = true;
     } else {
       rig.blockHighlight.visible = false;
@@ -30648,10 +31399,16 @@ export class RpgWorldEngine {
             if (
               Math.abs(p.x - blk.x) < blk.halfW + 0.25 &&
               Math.abs(p.z - blk.z) < blk.halfW + 0.25 &&
-              Math.abs(p.y - blk.y) < 1.35
+              Math.abs(p.y - blk.y) < (blk.halfH ?? 1.1) + 0.25
             ) {
               hitWall = true;
-              if (!p.fromPlayer && blk.kind === 'player_shield') {
+              if (p.fromPlayer && blk.kind === 'wood_crate') {
+                hitColor = 0xd97706;
+                this.showBanner(
+                  '🪓 Gunakan Kapak / Beliung (Slot 9) untuk menghancurkan Kotak Kayu Persegi!',
+                  2.4,
+                );
+              } else if (!p.fromPlayer && blk.kind === 'player_shield') {
                 hitColor = 0x38bdf8;
                 blk.hp -= 1;
                 blk.mesh.scale.setScalar(0.9);
@@ -31479,6 +32236,95 @@ export class RpgWorldEngine {
       return labels;
     }
 
+    if (this.dungeonBossDefeatCutscene && this.storyDialog?.kind === 'dungeon_boss_defeat') {
+      const dc = this.dungeonBossDefeatCutscene;
+      const boss = BOSSES[dc.zoneId];
+      if (
+        dc.beat === 'boss_apology' ||
+        dc.beat === 'hero_forgive_advise' ||
+        dc.beat === 'boss_remorse_crumble'
+      ) {
+        if (dc.bossMesh && dc.bossMesh.visible) {
+          const bp = projectPoint(dc.bossPos.x, dc.bossPos.y + 3.1, dc.bossPos.z);
+          if (bp) {
+            labels.push({
+              id: 'boss_defeat_boss_lbl',
+              x: bp.x,
+              y: bp.y,
+              title:
+                dc.beat === 'boss_apology'
+                  ? `🙇 Maafkan aku, ${this.getPlayerDisplayName()}...`
+                  : dc.beat === 'boss_remorse_crumble'
+                  ? '💔 Seandainya aku hidup lebih baik...'
+                  : boss.name,
+              kind: dc.beat === 'hero_forgive_advise' ? 'npc_alert' : 'speech',
+            });
+          }
+        }
+        const hp = projectPoint(this.heroPos.x, this.heroPos.y + 2.95, this.heroPos.z);
+        if (hp) {
+          labels.push({
+            id: 'boss_defeat_hero_lbl',
+            x: hp.x,
+            y: hp.y,
+            title:
+              dc.beat === 'hero_forgive_advise'
+                ? 'Aku memaafkanmu—jangan lakukan hal buruk lagi!'
+                : 'Mendengarkan penyesalan sang bos',
+            kind: dc.beat === 'hero_forgive_advise' ? 'speech' : 'thought',
+          });
+        }
+      } else if (dc.beat === 'key_emerge') {
+        const kp = projectPoint(dc.keyPos.x, dc.keyPos.y + 2.45, dc.keyPos.z);
+        if (kp) {
+          labels.push({
+            id: 'boss_defeat_key_lbl',
+            x: kp.x,
+            y: kp.y,
+            title: '🔑 Kunci Penjara Emas Muncul!',
+            kind: 'speech',
+          });
+        }
+      } else if (dc.beat === 'prisoners_celebrate' && this.dungeonRig) {
+        const cells = this.dungeonRig.prisonCells;
+        if (cells && cells.length > 0) {
+          const activeCell = cells[dc.celebrateCellIdx] ?? cells[0];
+          const cp = projectPoint(
+            activeCell.pos.x,
+            activeCell.pos.y + 3.25,
+            activeCell.pos.z,
+          );
+          if (cp) {
+            labels.push({
+              id: `boss_defeat_celeb_${activeCell.id}`,
+              x: cp.x,
+              y: cp.y,
+              title:
+                activeCell.id === 'cell_1'
+                  ? '😭🎉 Horeee! Kak Raka, kita selamat!'
+                  : activeCell.id === 'cell_2'
+                  ? '🥳🤗 Yeayyy! Terima kasih pahlawan!'
+                  : '🙌😭 Syukurlah! Bosnya sudah tiada!',
+              kind: 'speech',
+            });
+          }
+        } else {
+          const pPos = this.dungeonRig.prisonPos;
+          const cp = projectPoint(pPos.x, pPos.y + 2.75, pPos.z);
+          if (cp) {
+            labels.push({
+              id: 'boss_defeat_celeb_single',
+              x: cp.x,
+              y: cp.y,
+              title: `😭🎉 Horeee! Terima kasih ${this.getPlayerDisplayName()}!`,
+              kind: 'speech',
+            });
+          }
+        }
+      }
+      return labels;
+    }
+
     if (this.dungeonPrisonPleaCutscene && this.storyDialog?.kind === 'dungeon_prison_plea') {
       const pc = this.dungeonPrisonPleaCutscene;
       const story = ZONE_CAVE_STORIES[pc.zoneId];
@@ -31893,27 +32739,42 @@ export class RpgWorldEngine {
         }
         if (
           this.dungeonState.prisonUnlocked &&
-          this.dungeonRig.ribbonGroup.visible &&
           !this.ribbons.has(this.dungeonState.zoneId)
         ) {
           const rPos = this.dungeonRig.ribbonPos;
           const rDist = Math.hypot(rPos.x - this.heroPos.x, rPos.z - this.heroPos.z);
-          if (rDist < 9.5) {
-            const rp = projectPoint(rPos.x, rPos.y + 2.3, rPos.z);
-            if (rp) {
-              const rb = RIBBONS[this.dungeonState.zoneId];
+          if (this.dungeonRig.ribbonGroup.visible) {
+            if (rDist < 10.5) {
+              const rp = projectPoint(rPos.x, rPos.y + 2.3, rPos.z);
+              if (rp) {
+                const rb = RIBBONS[this.dungeonState.zoneId];
+                labels.push({
+                  id: 'cave_ribbon',
+                  x: rp.x,
+                  y: rp.y,
+                  title: `🎀 ${rb.name} (Ambil!)`,
+                  subtext: 'Pita Merah 3D Tersembunyi',
+                  kind: 'pickup',
+                });
+              }
+            }
+          } else if (!this.isRibbonCrateBroken() && rDist < 15.5) {
+            const cp = projectPoint(rPos.x, rPos.y + 2.55, rPos.z);
+            if (cp) {
               labels.push({
-                id: 'cave_ribbon',
-                x: rp.x,
-                y: rp.y,
-                title: `🎀 ${rb.name} (Ambil!)`,
-                subtext: 'Pita Merah 3D Tersembunyi',
-                kind: 'pickup',
+                id: 'cave_ribbon_crates',
+                x: cp.x,
+                y: cp.y,
+                title: '📦 Tumpukan Box Persegi',
+                subtext: 'Hancurkan dgn Kapak/Beliung (Slot 9)!',
+                kind: 'door',
               });
             }
           }
         }
         if (this.dungeonRig.prisonCells && this.dungeonRig.prisonCells.length > 0 && this.phase === 'playing') {
+          const crateBroken = this.isRibbonCrateBroken();
+          const hasRibbon = this.ribbons.has(this.dungeonState.zoneId);
           for (const cell of this.dungeonRig.prisonCells) {
             if (!cell.unlocked) {
               const dCell = Math.hypot(cell.pos.x - this.heroPos.x, cell.pos.z - this.heroPos.z);
@@ -31938,21 +32799,26 @@ export class RpgWorldEngine {
               if (leadPos) {
                 const cp = projectPoint(leadPos.x, leadPos.y + 2.4, leadPos.z);
                 if (cp) {
+                  const subtext = this.dungeonState.prisonUnlocked
+                    ? hasRibbon
+                      ? `Ayo keluar ke ${this.dungeonState.guardianName}!`
+                      : crateBroken
+                      ? 'Pita Merah terlihat! Segera ambil!'
+                      : cell.id === 'cell_1'
+                      ? 'Pandu: Hancurkan tumpukan box dgn Kapak/Beliung!'
+                      : 'Ikuti petunjuk ke tumpukan box persegi!'
+                    : 'Bebas · Masih ada sel terkunci!';
                   labels.push({
                     id: `cell_follow_${cell.id}`,
                     x: cp.x,
                     y: cp.y,
                     title:
                       cell.id === 'cell_1'
-                        ? 'Rani & Kak Raka'
+                        ? 'Rani (Cucu) & Kak Raka'
                         : cell.id === 'cell_2'
                         ? '4 Anak Desa'
                         : '5 Warga Desa',
-                    subtext: this.dungeonState.prisonUnlocked
-                      ? this.ribbons.has(this.dungeonState.zoneId)
-                        ? `Ayo keluar ke ${this.dungeonState.guardianName}!`
-                        : 'Mengikutimu · Cari Pita Merah 3D!'
-                      : 'Bebas · Masih ada sel terkunci!',
+                    subtext,
                     kind: 'speech',
                   });
                 }
@@ -31966,6 +32832,7 @@ export class RpgWorldEngine {
             this.dungeonCaptivePos.z,
           );
           if (cp) {
+            const crateBroken = this.isRibbonCrateBroken();
             labels.push({
               id: 'cave_captive_companion',
               x: cp.x,
@@ -31973,7 +32840,9 @@ export class RpgWorldEngine {
               title: this.dungeonState.captiveName,
               subtext: this.ribbons.has(this.dungeonState.zoneId)
                 ? `Ayo keluar ke ${this.dungeonState.guardianName}!`
-                : 'Mengikutimu · Cari Pita Merah 3D!',
+                : crateBroken
+                ? 'Pita Merah terlihat! Segera ambil!'
+                : 'Pandu: Hancurkan tumpukan box dgn Kapak/Beliung!',
               kind: 'speech',
             });
           }
@@ -33500,11 +34369,11 @@ export class RpgWorldEngine {
         }
         if (
           this.dungeonState.prisonUnlocked &&
-          this.dungeonRig.ribbonGroup.visible &&
           !this.ribbons.has(this.dungeonState.zoneId)
         ) {
           const rPos = this.dungeonRig.ribbonPos;
-          if (Math.hypot(rPos.x - this.heroPos.x, rPos.z - this.heroPos.z) < 11) {
+          const rDist = Math.hypot(rPos.x - this.heroPos.x, rPos.z - this.heroPos.z);
+          if (this.dungeonRig.ribbonGroup.visible && rDist < 16) {
             blips.push({
               id: 'cave_ribbon',
               x: rPos.x,
@@ -33513,6 +34382,16 @@ export class RpgWorldEngine {
               color: '#fb7185',
               needsHelp: true,
               label: 'Pita Merah 3D',
+            });
+          } else if (!this.isRibbonCrateBroken() && rDist < 34) {
+            blips.push({
+              id: 'cave_ribbon_crates',
+              x: rPos.x,
+              z: rPos.z,
+              kind: 'collectible',
+              color: '#f59e0b',
+              needsHelp: true,
+              label: 'Tumpukan Box (Pita)',
             });
           }
         }

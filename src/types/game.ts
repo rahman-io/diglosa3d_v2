@@ -360,7 +360,8 @@ export type CaveBlockKind =
   | 'diamond_ore'
   | 'heart_ore'
   | 'word_seal'
-  | 'player_shield';
+  | 'player_shield'
+  | 'wood_crate';
 
 export interface CaveSealContext {
   blockId: string;
@@ -460,6 +461,7 @@ export interface StoryDialogState {
     | 'dungeon_door_guide'
     | 'dungeon_boss_summon'
     | 'dungeon_boss_solo_rage'
+    | 'dungeon_boss_defeat'
     | 'dungeon_prison_plea'
     | 'dungeon_rescue'
     | 'dungeon_reunion_exit'
@@ -495,12 +497,18 @@ export interface StoryDialogState {
     | 'boss_threat'
     | 'hero_sharp_retort'
     | 'boss_shaken_clash';
+  dungeonBossDefeatBeat?:
+    | 'boss_apology'
+    | 'hero_forgive_advise'
+    | 'boss_remorse_crumble'
+    | 'key_emerge'
+    | 'prisoners_celebrate';
   dungeonPrisonPleaBeat?:
     | 'discover'
     | 'captive_cry_plea'
     | 'hero_promise'
     | 'captive_hope';
-  bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry';
+  bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry' | 'remorse';
   heroExpression?: 'neutral' | 'fierce';
   captiveExpression?: 'neutral' | 'sad_injured' | 'happy';
   villagerArchetypes?: string[];

@@ -16,7 +16,7 @@ export interface HarvestDialogueBoxProps {
   captiveMembers?: CaptiveMemberSpec[];
   monsterType?: MonsterType;
   heroExpression?: 'neutral' | 'fierce';
-  bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry';
+  bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry' | 'remorse';
   captiveExpression?: 'neutral' | 'sad_injured' | 'happy';
   speakerSide?: 'npc' | 'hero';
   textId: string;

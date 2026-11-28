@@ -396,6 +396,12 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
 
   const resolvedPlayerName = playerName.trim() || 'Hoot';
 
+  const isBossDefeatCinema =
+    story.kind === 'dungeon_boss_defeat' &&
+    (story.dungeonBossDefeatBeat === 'boss_remorse_crumble' ||
+      story.dungeonBossDefeatBeat === 'key_emerge' ||
+      story.dungeonBossDefeatBeat === 'prisoners_celebrate');
+
   if (
     (story.kind === 'dungeon_intro' &&
       (story.dungeonIntroBeat === 'emerge' || story.dungeonIntroBeat === 'retreat')) ||
@@ -403,11 +409,24 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
       (story.dungeonBossSummonBeat === 'emerge_shock' ||
         story.dungeonBossSummonBeat === 'boss_furious_summon')) ||
     (story.kind === 'dungeon_boss_solo_rage' && story.dungeonBossSoloBeat === 'rage_erupt') ||
-    (story.kind === 'dungeon_prison_plea' && story.dungeonPrisonPleaBeat === 'discover')
+    (story.kind === 'dungeon_prison_plea' && story.dungeonPrisonPleaBeat === 'discover') ||
+    isBossDefeatCinema
   ) {
     const isPrisonPleaDiscover = story.kind === 'dungeon_prison_plea';
+    const isPrisonerCelebrate =
+      story.kind === 'dungeon_boss_defeat' &&
+      story.dungeonBossDefeatBeat === 'prisoners_celebrate';
+    const isKeyEmerge =
+      story.kind === 'dungeon_boss_defeat' &&
+      story.dungeonBossDefeatBeat === 'key_emerge';
     const cinemaBadge =
-      isPrisonPleaDiscover
+      isPrisonerCelebrate
+        ? 'Tahanan Bersukacita & Haru'
+        : isKeyEmerge
+        ? 'Kunci Penjara Muncul'
+        : story.kind === 'dungeon_boss_defeat'
+        ? 'Penyesalan Sang Bos'
+        : isPrisonPleaDiscover
         ? 'Penjara Tersembunyi Ditemukan'
         : story.kind === 'dungeon_boss_solo_rage'
         ? 'Amarah Puncak Sang Bos'
@@ -428,7 +447,11 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
                 style={{ transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)` }}
                 className={`absolute left-0 top-0 whitespace-nowrap shadow-lg ${
                   lbl.kind === 'speech'
-                    ? isPrisonPleaDiscover
+                    ? isPrisonerCelebrate
+                      ? 'rounded-2xl border-2 border-emerald-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-emerald-100'
+                      : isKeyEmerge
+                      ? 'rounded-2xl border-2 border-amber-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-amber-100'
+                      : isPrisonPleaDiscover
                       ? 'rounded-2xl border-2 border-sky-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-sky-100'
                       : 'rounded-2xl border-2 border-rose-400 bg-slate-950/95 px-3 py-1 text-xs font-black text-rose-200'
                     : 'rounded-xl border border-purple-400/80 bg-slate-950/90 px-2.5 py-1 text-[11px] font-extrabold text-purple-200'
@@ -444,7 +467,11 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
           <div className="flex min-w-0 items-center gap-2">
             <span
               className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider sm:text-xs ${
-                isPrisonPleaDiscover
+                isPrisonerCelebrate
+                  ? 'border-emerald-300/80 bg-emerald-950/90 text-emerald-100'
+                  : isKeyEmerge
+                  ? 'border-amber-300/80 bg-amber-950/90 text-amber-100'
+                  : isPrisonPleaDiscover
                   ? 'border-sky-300/75 bg-sky-950/90 text-sky-100'
                   : 'border-rose-400/70 bg-rose-950/90 text-rose-200'
               }`}
@@ -468,6 +495,15 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
                 }`}
               >
                 {muted ? <VolumeX className="h-3.5 w-3.5" /> : <Volume2 className="h-3.5 w-3.5" />}
+              </button>
+            )}
+            {isPrisonerCelebrate && (
+              <button
+                type="button"
+                onClick={onAdvance}
+                className="inline-flex items-center gap-1 rounded-lg border border-emerald-300/80 bg-emerald-600/90 px-3 py-1 text-[11px] font-black text-white shadow transition hover:bg-emerald-500"
+              >
+                <span>Ambil Kunci Emas →</span>
               </button>
             )}
             <button
@@ -503,6 +539,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     story.kind === 'dungeon_door_guide' ||
     story.kind === 'dungeon_boss_summon' ||
     story.kind === 'dungeon_boss_solo_rage' ||
+    story.kind === 'dungeon_boss_defeat' ||
     story.kind === 'dungeon_prison_plea' ||
     story.kind === 'cave_guardian' ||
     story.kind === 'dungeon_rescue' ||
@@ -612,6 +649,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
         story.kind === 'dungeon_door_guide' ||
         story.kind === 'dungeon_boss_summon' ||
         story.kind === 'dungeon_boss_solo_rage' ||
+        story.kind === 'dungeon_boss_defeat' ||
         story.kind === 'dungeon_prison_plea') &&
         projectedLabels &&
         projectedLabels.length > 0 && (
@@ -627,7 +665,11 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
                     ? 'rounded-2xl border-2 border-sky-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-sky-100'
                     : story.kind === 'dungeon_door_guide'
                       ? 'rounded-2xl border-2 border-emerald-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-emerald-100'
-                      : 'rounded-2xl border-2 border-rose-400 bg-slate-950/95 px-3 py-1 text-xs font-black text-rose-100'
+                      : story.kind === 'dungeon_boss_defeat'
+                        ? lbl.id.includes('hero')
+                          ? 'rounded-2xl border-2 border-sky-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-sky-100'
+                          : 'rounded-2xl border-2 border-amber-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-amber-100'
+                        : 'rounded-2xl border-2 border-rose-400 bg-slate-950/95 px-3 py-1 text-xs font-black text-rose-100'
                   : 'rounded-xl border border-amber-300/80 bg-slate-950/90 px-2.5 py-1 text-[11px] font-extrabold text-amber-100'
               }`}
             >

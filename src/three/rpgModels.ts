@@ -200,6 +200,8 @@ export interface CaveBlockDef {
   y: number;
   z: number;
   halfW: number;
+  halfH?: number;
+  isRibbonCrate?: boolean;
   hp: number;
   maxHp: number;
   mesh: THREE.Mesh;
@@ -2380,7 +2382,8 @@ export interface MonsterAnimInput {
     | 'taunt'
     | 'menace'
     | 'shock'
-    | 'angry';
+    | 'angry'
+    | 'remorse';
   speed?: number;
   walkPhase?: number;
   elapsed: number;
@@ -2535,6 +2538,18 @@ export function animateMonsterRig(mesh: THREE.Object3D, input: MonsterAnimInput)
     targetLeftArmX = -1.68 - Math.sin(elapsed * 18) * 0.26;
     targetRightArmZ = -0.32;
     targetLeftArmZ = 0.32;
+  } else if (mode === 'remorse') {
+    const shiver = Math.sin(elapsed * 20 + phase) * 0.016;
+    targetScaleY = 0.88 + Math.sin(elapsed * 3.6 + phase) * 0.025;
+    targetBodyX = 0.24 + shiver;
+    targetBodyZ = shiver * 1.1;
+    targetUpperX = 0.22;
+    targetHeadX = 0.28 + Math.sin(elapsed * 4.5) * 0.03;
+    targetHeadY = Math.sin(elapsed * 2.0 + phase) * 0.09;
+    targetRightArmX = 0.16;
+    targetLeftArmX = 0.16;
+    targetRightArmZ = 0.18;
+    targetLeftArmZ = -0.18;
   }
 
   const curSy = THREE.MathUtils.damp(rig.bodyPivot.scale.y, targetScaleY, damp, dt);
@@ -2618,6 +2633,8 @@ export function animateMonsterRig(mesh: THREE.Object3D, input: MonsterAnimInput)
         ? 0.62 + Math.sin(elapsed * 18) * 0.06
         : mode === 'angry'
         ? 0.36 + Math.abs(Math.sin(elapsed * 16)) * 0.34
+        : mode === 'remorse'
+        ? 0.06 + Math.abs(Math.sin(elapsed * 8)) * 0.12
         : mode === 'windup' || mode === 'menace'
         ? 0.42 + Math.sin(elapsed * 14) * 0.08
         : 0.16 + Math.sin(elapsed * 3.2 + phase) * 0.11;
@@ -2657,6 +2674,8 @@ export function animateMonsterRig(mesh: THREE.Object3D, input: MonsterAnimInput)
         ? 1.48
         : mode === 'angry'
         ? 0.72
+        : mode === 'remorse'
+        ? 0.48
         : computeBlinkScale(elapsed, phase + 1.4);
     for (let i = 0; i < rig.eyes.length; i++) {
       rig.eyes[i].scale.y = blinkY;
@@ -2772,7 +2791,7 @@ export function attachBossCutsceneTraits(
 
 export function animateBossCutsceneTraits(
   mesh: THREE.Object3D,
-  mode: 'laugh' | 'menace' | 'taunt' | 'shock' | 'angry' | 'idle',
+  mode: 'laugh' | 'menace' | 'taunt' | 'shock' | 'angry' | 'remorse' | 'idle',
   elapsed: number,
   isSpeaking: boolean,
 ): void {
@@ -2785,6 +2804,16 @@ export function animateBossCutsceneTraits(
     traits.leftBrow.rotation.z = -0.24 - jiggle;
     traits.mouthGroup.scale.set(0.88, isSpeaking ? 1.55 + Math.abs(Math.sin(elapsed * 14)) * 0.5 : 1.75, 1);
     traits.crownGroup.scale.setScalar(1.06 + Math.sin(elapsed * 18) * 0.04);
+    return;
+  }
+
+  if (mode === 'remorse') {
+    const quiver = Math.sin(elapsed * 16) * 0.03;
+    traits.rightBrow.rotation.z = 0.26 + quiver;
+    traits.leftBrow.rotation.z = -0.26 - quiver;
+    const sy = isSpeaking ? 0.45 + Math.abs(Math.sin(elapsed * 9)) * 0.52 : 0.24;
+    traits.mouthGroup.scale.set(0.76, sy, 1);
+    traits.crownGroup.scale.setScalar(0.92);
     return;
   }
 
@@ -4106,7 +4135,8 @@ export function createPixelVoxelTexture(
     | 'dark_timber'
     | 'shingle'
     | 'amethyst_ore'
-    | 'cyan_ore' = 'stone',
+    | 'cyan_ore'
+    | 'wood_crate' = 'stone',
 ): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 16;
@@ -4116,7 +4146,27 @@ export function createPixelVoxelTexture(
   ctx.fillStyle = baseHex;
   ctx.fillRect(0, 0, 16, 16);
 
-  if (pattern === 'cobblestone' || pattern === 'mossy_cobble') {
+  if (pattern === 'wood_crate') {
+    // Square wooden crate planks with framed dark-timber border and diagonal cross-brace
+    for (let y = 0; y < 16; y++) {
+      ctx.fillStyle = y % 4 === 0 ? darkHex : y % 4 === 1 ? lightHex : baseHex;
+      ctx.fillRect(0, y, 16, 1);
+    }
+    ctx.fillStyle = darkHex;
+    ctx.fillRect(0, 0, 16, 2);
+    ctx.fillRect(0, 14, 16, 2);
+    ctx.fillRect(0, 0, 2, 16);
+    ctx.fillRect(14, 0, 2, 16);
+    for (let i = 2; i < 14; i++) {
+      ctx.fillRect(i, i, 2, 2);
+      ctx.fillRect(14 - i, i, 2, 2);
+    }
+    ctx.fillStyle = speckHex || '#292524';
+    ctx.fillRect(1, 1, 1, 1);
+    ctx.fillRect(14, 1, 1, 1);
+    ctx.fillRect(1, 14, 1, 1);
+    ctx.fillRect(14, 14, 1, 1);
+  } else if (pattern === 'cobblestone' || pattern === 'mossy_cobble') {
     const grout = darkHex;
     const stoneBlocks: Array<[number, number, number, number, string]> = [
       [0, 0, 7, 5, lightHex],
@@ -4587,13 +4637,14 @@ export function createCaptiveMesh(
 export function animateCaptiveMesh(
   mesh: THREE.Object3D,
   elapsed: number,
-  mood: boolean | 'happy' | 'sad_injured' | 'neutral' = false,
+  mood: boolean | 'happy' | 'sad_injured' | 'neutral' | 'celebrate_hug' = false,
   moving = false,
 ): void {
   const rig = mesh.userData.captiveRig as CaptiveAnimRig | undefined;
   if (!rig) return;
   const isSadInjured = mood === 'sad_injured';
-  const happy = mood === true || mood === 'happy';
+  const isCelebrateHug = mood === 'celebrate_hug';
+  const happy = mood === true || mood === 'happy' || isCelebrateHug;
 
   const breath = Math.sin(elapsed * (happy ? 5.8 : isSadInjured ? 6.4 : 2.8));
   const sy = 1 + breath * (happy ? 0.08 : isSadInjured ? 0.06 : 0.045);
@@ -4605,6 +4656,10 @@ export function animateCaptiveMesh(
     rig.bodyPivot.rotation.x = 0.14 + Math.sin(elapsed * 4.4) * 0.035;
     rig.bodyPivot.position.x = Math.sin(elapsed * 24) * 0.015;
     rig.bodyPivot.position.y = Math.abs(Math.sin(elapsed * 6.4)) * -0.025;
+  } else if (isCelebrateHug) {
+    rig.bodyPivot.rotation.x = Math.sin(elapsed * 4.8) > 0 ? 0.08 : -0.04;
+    rig.bodyPivot.position.x = 0;
+    rig.bodyPivot.position.y = 0;
   } else {
     rig.bodyPivot.rotation.x = 0;
     rig.bodyPivot.position.x = 0;
@@ -4616,6 +4671,10 @@ export function animateCaptiveMesh(
       rig.headGroup.rotation.y = Math.sin(elapsed * 2.1) * 0.16;
       rig.headGroup.rotation.x = 0.18 + Math.sin(elapsed * 6.2) * 0.055;
       rig.headGroup.rotation.z = Math.sin(elapsed * 2.9) * 0.085;
+    } else if (isCelebrateHug) {
+      rig.headGroup.rotation.y = Math.sin(elapsed * 4.2) * 0.24;
+      rig.headGroup.rotation.x = -0.08 + Math.sin(elapsed * 8.4) * 0.06;
+      rig.headGroup.rotation.z = Math.sin(elapsed * 3.8) * 0.08;
     } else {
       rig.headGroup.rotation.y = Math.sin(elapsed * 2.2) * 0.2;
       rig.headGroup.rotation.x = 0;
@@ -4634,6 +4693,8 @@ export function animateCaptiveMesh(
     if (rig.sparkleL && rig.sparkleR) {
       const shimmer = isSadInjured
         ? 0.95 + Math.sin(elapsed * 9.5) * 0.35
+        : isCelebrateHug
+        ? 1.05 + Math.sin(elapsed * 8.5) * 0.32
         : 0.72 + Math.sin(elapsed * 4.5) * 0.15;
       rig.sparkleL.scale.setScalar(shimmer);
       rig.sparkleR.scale.setScalar(shimmer);
@@ -4641,6 +4702,8 @@ export function animateCaptiveMesh(
     if (rig.sparkleMiniL && rig.sparkleMiniR) {
       const shimmer2 = isSadInjured
         ? 0.9 + Math.cos(elapsed * 11.2) * 0.38
+        : isCelebrateHug
+        ? 1.0 + Math.cos(elapsed * 9.5) * 0.3
         : 0.7;
       rig.sparkleMiniL.scale.setScalar(shimmer2);
       rig.sparkleMiniR.scale.setScalar(shimmer2);
@@ -4690,6 +4753,20 @@ export function animateCaptiveMesh(
       rig.leftArm.rotation.z = -0.34;
       rig.rightArm.rotation.x = -0.72 + Math.sin(elapsed * 4.2) * 0.07;
       rig.rightArm.rotation.z = 0.26;
+    } else if (isCelebrateHug) {
+      // Alternates between excited high cheering waves & warm hugging embrace!
+      const hugPhase = Math.sin(elapsed * 2.3);
+      if (hugPhase > 0.1) {
+        rig.leftArm.rotation.x = -1.32 + Math.sin(elapsed * 6) * 0.12;
+        rig.rightArm.rotation.x = -1.32 - Math.sin(elapsed * 6) * 0.12;
+        rig.leftArm.rotation.z = -0.48;
+        rig.rightArm.rotation.z = 0.48;
+      } else {
+        rig.leftArm.rotation.x = -2.38 + Math.sin(elapsed * 12) * 0.35;
+        rig.rightArm.rotation.x = -2.38 - Math.sin(elapsed * 12) * 0.35;
+        rig.leftArm.rotation.z = 0.22;
+        rig.rightArm.rotation.z = -0.22;
+      }
     } else if (happy) {
       rig.leftArm.rotation.x = -2.1 + Math.sin(elapsed * 10) * 0.35;
       rig.rightArm.rotation.x = -2.1 - Math.sin(elapsed * 10) * 0.35;
@@ -4865,6 +4942,7 @@ export function createDungeonEnvironment(
   const heartOreTex = createPixelVoxelTexture('#475569', '#1e293b', '#64748b', '#fb7185', 'ore');
   const wordSealTex = createPixelVoxelTexture('#1e1b4b', '#090d16', '#312e81', '#c084fc', 'obsidian');
   const shieldBlockTex = createPixelVoxelTexture('#b45309', '#78350f', '#d97706', '#38bdf8', 'shield');
+  const woodCrateTex = createPixelVoxelTexture('#b45309', '#78350f', '#d97706', '#292524', 'wood_crate');
   disposables.push(
     stoneTex,
     floorTex,
@@ -4873,6 +4951,7 @@ export function createDungeonEnvironment(
     heartOreTex,
     wordSealTex,
     shieldBlockTex,
+    woodCrateTex,
   );
 
   const wallMat = palette.createSurfaceMat({ map: stoneTex, roughness: 0.9, metalness: 0.05 });
@@ -4908,6 +4987,11 @@ export function createDungeonEnvironment(
     roughness: 0.7,
     metalness: 0.2,
   });
+  const woodCrateMat = palette.createSurfaceMat({
+    map: woodCrateTex,
+    roughness: 0.78,
+    metalness: 0.08,
+  });
   disposables.push(
     wallMat,
     floorMat,
@@ -4918,11 +5002,13 @@ export function createDungeonEnvironment(
     heartOreMat,
     wordSealMat,
     shieldBlockMat,
+    woodCrateMat,
   );
 
   if (isDesaSapaan) {
     const caveStoryDesa = ZONE_CAVE_STORIES[zoneId];
     const blockGeoDesa = new THREE.BoxGeometry(2.0, 2.2, 2.0);
+    const crateGeoDesa = new THREE.BoxGeometry(1.9, 1.9, 1.9);
     const crackTexturesDesa = createCrackOverlayTextures();
     const crackMaterialsDesa = crackTexturesDesa.map((tex) => {
       disposables.push(tex);
@@ -5037,6 +5123,7 @@ export function createDungeonEnvironment(
 
     disposables.push(
       blockGeoDesa,
+      crateGeoDesa,
       crackGeoDesa,
       edgesGeoDesa,
       edgesMatDesa,
@@ -5059,6 +5146,7 @@ export function createDungeonEnvironment(
       torchPreview: torchPreviewDesa,
       shieldBlockMat,
       blockGeo: blockGeoDesa,
+      crateGeo: crateGeoDesa,
       crackMaterials: crackMaterialsDesa,
       crackGeo: crackGeoDesa,
       stoneBlockMat,
@@ -5066,6 +5154,7 @@ export function createDungeonEnvironment(
       diamondOreMat,
       heartOreMat,
       wordSealMat,
+      woodCrateMat,
       guardianMesh: guardianMeshDesa,
       guardianAuraMat: guardianAuraMatDesa,
       prisonBars: prisonBarsDesa,
@@ -5308,10 +5397,12 @@ export function createDungeonEnvironment(
     heart_ore: { label: 'Kristal Hati', hp: 2, mat: heartOreMat },
     word_seal: { label: 'Obsidian Segel Kata', hp: 5, mat: wordSealMat },
     player_shield: { label: 'Blok Pelindung', hp: 4, mat: shieldBlockMat },
+    wood_crate: { label: 'Kotak Kayu Persegi', hp: 2, mat: woodCrateMat },
   };
 
   const blockGeo = new THREE.BoxGeometry(2.0, 2.2, 2.0);
-  disposables.push(blockGeo);
+  const crateGeo = new THREE.BoxGeometry(1.9, 1.9, 1.9);
+  disposables.push(blockGeo, crateGeo);
 
   const crackTextures = createCrackOverlayTextures();
   const crackMaterials = crackTextures.map((tex) => {
@@ -5481,6 +5572,49 @@ export function createDungeonEnvironment(
       hasAmbush: false,
     });
   });
+
+  // Breakable Stacked Square Wooden Crates hiding the 3D Red Ribbon at the cave corner!
+  if (!isDesaSapaan) {
+    const crateBaseX = caveStory.prisonCorner === 'nw' ? 14.0 : -14.0;
+    const crateBaseZ = -16.2;
+    const crateInwardSign = crateBaseX > 0 ? -1 : 1;
+    const crateStackSpecs: Array<{
+      x: number;
+      y: number;
+      z: number;
+      isRibbonCrate?: boolean;
+    }> = [
+      { x: crateBaseX, y: 0.95, z: crateBaseZ, isRibbonCrate: true },
+      { x: crateBaseX + crateInwardSign * 2.0, y: 0.95, z: crateBaseZ },
+      { x: crateBaseX, y: 0.95, z: crateBaseZ + 2.0 },
+      { x: crateBaseX + crateInwardSign * 0.9, y: 2.85, z: crateBaseZ + 0.9 },
+    ];
+    crateStackSpecs.forEach((cSpec, cIdx) => {
+      const cId = `cb_${zoneId}_crate_${cIdx}`;
+      const cMesh = new THREE.Mesh(crateGeo, woodCrateMat);
+      cMesh.position.set(cSpec.x, cSpec.y, cSpec.z);
+      cMesh.castShadow = true;
+      cMesh.receiveShadow = true;
+      cMesh.userData.caveBlockId = cId;
+      group.add(cMesh);
+      caveBlocks.push({
+        id: cId,
+        kind: 'wood_crate',
+        label: blockMeta.wood_crate.label,
+        x: cSpec.x,
+        y: cSpec.y,
+        z: cSpec.z,
+        halfW: 0.95,
+        halfH: 0.95,
+        isRibbonCrate: cSpec.isRibbonCrate,
+        hp: blockMeta.wood_crate.hp,
+        maxHp: blockMeta.wood_crate.hp,
+        mesh: cMesh,
+        alive: true,
+        hasAmbush: false,
+      });
+    });
+  }
 
   // Randomly hide Mine Ambush Guardians inside 2 mineable cave blocks per run!
   const ambushCandidates = caveBlocks.filter(

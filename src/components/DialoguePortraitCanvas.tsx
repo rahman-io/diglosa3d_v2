@@ -38,7 +38,7 @@ interface DialoguePortraitCanvasProps {
   captiveMembers?: CaptiveMemberSpec[];
   monsterType?: MonsterType;
   heroExpression?: 'neutral' | 'fierce';
-  bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry';
+  bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry' | 'remorse';
   captiveExpression?: 'neutral' | 'sad_injured' | 'happy';
   isSpeaking?: boolean;
   className?: string;
@@ -360,7 +360,7 @@ const DialoguePortraitCanvasInner: React.FC<DialoguePortraitCanvasProps> = ({
   speakingRef.current = isSpeaking;
   const heroExprRef = useRef<'neutral' | 'fierce'>(heroExpression);
   heroExprRef.current = heroExpression;
-  const bossExprRef = useRef<'laugh' | 'taunt' | 'menace' | 'shock' | 'angry' | undefined>(bossExpression);
+  const bossExprRef = useRef<'laugh' | 'taunt' | 'menace' | 'shock' | 'angry' | 'remorse' | undefined>(bossExpression);
   bossExprRef.current = bossExpression;
   const captiveExprRef = useRef<'neutral' | 'sad_injured' | 'happy' | undefined>(captiveExpression);
   captiveExprRef.current = captiveExpression;

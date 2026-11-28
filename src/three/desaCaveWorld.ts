@@ -421,6 +421,7 @@ export function createDesaCaveEnvironment(
     torchPreview: THREE.Group;
     shieldBlockMat: THREE.Material;
     blockGeo: THREE.BufferGeometry;
+    crateGeo: THREE.BufferGeometry;
     crackMaterials: THREE.MeshBasicMaterial[];
     crackGeo: THREE.BufferGeometry;
     stoneBlockMat: THREE.Material;
@@ -428,6 +429,7 @@ export function createDesaCaveEnvironment(
     diamondOreMat: THREE.Material;
     heartOreMat: THREE.Material;
     wordSealMat: THREE.Material;
+    woodCrateMat: THREE.Material;
     guardianMesh: THREE.Group;
     guardianAuraMat: THREE.MeshBasicMaterial;
     prisonBars: THREE.Group;
@@ -1623,6 +1625,7 @@ export function createDesaCaveEnvironment(
     heart_ore: { label: 'Kristal Hati', hp: 2, mat: sharedRigTools.heartOreMat },
     word_seal: { label: 'Segel Rune Kata', hp: 3, mat: sharedRigTools.wordSealMat },
     player_shield: { label: 'Blok Pelindung', hp: 4, mat: sharedRigTools.shieldBlockMat },
+    wood_crate: { label: 'Kotak Kayu Persegi', hp: 2, mat: sharedRigTools.woodCrateMat },
   };
   const blockCoords: Array<[number, number, CaveBlockKind]> = [
     [-18.0, 31.5, 'stone'],
@@ -1665,6 +1668,45 @@ export function createDesaCaveEnvironment(
       mesh,
       alive: true,
       hasAmbush: idx % 5 === 1,
+    });
+  });
+
+  // Stacked square wooden boxes in NW Mossy Grotto (y = 4.0) hiding the 3D Red Ribbon!
+  const grottoCrateSpecs: Array<{
+    x: number;
+    y: number;
+    z: number;
+    isRibbonCrate?: boolean;
+  }> = [
+    { x: -44.5, y: 4.95, z: -4.0, isRibbonCrate: true },
+    { x: -42.5, y: 4.95, z: -3.05 },
+    { x: -42.5, y: 4.95, z: -5.05 },
+    { x: -44.5, y: 4.95, z: -5.95 },
+    { x: -43.55, y: 6.85, z: -4.0 },
+  ];
+  grottoCrateSpecs.forEach((cSpec, cIdx) => {
+    const cId = `cb_desa_sapaan_crate_${cIdx}`;
+    const cMesh = new THREE.Mesh(sharedRigTools.crateGeo, sharedRigTools.woodCrateMat);
+    cMesh.position.set(cSpec.x, cSpec.y, cSpec.z);
+    cMesh.castShadow = true;
+    cMesh.receiveShadow = true;
+    cMesh.userData.caveBlockId = cId;
+    group.add(cMesh);
+    caveBlocks.push({
+      id: cId,
+      kind: 'wood_crate',
+      label: blockMeta.wood_crate.label,
+      x: cSpec.x,
+      y: cSpec.y,
+      z: cSpec.z,
+      halfW: 0.95,
+      halfH: 0.95,
+      isRibbonCrate: cSpec.isRibbonCrate,
+      hp: blockMeta.wood_crate.hp,
+      maxHp: blockMeta.wood_crate.hp,
+      mesh: cMesh,
+      alive: true,
+      hasAmbush: false,
     });
   });
 

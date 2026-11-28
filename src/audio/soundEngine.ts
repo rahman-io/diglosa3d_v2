@@ -871,6 +871,19 @@ class SoundEngine {
     this.beep(329.63, 0.55, 'sine', 0.06, 293.66, 0.84);
   }
 
+  public playBossCrumble(): void {
+    this.noise(0.65, 0.12, 0.02, 260);
+    this.beep(196, 0.42, 'triangle', 0.075, 92, 0.05);
+    this.beep(146.83, 0.55, 'sine', 0.07, 68, 0.25);
+    this.beep(587.33, 0.28, 'sine', 0.05, 880, 0.55);
+  }
+
+  public playPrisonersCheer(): void {
+    [523.25, 659.25, 783.99, 1046.5, 987.77, 1174.66].forEach((freq, i) => {
+      this.beep(freq, 0.16, 'triangle', 0.065, freq * 1.04, i * 0.09);
+    });
+  }
+
   public playDialogueBlip(pitchOffset = 0): void {
     if (this.muted) return;
     const nowMs = Date.now();
