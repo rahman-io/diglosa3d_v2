@@ -839,6 +839,14 @@ class SoundEngine {
     this.beep(659.25, 0.22, 'sine', 0.095, 740, 0.16);
   }
 
+  public playPrisonThreatSlam(): void {
+    // Metallic iron-bar slam + ominous monster growl rumble
+    this.beep(520, 0.09, 'square', 0.075, 210);
+    this.beep(790, 0.14, 'triangle', 0.055, 340, 0.018);
+    this.noise(0.28, 0.11, 0.015, 310);
+    this.beep(98, 0.34, 'sawtooth', 0.09, 44, 0.025);
+  }
+
   public playSadPlea(variant: 'siblings' | 'children' | 'adults' = 'siblings'): void {
     if (variant === 'children') {
       // High, fragile descending notes evoking young crying children

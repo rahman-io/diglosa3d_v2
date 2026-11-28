@@ -499,6 +499,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     story.kind === 'opening' ||
     story.kind === 'village_rescue_talk' ||
     story.kind === 'dungeon_intro' ||
+    story.kind === 'dungeon_prison_torment' ||
     story.kind === 'dungeon_boss_summon' ||
     story.kind === 'dungeon_boss_solo_rage' ||
     story.kind === 'dungeon_prison_plea' ||
@@ -606,6 +607,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
   return (
     <>
       {(story.kind === 'dungeon_intro' ||
+        story.kind === 'dungeon_prison_torment' ||
         story.kind === 'dungeon_boss_summon' ||
         story.kind === 'dungeon_boss_solo_rage' ||
         story.kind === 'dungeon_prison_plea') &&
@@ -618,7 +620,8 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
               style={{ transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)` }}
               className={`absolute left-0 top-0 whitespace-nowrap shadow-lg ${
                 lbl.kind === 'speech'
-                  ? story.kind === 'dungeon_prison_plea'
+                  ? story.kind === 'dungeon_prison_plea' ||
+                    (story.kind === 'dungeon_prison_torment' && lbl.id.includes('captive'))
                     ? 'rounded-2xl border-2 border-sky-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-sky-100'
                     : 'rounded-2xl border-2 border-rose-400 bg-slate-950/95 px-3 py-1 text-xs font-black text-rose-100'
                   : 'rounded-xl border border-amber-300/80 bg-slate-950/90 px-2.5 py-1 text-[11px] font-extrabold text-amber-100'

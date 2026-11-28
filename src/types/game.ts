@@ -456,6 +456,7 @@ export interface StoryDialogState {
     | 'area_cleared'
     | 'defeat_exit'
     | 'dungeon_intro'
+    | 'dungeon_prison_torment'
     | 'dungeon_boss_summon'
     | 'dungeon_boss_solo_rage'
     | 'dungeon_prison_plea'
@@ -475,6 +476,13 @@ export interface StoryDialogState {
   speakerNpcId?: string;
   speakerMonsterType?: MonsterType;
   dungeonIntroBeat?: 'emerge' | 'boss_taunt' | 'hero_reply' | 'boss_farewell' | 'retreat' | 'guardian';
+  dungeonPrisonTormentBeat?:
+    | 'cell_1_threat'
+    | 'cell_1_cry'
+    | 'cell_2_threat'
+    | 'cell_2_cry'
+    | 'cell_3_threat'
+    | 'cell_3_cry';
   dungeonBossSummonBeat?:
     | 'emerge_shock'
     | 'boss_shock_talk'

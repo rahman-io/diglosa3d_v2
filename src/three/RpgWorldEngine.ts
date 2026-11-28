@@ -1479,6 +1479,25 @@ export class RpgWorldEngine {
     tearSparkAccum: number;
     crySoundPlayed: boolean;
   } | null = null;
+  private dungeonPreBossPrisonFilm: {
+    zoneId: ZoneId;
+    beatIndex: number;
+    timer: number;
+    slamFired: boolean;
+    crySoundFired: boolean;
+    tearSparkAccum: number;
+    cameraSnappedForBeat: number;
+    cutsceneLight: THREE.PointLight;
+    guards: Array<{
+      cellId: string;
+      mesh: THREE.Group;
+      isShooter: boolean;
+      monsterType: MonsterType;
+      basePos: THREE.Vector3;
+      gatePos: THREE.Vector3;
+      phase: number;
+    }>;
+  } | null = null;
   private reunionCutscene: {
     zoneId: ZoneId;
     captiveMesh: THREE.Group;
@@ -7918,6 +7937,11 @@ export class RpgWorldEngine {
       return;
     }
 
+    if (this.storyDialog.kind === 'dungeon_prison_torment') {
+      this.advancePreBossPrisonTormentFilm();
+      return;
+    }
+
     if (this.storyDialog.kind === 'dungeon_boss_summon') {
       const cs = this.dungeonBossSummonCutscene;
       if (!cs) {
@@ -8191,6 +8215,8 @@ export class RpgWorldEngine {
       this.startVillageRescueEscort();
     } else if (this.storyDialog.kind === 'village_rescue_escort') {
       this.finishVillageRescueEscort();
+    } else if (this.storyDialog.kind === 'dungeon_prison_torment') {
+      this.skipPreBossPrisonTormentFilm();
     } else if (this.storyDialog.kind === 'dungeon_intro') {
       this.finishDungeonIntroCutscene();
     } else if (this.storyDialog.kind === 'dungeon_boss_summon') {
@@ -8243,6 +8269,22 @@ export class RpgWorldEngine {
       });
     }
     this.dungeonBossIntro = null;
+  }
+
+  private clearDungeonPreBossPrisonFilm(): void {
+    const film = this.dungeonPreBossPrisonFilm;
+    if (!film) return;
+    if (film.cutsceneLight.parent) {
+      film.cutsceneLight.parent.remove(film.cutsceneLight);
+    }
+    film.cutsceneLight.dispose();
+    for (const g of film.guards) {
+      if (g.mesh.parent) g.mesh.parent.remove(g.mesh);
+      g.mesh.traverse((obj) => {
+        if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+      });
+    }
+    this.dungeonPreBossPrisonFilm = null;
   }
 
   private clearDungeonBossSpawnCloud(): void {
@@ -8830,7 +8872,492 @@ export class RpgWorldEngine {
     this.pushHud(true);
   }
 
+  private getPreBossPrisonTormentBeats(): Array<{
+    cellId: 'cell_1' | 'cell_2' | 'cell_3';
+    beat:
+      | 'cell_1_threat'
+      | 'cell_1_cry'
+      | 'cell_2_threat'
+      | 'cell_2_cry'
+      | 'cell_3_threat'
+      | 'cell_3_cry';
+    roleKind: 'monster_threat' | 'captive_cry';
+    variant: 'siblings' | 'children' | 'adults';
+    speakerName: string;
+    speakerRole: string;
+    monsterType: MonsterType;
+    bossExpression: 'angry' | 'menace';
+    textEn: string;
+    textId: string;
+    guardBubble: string;
+    captiveBubble: string;
+    accentColor: string;
+  }> {
+    return [
+      {
+        cellId: 'cell_1',
+        beat: 'cell_1_threat',
+        roleKind: 'monster_threat',
+        variant: 'siblings',
+        speakerName: 'Penjaga Bayangan Sel 1',
+        speakerRole: 'Sel 1 (Tebing Timur Laut) · Ancaman Monster',
+        monsterType: 'stone_gargoyle',
+        bossExpression: 'angry',
+        textEn:
+          'Shut up and stop crying, weak siblings! Nobody from Desa Sapaan is coming to save you—our Boss owns your lives in this dark cave forever!',
+        textId:
+          'Diam kalian berdua dan berhenti menangis! Kakak beradik lemah seperti kalian tidak akan pernah ditolong siapa pun—selama-lamanya kalian jadi tawanan kami di gua gelap ini!',
+        guardBubble: '😈 "Diam dan berhenti menangis, bocah lemah!"',
+        captiveBubble: '😨 "Hiks... jangan gedor jerujinya..."',
+        accentColor: '#dc2626',
+      },
+      {
+        cellId: 'cell_1',
+        beat: 'cell_1_cry',
+        roleKind: 'captive_cry',
+        variant: 'siblings',
+        speakerName: 'Rani & Kakak Raka',
+        speakerRole: 'Sel 1 (Rani & Kakak Raka) · Menahan Tangis & Ketakutan',
+        monsterType: 'stone_gargoyle',
+        bossExpression: 'menace',
+        textEn:
+          "Hiks... Kak Raka, they keep slamming the iron bars and screaming at us! I'm so scared... Please, someone out there, come save us!",
+        textId:
+          'Hiks... Kak Raka, monster-monster itu terus menggedor jeruji besi dan membentak kita... Rani takut sekali! Siapa pun di luar sana, kumohon tolong selamatkan kami!',
+        guardBubble: '👿 "Percuma kalian berteriak minta tolong!"',
+        captiveBubble: '😭 "Hiks... Kak Raka aku takut... Tolong kami!"',
+        accentColor: '#38bdf8',
+      },
+      {
+        cellId: 'cell_2',
+        beat: 'cell_2_threat',
+        roleKind: 'monster_threat',
+        variant: 'children',
+        speakerName: 'Algojo Bayangan Sel 2',
+        speakerRole: 'Sel 2 (Tebing Barat) · Teror Terhadap 4 Anak Desa',
+        monsterType: 'dire_wolf',
+        bossExpression: 'menace',
+        textEn:
+          'Hahaha! Look at you four trembling little kids! Cry louder for your mothers—not a single hero dares step into this cave for you!',
+        textId:
+          'Hahaha! Lihatlah empat bocah cengeng ini gemetar ketakutan! Menangislah memanggil ibu kalian sekeras-kerasnya—tidak ada pahlawan yang berani turun ke gua ini!',
+        guardBubble: '😈 "Menangislah! Tidak ada yang berani menolong!"',
+        captiveBubble: '😨 "Tolooong... kami takut sekali!"',
+        accentColor: '#e11d48',
+      },
+      {
+        cellId: 'cell_2',
+        beat: 'cell_2_cry',
+        roleKind: 'captive_cry',
+        variant: 'children',
+        speakerName: '4 Anak Desa (Bimo, Sinta, Tobi & Naya)',
+        speakerRole: 'Sel 2 (4 Anak Desa) · Tangisan Pilu Memanggil Ibu',
+        monsterType: 'dire_wolf',
+        bossExpression: 'menace',
+        textEn:
+          "Hiks... Mom! Dad! It's freezing cold and those monsters won't stop roaring at the gate... Please somebody help the four of us!",
+        textId:
+          'Hiks... Ibu... Ayah... badan kami menggigil dan monster itu terus mengaum menakuti kami di balik jeruji... Kumohon siapa pun, selamatkan kami berempat!',
+        guardBubble: '👿 "Tutup mulut kalian, anak-anak cengeng!"',
+        captiveBubble: '😭 "Hiks... Ibu... Ayah... tolong kami berempat!"',
+        accentColor: '#38bdf8',
+      },
+      {
+        cellId: 'cell_3',
+        beat: 'cell_3_threat',
+        roleKind: 'monster_threat',
+        variant: 'adults',
+        speakerName: 'Kepala Penjaga Sel 3',
+        speakerRole: 'Sel 3 (Sayap Tenggara) · Intimidasi Kejam Terhadap Warga',
+        monsterType: 'minotaur_brute',
+        bossExpression: 'angry',
+        textEn:
+          'Kneel in despair, elders of Desa Sapaan! We locked your children in cages on the cliffs above, and none of you will ever see the sun again!',
+        textId:
+          'Berlututlah kalian warga Desa Sapaan! Anak-anak kalian sudah kami kurung di tebing atas, dan tidak satu pun dari kalian akan melihat matahari lagi!',
+        guardBubble: '💥 "Kalian tidak akan pernah melihat matahari lagi!"',
+        captiveBubble: '😰 "Jangan sakiti anak-anak kami...!"',
+        accentColor: '#b91c1c',
+      },
+      {
+        cellId: 'cell_3',
+        beat: 'cell_3_cry',
+        roleKind: 'captive_cry',
+        variant: 'adults',
+        speakerName: '5 Warga Desa (Pak Darma, Bu Sari, Bang Jaka, Mbak Wulan & Pak Tono)',
+        speakerRole: 'Sel 3 (5 Warga Dewasa) · Rintihan Putus Asa',
+        monsterType: 'minotaur_brute',
+        bossExpression: 'angry',
+        textEn:
+          'Hiks... have mercy, please leave the children alone! Pak Darma is badly hurt and our strength is gone... Heavens, please send a hero to save our village!',
+        textId:
+          'Hiks... kumohon jangan sakiti anak-anak kami... Pak Darma sudah terluka parah dan tenaga kami habis... Tuhan, kirimkanlah pahlawan untuk menyelamatkan kami semua!',
+        guardBubble: '👿 "Menyerahlah! Tidak akan ada yang datang!"',
+        captiveBubble: '😭 "Kirimkanlah pahlawan... selamatkan anak-anak kami!"',
+        accentColor: '#38bdf8',
+      },
+    ];
+  }
+
+  private startPreBossPrisonTormentFilm(zoneId: ZoneId): void {
+    this.clearDungeonPreBossPrisonFilm();
+    this.clearDungeonBossIntro();
+    if (!this.dungeonRig || !this.dungeonRig.prisonCells || this.dungeonRig.prisonCells.length === 0) {
+      this.startDungeonBossIntroPhase(zoneId);
+      return;
+    }
+
+    this.phase = 'story';
+    this.heldKeys.clear();
+    this.applyCameraVisibilityAndControls();
+    this.storyTimer = 0;
+
+    for (const m of this.dungeonMonsters) {
+      m.mesh.visible = false;
+    }
+    for (const s of this.shooters) {
+      s.mesh.visible = false;
+    }
+
+    this.heroPos.copy(this.dungeonRig.spawnPos);
+    this.heroYaw = Math.PI;
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.body.rotation.y = this.heroYaw;
+
+    const cutsceneLight = new THREE.PointLight(0xffedd5, 3.8, 28, 1.4);
+    this.dungeonRig.group.add(cutsceneLight);
+
+    const guardSpecs: Record<string, Array<{ isShooter: boolean; monsterType: MonsterType; zOff: number; scale: number }>> = {
+      cell_1: [
+        { isShooter: false, monsterType: 'stone_gargoyle', zOff: -1.35, scale: 1.05 },
+        { isShooter: true, monsterType: 'thorn_goblin', zOff: 1.35, scale: 1.0 },
+      ],
+      cell_2: [
+        { isShooter: false, monsterType: 'dire_wolf', zOff: -1.45, scale: 1.08 },
+        { isShooter: false, monsterType: 'thorn_goblin', zOff: 1.45, scale: 1.04 },
+      ],
+      cell_3: [
+        { isShooter: false, monsterType: 'minotaur_brute', zOff: -1.65, scale: 1.18 },
+        { isShooter: true, monsterType: 'skeleton_warrior', zOff: 1.65, scale: 1.05 },
+      ],
+    };
+
+    const guards: NonNullable<typeof this.dungeonPreBossPrisonFilm>['guards'] = [];
+    for (const cell of this.dungeonRig.prisonCells) {
+      const openSignX = cell.facingDir.x >= 0 ? 1 : -1;
+      const halfX = cell.id === 'cell_1' ? 3.2 : cell.id === 'cell_2' ? 3.7 : 3.9;
+      const baseX = cell.pos.x + openSignX * (halfX + 2.35);
+      const gateX = cell.pos.x + openSignX * (halfX + 1.05);
+      const specs = guardSpecs[cell.id] ?? guardSpecs.cell_1;
+
+      const restYaw = openSignX > 0 ? Math.PI / 2 : -Math.PI / 2;
+      for (const cap of cell.captives) {
+        if (cap.mesh.parent === cell.group) {
+          cap.mesh.rotation.y = restYaw;
+        }
+      }
+
+      specs.forEach((sp, idx) => {
+        const mesh = sp.isShooter
+          ? createShooterMesh(this.palette)
+          : createMonsterMesh(sp.monsterType, this.palette, sp.scale);
+        const basePos = new THREE.Vector3(baseX, cell.pos.y, cell.pos.z + sp.zOff);
+        const gatePos = new THREE.Vector3(gateX, cell.pos.y, cell.pos.z + sp.zOff * 0.72);
+        mesh.position.copy(basePos);
+        mesh.rotation.y = Math.atan2(cell.pos.x - basePos.x, cell.pos.z - basePos.z);
+        this.dungeonRig?.group.add(mesh);
+        guards.push({
+          cellId: cell.id,
+          mesh,
+          isShooter: sp.isShooter,
+          monsterType: sp.monsterType,
+          basePos,
+          gatePos,
+          phase: idx * 1.6 + guards.length * 0.7,
+        });
+      });
+    }
+
+    this.dungeonPreBossPrisonFilm = {
+      zoneId,
+      beatIndex: 0,
+      timer: 0,
+      slamFired: false,
+      crySoundFired: false,
+      tearSparkAccum: 0,
+      cameraSnappedForBeat: -1,
+      cutsceneLight,
+      guards,
+    };
+
+    this.applyPreBossPrisonTormentBeat(0);
+  }
+
+  private applyPreBossPrisonTormentBeat(beatIndex: number): void {
+    const film = this.dungeonPreBossPrisonFilm;
+    if (!film || !this.dungeonRig?.prisonCells) return;
+    const beats = this.getPreBossPrisonTormentBeats();
+    const b = beats[beatIndex];
+    if (!b) {
+      this.skipPreBossPrisonTormentFilm();
+      return;
+    }
+
+    film.beatIndex = beatIndex;
+    film.timer = 0;
+    film.slamFired = false;
+    film.crySoundFired = false;
+    film.tearSparkAccum = 0;
+
+    const cellCfg = this.getDesaPrisonCellStoryConfig(b.cellId);
+    const isThreat = b.roleKind === 'monster_threat';
+
+    this.storyDialog = {
+      kind: 'dungeon_prison_torment',
+      step: beatIndex,
+      maxStep: beats.length - 1,
+      zoneId: film.zoneId,
+      dungeonPrisonTormentBeat: b.beat,
+      speakerName: b.speakerName,
+      speakerRole: b.speakerRole,
+      speakerKind: isThreat ? 'boss' : 'captive',
+      speakerMonsterType: isThreat ? b.monsterType : undefined,
+      bossExpression: isThreat ? b.bossExpression : undefined,
+      captiveKind: !isThreat ? (cellCfg.captiveMembers[0]?.kind ?? 'girl') : undefined,
+      captiveColor: !isThreat ? (cellCfg.captiveMembers[0]?.color ?? 0xf43f5e) : undefined,
+      captiveMembers: !isThreat ? cellCfg.captiveMembers : undefined,
+      captiveExpression: !isThreat ? 'sad_injured' : undefined,
+      speakerSide: 'npc',
+      textEn: b.textEn,
+      textId: b.textId,
+      accentColor: b.accentColor,
+    };
+
+    if (isThreat) {
+      soundEngine.playPrisonThreatSlam();
+      soundEngine.speakEnglish(b.textEn, 0.9, 0.84);
+      const cell = this.dungeonRig.prisonCells.find((c) => c.id === b.cellId);
+      if (cell) {
+        const openSignX = cell.facingDir.x >= 0 ? 1 : -1;
+        const halfX = cell.id === 'cell_1' ? 3.2 : cell.id === 'cell_2' ? 3.7 : 3.9;
+        const barX = cell.pos.x + openSignX * halfX;
+        this.spawnBurst(barX, cell.pos.y + 1.5, cell.pos.z, 0xf43f5e, 18);
+        this.spawnBurst(barX, cell.pos.y + 1.3, cell.pos.z, 0x9333ea, 12);
+      }
+    } else {
+      soundEngine.playSadPlea(b.variant);
+      soundEngine.speakEnglish(b.textEn, 0.86, 1.12);
+    }
+
+    this.pushHud(true);
+  }
+
+  private advancePreBossPrisonTormentFilm(): void {
+    const film = this.dungeonPreBossPrisonFilm;
+    if (!film) {
+      const zId = this.storyDialog?.zoneId ?? this.dungeonState?.zoneId;
+      if (zId) this.startDungeonBossIntroPhase(zId);
+      return;
+    }
+    const beats = this.getPreBossPrisonTormentBeats();
+    const nextIdx = film.beatIndex + 1;
+    if (nextIdx < beats.length) {
+      this.applyPreBossPrisonTormentBeat(nextIdx);
+    } else {
+      this.skipPreBossPrisonTormentFilm();
+    }
+  }
+
+  private skipPreBossPrisonTormentFilm(): void {
+    const zId =
+      this.dungeonPreBossPrisonFilm?.zoneId ||
+      this.storyDialog?.zoneId ||
+      this.dungeonState?.zoneId;
+    this.clearDungeonPreBossPrisonFilm();
+    if (zId) {
+      this.startDungeonBossIntroPhase(zId);
+    } else {
+      this.finishDungeonIntroCutscene();
+    }
+  }
+
+  private updatePreBossPrisonTormentFilm(dt: number): void {
+    const film = this.dungeonPreBossPrisonFilm;
+    if (!film || !this.dungeonRig?.prisonCells) return;
+    film.timer += dt;
+    film.tearSparkAccum += dt;
+    const t = film.timer;
+    const beats = this.getPreBossPrisonTormentBeats();
+    const b = beats[film.beatIndex];
+    if (!b) return;
+
+    const activeCell = this.dungeonRig.prisonCells.find((c) => c.id === b.cellId);
+    if (!activeCell) return;
+
+    const isThreat = b.roleKind === 'monster_threat';
+    const openSignX = activeCell.facingDir.x >= 0 ? 1 : -1;
+    const halfX = activeCell.id === 'cell_1' ? 3.2 : activeCell.id === 'cell_2' ? 3.7 : 3.9;
+
+    // Repeated dramatic slam burst mid-beat on threat shots
+    if (isThreat && !film.slamFired && t >= 1.25) {
+      film.slamFired = true;
+      soundEngine.playPrisonThreatSlam();
+      const barX = activeCell.pos.x + openSignX * halfX;
+      this.spawnBurst(barX, activeCell.pos.y + 1.45, activeCell.pos.z, 0xef4444, 16);
+      this.spawnBurst(barX, activeCell.pos.y + 1.2, activeCell.pos.z, 0x7c3aed, 10);
+    }
+
+    // Lighting right outside active cell bars so captives & monsters are vividly visible
+    film.cutsceneLight.position.set(
+      activeCell.pos.x + openSignX * (halfX + 3.2),
+      activeCell.pos.y + 3.4,
+      activeCell.pos.z + 0.4,
+    );
+    this.playerCaveLight.position.copy(film.cutsceneLight.position);
+
+    // Animate all captives in all cells weeping/trembling
+    for (const cell of this.dungeonRig.prisonCells) {
+      cell.captives.forEach((cap, idx) => {
+        animateCaptiveMesh(cap.mesh, this.elapsed + idx * 0.48, 'sad_injured', false);
+      });
+    }
+
+    // Emit tear droplets inside the active cell
+    if (film.tearSparkAccum >= 0.44) {
+      film.tearSparkAccum = 0;
+      activeCell.captives.forEach((cap) => {
+        if (Math.random() < 0.72) {
+          this.spawnBurst(
+            activeCell.pos.x + cap.localPos.x + (Math.random() - 0.5) * 0.3,
+            activeCell.pos.y + cap.localPos.y + 1.32 + Math.random() * 0.28,
+            activeCell.pos.z + cap.localPos.z + (Math.random() - 0.5) * 0.3,
+            Math.random() < 0.5 ? 0xe0f2fe : 0x7dd3fc,
+            4,
+          );
+        }
+      });
+    }
+
+    // Animate the menacing guards in front of all 3 cells (especially active cell lunging at the bars)
+    for (const g of film.guards) {
+      const isCurrentCell = g.cellId === b.cellId;
+      if (isCurrentCell && isThreat) {
+        const lungeCycle = (t * 0.9 + g.phase * 0.12) % 1.25;
+        const strikeAlpha =
+          lungeCycle < 0.35
+            ? lungeCycle / 0.35
+            : lungeCycle < 0.7
+              ? 1 - (lungeCycle - 0.35) / 0.35
+              : 0;
+        g.mesh.position.lerpVectors(g.basePos, g.gatePos, strikeAlpha * 0.92);
+        if (g.isShooter) {
+          animateShooterRig(g.mesh, {
+            speed: strikeAlpha > 0.05 ? 2.4 : 0,
+            walkPhase: this.elapsed * 9 + g.phase,
+            aimAlpha: 0.95,
+            recoil: strikeAlpha > 0.75 ? 0.45 : 0,
+            hitSquash: 0,
+            elapsed: this.elapsed,
+            phase: g.phase,
+            dt,
+          });
+        } else {
+          animateMonsterRig(g.mesh, {
+            mode: strikeAlpha > 0.55 ? 'attack' : strikeAlpha > 0.1 ? 'windup' : 'menace',
+            speed: 0,
+            walkPhase: this.elapsed * 8 + g.phase,
+            elapsed: this.elapsed,
+            phase: g.phase,
+            attackProgress: strikeAlpha,
+            dt,
+          });
+        }
+      } else {
+        g.mesh.position.copy(g.basePos);
+        if (g.isShooter) {
+          animateShooterRig(g.mesh, {
+            speed: 0,
+            walkPhase: g.phase,
+            aimAlpha: isCurrentCell ? 0.88 : 0.4,
+            recoil: 0,
+            hitSquash: 0,
+            elapsed: this.elapsed,
+            phase: g.phase,
+            dt,
+          });
+        } else {
+          animateMonsterRig(g.mesh, {
+            mode: isCurrentCell ? 'laugh' : 'menace',
+            speed: 0,
+            walkPhase: this.elapsed * 4 + g.phase,
+            elapsed: this.elapsed,
+            phase: g.phase,
+            dt,
+          });
+        }
+      }
+    }
+
+    // Compute cell captive center for camera framing
+    const captiveCenter = new THREE.Vector3();
+    activeCell.captives.forEach((c) => {
+      captiveCenter.add(activeCell.pos).add(c.localPos);
+    });
+    captiveCenter.divideScalar(Math.max(1, activeCell.captives.length));
+
+    const slamShake =
+      isThreat && (t < 0.35 || (t >= 1.25 && t < 1.6))
+        ? Math.sin(this.elapsed * 58) * 0.1
+        : 0;
+
+    if (isThreat) {
+      // Wide-to-push-in menacing shot outside bars framing monsters slamming the gate + terrified captives behind bars
+      const pushP = THREE.MathUtils.clamp(t / 2.2, 0, 1);
+      _v1.set(
+        activeCell.pos.x + openSignX * THREE.MathUtils.lerp(halfX + 6.9, halfX + 5.6, pushP) + slamShake,
+        activeCell.pos.y + THREE.MathUtils.lerp(2.9, 2.55, pushP) + slamShake * 0.6,
+        activeCell.pos.z + THREE.MathUtils.lerp(2.7, 2.1, pushP),
+      );
+      _v2.set(
+        activeCell.pos.x + openSignX * (halfX + 0.65),
+        activeCell.pos.y + 1.35,
+        activeCell.pos.z,
+      );
+    } else {
+      // Emotional close-up through the iron bars on the trembling, crying villagers/children
+      const pushP = THREE.MathUtils.clamp(t / 2.4, 0, 1);
+      _v1.set(
+        activeCell.pos.x + openSignX * THREE.MathUtils.lerp(halfX + 4.8, halfX + 3.85, pushP),
+        activeCell.pos.y + 2.15,
+        activeCell.pos.z - 1.55,
+      );
+      _v2.set(captiveCenter.x, captiveCenter.y + 1.15, captiveCenter.z);
+    }
+
+    // Snap immediately when cutting to a different cell so camera never passes through cave rock walls
+    if (film.cameraSnappedForBeat !== film.beatIndex && isThreat) {
+      film.cameraSnappedForBeat = film.beatIndex;
+      this.camera.position.copy(_v1);
+      this.controls.target.copy(_v2);
+      this.controls.update();
+    } else {
+      film.cameraSnappedForBeat = film.beatIndex;
+      const camLerp = 1 - Math.exp(-5.4 * dt);
+      this.camera.position.lerp(_v1, camLerp);
+      this.controls.target.lerp(_v2, camLerp);
+    }
+  }
+
   private startDungeonIntroCutscene(zoneId: ZoneId): void {
+    if (this.dungeonRig?.prisonCells && this.dungeonRig.prisonCells.length > 0) {
+      this.startPreBossPrisonTormentFilm(zoneId);
+      return;
+    }
+    this.startDungeonBossIntroPhase(zoneId);
+  }
+
+  private startDungeonBossIntroPhase(zoneId: ZoneId): void {
+    this.clearDungeonPreBossPrisonFilm();
     this.clearDungeonBossIntro();
     const boss = BOSSES[zoneId];
     const hasInsideGuardian = this.dungeonRig?.hasInsideGuardian !== false;
@@ -10255,6 +10782,7 @@ export class RpgWorldEngine {
     this.caveCountdownStep = null;
     this.caveCountdownZoneName = '';
     this.caveCountdownPendingBanner = null;
+    this.clearDungeonPreBossPrisonFilm();
     this.clearDungeonBossIntro();
     this.clearDungeonBossSpawnCloud();
     this.clearDungeonBossSummonCutscene();
@@ -23108,6 +23636,11 @@ export class RpgWorldEngine {
       return;
     }
 
+    if (this.storyDialog?.kind === 'dungeon_prison_torment' && this.dungeonPreBossPrisonFilm) {
+      this.updatePreBossPrisonTormentFilm(dt);
+      return;
+    }
+
     if (this.storyDialog?.kind === 'dungeon_prison_plea' && this.dungeonPrisonPleaCutscene) {
       this.updateDungeonPrisonPleaCutscene(dt);
       return;
@@ -30444,6 +30977,55 @@ export class RpgWorldEngine {
               : 'Melihat para tawanan menangis di balik sel besi',
           kind: pc.beat === 'hero_promise' ? 'speech' : 'thought',
         });
+      }
+      return labels;
+    }
+
+    if (
+      this.dungeonPreBossPrisonFilm &&
+      this.storyDialog?.kind === 'dungeon_prison_torment' &&
+      this.dungeonRig?.prisonCells
+    ) {
+      const film = this.dungeonPreBossPrisonFilm;
+      const beats = this.getPreBossPrisonTormentBeats();
+      const b = beats[film.beatIndex];
+      const activeCell = b
+        ? this.dungeonRig.prisonCells.find((c) => c.id === b.cellId)
+        : undefined;
+      if (b && activeCell) {
+        const isThreat = b.roleKind === 'monster_threat';
+        const leadGuard = film.guards.find((g) => g.cellId === b.cellId);
+        if (leadGuard) {
+          const gp = projectPoint(
+            leadGuard.mesh.position.x,
+            leadGuard.mesh.position.y + 2.7,
+            leadGuard.mesh.position.z,
+          );
+          if (gp) {
+            labels.push({
+              id: 'prison_torment_guard_lbl',
+              x: gp.x,
+              y: gp.y,
+              title: b.guardBubble,
+              kind: isThreat ? 'speech' : 'npc_alert',
+            });
+          }
+        }
+        const captiveCenter = new THREE.Vector3();
+        activeCell.captives.forEach((c) => {
+          captiveCenter.add(activeCell.pos).add(c.localPos);
+        });
+        captiveCenter.divideScalar(Math.max(1, activeCell.captives.length));
+        const cp = projectPoint(captiveCenter.x, captiveCenter.y + 2.25, captiveCenter.z);
+        if (cp) {
+          labels.push({
+            id: 'prison_torment_captive_lbl',
+            x: cp.x,
+            y: cp.y,
+            title: b.captiveBubble,
+            kind: isThreat ? 'thought' : 'speech',
+          });
+        }
       }
       return labels;
     }
