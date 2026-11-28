@@ -70,6 +70,14 @@ export interface SyncProgressState {
 let swRegistration: ServiceWorkerRegistration | null = null;
 let swInitialized = false;
 
+export function isAbortError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+  const maybe = err as { name?: unknown; code?: unknown };
+  if (maybe.name === 'AbortError' || maybe.code === 20) return true;
+  if (err instanceof Error && err.message.toLowerCase().includes('aborterror')) return true;
+  return false;
+}
+
 export function getLocalOfflineState(): LocalOfflineState {
   try {
     const rawHashes = localStorage.getItem(LS_FILE_HASHES);
@@ -173,60 +181,69 @@ export async function inspectLocalCache(
     };
   }
 
-  // Drop legacy poisoned caches automatically
-  for (const legacyName of LEGACY_OFFLINE_CACHE_NAMES) {
-    caches.delete(legacyName).catch(() => false);
-  }
+  try {
+    // Drop legacy poisoned caches automatically
+    for (const legacyName of LEGACY_OFFLINE_CACHE_NAMES) {
+      caches.delete(legacyName).catch(() => false);
+    }
 
-  const cache = await caches.open(OFFLINE_CACHE_NAME);
-  const cachedRequests = await cache.keys();
-  const cachedUrls = new Set(cachedRequests.map((r) => r.url));
+    const cache = await caches.open(OFFLINE_CACHE_NAME);
+    const cachedRequests = await cache.keys();
+    const cachedUrls = new Set(cachedRequests.map((r) => r.url));
 
-  if (!manifest) {
+    if (!manifest) {
+      return {
+        hasAnyCachedAssets: cachedUrls.size > 0,
+        cachedCount: cachedUrls.size,
+        missingAssets: [],
+        staleUrls: [],
+      };
+    }
+
+    const localState = getLocalOfflineState();
+    const manifestUrlSet = new Set<string>();
+    const missingAssets: OfflineAssetEntry[] = [];
+
+    for (const entry of manifest.assets) {
+      const absUrl = resolveAssetAbsoluteUrl(entry.url);
+      manifestUrlSet.add(absUrl);
+      const storedHash = localState.fileHashes[entry.url];
+      const isPresent = cachedUrls.has(absUrl);
+      if (!isPresent || storedHash !== entry.hash) {
+        missingAssets.push(entry);
+        continue;
+      }
+      if (entry.kind === 'ui' || entry.kind === 'image' || entry.kind === 'audio') {
+        const matched = await cache.match(new Request(absUrl)).catch(() => undefined);
+        const ctype = (matched?.headers.get('Content-Type') || '').toLowerCase();
+        if (!matched || ctype.includes('text/html')) {
+          await cache.delete(new Request(absUrl)).catch(() => false);
+          missingAssets.push(entry);
+        }
+      }
+    }
+
+    const staleUrls: string[] = [];
+    for (const reqUrl of cachedUrls) {
+      if (!manifestUrlSet.has(reqUrl)) {
+        staleUrls.push(reqUrl);
+      }
+    }
+
     return {
       hasAnyCachedAssets: cachedUrls.size > 0,
       cachedCount: cachedUrls.size,
-      missingAssets: [],
+      missingAssets,
+      staleUrls,
+    };
+  } catch {
+    return {
+      hasAnyCachedAssets: false,
+      cachedCount: 0,
+      missingAssets: manifest?.assets ?? [],
       staleUrls: [],
     };
   }
-
-  const localState = getLocalOfflineState();
-  const manifestUrlSet = new Set<string>();
-  const missingAssets: OfflineAssetEntry[] = [];
-
-  for (const entry of manifest.assets) {
-    const absUrl = resolveAssetAbsoluteUrl(entry.url);
-    manifestUrlSet.add(absUrl);
-    const storedHash = localState.fileHashes[entry.url];
-    const isPresent = cachedUrls.has(absUrl);
-    if (!isPresent || storedHash !== entry.hash) {
-      missingAssets.push(entry);
-      continue;
-    }
-    if (entry.kind === 'ui' || entry.kind === 'image' || entry.kind === 'audio') {
-      const matched = await cache.match(new Request(absUrl));
-      const ctype = (matched?.headers.get('Content-Type') || '').toLowerCase();
-      if (!matched || ctype.includes('text/html')) {
-        await cache.delete(new Request(absUrl)).catch(() => false);
-        missingAssets.push(entry);
-      }
-    }
-  }
-
-  const staleUrls: string[] = [];
-  for (const reqUrl of cachedUrls) {
-    if (!manifestUrlSet.has(reqUrl)) {
-      staleUrls.push(reqUrl);
-    }
-  }
-
-  return {
-    hasAnyCachedAssets: cachedUrls.size > 0,
-    cachedCount: cachedUrls.size,
-    missingAssets,
-    staleUrls,
-  };
 }
 
 export function initPwaAutoUpdateWorker(onNewVersionActivating?: () => void): void {
@@ -257,6 +274,9 @@ export function initPwaAutoUpdateWorker(onNewVersionActivating?: () => void): vo
       onNeedRefresh() {
         onNewVersionActivating?.();
       },
+      onRegisterError() {
+        // Ignore registration errors/aborts in unsupported or interrupted contexts
+      },
     });
   } catch {
     // ignore SW registration failure in unsupported contexts
@@ -278,6 +298,9 @@ async function fetchAssetAndCache(
   onChunkBytes: (deltaBytes: number) => void,
   signal?: AbortSignal,
 ): Promise<void> {
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
   const absUrl = resolveAssetAbsoluteUrl(entry.url);
   // Bust HTTP cache during sync so server updates are guaranteed fresh
   const fetchUrl = `${absUrl}${absUrl.includes('?') ? '&' : '?'}v=${encodeURIComponent(entry.hash)}`;
@@ -308,14 +331,29 @@ async function fetchAssetAndCache(
     const chunks: Uint8Array[] = [];
     let received = 0;
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      if (value) {
-        chunks.push(value);
-        received += value.byteLength;
-        onChunkBytes(value.byteLength);
+    const onAbort = () => {
+      reader.cancel().catch(() => {});
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+
+    try {
+      while (true) {
+        if (signal?.aborted) {
+          throw new DOMException('Aborted', 'AbortError');
+        }
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          chunks.push(value);
+          received += value.byteLength;
+          onChunkBytes(value.byteLength);
+        }
       }
+    } catch (err) {
+      reader.cancel().catch(() => {});
+      throw err;
+    } finally {
+      signal?.removeEventListener('abort', onAbort);
     }
 
     if (received === 0 && entry.size > 0) {
@@ -341,6 +379,9 @@ async function fetchAssetAndCache(
     });
   } else {
     const buf = await response.arrayBuffer();
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
     onChunkBytes(buf.byteLength || entry.size);
     const headers = new Headers();
     headers.set('Content-Type', contentType);
@@ -352,6 +393,9 @@ async function fetchAssetAndCache(
     });
   }
 
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
   await cache.put(new Request(absUrl), finalResponse);
 }
 
@@ -363,6 +407,9 @@ export async function runOfflineSyncDownload(
   onProgress: (state: SyncProgressState) => void,
   signal?: AbortSignal,
 ): Promise<{ requiresCodeReload: boolean }> {
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
+  }
   const prevState = getLocalOfflineState();
   const codeChanged =
     Boolean(prevState.codeHash) && prevState.codeHash !== manifest.codeHash;
@@ -383,6 +430,7 @@ export async function runOfflineSyncDownload(
   const totalFiles = assetsToDownload.length;
 
   const reportProgress = (currentFile: string) => {
+    if (signal?.aborted) return;
     const clampedBytes = Math.min(totalBytes, downloadedBytes);
     const pct = totalFiles === 0 ? 100 : Math.min(99, Math.round((clampedBytes / totalBytes) * 100));
     onProgress({
@@ -439,18 +487,33 @@ export async function runOfflineSyncDownload(
       }
     });
 
-    await Promise.all(workers);
+    const settled = await Promise.allSettled(workers);
+    if (signal?.aborted) {
+      throw new DOMException('Aborted', 'AbortError');
+    }
+    const rejected = settled.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+    if (rejected) {
+      throw rejected.reason;
+    }
+  }
+
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
   }
 
   // Also refresh root HTML in cache + trigger SW update check
   try {
     const rootRes = await fetch('./index.html', { cache: 'reload', signal });
-    if (rootRes.ok) {
+    if (rootRes.ok && !signal?.aborted) {
       await cache.put(new Request(resolveAssetAbsoluteUrl('./index.html')), rootRes.clone());
       await cache.put(new Request(resolveAssetAbsoluteUrl('./')), rootRes);
     }
   } catch {
-    // ignore in dev if index.html redirects
+    // ignore in dev if index.html redirects or aborts
+  }
+
+  if (signal?.aborted) {
+    throw new DOMException('Aborted', 'AbortError');
   }
 
   await triggerServiceWorkerUpdateCheck();

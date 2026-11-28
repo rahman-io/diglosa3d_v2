@@ -192,8 +192,9 @@ const ResilientMedallionImg: React.FC<{
   useEffect(() => {
     if (attempt !== 1) return;
     let cancelled = false;
+    const controller = new AbortController();
     const bustUrl = `${src}${src.includes('?') ? '&' : '?'}cb=${Date.now()}`;
-    fetch(bustUrl, { cache: 'no-store' })
+    fetch(bustUrl, { cache: 'no-store', signal: controller.signal })
       .then(async (res) => {
         const ct = (res.headers.get('content-type') || '').toLowerCase();
         if (!res.ok || ct.includes('text/html')) {
@@ -210,14 +211,14 @@ const ResilientMedallionImg: React.FC<{
         }
         setBlobUrl(objUrl);
       })
-      .catch(() => {
-        if (!cancelled) {
-          setCacheBust(Date.now());
-          setAttempt(2);
-        }
+      .catch((err) => {
+        if (cancelled || (err instanceof Error && err.name === 'AbortError')) return;
+        setCacheBust(Date.now());
+        setAttempt(2);
       });
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [attempt, src]);
 

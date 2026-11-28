@@ -183,7 +183,8 @@ export class P2pMeshTransport {
       .then(async () => {
         if (this.disposed) return;
         await task();
-      });
+      })
+      .catch(() => undefined);
     this.signalQueues.set(uid, next);
   }
 

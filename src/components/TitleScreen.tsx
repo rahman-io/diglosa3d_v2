@@ -261,10 +261,12 @@ export const TitleScreen: React.FC<TitleScreenProps> = ({
                         disabled={logoutBusy}
                         onClick={() => {
                           setLogoutBusy(true);
-                          void onSignOut().finally(() => {
-                            setLogoutBusy(false);
-                            setShowInfoSheet(false);
-                          });
+                          void onSignOut()
+                            .catch(() => undefined)
+                            .finally(() => {
+                              setLogoutBusy(false);
+                              setShowInfoSheet(false);
+                            });
                         }}
                         title="Logout dari Akun Google"
                         className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-rose-400/45 bg-rose-500/20 px-2.5 py-1.5 text-[10px] font-black text-rose-100 transition hover:bg-rose-500/35 disabled:opacity-50"

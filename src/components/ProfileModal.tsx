@@ -228,10 +228,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({
                       disabled={logoutBusy}
                       onClick={() => {
                         setLogoutBusy(true);
-                        void onSignOut().finally(() => {
-                          setLogoutBusy(false);
-                          onClose();
-                        });
+                        void onSignOut()
+                          .catch(() => undefined)
+                          .finally(() => {
+                            setLogoutBusy(false);
+                            onClose();
+                          });
                       }}
                       className="inline-flex shrink-0 items-center gap-1 rounded-xl border border-rose-400/45 bg-rose-950/60 px-2.5 py-1.5 text-[11px] font-black text-rose-100 transition hover:bg-rose-900/75 disabled:opacity-50"
                     >

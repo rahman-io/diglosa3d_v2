@@ -31,13 +31,24 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
   syncStatus,
 }) => {
   const [authBusy, setAuthBusy] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
 
   if (!open) return null;
 
   const handleLogin = async () => {
     setAuthBusy(true);
+    setAuthError(null);
     try {
       await onSignIn();
+    } catch (err) {
+      const code = (err as { code?: string } | null)?.code ?? '';
+      if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') {
+        setAuthError('Login Google dibatalkan. Silakan coba lagi.');
+      } else if (code === 'auth/popup-blocked') {
+        setAuthError('Pop-up login diblokir browser. Izinkan pop-up lalu coba lagi.');
+      } else if (!(err instanceof Error && err.name === 'AbortError')) {
+        setAuthError('Gagal masuk dengan Akun Google. Coba kembali.');
+      }
     } finally {
       setAuthBusy(false);
     }
@@ -89,7 +100,7 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
                   <button
                     type="button"
                     disabled={syncing}
-                    onClick={onManualSync}
+                    onClick={() => void onManualSync().catch(() => undefined)}
                     className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-500 px-3 py-1.5 text-xs font-bold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
                   >
                     <CloudUpload className="h-3.5 w-3.5" />
@@ -106,13 +117,16 @@ export const LeaderboardModal: React.FC<LeaderboardModalProps> = ({
               <button
                 type="button"
                 disabled={authBusy}
-                onClick={handleLogin}
+                onClick={() => void handleLogin()}
                 className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-xs font-extrabold text-slate-950 transition hover:bg-amber-300 disabled:opacity-60"
               >
                 <LogIn className="h-3.5 w-3.5" />
                 <span>{authBusy ? 'Menghubungkan...' : 'Masuk dengan Google'}</span>
               </button>
             </div>
+          )}
+          {authError && (
+            <div className="mt-2 text-xs font-semibold text-rose-300">{authError}</div>
           )}
           {syncStatus && (
             <div className="mt-2 text-xs font-semibold text-emerald-300">{syncStatus}</div>

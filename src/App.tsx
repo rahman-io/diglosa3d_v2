@@ -42,6 +42,7 @@ import {
   getLocalOfflineState,
   initPwaAutoUpdateWorker,
   inspectLocalCache,
+  isAbortError,
   OfflineAssetEntry,
   OfflineManifest,
   runOfflineSyncDownload,
@@ -562,9 +563,14 @@ function DiglosaRpgApp() {
           missingAssets,
           staleUrls,
           isUpdate,
-          (nextState) => setSyncState(nextState),
+          (nextState) => {
+            if (!controller.signal.aborted) {
+              setSyncState(nextState);
+            }
+          },
           controller.signal,
         );
+        if (controller.signal.aborted) return;
         setOfflineReady(true);
         setOfflineVersion(manifest.version);
 
@@ -577,7 +583,7 @@ function DiglosaRpgApp() {
 
         await finishSyncAndPromptInstall();
       } catch (err) {
-        if ((err as Error)?.name === 'AbortError') return;
+        if (isAbortError(err) || controller.signal.aborted) return;
         setSyncState((prev) => ({
           ...prev,
           phase: 'error',
@@ -610,109 +616,129 @@ function DiglosaRpgApp() {
         versionLabel: localState.version ? `v${localState.version}` : '',
       }));
 
-      const serverManifest = await fetchServerManifest(4500);
+      try {
+        const serverManifest = await fetchServerManifest(4500);
 
-      if (!serverManifest) {
-        // Offline or server unreachable, verify local cache
-        const cacheCheck = await inspectLocalCache(null);
-        if (localState.enrolled && cacheCheck.hasAnyCachedAssets) {
+        if (!serverManifest) {
+          // Offline or server unreachable, verify local cache
+          const cacheCheck = await inspectLocalCache(null);
+          if (localState.enrolled && cacheCheck.hasAnyCachedAssets) {
+            setOfflineReady(true);
+            setOfflineVersion(localState.version);
+            setSyncState({
+              phase: 'offline_ready',
+              percent: 100,
+              downloadedBytes: localState.totalBytes,
+              totalBytes: localState.totalBytes,
+              completedFiles: localState.fileCount,
+              totalFiles: localState.fileCount,
+              currentFile: '',
+              statusLabel: 'Mode Offline Aktif · Cache Lokal Terverifikasi',
+              versionLabel: localState.version ? `v${localState.version}` : 'Offline',
+              isUpdate: false,
+              manifest: null,
+            });
+            window.setTimeout(() => setShowAssetDownloader(false), 550);
+          } else {
+            setOfflineReady(false);
+            setSyncState({
+              phase: 'offline_empty',
+              percent: 0,
+              downloadedBytes: 0,
+              totalBytes: 0,
+              completedFiles: 0,
+              totalFiles: 0,
+              currentFile: '',
+              statusLabel: 'Tidak ada koneksi & aset offline belum tersedia',
+              versionLabel: 'Offline',
+              isUpdate: false,
+              manifest: null,
+            });
+          }
+          return;
+        }
+
+        const cacheStatus = await inspectLocalCache(serverManifest);
+        const isUpToDate =
+          localState.enrolled &&
+          localState.buildHash === serverManifest.buildHash &&
+          cacheStatus.missingAssets.length === 0;
+
+        if (isUpToDate) {
           setOfflineReady(true);
-          setOfflineVersion(localState.version);
+          setOfflineVersion(serverManifest.version);
           setSyncState({
-            phase: 'offline_ready',
+            phase: 'ready',
             percent: 100,
-            downloadedBytes: localState.totalBytes,
-            totalBytes: localState.totalBytes,
-            completedFiles: localState.fileCount,
-            totalFiles: localState.fileCount,
+            downloadedBytes: serverManifest.totalBytes,
+            totalBytes: serverManifest.totalBytes,
+            completedFiles: serverManifest.assets.length,
+            totalFiles: serverManifest.assets.length,
             currentFile: '',
-            statusLabel: 'Mode Offline Aktif · Cache Lokal Terverifikasi',
-            versionLabel: localState.version ? `v${localState.version}` : 'Offline',
+            statusLabel: 'Diglosa Offline Shield · Aset Terverifikasi 100%',
+            versionLabel: `v${serverManifest.version}`,
             isUpdate: false,
-            manifest: null,
+            manifest: serverManifest,
           });
-          window.setTimeout(() => setShowAssetDownloader(false), 550);
+          await finishSyncAndPromptInstall();
+          return;
+        }
+
+        const isUpdate = Boolean(localState.enrolled && localState.buildHash);
+        const assetsToFetch =
+          cacheStatus.missingAssets.length > 0
+            ? cacheStatus.missingAssets
+            : serverManifest.assets;
+
+        pendingManifestRef.current = {
+          manifest: serverManifest,
+          missingAssets: assetsToFetch,
+          staleUrls: cacheStatus.staleUrls,
+          isUpdate,
+        };
+
+        if (isUpdate || forceShowOverlay) {
+          // Player already opted into offline mode -> auto-update seamlessly on refresh / open!
+          await executeOfflineDownload(
+            serverManifest,
+            assetsToFetch,
+            cacheStatus.staleUrls,
+            isUpdate,
+          );
         } else {
+          // First time: ask player to download all assets for full offline + auto-update
           setOfflineReady(false);
           setSyncState({
-            phase: 'offline_empty',
+            phase: 'prompt_download',
             percent: 0,
             downloadedBytes: 0,
-            totalBytes: 0,
+            totalBytes: serverManifest.totalBytes,
             completedFiles: 0,
-            totalFiles: 0,
+            totalFiles: serverManifest.assets.length,
             currentFile: '',
-            statusLabel: 'Tidak ada koneksi & aset offline belum tersedia',
-            versionLabel: 'Offline',
+            statusLabel: 'Menunggu persetujuan unduhan aset offline...',
+            versionLabel: `v${serverManifest.version}`,
             isUpdate: false,
-            manifest: null,
+            manifest: serverManifest,
           });
         }
-        return;
-      }
-
-      const cacheStatus = await inspectLocalCache(serverManifest);
-      const isUpToDate =
-        localState.enrolled &&
-        localState.buildHash === serverManifest.buildHash &&
-        cacheStatus.missingAssets.length === 0;
-
-      if (isUpToDate) {
-        setOfflineReady(true);
-        setOfflineVersion(serverManifest.version);
-        setSyncState({
-          phase: 'ready',
-          percent: 100,
-          downloadedBytes: serverManifest.totalBytes,
-          totalBytes: serverManifest.totalBytes,
-          completedFiles: serverManifest.assets.length,
-          totalFiles: serverManifest.assets.length,
-          currentFile: '',
-          statusLabel: 'Diglosa Offline Shield · Aset Terverifikasi 100%',
-          versionLabel: `v${serverManifest.version}`,
-          isUpdate: false,
-          manifest: serverManifest,
-        });
-        await finishSyncAndPromptInstall();
-        return;
-      }
-
-      const isUpdate = Boolean(localState.enrolled && localState.buildHash);
-      const assetsToFetch =
-        cacheStatus.missingAssets.length > 0
-          ? cacheStatus.missingAssets
-          : serverManifest.assets;
-
-      pendingManifestRef.current = {
-        manifest: serverManifest,
-        missingAssets: assetsToFetch,
-        staleUrls: cacheStatus.staleUrls,
-        isUpdate,
-      };
-
-      if (isUpdate || forceShowOverlay) {
-        // Player already opted into offline mode -> auto-update seamlessly on refresh / open!
-        await executeOfflineDownload(
-          serverManifest,
-          assetsToFetch,
-          cacheStatus.staleUrls,
-          isUpdate,
-        );
-      } else {
-        // First time: ask player to download all assets for full offline + auto-update
+      } catch (err) {
+        if (isAbortError(err)) return;
         setOfflineReady(false);
         setSyncState({
-          phase: 'prompt_download',
+          phase: 'error',
           percent: 0,
           downloadedBytes: 0,
-          totalBytes: serverManifest.totalBytes,
+          totalBytes: 0,
           completedFiles: 0,
-          totalFiles: serverManifest.assets.length,
+          totalFiles: 0,
           currentFile: '',
-          statusLabel: 'Menunggu persetujuan unduhan aset offline...',
-          versionLabel: `v${serverManifest.version}`,
+          statusLabel: 'Pemeriksaan aset terputus',
+          versionLabel: localState.version ? `v${localState.version}` : '',
           isUpdate: false,
-          manifest: serverManifest,
+          errorMessage:
+            err instanceof Error ? err.message : 'Gagal memeriksa pembaruan aset.',
+          manifest: null,
         });
       }
     },
@@ -734,11 +760,13 @@ function DiglosaRpgApp() {
       if (!navigator.onLine) return;
       const local = getLocalOfflineState();
       if (!local.enrolled) return;
-      void fetchServerManifest(3500).then((remote) => {
-        if (remote && remote.buildHash !== local.buildHash) {
-          void runServerAndCacheCheck(true);
-        }
-      });
+      void fetchServerManifest(3500)
+        .then((remote) => {
+          if (remote && remote.buildHash !== local.buildHash) {
+            void runServerAndCacheCheck(true);
+          }
+        })
+        .catch(() => undefined);
     };
 
     const onVisibility = () => {
@@ -1488,7 +1516,8 @@ function DiglosaRpgApp() {
         if (!cancelled && found !== undefined) {
           setResumableRoom(found);
         }
-      });
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -1573,14 +1602,16 @@ function DiglosaRpgApp() {
               uid,
               playerNameRef.current || 'Host',
               departedAtMs,
-            ).then((claimed) => {
-              if (claimed) {
-                engineRef.current?.showGroupNotice(
-                  '👑 Host sebelumnya keluar sehingga kamu sekarang menjadi Host grup!',
-                  3.0,
-                );
-              }
-            });
+            )
+              .then((claimed) => {
+                if (claimed) {
+                  engineRef.current?.showGroupNotice(
+                    '👑 Host sebelumnya keluar sehingga kamu sekarang menjadi Host grup!',
+                    3.0,
+                  );
+                }
+              })
+              .catch(() => undefined);
           }
         }
       },
@@ -1604,7 +1635,7 @@ function DiglosaRpgApp() {
 
     const unsubRoom = subscribeRoom(activeRoomId, (nextRoom) => {
       if (!nextRoom) {
-        void handleLeaveMultiplayerRoom(true);
+        void handleLeaveMultiplayerRoom(true).catch(() => undefined);
         return;
       }
       setActiveRoom(mergeRoomWithCachedMeta(nextRoom));
@@ -1800,6 +1831,7 @@ function DiglosaRpgApp() {
         setActiveRoom(resolvedRoom);
         enterMultiplayerMatch(resolvedRoom, mySpawnIndex, joinedAlreadyPlaying);
       })
+      .catch(() => undefined)
       .finally(() => {
         if (enteringPlayingRoomRef.current === activeRoom.roomId) {
           enteringPlayingRoomRef.current = null;
@@ -2031,9 +2063,11 @@ function DiglosaRpgApp() {
     setPendingDifficulty(hud.settings.difficulty);
     setDifficultyPromptOpen(true);
     if (user?.uid && user?.emailVerified && !activeRoom && !resumableRoom) {
-      void checkSavedRoomMembership(user.uid).then((found) => {
-        setResumableRoom(found);
-      });
+      void checkSavedRoomMembership(user.uid)
+        .then((found) => {
+          setResumableRoom(found);
+        })
+        .catch(() => undefined);
     }
   }, [hud.settings.difficulty, user?.uid, user?.emailVerified, activeRoom, resumableRoom]);
 
@@ -2050,12 +2084,12 @@ function DiglosaRpgApp() {
     (difficulty: DifficultyMode, spawnMode: SpawnPreference) => {
       if (getAlwaysFullscreenPref()) void requestAppFullscreen();
       if (activeRoom) {
-        void handleLeaveMultiplayerRoom(false);
+        void handleLeaveMultiplayerRoom(false).catch(() => undefined);
       } else if (resumableRoom) {
         const oldRoomId = resumableRoom.room.roomId;
         setResumableRoom(null);
         clearLastActiveRoomSession();
-        void leaveMultiplayerRoom(oldRoomId);
+        void leaveMultiplayerRoom(oldRoomId).catch(() => undefined);
       }
       setIsMultiplayerPlaying(false);
       quickLearnStandaloneRef.current = false;
@@ -2360,7 +2394,7 @@ function DiglosaRpgApp() {
 
   const handleSignOut = useCallback(async () => {
     if (activeRoom) {
-      await handleLeaveMultiplayerRoom(true);
+      await handleLeaveMultiplayerRoom(true).catch(() => undefined);
     } else if (resumableRoom) {
       const oldRoomId = resumableRoom.room.roomId;
       setResumableRoom(null);
@@ -2381,7 +2415,7 @@ function DiglosaRpgApp() {
     setIsMultiplayerPlaying(false);
     engineRef.current?.setMultiplayerActive(false);
     engineRef.current?.setPhase('title');
-    await signOut(auth);
+    await signOut(auth).catch(() => undefined);
     setSyncStatus(null);
   }, [activeRoom, resumableRoom, handleLeaveMultiplayerRoom]);
 
@@ -2409,6 +2443,10 @@ function DiglosaRpgApp() {
       leaderboardFetchedAtRef.current = 0;
       if (leaderboardOpen) {
         void refreshLeaderboard(true);
+      }
+    } catch (err) {
+      if (!isAbortError(err)) {
+        setSyncStatus('Gagal menyinkronkan skor ke Cloud. Periksa koneksi lalu coba lagi.');
       }
     } finally {
       setSyncing(false);
@@ -2873,7 +2911,7 @@ function DiglosaRpgApp() {
           onSendChat={handleSendChat}
           onToggleMic={() => void handleToggleMabarMic()}
           onToggleMuteAllVoice={handleToggleMuteAllVoice}
-          onLeaveRoom={() => void handleLeaveMultiplayerRoom(true)}
+          onLeaveRoom={() => void handleLeaveMultiplayerRoom(true).catch(() => undefined)}
         />
       )}
 
@@ -3019,7 +3057,7 @@ function DiglosaRpgApp() {
             clearActiveSessionStage();
             quickLearnStandaloneRef.current = false;
             if (activeRoom) {
-              void handleLeaveMultiplayerRoom(true);
+              void handleLeaveMultiplayerRoom(true).catch(() => undefined);
             } else {
               window.location.reload();
             }
