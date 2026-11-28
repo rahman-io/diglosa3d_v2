@@ -884,6 +884,22 @@ class SoundEngine {
     });
   }
 
+  public playGuardianCall(): void {
+    [392.0, 493.88, 587.33, 783.99].forEach((freq, i) => {
+      this.beep(freq, 0.22, 'triangle', 0.075, freq * 1.02, i * 0.09);
+    });
+  }
+
+  public playGardenTransform(): void {
+    this.noise(0.5, 0.07, 0.0, 1100);
+    [523.25, 659.25, 783.99, 987.77, 1174.66, 1318.51, 1567.98].forEach((freq, i) => {
+      this.beep(freq, 0.34, 'sine', 0.065, freq * 1.03, i * 0.11);
+      if (i % 2 === 0) {
+        this.beep(freq * 0.5, 0.28, 'triangle', 0.05, undefined, i * 0.11);
+      }
+    });
+  }
+
   public playDialogueBlip(pitchOffset = 0): void {
     if (this.muted) return;
     const nowMs = Date.now();

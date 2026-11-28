@@ -220,6 +220,7 @@ export interface CaveStaticCollider {
   maxY?: number;
   blockProjectiles?: boolean;
   isRiverCrystal?: boolean;
+  isPrisonCollider?: boolean;
 }
 
 export interface CaveCliffPlatform {
@@ -285,12 +286,37 @@ export interface DungeonPrisonCellRig {
   unlocked: boolean;
 }
 
+export interface DungeonFrontDoorRig {
+  group: THREE.Group;
+  leftLeafPivot: THREE.Group;
+  rightLeafPivot: THREE.Group;
+  openProgress: number;
+}
+
+export interface CaveButterflyEntry {
+  group: THREE.Group;
+  leftWing: THREE.Group;
+  rightWing: THREE.Group;
+  center: THREE.Vector3;
+  radiusX: number;
+  radiusZ: number;
+  baseY: number;
+  speed: number;
+  phase: number;
+  flapSpeed: number;
+}
+
 export interface DungeonArenaRig {
   group: THREE.Group;
   animatables: THREE.Object3D[];
   doors: DungeonDoorRig[];
   exitPadPos: THREE.Vector3;
   exitClickable: THREE.Object3D;
+  frontDoor?: DungeonFrontDoorRig;
+  mistGroup?: THREE.Group;
+  gardenGroup?: THREE.Group;
+  gardenBlooms?: THREE.Object3D[];
+  butterflies?: CaveButterflyEntry[];
   craftingTablePos: THREE.Vector3;
   caveBlocks: CaveBlockDef[];
   caveColliders: CaveStaticCollider[];
@@ -4898,6 +4924,480 @@ function createGoldenSquareSigilTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+function createMistWispTexture(): THREE.CanvasTexture {
+  const c = document.createElement('canvas');
+  c.width = 128;
+  c.height = 128;
+  const ctx = c.getContext('2d')!;
+  const grad = ctx.createRadialGradient(64, 64, 6, 64, 64, 62);
+  grad.addColorStop(0, 'rgba(226,232,240,0.85)');
+  grad.addColorStop(0.5, 'rgba(148,163,184,0.38)');
+  grad.addColorStop(1, 'rgba(15,23,42,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 128, 128);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+export interface CaveGardenTreeSpec {
+  x: number;
+  y: number;
+  z: number;
+  scale?: number;
+  blossomHex?: number;
+}
+
+export interface CaveGardenPatchSpec {
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
+  flowerCount?: number;
+}
+
+export interface CaveGardenResult {
+  gardenGroup: THREE.Group;
+  gardenBlooms: THREE.Object3D[];
+  butterflies: CaveButterflyEntry[];
+}
+
+export function setCaveFrontDoorOpenProgress(
+  doorRig: DungeonFrontDoorRig | undefined,
+  progress: number,
+): void {
+  if (!doorRig) return;
+  const clamped = Math.max(0, Math.min(1, progress));
+  doorRig.openProgress = clamped;
+  const angle = clamped * 1.62;
+  doorRig.leftLeafPivot.rotation.y = -angle;
+  doorRig.rightLeafPivot.rotation.y = angle;
+}
+
+export function createCaveFrontDoorRig(
+  palette: MaterialPalette,
+  disposables: Array<{ dispose: () => void }>,
+  options: {
+    pos: THREE.Vector3;
+    rotY?: number;
+    accentHex?: number;
+    addPortalRing?: boolean;
+    animatables?: THREE.Object3D[];
+    cameraOccluders?: THREE.Object3D[];
+    caveColliders?: CaveStaticCollider[];
+  },
+): DungeonFrontDoorRig {
+  const group = new THREE.Group();
+  group.position.copy(options.pos);
+  group.rotation.y = options.rotY ?? 0;
+  group.userData.dungeonExit = true;
+  group.userData.exitPad = true;
+
+  const stoneDarkMat = palette.getMat(0x334155, 'matte');
+  const stoneMidMat = palette.getMat(0x475569, 'matte');
+  const mossCapMat = palette.getMat(0x4d7c0f, 'matte');
+  const woodLeafMat = palette.getMat(0x78350f, 'matte');
+  const woodTrimMat = palette.getMat(0x92400e, 'matte');
+  const brassMat = palette.getMat(0xfbbf24, 'metal');
+  const glowPortalMat = palette.getMat(options.accentHex ?? 0x22d3ee, 'emissive');
+  const lanternGlowMat = palette.getMat(0xfde047, 'emissive');
+
+  // Stone Threshold Step + Glowing Exit Pad Core
+  const stepSlab = new THREE.Mesh(new THREE.BoxGeometry(5.6, 0.18, 3.2), stoneDarkMat);
+  stepSlab.position.set(0, 0.09, 0.25);
+  stepSlab.receiveShadow = true;
+
+  const padGeo = new THREE.CylinderGeometry(2.05, 2.25, 0.16, 20);
+  const padMesh = new THREE.Mesh(padGeo, glowPortalMat);
+  padMesh.position.set(0, 0.19, 0);
+
+  // Carved Stone Arch Pillars & Lintel Framing the Hinged Double Doors
+  const pillarGeo = new THREE.BoxGeometry(0.92, 4.7, 0.98);
+  const pillarL = new THREE.Mesh(pillarGeo, stoneMidMat);
+  pillarL.position.set(-2.32, 2.35, 0);
+  pillarL.castShadow = true;
+  pillarL.receiveShadow = true;
+  const pillarR = new THREE.Mesh(pillarGeo, stoneMidMat);
+  pillarR.position.set(2.32, 2.35, 0);
+  pillarR.castShadow = true;
+  pillarR.receiveShadow = true;
+
+  const capGeo = new THREE.BoxGeometry(1.16, 0.42, 1.18);
+  const capL = new THREE.Mesh(capGeo, stoneDarkMat);
+  capL.position.set(-2.32, 4.72, 0);
+  const capR = new THREE.Mesh(capGeo, stoneDarkMat);
+  capR.position.set(2.32, 4.72, 0);
+
+  const lintelGeo = new THREE.BoxGeometry(6.1, 1.0, 1.18);
+  const lintel = new THREE.Mesh(lintelGeo, stoneDarkMat);
+  lintel.position.set(0, 5.15, 0);
+  lintel.castShadow = true;
+
+  const mossTopGeo = new THREE.BoxGeometry(6.25, 0.26, 1.26);
+  const mossTop = new THREE.Mesh(mossTopGeo, mossCapMat);
+  mossTop.position.set(0, 5.75, 0);
+
+  const keystoneGeo = new THREE.BoxGeometry(1.15, 0.85, 1.32);
+  const keystone = new THREE.Mesh(keystoneGeo, palette.getMat(0x94a3b8, 'matte'));
+  keystone.position.set(0, 5.15, 0);
+  const keystoneGem = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), glowPortalMat);
+  keystoneGem.position.set(0, 5.15, 0.72);
+
+  // Warm Glowing Hanging Lanterns on Front Pillars
+  [-2.32, 2.32].forEach((lx) => {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.65), stoneDarkMat);
+    arm.position.set(lx, 3.65, 0.72);
+    const lantern = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.46, 0.34), lanternGlowMat);
+    lantern.position.set(lx, 3.3, 0.96);
+    group.add(arm, lantern);
+  });
+
+  // Hinged Double Oak & Brass Front Doors (`leftLeafPivot` & `rightLeafPivot`)
+  const leafW = 1.84;
+  const leafH = 4.35;
+  const leafGeo = new THREE.BoxGeometry(leafW, leafH, 0.22);
+  const bandGeo = new THREE.BoxGeometry(leafW * 0.94, 0.16, 0.27);
+  const trimGeo = new THREE.BoxGeometry(0.16, leafH * 0.92, 0.26);
+  const handleGeo = new THREE.TorusGeometry(0.16, 0.045, 6, 14);
+  const crestGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.26, 12);
+
+  const buildLeaf = (side: -1 | 1): THREE.Group => {
+    const pivot = new THREE.Group();
+    pivot.position.set(side * 1.86, 0.2, 0);
+    const centerShiftX = -side * (leafW * 0.5);
+
+    const plank = new THREE.Mesh(leafGeo, woodLeafMat);
+    plank.position.set(centerShiftX, leafH * 0.5, 0);
+    plank.castShadow = true;
+    plank.receiveShadow = true;
+
+    const topBand = new THREE.Mesh(bandGeo, brassMat);
+    topBand.position.set(centerShiftX, leafH * 0.82, 0);
+    const midBand = new THREE.Mesh(bandGeo, brassMat);
+    midBand.position.set(centerShiftX, leafH * 0.48, 0);
+    const botBand = new THREE.Mesh(bandGeo, brassMat);
+    botBand.position.set(centerShiftX, leafH * 0.14, 0);
+
+    const innerTrim = new THREE.Mesh(trimGeo, woodTrimMat);
+    innerTrim.position.set(centerShiftX - side * (leafW * 0.44), leafH * 0.5, 0);
+
+    const handleFront = new THREE.Mesh(handleGeo, brassMat);
+    handleFront.position.set(centerShiftX - side * (leafW * 0.32), 1.85, 0.16);
+    const handleBack = new THREE.Mesh(handleGeo, brassMat);
+    handleBack.position.set(centerShiftX - side * (leafW * 0.32), 1.85, -0.16);
+
+    const crest = new THREE.Mesh(crestGeo, glowPortalMat);
+    crest.rotation.x = Math.PI / 2;
+    crest.position.set(centerShiftX, 2.95, 0);
+
+    pivot.add(plank, topBand, midBand, botBand, innerTrim, handleFront, handleBack, crest);
+    return pivot;
+  };
+
+  const leftLeafPivot = buildLeaf(-1);
+  const rightLeafPivot = buildLeaf(1);
+
+  group.add(
+    stepSlab,
+    padMesh,
+    pillarL,
+    pillarR,
+    capL,
+    capR,
+    lintel,
+    mossTop,
+    keystone,
+    keystoneGem,
+    leftLeafPivot,
+    rightLeafPivot,
+  );
+
+  if (options.addPortalRing) {
+    const exitRingGeo = new THREE.TorusGeometry(1.55, 0.15, 8, 22);
+    const exitRing = new THREE.Mesh(exitRingGeo, glowPortalMat);
+    exitRing.position.set(0, 2.45, -0.35);
+    exitRing.userData.animKind = 'spinZ';
+    options.animatables?.push(exitRing);
+    group.add(exitRing);
+    disposables.push(exitRingGeo);
+  }
+
+  if (options.cameraOccluders) {
+    options.cameraOccluders.push(pillarL, pillarR, lintel);
+  }
+
+  if (options.caveColliders) {
+    const rotY = options.rotY ?? 0;
+    const cos = Math.cos(rotY);
+    const sin = Math.sin(rotY);
+    [-2.32, 2.32].forEach((lx) => {
+      options.caveColliders!.push({
+        x: options.pos.x + lx * cos,
+        z: options.pos.z - lx * sin,
+        halfW: 0.52,
+        halfD: 0.54,
+        rotY,
+        minY: options.pos.y,
+        maxY: options.pos.y + 5.6,
+      });
+    });
+  }
+
+  group.traverse((child) => {
+    child.userData.dungeonExit = true;
+    child.userData.exitPad = true;
+  });
+
+  disposables.push(
+    padGeo,
+    pillarGeo,
+    capGeo,
+    lintelGeo,
+    mossTopGeo,
+    keystoneGeo,
+    leafGeo,
+    bandGeo,
+    trimGeo,
+    handleGeo,
+    crestGeo,
+  );
+
+  return {
+    group,
+    leftLeafPivot,
+    rightLeafPivot,
+    openProgress: 0,
+  };
+}
+
+export function createCaveGardenRig(
+  palette: MaterialPalette,
+  disposables: Array<{ dispose: () => void }>,
+  specs: {
+    trees: CaveGardenTreeSpec[];
+    patches: CaveGardenPatchSpec[];
+    butterflyCenters: Array<{ x: number; y: number; z: number; rx?: number; rz?: number }>;
+  },
+): CaveGardenResult {
+  const gardenGroup = new THREE.Group();
+  const gardenBlooms: THREE.Object3D[] = [];
+  const butterflies: CaveButterflyEntry[] = [];
+
+  const trunkMat = palette.getMat(0x78350f, 'matte');
+  const barkDarkMat = palette.getMat(0x5c2d0c, 'matte');
+  const leafMainMat = palette.getMat(0x22c55e, 'matte');
+  const leafLightMat = palette.getMat(0x4ade80, 'matte');
+  const leafDeepMat = palette.getMat(0x16a34a, 'matte');
+  const grassMat = palette.getMat(0x4ade80, 'matte');
+  const grassRimMat = palette.getMat(0x65a30d, 'matte');
+  const stemMat = palette.getMat(0x15803d, 'matte');
+  const butterflyBodyMat = palette.getMat(0x1e293b, 'matte');
+  const goldCenterMat = palette.getMat(0xfef08a, 'emissive');
+
+  const petalPalette = [
+    palette.getMat(0xf43f5e, 'gloss'),
+    palette.getMat(0xfacc15, 'gloss'),
+    palette.getMat(0x38bdf8, 'gloss'),
+    palette.getMat(0xc084fc, 'gloss'),
+    palette.getMat(0xfb923c, 'gloss'),
+    palette.getMat(0xf472b6, 'gloss'),
+  ];
+  const butterflyWingMats = [
+    palette.createSurfaceMat({ color: 0xf43f5e, emissive: 0xe11d48, emissiveIntensity: 0.25, side: THREE.DoubleSide }),
+    palette.createSurfaceMat({ color: 0xfacc15, emissive: 0xeab308, emissiveIntensity: 0.25, side: THREE.DoubleSide }),
+    palette.createSurfaceMat({ color: 0x38bdf8, emissive: 0x0ea5e9, emissiveIntensity: 0.25, side: THREE.DoubleSide }),
+    palette.createSurfaceMat({ color: 0xc084fc, emissive: 0xa855f7, emissiveIntensity: 0.25, side: THREE.DoubleSide }),
+    palette.createSurfaceMat({ color: 0x34d399, emissive: 0x10b981, emissiveIntensity: 0.25, side: THREE.DoubleSide }),
+    palette.createSurfaceMat({ color: 0xfb923c, emissive: 0xf97316, emissiveIntensity: 0.25, side: THREE.DoubleSide }),
+  ];
+
+  const trunkGeo = new THREE.CylinderGeometry(0.28, 0.44, 2.35, 8);
+  const rootGeo = new THREE.CylinderGeometry(0.42, 0.62, 0.45, 7);
+  const canopyMainGeo = new THREE.IcosahedronGeometry(1.45, 1);
+  const canopySideGeo = new THREE.IcosahedronGeometry(1.05, 1);
+  const canopyTopGeo = new THREE.IcosahedronGeometry(0.95, 1);
+  const blossomDotGeo = new THREE.SphereGeometry(0.2, 6, 6);
+  const flowerHeadGeo = new THREE.DodecahedronGeometry(0.24, 0);
+  const flowerCenterGeo = new THREE.SphereGeometry(0.11, 6, 6);
+  const stemGeo = new THREE.CylinderGeometry(0.04, 0.05, 0.42, 5);
+  const bfBodyGeo = new THREE.BoxGeometry(0.08, 0.08, 0.34);
+  const bfWingGeo = new THREE.PlaneGeometry(0.32, 0.24);
+  const patchDiscGeo = new THREE.CylinderGeometry(1, 1.06, 0.14, 16);
+  const patchRimGeo = new THREE.TorusGeometry(1.02, 0.07, 5, 16);
+
+  disposables.push(
+    trunkGeo,
+    rootGeo,
+    canopyMainGeo,
+    canopySideGeo,
+    canopyTopGeo,
+    blossomDotGeo,
+    flowerHeadGeo,
+    flowerCenterGeo,
+    stemGeo,
+    bfBodyGeo,
+    bfWingGeo,
+    patchDiscGeo,
+    patchRimGeo,
+    ...butterflyWingMats,
+  );
+
+  // 1. Lush Garden Lawn & Flowerbeds (`taman-taman`)
+  specs.patches.forEach((p, idx) => {
+    const patch = new THREE.Group();
+    patch.position.set(p.x, p.y + 0.02, p.z);
+
+    const lawn = new THREE.Mesh(patchDiscGeo, grassMat);
+    lawn.scale.set(p.radius, 1, p.radius);
+    lawn.position.y = 0.06;
+    lawn.receiveShadow = true;
+
+    const rim = new THREE.Mesh(patchRimGeo, grassRimMat);
+    rim.rotation.x = Math.PI / 2;
+    rim.scale.set(p.radius, p.radius, 1);
+    rim.position.y = 0.08;
+
+    patch.add(lawn, rim);
+
+    const fCount = p.flowerCount ?? Math.max(6, Math.round(p.radius * 3.5));
+    for (let i = 0; i < fCount; i++) {
+      const ang = (i / fCount) * Math.PI * 2 + idx * 0.45;
+      const dist = (0.28 + ((i * 37) % 62) / 100) * p.radius;
+      const fx = Math.cos(ang) * dist;
+      const fz = Math.sin(ang) * dist;
+      const fGroup = new THREE.Group();
+      fGroup.position.set(fx, 0.12, fz);
+
+      const stem = new THREE.Mesh(stemGeo, stemMat);
+      stem.position.y = 0.2;
+      const petalMat = petalPalette[(idx + i) % petalPalette.length];
+      const head = new THREE.Mesh(flowerHeadGeo, petalMat);
+      head.position.y = 0.44;
+      const center = new THREE.Mesh(flowerCenterGeo, goldCenterMat);
+      center.position.y = 0.49;
+      fGroup.add(stem, head, center);
+      patch.add(fGroup);
+    }
+
+    gardenGroup.add(patch);
+    gardenBlooms.push(patch);
+  });
+
+  // 2. Beautiful Multi-Part 3D Trees (`pohon indah`)
+  specs.trees.forEach((t, idx) => {
+    const tree = new THREE.Group();
+    tree.position.set(t.x, t.y, t.z);
+    const sc = t.scale ?? 1.0;
+    tree.userData.targetScale = sc;
+
+    const root = new THREE.Mesh(rootGeo, barkDarkMat);
+    root.position.y = 0.22;
+    const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+    trunk.position.y = 1.35;
+    trunk.castShadow = true;
+
+    const cMain = new THREE.Mesh(canopyMainGeo, leafMainMat);
+    cMain.position.set(0, 3.1, 0);
+    cMain.castShadow = true;
+
+    const cLeft = new THREE.Mesh(canopySideGeo, leafLightMat);
+    cLeft.position.set(-0.92, 2.75, 0.45);
+    cLeft.castShadow = true;
+
+    const cRight = new THREE.Mesh(canopySideGeo, leafDeepMat);
+    cRight.position.set(0.95, 2.8, -0.38);
+    cRight.castShadow = true;
+
+    const cTop = new THREE.Mesh(canopyTopGeo, leafLightMat);
+    cTop.position.set(0.08, 4.15, 0.1);
+    cTop.castShadow = true;
+
+    tree.add(root, trunk, cMain, cLeft, cRight, cTop);
+
+    const bMat =
+      t.blossomHex !== undefined
+        ? palette.getMat(t.blossomHex, 'gloss')
+        : petalPalette[idx % petalPalette.length];
+    const blossomOffsets: Array<[number, number, number]> = [
+      [-1.15, 3.05, 0.95],
+      [1.15, 3.15, 0.72],
+      [0.15, 4.45, 0.68],
+      [-0.55, 3.65, -0.95],
+      [0.85, 2.65, -1.0],
+    ];
+    blossomOffsets.forEach(([bx, by, bz]) => {
+      const dot = new THREE.Mesh(blossomDotGeo, bMat);
+      dot.position.set(bx, by, bz);
+      tree.add(dot);
+    });
+
+    tree.scale.setScalar(sc);
+    gardenGroup.add(tree);
+    gardenBlooms.push(tree);
+  });
+
+  // 3. Fluttering Composite 3D Butterflies (`kupu-kupu berterbangan`)
+  specs.butterflyCenters.forEach((bc, idx) => {
+    const bfGroup = new THREE.Group();
+    const wingMat = butterflyWingMats[idx % butterflyWingMats.length];
+
+    const body = new THREE.Mesh(bfBodyGeo, butterflyBodyMat);
+    const leftWing = new THREE.Group();
+    const rightWing = new THREE.Group();
+
+    const wMeshL = new THREE.Mesh(bfWingGeo, wingMat);
+    wMeshL.rotation.x = -Math.PI / 2;
+    wMeshL.position.set(-0.18, 0, 0);
+    leftWing.add(wMeshL);
+
+    const wMeshR = new THREE.Mesh(bfWingGeo, wingMat);
+    wMeshR.rotation.x = -Math.PI / 2;
+    wMeshR.position.set(0.18, 0, 0);
+    rightWing.add(wMeshR);
+
+    bfGroup.add(body, leftWing, rightWing);
+    bfGroup.position.set(bc.x, bc.y, bc.z);
+    gardenGroup.add(bfGroup);
+
+    butterflies.push({
+      group: bfGroup,
+      leftWing,
+      rightWing,
+      center: new THREE.Vector3(bc.x, bc.y, bc.z),
+      radiusX: bc.rx ?? 2.6 + (idx % 3) * 0.75,
+      radiusZ: bc.rz ?? 2.3 + ((idx + 1) % 3) * 0.7,
+      baseY: bc.y,
+      speed: 0.85 + (idx % 4) * 0.22,
+      phase: idx * 1.15,
+      flapSpeed: 13.5 + (idx % 3) * 2.4,
+    });
+  });
+
+  gardenGroup.visible = false;
+  return { gardenGroup, gardenBlooms, butterflies };
+}
+
+export function animateCaveButterflies(
+  butterflies: CaveButterflyEntry[] | undefined,
+  elapsed: number,
+): void {
+  if (!butterflies || butterflies.length === 0) return;
+  for (let i = 0; i < butterflies.length; i++) {
+    const bf = butterflies[i];
+    const ang = elapsed * bf.speed + bf.phase;
+    const nx = bf.center.x + Math.sin(ang) * bf.radiusX;
+    const nz = bf.center.z + Math.sin(ang * 2.0 + 0.5) * bf.radiusZ * 0.68;
+    const ny = bf.baseY + Math.sin(elapsed * 2.4 + bf.phase) * 0.42;
+    const vx = Math.cos(ang) * bf.radiusX * bf.speed;
+    const vz = Math.cos(ang * 2.0 + 0.5) * bf.radiusZ * 0.68 * 2.0 * bf.speed;
+    bf.group.position.set(nx, ny, nz);
+    bf.group.rotation.y = Math.atan2(vx, vz);
+    const flap = Math.sin(elapsed * bf.flapSpeed + bf.phase) * 0.88;
+    bf.leftWing.rotation.z = flap;
+    bf.rightWing.rotation.z = -flap;
+  }
+}
+
 // 10. Minecraft-Style 3D Voxel Cave Arena (with Roof, Stalactites, Mineable Blocks & 5 Mission Doors!)
 export function createDungeonEnvironment(
   zoneId: ZoneId,
@@ -5734,45 +6234,57 @@ export function createDungeonEnvironment(
     return dRig;
   });
 
-  // Exit Portal Gate at South Center (0, 0, 17)
-  const exitGate = new THREE.Group();
-  exitGate.position.copy(exitPadPos);
-  exitGate.userData.dungeonExit = true;
-
-  const pad = new THREE.Mesh(
-    new THREE.CylinderGeometry(2.8, 3.0, 0.25, 20),
-    palette.getMat(0x0ea5e9, 'emissive'),
-  );
-  pad.position.y = 0.12;
-  const archL = new THREE.Mesh(new THREE.BoxGeometry(0.95, 4.6, 0.95), palette.getMat(0x475569, 'matte'));
-  archL.position.set(-2.5, 2.3, 0);
-  const archR = new THREE.Mesh(new THREE.BoxGeometry(0.95, 4.6, 0.95), palette.getMat(0x475569, 'matte'));
-  archR.position.set(2.5, 2.3, 0);
-  const archTop = new THREE.Mesh(new THREE.BoxGeometry(6.2, 1.05, 1.15), palette.getMat(0x334155, 'matte'));
-  archTop.position.set(0, 4.85, 0);
-  cameraOccluders.push(archL, archR, archTop);
-
-  if (isDesaSapaan) {
-    const exitMoss = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.24, 1.25), palette.getMat(0x4d7c0f, 'matte'));
-    exitMoss.position.set(0, 5.45, 0);
-    const keystone = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.72, 1.28), palette.getMat(0x9ca3af, 'matte'));
-    keystone.position.set(0, 4.85, 0);
-    // Cobblestone foreground steps leading into the plaza
-    const stepFront = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.14, 1.6), wallMat);
-    stepFront.position.set(0, 0.07, -1.6);
-    stepFront.receiveShadow = true;
-    exitGate.add(pad, archL, archR, archTop, exitMoss, keystone, stepFront);
-  } else {
-    const exitRing = new THREE.Mesh(
-      new THREE.TorusGeometry(1.75, 0.18, 8, 24),
-      palette.getMat(0x22d3ee, 'emissive'),
-    );
-    exitRing.position.set(0, 2.35, 0);
-    exitRing.userData.animKind = 'spinZ';
-    animatables.push(exitRing);
-    exitGate.add(pad, archL, archR, archTop, exitRing);
-  }
+  // Exit Portal Front Door Gate at South Center (0, 0, 17)
+  const frontDoor = createCaveFrontDoorRig(palette, disposables, {
+    pos: exitPadPos,
+    rotY: Math.PI,
+    accentHex: 0x22d3ee,
+    addPortalRing: !isDesaSapaan,
+    animatables,
+    cameraOccluders,
+    caveColliders,
+  });
+  const exitGate = frontDoor.group;
   group.add(exitGate);
+
+  // Drifting Cavern Mist Wisps (cleared upon garden transformation!)
+  const mistGroup = new THREE.Group();
+  mistGroup.userData.isMapHidden = true;
+  if (!isDesaSapaan) {
+    const mistTex = createMistWispTexture();
+    disposables.push(mistTex);
+    const mistCoords: Array<[number, number, number, number]> = [
+      [-9, 0.25, -4, 0.2],
+      [9, 0.25, -4, 0.2],
+      [0, 0.28, -11, 0.22],
+      [-7, 0.22, 10, 0.18],
+      [7, 0.22, 10, 0.18],
+    ];
+    mistCoords.forEach(([mx, my, mz, op], idx) => {
+      const mGeo = new THREE.PlaneGeometry(12, 12);
+      const mMat = new THREE.MeshBasicMaterial({
+        map: mistTex,
+        color: ringHex,
+        transparent: true,
+        opacity: op,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const mPlane = new THREE.Mesh(mGeo, mMat);
+      mPlane.rotation.x = -Math.PI / 2;
+      mPlane.position.set(mx, my, mz);
+      mPlane.userData.isMapHidden = true;
+      mPlane.userData.animKind = 'mist';
+      mPlane.userData.baseX = mx;
+      mPlane.userData.baseZ = mz;
+      mPlane.userData.baseOpacity = op;
+      mPlane.userData.phase = idx * 1.3;
+      animatables.push(mPlane);
+      disposables.push(mGeo, mMat);
+      mistGroup.add(mPlane);
+    });
+  }
+  group.add(mistGroup);
 
   // Minecraft-style Block Selection Wireframe Highlight
   const edgesGeo = new THREE.EdgesGeometry(new THREE.BoxGeometry(2.08, 2.28, 2.08));
@@ -6100,12 +6612,50 @@ export function createDungeonEnvironment(
   );
   group.add(ribbonGroup);
 
+  const gardenSetup = createCaveGardenRig(palette, disposables, {
+    trees: [
+      { x: prisonPos.x, y: 0, z: prisonPos.z, scale: 1.15, blossomHex: 0xf472b6 },
+      { x: -13.5, y: 0, z: 4.5, scale: 0.95, blossomHex: 0xfacc15 },
+      { x: 13.5, y: 0, z: 4.5, scale: 0.95, blossomHex: 0x38bdf8 },
+      { x: -7.5, y: 0, z: -13.5, scale: 1.05, blossomHex: 0xc084fc },
+      { x: 7.5, y: 0, z: -13.5, scale: 1.05, blossomHex: 0xfb7185 },
+      { x: -15.5, y: 0, z: -7.5, scale: 0.9, blossomHex: 0x34d399 },
+      { x: 15.5, y: 0, z: -7.5, scale: 0.9, blossomHex: 0xfacc15 },
+    ],
+    patches: [
+      { x: prisonPos.x, y: 0, z: prisonPos.z, radius: 3.1, flowerCount: 14 },
+      { x: 0, y: 0, z: -1.5, radius: 3.6, flowerCount: 16 },
+      { x: -8.2, y: 0, z: 9.5, radius: 2.5, flowerCount: 10 },
+      { x: 8.2, y: 0, z: 9.5, radius: 2.5, flowerCount: 10 },
+      { x: -12.5, y: 0, z: -8.5, radius: 2.4, flowerCount: 10 },
+      { x: 12.5, y: 0, z: -8.5, radius: 2.4, flowerCount: 10 },
+    ],
+    butterflyCenters: [
+      { x: prisonPos.x, y: 2.2, z: prisonPos.z },
+      { x: 0, y: 2.1, z: -1.5 },
+      { x: -7.5, y: 2.3, z: 8.5 },
+      { x: 7.5, y: 2.3, z: 8.5 },
+      { x: -10.0, y: 2.5, z: -11.0 },
+      { x: 10.0, y: 2.5, z: -11.0 },
+      { x: 0, y: 2.6, z: 11.5 },
+      { x: -4.5, y: 2.2, z: 2.5 },
+      { x: 4.5, y: 2.2, z: 2.5 },
+      { x: 0, y: 2.8, z: -14.0 },
+    ],
+  });
+  group.add(gardenSetup.gardenGroup);
+
   return {
     group,
     animatables,
     doors,
     exitPadPos,
     exitClickable: exitGate,
+    frontDoor,
+    mistGroup,
+    gardenGroup: gardenSetup.gardenGroup,
+    gardenBlooms: gardenSetup.gardenBlooms,
+    butterflies: gardenSetup.butterflies,
     craftingTablePos,
     caveBlocks,
     caveColliders,

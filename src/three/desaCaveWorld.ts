@@ -1,6 +1,11 @@
 import * as THREE from 'three';
 import type { MaterialPalette, SurfaceMaterial } from './materials';
-import { createCaptiveMesh, createPixelVoxelTexture } from './rpgModels';
+import {
+  createCaptiveMesh,
+  createCaveFrontDoorRig,
+  createCaveGardenRig,
+  createPixelVoxelTexture,
+} from './rpgModels';
 import { createWeaponMesh } from './weaponModels';
 import type { CaveBlockKind } from '../types/game';
 import type {
@@ -1298,33 +1303,36 @@ export function createDesaCaveEnvironment(
     caveColliders.push({ x: 9.5, z: 41.5, halfW: 1.65, halfD: 1.65, minY: 0, maxY: 1.65 });
   }
 
-  // 5. Glowing Cyan Square Exit Teleport Pad on Exit Terrace (-14.5, 3.5, 29.0)
+  // 5. Grand Carved 3D Front Cave Door ("Pintu Depan Gua") on Exit Terrace (-14.5, 3.5, 29.0)
   const exitPadPos = new THREE.Vector3(-14.5, 3.5, 29.0);
-  const exitGate = new THREE.Group();
-  exitGate.position.copy(exitPadPos);
-  exitGate.userData.exitPad = true;
+  const frontDoor = createCaveFrontDoorRig(palette, disposables, {
+    pos: exitPadPos,
+    rotY: 0.98,
+    accentHex: 0x38bdf8,
+    addPortalRing: false,
+    animatables,
+    cameraOccluders,
+    caveColliders,
+  });
+  const exitGate = frontDoor.group;
   {
-    const frameBase = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.22, 3.6), palette.getMat(0x334155, 'matte'));
-    frameBase.position.y = 0.11;
-    const padCore = new THREE.Mesh(new THREE.BoxGeometry(2.85, 0.16, 2.85), bluePortalMat);
-    padCore.position.y = 0.2;
     const auraBeam = new THREE.Mesh(
-      new THREE.BoxGeometry(2.45, 3.0, 2.45),
+      new THREE.BoxGeometry(2.3, 2.8, 2.3),
       palette.createSurfaceMat({
         color: 0x38bdf8,
         emissive: 0x0ea5e9,
-        emissiveIntensity: 0.75,
+        emissiveIntensity: 0.65,
         transparent: true,
-        opacity: 0.24,
+        opacity: 0.18,
         roughness: 0.1,
       }),
     );
-    auraBeam.position.y = 1.7;
+    auraBeam.position.set(0, 1.65, -0.35);
     auraBeam.userData.animKind = 'bob';
-    auraBeam.userData.baseY = 1.7;
+    auraBeam.userData.baseY = 1.65;
     auraBeam.userData.phase = 0.5;
     animatables.push(auraBeam);
-    exitGate.add(frameBase, padCore, auraBeam);
+    exitGate.add(auraBeam);
     group.add(exitGate);
 
     // Stacked wooden crates beside Exit Pad & Door 3 (with solid colliders!)
@@ -1561,10 +1569,10 @@ export function createDesaCaveEnvironment(
     );
   }
 
-  // Atmospheric Drifting Cavern Mist Planes (hidden on minimap snapshots)
+  // Atmospheric Drifting Cavern Mist Planes (hidden on minimap snapshots & cleared on garden transform)
+  const mistGroup = new THREE.Group();
+  mistGroup.userData.isMapHidden = true;
   {
-    const mistGroup = new THREE.Group();
-    mistGroup.userData.isMapHidden = true;
     const mistSpecs: Array<[number, number, number, number, number, number]> = [
       [-6.0, 0.25, 3.0, 14, 14, 0.26],
       [-2.0, 0.15, 19.0, 16, 16, 0.24],
@@ -1963,7 +1971,7 @@ export function createDesaCaveEnvironment(
     group.add(cellGroup);
     cameraOccluders.push(cellRoof, cellBack);
 
-    // Colliders for back wall, north/south side walls, and roof (front gate handled dynamically when locked!)
+    // Colliders for back wall, north/south side walls, and roof (front gate handled dynamically when locked; cleared on garden transform!)
     caveColliders.push(
       {
         x: pos.x + backSignX * (halfX - backWallThick * 0.5),
@@ -1972,6 +1980,7 @@ export function createDesaCaveEnvironment(
         halfD: halfZ + 0.1,
         minY: pos.y,
         maxY: pos.y + heightY + 1.0,
+        isPrisonCollider: true,
       },
       {
         x: pos.x,
@@ -1980,6 +1989,7 @@ export function createDesaCaveEnvironment(
         halfD: sideWallThick * 0.5 + 0.12,
         minY: pos.y,
         maxY: pos.y + heightY + 1.0,
+        isPrisonCollider: true,
       },
       {
         x: pos.x,
@@ -1988,6 +1998,7 @@ export function createDesaCaveEnvironment(
         halfD: sideWallThick * 0.5 + 0.12,
         minY: pos.y,
         maxY: pos.y + heightY + 1.0,
+        isPrisonCollider: true,
       },
       {
         x: pos.x,
@@ -1996,6 +2007,7 @@ export function createDesaCaveEnvironment(
         halfD: halfZ + 0.3,
         minY: pos.y + heightY - 0.1,
         maxY: pos.y + heightY + 1.1,
+        isPrisonCollider: true,
       },
     );
 
@@ -2183,12 +2195,63 @@ export function createDesaCaveEnvironment(
   // Dummy inside guardian (Desa Sapaan uses outside Pak Budi reunion!)
   const guardianPos = new THREE.Vector3(4.8, 0, 11.8);
 
+  // Lush Paradise Garden, Trees, Flowerbeds & Butterflies (revealed when prisons crumble!)
+  const gardenSetup = createCaveGardenRig(palette, disposables, {
+    trees: [
+      { x: 38.5, y: 9.5, z: -30.5, scale: 1.18, blossomHex: 0xf472b6 },  // Replaces Sel 1
+      { x: -41.5, y: 3.5, z: -29.5, scale: 1.16, blossomHex: 0xfacc15 }, // Replaces Sel 2
+      { x: 41.5, y: 0.0, z: 35.0, scale: 1.22, blossomHex: 0x38bdf8 },  // Replaces Sel 3
+      { x: -18.0, y: 3.5, z: 22.5, scale: 1.05, blossomHex: 0xf472b6 }, // Exit Terrace North
+      { x: -8.8, y: 3.5, z: 24.5, scale: 0.92, blossomHex: 0x34d399 },  // Exit Terrace East
+      { x: -11.5, y: 0.0, z: 36.5, scale: 1.05, blossomHex: 0xfacc15 }, // Lower Plaza West
+      { x: 11.5, y: 0.0, z: 34.5, scale: 1.02, blossomHex: 0xc084fc },  // Lower Plaza East
+      { x: 29.0, y: 0.0, z: 35.5, scale: 1.1, blossomHex: 0xfb7185 },   // SE Riverside Meadow
+      { x: 11.5, y: 3.5, z: 14.8, scale: 0.96, blossomHex: 0x38bdf8 },  // Central Promontory
+      { x: -11.5, y: 9.5, z: -35.5, scale: 1.12, blossomHex: 0xfacc15 },// High Boss Courtyard W
+      { x: 15.5, y: 9.5, z: -35.5, scale: 1.12, blossomHex: 0xf472b6 }, // High Boss Courtyard E
+    ],
+    patches: [
+      { x: 38.5, y: 9.5, z: -30.5, radius: 3.6, flowerCount: 16 },
+      { x: -41.5, y: 3.5, z: -29.5, radius: 3.8, flowerCount: 16 },
+      { x: 41.5, y: 0.0, z: 35.0, radius: 4.2, flowerCount: 18 },
+      { x: -15.5, y: 3.5, z: 23.0, radius: 2.8, flowerCount: 12 },
+      { x: -10.5, y: 3.5, z: 27.5, radius: 2.3, flowerCount: 10 },
+      { x: -1.5, y: 0.0, z: 36.5, radius: 3.4, flowerCount: 14 },
+      { x: 32.0, y: 0.0, z: 38.0, radius: 3.5, flowerCount: 14 },
+      { x: 7.5, y: 3.5, z: 15.5, radius: 2.4, flowerCount: 10 },
+      { x: 2.0, y: 9.5, z: -33.5, radius: 4.1, flowerCount: 18 },
+      { x: -25.5, y: 3.5, z: -25.5, radius: 2.9, flowerCount: 12 },
+    ],
+    butterflyCenters: [
+      { x: -14.5, y: 5.5, z: 29.0, rx: 3.2, rz: 2.8 }, // Hovering right over Front Door!
+      { x: -11.0, y: 5.4, z: 25.0, rx: 2.8, rz: 2.4 },
+      { x: -1.5, y: 2.2, z: 38.0, rx: 3.6, rz: 3.0 },
+      { x: 6.5, y: 2.1, z: 39.0, rx: 2.8, rz: 2.5 },
+      { x: 38.5, y: 11.8, z: -30.5, rx: 3.2, rz: 3.0 },
+      { x: -41.5, y: 5.8, z: -29.5, rx: 3.2, rz: 3.0 },
+      { x: 41.5, y: 2.4, z: 35.0, rx: 3.6, rz: 3.2 },
+      { x: 31.0, y: 2.2, z: 36.0, rx: 3.0, rz: 2.6 },
+      { x: 2.0, y: 11.9, z: -33.5, rx: 4.0, rz: 3.2 },
+      { x: -8.0, y: 11.7, z: -33.0, rx: 2.8, rz: 2.4 },
+      { x: 11.5, y: 11.7, z: -33.0, rx: 2.8, rz: 2.4 },
+      { x: 6.5, y: 5.6, z: 14.5, rx: 2.6, rz: 2.2 },
+      { x: -3.5, y: 2.4, z: 16.5, rx: 2.8, rz: 2.4 },
+      { x: -24.5, y: 5.6, z: -26.5, rx: 2.8, rz: 2.4 },
+    ],
+  });
+  group.add(gardenSetup.gardenGroup);
+
   return {
     group,
     animatables,
     doors,
     exitPadPos,
     exitClickable: exitGate,
+    frontDoor,
+    mistGroup,
+    gardenGroup: gardenSetup.gardenGroup,
+    gardenBlooms: gardenSetup.gardenBlooms,
+    butterflies: gardenSetup.butterflies,
     craftingTablePos,
     caveBlocks,
     caveColliders,

@@ -169,6 +169,7 @@ import {
   AcademyHallRig,
   animateBossCutsceneTraits,
   animateCaptiveMesh,
+  animateCaveButterflies,
   animateMonsterRig,
   animateShooterRig,
   animateZoneNpc,
@@ -204,6 +205,7 @@ import {
   HeroAvatarRig,
   OwlMessengerRig,
   PortalArchRig,
+  setCaveFrontDoorOpenProgress,
   setFirstPersonHeldVisual,
   setHeroFacialExpression,
   setHeroWeaponVisual,
@@ -1565,6 +1567,37 @@ export class RpgWorldEngine {
     hasRibbon: boolean;
     fogJustCleared: boolean;
   } | null = null;
+  private guidedOutsideZoneId: ZoneId | null = null;
+  private dungeonRibbonReunionCutscene: {
+    zoneId: ZoneId;
+    beat:
+      | 'guardian_beckon'
+      | 'walk_to_guardian'
+      | 'grateful_reunion'
+      | 'garden_transform'
+      | 'exit_ready';
+    timer: number;
+    guardianMesh: THREE.Group;
+    addedGuardianTemp: boolean;
+    guardianOrigPos: THREE.Vector3;
+    guardianOrigRotY: number;
+    doorPos: THREE.Vector3;
+    doorFrontSpot: THREE.Vector3;
+    heroStartPos: THREE.Vector3;
+    heroTargetPos: THREE.Vector3;
+    captiveTargets: Array<{
+      mesh: THREE.Group;
+      startPos: THREE.Vector3;
+      endPos: THREE.Vector3;
+      phaseOffset: number;
+      isRani?: boolean;
+    }>;
+    sparkAccum: number;
+    transformAudioFired: boolean;
+    prisonCrumbleFired: boolean;
+    doorSoundFired: boolean;
+    cutsceneLight: THREE.PointLight;
+  } | null = null;
 
   // RPG Progression State
   private phase: GamePhase = 'title';
@@ -2846,6 +2879,9 @@ export class RpgWorldEngine {
     if (alive > 0) return false;
 
     this.liberatedZones.add(zoneId);
+    if (this.guidedOutsideZoneId === zoneId) {
+      this.guidedOutsideZoneId = null;
+    }
     const q = this.quests.find((item) => item.zoneId === zoneId);
     if (q) {
       q.accepted = true;
@@ -2867,6 +2903,57 @@ export class RpgWorldEngine {
       this.pushHud(true);
     }
     return true;
+  }
+
+  private getNearestGuidedOutsideMonster(zoneId: ZoneId): RoamingMonster | null {
+    let best: RoamingMonster | null = null;
+    let bestDistSq = Infinity;
+    for (let i = 0; i < this.monsters.length; i++) {
+      const m = this.monsters[i];
+      if (!m.alive || !this.isMonsterOnIsland(m, zoneId)) continue;
+      const dSq = (m.x - this.heroPos.x) ** 2 + (m.z - this.heroPos.z) ** 2;
+      if (dSq < bestDistSq) {
+        bestDistSq = dSq;
+        best = m;
+      }
+    }
+    return best;
+  }
+
+  private guidePlayerTowardRemainingOutsideMonster(zoneId: ZoneId): void {
+    const { alive } = this.getZoneIslandCounts(zoneId);
+    if (alive <= 0) {
+      if (this.guidedOutsideZoneId === zoneId) this.guidedOutsideZoneId = null;
+      return;
+    }
+    this.guidedOutsideZoneId = zoneId;
+    const nearest = this.getNearestGuidedOutsideMonster(zoneId);
+    const activeDef = getActiveZoneNpcDef(zoneId, this.getCurrentDayPhase() === 'malam');
+    if (nearest) {
+      this.heroYaw = Math.atan2(nearest.x - this.heroPos.x, nearest.z - this.heroPos.z);
+      this.hero.body.rotation.y = this.heroYaw;
+      this.snapCameraBehindHero();
+      const dx = nearest.x - this.heroPos.x;
+      const dz = nearest.z - this.heroPos.z;
+      const len = Math.hypot(dx, dz) || 1;
+      for (let s = 1; s <= 4; s++) {
+        const d = Math.min(len * 0.6, s * 2.4);
+        const sx = this.heroPos.x + (dx / len) * d;
+        const sz = this.heroPos.z + (dz / len) * d;
+        this.spawnBurst(sx, getArchipelagoGroundY(sx, sz) + 1.1, sz, 0x34d399, 10);
+      }
+      soundEngine.playGuardianCall();
+      this.showBanner(
+        `🧭 ${activeDef.name} menuntunmu menuju ${nearest.name} (${Math.round(len)}m) — habisi ${alive} monster luar tersisa di ${ZONE_INFO[zoneId].name}!`,
+        6.2,
+      );
+    } else {
+      this.showBanner(
+        `🧭 ${activeDef.name} menuntunmu: Habisi ${alive} monster luar tersisa di ${ZONE_INFO[zoneId].name}!`,
+        5.5,
+      );
+    }
+    this.pushHud(true);
   }
 
   private collectCaveRibbon(zoneId: ZoneId): void {
@@ -2892,15 +2979,8 @@ export class RpgWorldEngine {
     this.addScore(350);
     this.gainXp(60);
     soundEngine.playFanfare();
-    const rb = RIBBONS[zoneId];
-    const capName = this.dungeonState?.captiveName ?? ZONE_CAVE_STORIES[zoneId].captiveName;
-    const guardName = this.dungeonState?.guardianName ?? ZONE_CAVE_STORIES[zoneId].guardianName;
-    this.showBanner(
-      `🎀 ${rb.name} ditemukan (${this.ribbons.size}/6)! ${rb.quote} Ayo bawa ${capName} keluar menemui ${guardName}!`,
-      5.8,
-    );
     this.saveProgress();
-    this.pushHud(true);
+    this.startDungeonRibbonReunionCutscene(zoneId);
   }
 
   private grantNightPermissionForZone(zoneId: ZoneId, silent = false): void {
@@ -6133,6 +6213,8 @@ export class RpgWorldEngine {
     this.liberatedZones.clear();
     this.captiveRescuedZones.clear();
     this.guardianReunitedZones.clear();
+    this.guidedOutsideZoneId = null;
+    this.clearDungeonRibbonReunionCutscene();
     this.clearReunionCutscene();
     this.syncReunitedCaptivesAndGates();
     this.nightPermittedZones.clear();
@@ -8261,12 +8343,45 @@ export class RpgWorldEngine {
       return;
     }
 
+    if (this.storyDialog.kind === 'dungeon_ribbon_reunion') {
+      const rr = this.dungeonRibbonReunionCutscene;
+      if (!rr) {
+        this.finishDungeonRibbonReunionCutscene(true);
+        return;
+      }
+      if (rr.beat === 'guardian_beckon') {
+        this.transitionRibbonReunionToWalk();
+        return;
+      }
+      if (rr.beat === 'walk_to_guardian') {
+        this.transitionRibbonReunionToReunion();
+        return;
+      }
+      if (rr.beat === 'grateful_reunion') {
+        this.transitionRibbonReunionToGarden();
+        return;
+      }
+      if (rr.beat === 'garden_transform') {
+        this.transitionRibbonReunionToExitReady();
+        return;
+      }
+      if (rr.beat === 'exit_ready') {
+        this.finishDungeonRibbonReunionCutscene(true);
+        return;
+      }
+    }
+
     if (this.storyDialog.kind === 'area_cleared') {
+      const guidedZone = this.guidedOutsideZoneId;
       this.storyDialog = null;
       this.phase = 'playing';
       this.applyCameraVisibilityAndControls();
       this.snapCameraBehindHero();
-      this.pushHud(true);
+      if (guidedZone && this.worldMode === 'overworld') {
+        this.guidePlayerTowardRemainingOutsideMonster(guidedZone);
+      } else {
+        this.pushHud(true);
+      }
       return;
     }
 
@@ -8313,6 +8428,8 @@ export class RpgWorldEngine {
       this.finishDungeonPrisonPleaCutscene();
     } else if (this.storyDialog.kind === 'dungeon_rescue') {
       this.finishDungeonRescueCutscene(this.storyDialog.zoneId);
+    } else if (this.storyDialog.kind === 'dungeon_ribbon_reunion') {
+      this.finishDungeonRibbonReunionCutscene(true);
     } else if (this.storyDialog.kind === 'dungeon_reunion_exit') {
       if (this.reunionCutscene?.stage === 'walking_out') {
         this.snapDungeonReunionToWelcome();
@@ -8320,11 +8437,16 @@ export class RpgWorldEngine {
         this.finishDungeonReunionCutscene();
       }
     } else if (this.storyDialog.kind === 'area_cleared') {
+      const guidedZone = this.guidedOutsideZoneId;
       this.storyDialog = null;
       this.phase = 'playing';
       this.applyCameraVisibilityAndControls();
       this.snapCameraBehindHero();
-      this.pushHud(true);
+      if (guidedZone && this.worldMode === 'overworld') {
+        this.guidePlayerTowardRemainingOutsideMonster(guidedZone);
+      } else {
+        this.pushHud(true);
+      }
     } else if (this.storyDialog.kind === 'cave_guardian') {
       this.storyDialog = null;
       this.caveGuardianTurns = [];
@@ -11154,7 +11276,12 @@ export class RpgWorldEngine {
     }
   }
 
-  private applyAtmosphere(mode: WorldLocationMode, zoneId?: ZoneId, dungeonBright = false): void {
+  private applyAtmosphere(
+    mode: WorldLocationMode,
+    zoneId?: ZoneId,
+    dungeonBright = false,
+    gardenOasis = false,
+  ): void {
     const liteBoost = this.preferLiteShader ? 0.2 : 0;
     const shadowsDesired = mode !== 'ocean' && !this.isSoftwareGl && this.settings.fxLevel !== 'off';
     this.renderer.shadowMap.enabled = shadowsDesired;
@@ -11163,7 +11290,24 @@ export class RpgWorldEngine {
       this.renderer.shadowMap.needsUpdate = true;
     }
     if (mode === 'dungeon') {
-      if (dungeonBright) {
+      if (gardenOasis) {
+        (this.scene.background as THREE.Color).setHex(0x38bdf8);
+        if (this.scene.fog instanceof THREE.FogExp2) {
+          this.scene.fog.color.setHex(0x7dd3fc);
+          this.scene.fog.density = 0.0024;
+        }
+        this.hemiLight.color.setHex(0xe0f2fe);
+        this.hemiLight.groundColor.setHex(0x4ade80);
+        this.hemiLight.intensity = 1.48 + liteBoost;
+        this.sunLight.target.position.set(0, 0, 0);
+        this.sunLight.target.updateMatrixWorld();
+        this.sunLight.color.setHex(0xfffbeb);
+        this.sunLight.position.set(42, 72, 42);
+        this.sunLight.intensity = 1.9;
+        this.rimLight.intensity = 0.7;
+        if (!this.preferLiteShader) this.scene.environmentIntensity = 1.05;
+        this.playerCaveLight.intensity = 0.8;
+      } else if (dungeonBright) {
         const brightHex =
           zoneId === 'gua_portal'
             ? 0x3b2f63
@@ -11396,6 +11540,7 @@ export class RpgWorldEngine {
     this.bossGuardWaitPositions.clear();
     this.bossSummonShieldActive = false;
     this.bossRageSparkTimer = 0;
+    this.clearDungeonRibbonReunionCutscene();
     this.clearReunionCutscene();
     this.clearProjectiles();
     this.applyAtmosphere('overworld');
@@ -11544,7 +11689,8 @@ export class RpgWorldEngine {
 
     const rescued = this.captiveRescuedZones.has(zoneId) || this.liberatedZones.has(zoneId);
     const bossBeaten = rescued || this.defeatedBossZones.has(zoneId);
-    this.applyAtmosphere('dungeon', zoneId, bossBeaten);
+    const gardenTransformed = rescued && this.ribbons.has(zoneId);
+    this.applyAtmosphere('dungeon', zoneId, bossBeaten, gardenTransformed);
 
     const deal = this.getOrCreateAreaDeal(zoneId);
     const clearedSet = new Set(this.areaDoorsCleared[zoneId] || []);
@@ -12211,6 +12357,12 @@ export class RpgWorldEngine {
     this.hero.root.position.copy(this.heroPos);
     this.hero.body.rotation.y = this.heroYaw;
 
+    if (gardenTransformed) {
+      this.applyCaveGardenTransformedState(true);
+    } else if (rig.frontDoor) {
+      setCaveFrontDoorOpenProgress(rig.frontDoor, 0.15);
+    }
+
     this.applyCameraVisibilityAndControls();
     this.snapCameraBehindHero();
 
@@ -12457,6 +12609,12 @@ export class RpgWorldEngine {
       const { alive: remOutside } = this.getZoneIslandCounts(exitedZoneId);
       const fogJustCleared = this.checkZoneFogClear(exitedZoneId, false);
       const hasRibbon = this.ribbons.has(exitedZoneId);
+
+      if (!fogJustCleared && remOutside > 0) {
+        this.guidedOutsideZoneId = exitedZoneId;
+      } else if (this.guidedOutsideZoneId === exitedZoneId) {
+        this.guidedOutsideZoneId = null;
+      }
 
       if (firstReunion) {
         this.startDungeonReunionExitCutscene(
@@ -12918,6 +13076,9 @@ export class RpgWorldEngine {
     this.hero.body.position.y = 0;
     this.applyCameraVisibilityAndControls();
     this.snapCameraBehindHero();
+    if (this.guidedOutsideZoneId && this.getZoneIslandCounts(this.guidedOutsideZoneId).alive > 0) {
+      this.guidePlayerTowardRemainingOutsideMonster(this.guidedOutsideZoneId);
+    }
     this.saveProgress();
     this.pushHud(true);
   }
@@ -24703,6 +24864,701 @@ export class RpgWorldEngine {
     this.controls.target.lerp(_v2, camLerp);
   }
 
+  private clearDungeonRibbonReunionCutscene(): void {
+    const rr = this.dungeonRibbonReunionCutscene;
+    if (!rr) return;
+    if (rr.cutsceneLight.parent) {
+      rr.cutsceneLight.parent.remove(rr.cutsceneLight);
+    }
+    if (rr.addedGuardianTemp) {
+      if (rr.guardianMesh.parent) {
+        rr.guardianMesh.parent.remove(rr.guardianMesh);
+      }
+    } else if (this.dungeonRig?.hasInsideGuardian) {
+      rr.guardianMesh.position.copy(rr.guardianOrigPos);
+      rr.guardianMesh.rotation.y = rr.guardianOrigRotY;
+    }
+    this.hero.body.scale.set(1, 1, 1);
+    setHeroFacialExpression(this.hero, 'neutral', this.elapsed, false);
+    this.dungeonRibbonReunionCutscene = null;
+  }
+
+  private applyCaveGardenTransformedState(instant = false): void {
+    const rig = this.dungeonRig;
+    if (!rig) return;
+    if (rig.mistGroup) {
+      rig.mistGroup.visible = false;
+    }
+    rig.prisonGroup.visible = false;
+    rig.prisonBars.visible = false;
+    if (rig.prisonCells) {
+      rig.prisonCells.forEach((cell) => {
+        cell.bars.visible = false;
+        cell.group.visible = false;
+      });
+    }
+    rig.caveColliders = rig.caveColliders.filter((col) => !col.isPrisonCollider);
+    if (rig.gardenGroup) {
+      rig.gardenGroup.visible = true;
+    }
+    if (instant && rig.gardenBlooms) {
+      rig.gardenBlooms.forEach((obj) => {
+        const ts = typeof obj.userData.targetScale === 'number' ? obj.userData.targetScale : 1;
+        obj.scale.setScalar(ts);
+      });
+    }
+    if (instant && rig.frontDoor) {
+      setCaveFrontDoorOpenProgress(rig.frontDoor, 1.0);
+    }
+    const zId = this.dungeonState?.zoneId;
+    if (zId) {
+      this.applyAtmosphere('dungeon', zId, true, true);
+    }
+  }
+
+  private startDungeonRibbonReunionCutscene(zoneId: ZoneId): void {
+    const rig = this.dungeonRig;
+    if (!rig) return;
+    this.clearDungeonRibbonReunionCutscene();
+    if (this.cameraMode === 'first_person') {
+      this.cameraMode = 'third_back';
+    }
+    this.phase = 'story';
+    this.heldKeys.clear();
+    this.tapMoveTarget = null;
+    this.applyCameraVisibilityAndControls();
+    this.storyTimer = 0;
+
+    const story = ZONE_CAVE_STORIES[zoneId];
+    const activeDef = getActiveZoneNpcDef(zoneId, this.getCurrentDayPhase() === 'malam');
+    const isDesa = zoneId === 'desa_sapaan';
+    const doorPos = rig.exitPadPos.clone();
+
+    // Local +Z of frontDoor rig points into the cave courtyard:
+    // desa_sapaan rotY=0.98 -> (+0.83, 0, +0.56); others rotY=Math.PI -> (0, 0, -1)
+    const doorRotY = isDesa ? 0.98 : Math.PI;
+    const fwdX = Math.sin(doorRotY);
+    const fwdZ = Math.cos(doorRotY);
+    const sideX = fwdZ;
+    const sideZ = -fwdX;
+
+    const doorFrontSpot = new THREE.Vector3(
+      doorPos.x + fwdX * (isDesa ? 2.6 : 3.2),
+      doorPos.y,
+      doorPos.z + fwdZ * (isDesa ? 2.6 : 3.2),
+    );
+    doorFrontSpot.y = this.getDungeonSupportHeight(doorFrontSpot.x, doorFrontSpot.z, doorPos.y + 1.0);
+
+    const heroStartPos = isDesa
+      ? new THREE.Vector3(-1.8, 0, 39.2)
+      : new THREE.Vector3(0, 0, 3.6);
+    heroStartPos.y = this.getDungeonSupportHeight(heroStartPos.x, heroStartPos.z, 1.0);
+
+    const heroTargetPos = new THREE.Vector3(
+      doorFrontSpot.x + fwdX * 3.1,
+      doorPos.y,
+      doorFrontSpot.z + fwdZ * 3.1,
+    );
+    heroTargetPos.y = this.getDungeonSupportHeight(heroTargetPos.x, heroTargetPos.z, doorPos.y + 1.0);
+
+    const guardianMesh = rig.guardianMesh;
+    const guardianOrigPos = guardianMesh.position.clone();
+    const guardianOrigRotY = guardianMesh.rotation.y;
+    const addedGuardianTemp = !rig.hasInsideGuardian;
+    if (addedGuardianTemp) {
+      rig.group.add(guardianMesh);
+    }
+    guardianMesh.visible = true;
+    guardianMesh.position.copy(doorFrontSpot);
+    guardianMesh.rotation.y = Math.atan2(
+      heroStartPos.x - doorFrontSpot.x,
+      heroStartPos.z - doorFrontSpot.z,
+    );
+
+    const captiveTargets: Array<{
+      mesh: THREE.Group;
+      startPos: THREE.Vector3;
+      endPos: THREE.Vector3;
+      phaseOffset: number;
+      isRani?: boolean;
+    }> = [];
+
+    if (rig.prisonCells && rig.prisonCells.length > 0) {
+      let cIdx = 0;
+      for (const cell of rig.prisonCells) {
+        for (const cap of cell.captives) {
+          rig.group.add(cap.mesh);
+          cap.mesh.visible = true;
+          const row = Math.floor(cIdx / 4);
+          const col = (cIdx % 4) - 1.5;
+          const sPos = new THREE.Vector3(
+            heroStartPos.x + col * 1.1 + row * 0.4,
+            0,
+            heroStartPos.z + 1.35 + row * 1.25,
+          );
+          sPos.y = this.getDungeonSupportHeight(sPos.x, sPos.z, heroStartPos.y + 1.0);
+          const ePos = new THREE.Vector3(
+            heroTargetPos.x + fwdX * (1.25 + row * 1.05) + sideX * (col * 1.15),
+            doorPos.y,
+            heroTargetPos.z + fwdZ * (1.25 + row * 1.05) + sideZ * (col * 1.15),
+          );
+          ePos.y = this.getDungeonSupportHeight(ePos.x, ePos.z, doorPos.y + 1.5);
+          cap.mesh.position.copy(sPos);
+          cap.mesh.rotation.y = Math.atan2(
+            doorFrontSpot.x - sPos.x,
+            doorFrontSpot.z - sPos.z,
+          );
+          captiveTargets.push({
+            mesh: cap.mesh,
+            startPos: sPos,
+            endPos: ePos,
+            phaseOffset: cIdx * 0.45,
+            isRani: cap.id.includes('rani'),
+          });
+          cIdx += 1;
+        }
+      }
+    } else {
+      rig.group.add(rig.captiveMesh);
+      rig.captiveMesh.visible = true;
+      const sPos = new THREE.Vector3(heroStartPos.x - 1.5, heroStartPos.y, heroStartPos.z + 0.9);
+      sPos.y = this.getDungeonSupportHeight(sPos.x, sPos.z, heroStartPos.y + 1.0);
+      const ePos = new THREE.Vector3(
+        heroTargetPos.x + sideX * 1.6 + fwdX * 0.6,
+        heroTargetPos.y,
+        heroTargetPos.z + sideZ * 1.6 + fwdZ * 0.6,
+      );
+      ePos.y = this.getDungeonSupportHeight(ePos.x, ePos.z, doorPos.y + 1.0);
+      rig.captiveMesh.position.copy(sPos);
+      rig.captiveMesh.rotation.y = Math.atan2(
+        doorFrontSpot.x - sPos.x,
+        doorFrontSpot.z - sPos.z,
+      );
+      captiveTargets.push({
+        mesh: rig.captiveMesh,
+        startPos: sPos,
+        endPos: ePos,
+        phaseOffset: 0.25,
+      });
+    }
+
+    this.heroPos.copy(heroStartPos);
+    this.heroYaw = Math.atan2(
+      doorFrontSpot.x - heroStartPos.x,
+      doorFrontSpot.z - heroStartPos.z,
+    );
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.body.rotation.y = this.heroYaw;
+    this.playerCaveLight.position.set(doorFrontSpot.x, doorFrontSpot.y + 3.2, doorFrontSpot.z);
+
+    if (rig.frontDoor) {
+      setCaveFrontDoorOpenProgress(rig.frontDoor, 0.12);
+    }
+
+    const cutsceneLight = new THREE.PointLight(0xfef3c7, 4.2, 34, 1.35);
+    cutsceneLight.position.set(doorFrontSpot.x, doorFrontSpot.y + 4.4, doorFrontSpot.z);
+    rig.group.add(cutsceneLight);
+
+    this.dungeonRibbonReunionCutscene = {
+      zoneId,
+      beat: 'guardian_beckon',
+      timer: 0,
+      guardianMesh,
+      addedGuardianTemp,
+      guardianOrigPos,
+      guardianOrigRotY,
+      doorPos,
+      doorFrontSpot,
+      heroStartPos,
+      heroTargetPos,
+      captiveTargets,
+      sparkAccum: 0,
+      transformAudioFired: false,
+      prisonCrumbleFired: false,
+      doorSoundFired: false,
+      cutsceneLight,
+    };
+
+    const pName = this.getPlayerDisplayName();
+    const gName = activeDef.name || story.guardianName;
+    const gAddr = formatGuardianAddress(activeDef, pName, this.localCharacterId);
+    const beckonEn = isDesa
+      ? `Over here, ${gAddr}! Rani, Raka, and everyone! I am waiting right by the Front Cave Door—come to me!`
+      : `Over here, ${gAddr} and ${story.captiveName}! I am waiting at the Front Cave Door—come safely to me!`;
+    const beckonId = isDesa
+      ? `Kemarilah, ${gAddr}! Rani, Kak Raka, anak-anak, dan semua warga! Aku menunggu di Pintu Depan Gua—ayo ke sini!`
+      : `Kemarilah, ${gAddr} dan ${story.captiveName}! Aku menunggu di Pintu Depan Gua—ayo segera mendekat ke sini!`;
+
+    this.storyDialog = {
+      kind: 'dungeon_ribbon_reunion',
+      step: 0,
+      maxStep: 4,
+      zoneId,
+      dungeonRibbonReunionBeat: 'guardian_beckon',
+      speakerName: gName,
+      speakerRole: 'Menunggu & Memanggil di Pintu Depan Gua',
+      speakerKind: 'npc',
+      speakerNpcId: activeDef.id,
+      speakerSide: 'npc',
+      textEn: beckonEn,
+      textId: beckonId,
+      accentColor: '#f59e0b',
+    };
+
+    soundEngine.playGuardianCall();
+    soundEngine.speakEnglish(beckonEn, 0.96, 1.0);
+    this.pushHud(true);
+  }
+
+  private transitionRibbonReunionToWalk(): void {
+    const rr = this.dungeonRibbonReunionCutscene;
+    if (!rr || rr.beat !== 'guardian_beckon') return;
+    rr.beat = 'walk_to_guardian';
+    rr.timer = 0;
+
+    const pName = this.getPlayerDisplayName();
+    const story = ZONE_CAVE_STORIES[rr.zoneId];
+    const activeDef = getActiveZoneNpcDef(rr.zoneId, this.getCurrentDayPhase() === 'malam');
+    const gName = activeDef.name || story.guardianName;
+    const isDesa = rr.zoneId === 'desa_sapaan';
+
+    const walkEn = isDesa
+      ? `${pName}, Rani, and all the freed villagers rush happily toward ${gName} waiting by the Front Cave Door!`
+      : `${pName} and ${story.captiveName} walk joyfully toward ${gName} at the Front Cave Door!`;
+    const walkId = isDesa
+      ? `${pName}, Rani (si cucu), dan seluruh tawanan yang selamat berjalan gembira menuju ${gName} di Pintu Depan Gua!`
+      : `${pName} dan ${story.captiveName} melangkah gembira menuju ${gName} di Pintu Depan Gua!`;
+
+    this.storyDialog = {
+      kind: 'dungeon_ribbon_reunion',
+      step: 1,
+      maxStep: 4,
+      zoneId: rr.zoneId,
+      dungeonRibbonReunionBeat: 'walk_to_guardian',
+      speakerName: 'Menuju Pintu Depan Gua',
+      speakerRole: 'Reuni Penyelamatan Gua',
+      speakerKind: 'captive',
+      captiveKind: story.captiveKind,
+      captiveColor: story.captiveColor,
+      captiveExpression: 'happy',
+      speakerSide: 'hero',
+      textEn: walkEn,
+      textId: walkId,
+      accentColor: '#10b981',
+    };
+
+    soundEngine.playPick();
+    this.pushHud(true);
+  }
+
+  private transitionRibbonReunionToReunion(): void {
+    const rr = this.dungeonRibbonReunionCutscene;
+    if (!rr) return;
+    rr.beat = 'grateful_reunion';
+    rr.timer = 0;
+
+    this.heroPos.copy(rr.heroTargetPos);
+    this.heroYaw = Math.atan2(
+      rr.doorFrontSpot.x - rr.heroTargetPos.x,
+      rr.doorFrontSpot.z - rr.heroTargetPos.z,
+    );
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.body.rotation.y = this.heroYaw;
+    for (const ct of rr.captiveTargets) {
+      ct.mesh.position.copy(ct.endPos);
+      ct.mesh.rotation.y = Math.atan2(
+        rr.doorFrontSpot.x - ct.endPos.x,
+        rr.doorFrontSpot.z - ct.endPos.z,
+      );
+    }
+
+    const pName = this.getPlayerDisplayName();
+    const story = ZONE_CAVE_STORIES[rr.zoneId];
+    const activeDef = getActiveZoneNpcDef(rr.zoneId, this.getCurrentDayPhase() === 'malam');
+    const gName = activeDef.name || story.guardianName;
+    const gAddr = formatGuardianAddress(activeDef, pName, this.localCharacterId);
+    const isDesa = rr.zoneId === 'desa_sapaan';
+
+    const thanksEn = isDesa
+      ? `Oh, thank goodness! Rani, my dear granddaughter, and all our villagers are safe! Thank you from the bottom of my heart, ${gAddr}!`
+      : `Thank goodness ${story.captiveName} is safe! I am deeply grateful to you, ${gAddr}!`;
+    const thanksId = isDesa
+      ? `Ya ampun, syukurlah!! Rani cucuku tersayang, Raka, anak-anak, dan semua warga selamat! Terima kasih sebesar-besarnya, ${gAddr}!`
+      : `Syukurlah ${story.captiveName} selamat! Aku sangat senang dan berterima kasih kepadamu, ${gAddr}!`;
+
+    this.storyDialog = {
+      kind: 'dungeon_ribbon_reunion',
+      step: 2,
+      maxStep: 4,
+      zoneId: rr.zoneId,
+      dungeonRibbonReunionBeat: 'grateful_reunion',
+      speakerName: gName,
+      speakerRole: isDesa
+        ? 'Reuni Haru Bersama Cucu & Tawanan Selamat'
+        : `Reuni Haru Bersama ${story.captiveName}`,
+      speakerKind: 'npc',
+      speakerNpcId: activeDef.id,
+      captiveExpression: 'happy',
+      speakerSide: 'npc',
+      textEn: thanksEn,
+      textId: thanksId,
+      accentColor: '#10b981',
+    };
+
+    soundEngine.playPrisonersCheer();
+    soundEngine.speakEnglish(thanksEn, 0.96, 1.0);
+    this.spawnBurst(rr.doorFrontSpot.x, rr.doorFrontSpot.y + 1.8, rr.doorFrontSpot.z, 0xfbbf24, 28);
+    this.pushHud(true);
+  }
+
+  private transitionRibbonReunionToGarden(): void {
+    const rr = this.dungeonRibbonReunionCutscene;
+    if (!rr) return;
+    rr.beat = 'garden_transform';
+    rr.timer = 0;
+
+    const rig = this.dungeonRig;
+    if (rig?.gardenGroup) {
+      rig.gardenGroup.visible = true;
+      if (rig.gardenBlooms) {
+        rig.gardenBlooms.forEach((obj) => {
+          obj.scale.setScalar(0.01);
+        });
+      }
+    }
+
+    const transformEn =
+      'Look! With the Red Ribbon restored and everyone reunited, the gloomy mist vanishes, the iron prisons shatter, and lush trees, bright flowers, and fluttering butterflies transform the cave into an enchanting garden!';
+    const transformId =
+      'Lihatlah! Begitu kita bersatu, kabut kelam sirna, seluruh penjara besi hancur lenyap, dan pepohonan indah, taman bunga warna-warni, serta kupu-kupu berterbangan menghiasi gua menjadi taman asri yang memukau!';
+
+    this.storyDialog = {
+      kind: 'dungeon_ribbon_reunion',
+      step: 3,
+      maxStep: 4,
+      zoneId: rr.zoneId,
+      dungeonRibbonReunionBeat: 'garden_transform',
+      speakerName: 'Keajaiban Taman Asri & Kupu-Kupu',
+      speakerRole: 'Gua Berubah Menjadi Taman Indah',
+      speakerKind: 'npc',
+      speakerNpcId: getActiveZoneNpcDef(rr.zoneId, this.getCurrentDayPhase() === 'malam').id,
+      speakerSide: 'npc',
+      textEn: transformEn,
+      textId: transformId,
+      accentColor: '#34d399',
+    };
+
+    soundEngine.speakEnglish(transformEn, 0.95, 1.0);
+    this.pushHud(true);
+  }
+
+  private transitionRibbonReunionToExitReady(): void {
+    const rr = this.dungeonRibbonReunionCutscene;
+    if (!rr) return;
+    rr.beat = 'exit_ready';
+    rr.timer = 0;
+    this.applyCaveGardenTransformedState(true);
+
+    const { alive: remOutside } = this.getZoneIslandCounts(rr.zoneId);
+    const activeDef = getActiveZoneNpcDef(rr.zoneId, this.getCurrentDayPhase() === 'malam');
+    const story = ZONE_CAVE_STORIES[rr.zoneId];
+    const gName = activeDef.name || story.guardianName;
+    const pName = this.getPlayerDisplayName();
+    const gAddr = formatGuardianAddress(activeDef, pName, this.localCharacterId);
+
+    const exitEn =
+      remOutside > 0
+        ? `The Front Cave Door is now wide open! Step outside with me, ${gAddr}—I will lead you straight to the ${remOutside} remaining monster(s) outside so we defeat them all!`
+        : `The Front Cave Door is now wide open! Come step outside into the bright island, ${gAddr}!`;
+    const exitId =
+      remOutside > 0
+        ? `Pintu Depan Gua sudah terbuka lebar! Ayo kita keluar bersama, ${gAddr}—aku akan menuntunmu ke luar karena masih ada ${remOutside} monster di luar gua yang harus kita habisi!`
+        : `Pintu Depan Gua sudah terbuka lebar! Ayo kita keluar ke pulau yang kini cerah dan asri, ${gAddr}!`;
+
+    this.storyDialog = {
+      kind: 'dungeon_ribbon_reunion',
+      step: 4,
+      maxStep: 4,
+      zoneId: rr.zoneId,
+      dungeonRibbonReunionBeat: 'exit_ready',
+      speakerName: gName,
+      speakerRole:
+        remOutside > 0
+          ? `Pintu Depan Terbuka · Tuntunan ${remOutside} Monster Luar`
+          : 'Pintu Depan Gua Terbuka Lebar',
+      speakerKind: 'npc',
+      speakerNpcId: activeDef.id,
+      captiveExpression: 'happy',
+      speakerSide: 'npc',
+      rewardSummary: `🎀 Pita Merah Ditemukan · 🦋 Gua Jadi Taman Asri · 🚪 Pintu Depan Terbuka`,
+      textEn: exitEn,
+      textId: exitId,
+      accentColor: '#0ea5e9',
+    };
+
+    if (!rr.doorSoundFired) {
+      rr.doorSoundFired = true;
+      soundEngine.playDoor();
+      this.spawnBurst(rr.doorPos.x, rr.doorPos.y + 2.1, rr.doorPos.z, 0x38bdf8, 28);
+    }
+    soundEngine.speakEnglish(exitEn, 0.96, 1.0);
+    this.pushHud(true);
+  }
+
+  private finishDungeonRibbonReunionCutscene(exitNow = true): void {
+    const rr = this.dungeonRibbonReunionCutscene;
+    const zId = rr?.zoneId ?? this.storyDialog?.zoneId ?? this.dungeonState?.zoneId;
+    this.applyCaveGardenTransformedState(true);
+    this.clearDungeonRibbonReunionCutscene();
+    this.storyDialog = null;
+    if (zId) {
+      const { alive: remOutside } = this.getZoneIslandCounts(zId);
+      if (remOutside > 0) {
+        this.guidedOutsideZoneId = zId;
+      }
+    }
+    if (exitNow && this.worldMode === 'dungeon') {
+      this.exitDungeon();
+      return;
+    }
+    this.phase = 'playing';
+    this.applyCameraVisibilityAndControls();
+    this.snapCameraBehindHero();
+    this.saveProgress();
+    this.pushHud(true);
+  }
+
+  private updateDungeonRibbonReunionCutscene(dt: number): void {
+    const rr = this.dungeonRibbonReunionCutscene;
+    const rig = this.dungeonRig;
+    if (!rr || !rig) return;
+    rr.timer += dt;
+    const t = rr.timer;
+
+    const isDesa = rr.zoneId === 'desa_sapaan';
+    const doorRotY = isDesa ? 0.98 : Math.PI;
+    const fwdX = Math.sin(doorRotY);
+    const fwdZ = Math.cos(doorRotY);
+    const sideX = fwdZ;
+    const sideZ = -fwdX;
+
+    if (rig.gardenGroup?.visible) {
+      animateCaveButterflies(rig.butterflies, this.elapsed);
+    }
+
+    if (rr.beat === 'guardian_beckon') {
+      rr.guardianMesh.position.copy(rr.doorFrontSpot);
+      rr.guardianMesh.rotation.y = Math.atan2(
+        rr.heroStartPos.x - rr.doorFrontSpot.x,
+        rr.doorFrontSpot.z ? rr.heroStartPos.z - rr.doorFrontSpot.z : -1,
+      );
+      animateZoneNpc(rr.guardianMesh, this.elapsed, 0.65, true, dt, 'stand');
+      setHeroFacialExpression(this.hero, 'neutral', this.elapsed, false);
+      for (const ct of rr.captiveTargets) {
+        animateCaptiveMesh(ct.mesh, this.elapsed + ct.phaseOffset, true, false);
+      }
+      _v1.set(
+        rr.doorFrontSpot.x + fwdX * 5.6 + sideX * 2.1,
+        rr.doorFrontSpot.y + 2.8,
+        rr.doorFrontSpot.z + fwdZ * 5.6 + sideZ * 2.1,
+      );
+      _v2.set(rr.doorFrontSpot.x, rr.doorFrontSpot.y + 1.55, rr.doorFrontSpot.z);
+    } else if (rr.beat === 'walk_to_guardian') {
+      const p = THREE.MathUtils.clamp(t / 2.85, 0, 1);
+      const ease = 1 - Math.pow(1 - p, 2);
+      const walking = p < 0.99;
+
+      this.heroPos.lerpVectors(rr.heroStartPos, rr.heroTargetPos, ease);
+      this.heroPos.y = this.getDungeonSupportHeight(this.heroPos.x, this.heroPos.z, this.heroPos.y + 1.0);
+      this.hero.root.position.copy(this.heroPos);
+
+      if (walking) {
+        this.walkCycle += dt * 11.5;
+        const swing = Math.sin(this.walkCycle) * 0.56;
+        this.hero.leftLeg.rotation.x = swing;
+        this.hero.rightLeg.rotation.x = -swing;
+        this.hero.leftArm.rotation.x = -swing * 0.65;
+        this.hero.rightArm.rotation.x = swing * 0.55;
+        this.hero.body.position.y = Math.abs(Math.sin(this.walkCycle)) * 0.09;
+      } else {
+        this.hero.leftLeg.rotation.x = 0;
+        this.hero.rightLeg.rotation.x = 0;
+        this.hero.body.position.y = 0;
+      }
+      this.heroYaw = Math.atan2(
+        rr.doorFrontSpot.x - this.heroPos.x,
+        rr.doorFrontSpot.z - this.heroPos.z,
+      );
+      this.hero.body.rotation.y = this.heroYaw;
+
+      for (const ct of rr.captiveTargets) {
+        const cx = THREE.MathUtils.lerp(ct.startPos.x, ct.endPos.x, ease);
+        const cz = THREE.MathUtils.lerp(ct.startPos.z, ct.endPos.z, ease);
+        const gy = this.getDungeonSupportHeight(cx, cz, ct.startPos.y + 2.0);
+        const hop = walking
+          ? Math.abs(Math.sin(this.elapsed * 12 + ct.phaseOffset)) * 0.12
+          : Math.abs(Math.sin(this.elapsed * 5.4 + ct.phaseOffset)) * 0.1;
+        ct.mesh.position.set(cx, gy + hop, cz);
+        ct.mesh.rotation.y = Math.atan2(
+          rr.doorFrontSpot.x - cx,
+          rr.doorFrontSpot.z - cz,
+        );
+        animateCaptiveMesh(ct.mesh, this.elapsed + ct.phaseOffset, true, walking);
+      }
+
+      rr.guardianMesh.rotation.y = Math.atan2(
+        this.heroPos.x - rr.doorFrontSpot.x,
+        this.heroPos.z - rr.doorFrontSpot.z,
+      );
+      rr.guardianMesh.position.y =
+        rr.doorFrontSpot.y + Math.abs(Math.sin(this.elapsed * 5.0)) * 0.1;
+      animateZoneNpc(rr.guardianMesh, this.elapsed, 0.7, true, dt, 'stand');
+
+      _v1.set(
+        this.heroPos.x + sideX * 6.4 + fwdX * 1.4,
+        this.heroPos.y + 4.4,
+        this.heroPos.z + sideZ * 6.4 + fwdZ * 1.4,
+      );
+      _v2.set(
+        THREE.MathUtils.lerp(this.heroPos.x, rr.doorFrontSpot.x, 0.45),
+        THREE.MathUtils.lerp(this.heroPos.y, rr.doorFrontSpot.y, 0.45) + 1.5,
+        THREE.MathUtils.lerp(this.heroPos.z, rr.doorFrontSpot.z, 0.45),
+      );
+
+      if (t >= 3.25) {
+        this.transitionRibbonReunionToReunion();
+        return;
+      }
+    } else if (rr.beat === 'grateful_reunion') {
+      this.animateHeroConversation(false, dt);
+      rr.guardianMesh.rotation.y = Math.atan2(
+        this.heroPos.x - rr.doorFrontSpot.x,
+        this.heroPos.z - rr.doorFrontSpot.z,
+      );
+      rr.guardianMesh.position.y =
+        rr.doorFrontSpot.y + Math.abs(Math.sin(this.elapsed * 4.5)) * 0.08;
+      animateZoneNpc(rr.guardianMesh, this.elapsed, 0.6, true, dt, 'stand');
+      for (const ct of rr.captiveTargets) {
+        ct.mesh.position.y =
+          ct.endPos.y + Math.abs(Math.sin(this.elapsed * 5.8 + ct.phaseOffset)) * 0.14;
+        animateCaptiveMesh(ct.mesh, this.elapsed + ct.phaseOffset, true, false);
+      }
+      _v1.set(
+        rr.doorFrontSpot.x + fwdX * 6.4 + sideX * 4.2,
+        rr.doorFrontSpot.y + 3.1,
+        rr.doorFrontSpot.z + fwdZ * 6.4 + sideZ * 4.2,
+      );
+      _v2.set(
+        THREE.MathUtils.lerp(rr.doorFrontSpot.x, this.heroPos.x, 0.5),
+        rr.doorFrontSpot.y + 1.45,
+        THREE.MathUtils.lerp(rr.doorFrontSpot.z, this.heroPos.z, 0.5),
+      );
+    } else if (rr.beat === 'garden_transform') {
+      if (t >= 0.25 && !rr.transformAudioFired) {
+        rr.transformAudioFired = true;
+        soundEngine.playGardenTransform();
+        if (rig.mistGroup) rig.mistGroup.visible = false;
+        this.applyAtmosphere('dungeon', rr.zoneId, true, true);
+      }
+      if (t >= 0.45 && !rr.prisonCrumbleFired) {
+        rr.prisonCrumbleFired = true;
+        soundEngine.playBoom();
+        rig.prisonGroup.visible = false;
+        rig.prisonBars.visible = false;
+        if (rig.prisonCells && rig.prisonCells.length > 0) {
+          rig.prisonCells.forEach((cell) => {
+            cell.bars.visible = false;
+            cell.group.visible = false;
+            this.spawnBurst(cell.pos.x, cell.pos.y + 2.0, cell.pos.z, 0x34d399, 26);
+          });
+        } else {
+          this.spawnBurst(rig.prisonPos.x, rig.prisonPos.y + 1.8, rig.prisonPos.z, 0x34d399, 28);
+        }
+        rig.caveColliders = rig.caveColliders.filter((col) => !col.isPrisonCollider);
+      }
+
+      if (rig.gardenBlooms && rig.gardenBlooms.length > 0) {
+        const count = rig.gardenBlooms.length;
+        for (let i = 0; i < count; i++) {
+          const obj = rig.gardenBlooms[i];
+          const ts = typeof obj.userData.targetScale === 'number' ? obj.userData.targetScale : 1;
+          const startAt = 0.3 + (i / Math.max(1, count)) * 1.9;
+          const pGrow = THREE.MathUtils.clamp((t - startAt) / 0.85, 0, 1);
+          const bounce =
+            pGrow <= 0
+              ? 0.01
+              : pGrow < 1
+              ? Math.sin(pGrow * Math.PI) * 0.14 + pGrow
+              : 1;
+          obj.scale.setScalar(ts * Math.max(0.01, bounce));
+        }
+      }
+
+      rr.sparkAccum += dt;
+      if (rr.sparkAccum >= 0.24) {
+        rr.sparkAccum = 0;
+        const rx = isDesa ? (Math.random() - 0.5) * 60 : (Math.random() - 0.5) * 28;
+        const rz = isDesa ? (Math.random() - 0.5) * 65 : (Math.random() - 0.5) * 26;
+        const ry = this.getDungeonSupportHeight(rx, rz, 12) + 2.0;
+        this.spawnBurst(rx, ry, rz, Math.random() < 0.5 ? 0x4ade80 : 0xfef08a, 8);
+      }
+
+      this.animateHeroConversation(false, dt);
+      animateZoneNpc(rr.guardianMesh, this.elapsed, 0.5, true, dt, 'stand');
+      for (const ct of rr.captiveTargets) {
+        animateCaptiveMesh(ct.mesh, this.elapsed + ct.phaseOffset, true, false);
+      }
+
+      if (isDesa) {
+        const panP = THREE.MathUtils.clamp(t / 4.2, 0, 1);
+        _v1.set(
+          THREE.MathUtils.lerp(4.0, -2.5, panP),
+          THREE.MathUtils.lerp(18.0, 12.5, panP),
+          THREE.MathUtils.lerp(24.0, 40.5, panP),
+        );
+        _v2.set(
+          THREE.MathUtils.lerp(2.0, -10.5, panP),
+          THREE.MathUtils.lerp(8.5, 4.2, panP),
+          THREE.MathUtils.lerp(-24.0, 26.0, panP),
+        );
+      } else {
+        const panP = THREE.MathUtils.clamp(t / 4.0, 0, 1);
+        const ang = THREE.MathUtils.lerp(-0.9, 0.85, panP);
+        _v1.set(Math.sin(ang) * 14.5, 9.2, Math.cos(ang) * 11.5);
+        _v2.set(0, 2.2, THREE.MathUtils.lerp(-6.5, 9.5, panP));
+      }
+
+      if (t >= 4.5) {
+        this.transitionRibbonReunionToExitReady();
+        return;
+      }
+    } else {
+      // exit_ready: double oak/brass front doors swing wide open!
+      const openP = THREE.MathUtils.clamp(t / 0.85, 0, 1);
+      const easeOpen = 1 - Math.pow(1 - openP, 2);
+      setCaveFrontDoorOpenProgress(rig.frontDoor, Math.max(0.15, easeOpen));
+      this.animateHeroConversation(false, dt);
+      rr.guardianMesh.rotation.y = Math.atan2(
+        this.heroPos.x - rr.doorFrontSpot.x,
+        this.heroPos.z - rr.doorFrontSpot.z,
+      );
+      animateZoneNpc(rr.guardianMesh, this.elapsed, 0.65, true, dt, 'stand');
+      for (const ct of rr.captiveTargets) {
+        animateCaptiveMesh(ct.mesh, this.elapsed + ct.phaseOffset, true, false);
+      }
+      _v1.set(
+        rr.doorPos.x + fwdX * 8.6 + sideX * 2.8,
+        rr.doorPos.y + 3.9,
+        rr.doorPos.z + fwdZ * 8.6 + sideZ * 2.8,
+      );
+      _v2.set(rr.doorPos.x, rr.doorPos.y + 2.0, rr.doorPos.z);
+    }
+
+    const camLerp = 1 - Math.exp(-4.6 * dt);
+    this.camera.position.lerp(_v1, camLerp);
+    this.controls.target.lerp(_v2, camLerp);
+  }
+
   private updateStoryAnimations(dt: number): void {
     this.storyTimer += dt;
 
@@ -24919,6 +25775,11 @@ export class RpgWorldEngine {
 
     if (this.storyDialog?.kind === 'dungeon_prison_plea' && this.dungeonPrisonPleaCutscene) {
       this.updateDungeonPrisonPleaCutscene(dt);
+      return;
+    }
+
+    if (this.storyDialog?.kind === 'dungeon_ribbon_reunion' && this.dungeonRibbonReunionCutscene) {
+      this.updateDungeonRibbonReunionCutscene(dt);
       return;
     }
 
@@ -25410,6 +26271,7 @@ export class RpgWorldEngine {
         this.storyDialog?.kind === 'village_rescue_escort' ||
         this.storyDialog?.kind === 'dungeon_intro' ||
         this.storyDialog?.kind === 'dungeon_rescue' ||
+        this.storyDialog?.kind === 'dungeon_ribbon_reunion' ||
         this.storyDialog?.kind === 'dungeon_reunion_exit' ||
         this.storyDialog?.kind === 'area_cleared');
     if (inPrologue || inAmbushCutscene) {
@@ -25652,6 +26514,24 @@ export class RpgWorldEngine {
           this.dungeonRig.ribbonPivot.rotation.y += dt * 1.85;
           this.dungeonRig.ribbonPivot.position.y = 1.35 + Math.sin(this.elapsed * 2.9) * 0.14;
           this.dungeonRig.ribbonRingMat.opacity = 0.65 + Math.sin(this.elapsed * 4.2) * 0.25;
+        }
+        if (this.dungeonRig.gardenGroup?.visible) {
+          animateCaveButterflies(this.dungeonRig.butterflies, this.elapsed);
+        }
+        if (this.dungeonRig.frontDoor && this.storyDialog?.kind !== 'dungeon_ribbon_reunion') {
+          const zIdCur = this.dungeonState?.zoneId;
+          const distToExit = Math.hypot(
+            this.heroPos.x - this.dungeonExitPos.x,
+            this.heroPos.z - this.dungeonExitPos.z,
+          );
+          const targetOpen =
+            (zIdCur && this.ribbons.has(zIdCur)) || distToExit < 6.8 ? 1.0 : 0.15;
+          const nextOpen = THREE.MathUtils.lerp(
+            this.dungeonRig.frontDoor.openProgress,
+            targetOpen,
+            1 - Math.exp(-6.5 * dt),
+          );
+          setCaveFrontDoorOpenProgress(this.dungeonRig.frontDoor, nextOpen);
         }
         for (const blk of this.dungeonRig.caveBlocks) {
           if (blk.alive && blk.mesh.scale.x < 0.999) {
@@ -32561,6 +33441,60 @@ export class RpgWorldEngine {
       return labels;
     }
 
+    if (
+      this.dungeonRibbonReunionCutscene &&
+      this.storyDialog?.kind === 'dungeon_ribbon_reunion'
+    ) {
+      const rr = this.dungeonRibbonReunionCutscene;
+      const activeDef = getActiveZoneNpcDef(rr.zoneId, this.getCurrentDayPhase() === 'malam');
+      const gName = activeDef.name || ZONE_CAVE_STORIES[rr.zoneId].guardianName;
+      if (rr.beat !== 'garden_transform') {
+        const gp = projectPoint(
+          rr.guardianMesh.position.x,
+          rr.guardianMesh.position.y + 2.8,
+          rr.guardianMesh.position.z,
+        );
+        if (gp) {
+          labels.push({
+            id: 'ribbon_reunion_guardian',
+            x: gp.x,
+            y: gp.y,
+            title:
+              rr.beat === 'guardian_beckon'
+                ? `👋 ${gName}: "Kemarilah ke Pintu Depan!"`
+                : rr.beat === 'walk_to_guardian'
+                ? `🤗 ${gName} menunggu di Pintu Depan Gua`
+                : rr.beat === 'grateful_reunion'
+                ? `🥹 ${gName} sangat bahagia & berterima kasih!`
+                : `🚪 ${gName}: "Ayo keluar lewat Pintu Depan!"`,
+            kind: 'speech',
+          });
+        }
+        const hp = projectPoint(this.heroPos.x, this.heroPos.y + 2.85, this.heroPos.z);
+        if (hp && rr.beat === 'walk_to_guardian') {
+          labels.push({
+            id: 'ribbon_reunion_hero',
+            x: hp.x,
+            y: hp.y,
+            title: '🎉 Menuju Penjaga di Pintu Depan!',
+            kind: 'speech',
+          });
+        }
+      } else {
+        const dp = projectPoint(rr.doorPos.x, rr.doorPos.y + 4.8, rr.doorPos.z);
+        if (dp) {
+          labels.push({
+            id: 'ribbon_reunion_garden',
+            x: dp.x,
+            y: dp.y,
+            title: '🦋 Gua Berubah Menjadi Taman Asri & Kupu-Kupu!',
+            kind: 'npc_alert',
+          });
+        }
+      }
+      return labels;
+    }
+
     if (this.villageAmbushState?.active) {
       const amb = this.villageAmbushState;
       const showAmbNpcLabels =
@@ -32845,6 +33779,33 @@ export class RpgWorldEngine {
                 : 'Pandu: Hancurkan tumpukan box dgn Kapak/Beliung!',
               kind: 'speech',
             });
+          }
+        }
+        if (this.dungeonRig.frontDoor && this.phase === 'playing') {
+          const dExit = Math.hypot(
+            this.dungeonExitPos.x - this.heroPos.x,
+            this.dungeonExitPos.z - this.heroPos.z,
+          );
+          if (this.ribbons.has(this.dungeonState.zoneId) || dExit < 24) {
+            const ep = projectPoint(
+              this.dungeonExitPos.x,
+              this.dungeonExitPos.y + 5.65,
+              this.dungeonExitPos.z,
+            );
+            if (ep) {
+              labels.push({
+                id: 'cave_front_door_exit',
+                x: ep.x,
+                y: ep.y,
+                title: this.nearDungeonExit
+                  ? '🚪 Pintu Depan Gua (Tekan E / Keluar!)'
+                  : '🚪 Pintu Depan Gua',
+                subtext: this.ribbons.has(this.dungeonState.zoneId)
+                  ? 'Taman Asri Terbuka · Keluar Menuju Pulau'
+                  : 'Jalan Keluar Menuju Pulau',
+                kind: 'door',
+              });
+            }
           }
         }
       }
@@ -33214,6 +34175,32 @@ export class RpgWorldEngine {
             title: `🦅 ${m.name}`,
             subtext: `Perisai Kata ${m.stanceHp ?? spec.stanceHp}/${spec.stanceHp} · Bawa Kuis`,
             kind: 'monster',
+          });
+        }
+      }
+    }
+
+    if (this.worldMode === 'overworld' && this.phase === 'playing' && this.guidedOutsideZoneId) {
+      const nearestGuided = this.getNearestGuidedOutsideMonster(this.guidedOutsideZoneId);
+      if (nearestGuided) {
+        const distGuided = Math.round(
+          Math.hypot(nearestGuided.x - this.heroPos.x, nearestGuided.z - this.heroPos.z),
+        );
+        const guidedY =
+          nearestGuided.y ?? getArchipelagoGroundY(nearestGuided.x, nearestGuided.z);
+        const gp = projectPoint(
+          nearestGuided.x,
+          guidedY + Math.max(2.9, MONSTER_SPECS[nearestGuided.type].hitHalfH * 2.1),
+          nearestGuided.z,
+        );
+        if (gp) {
+          labels.push({
+            id: 'guided_outside_target',
+            x: gp.x,
+            y: gp.y,
+            title: `🧭 Penuntun: ${nearestGuided.name} (${distGuided}m)`,
+            subtext: 'Habisi seluruh monster luar tersisa!',
+            kind: 'npc_alert',
           });
         }
       }
@@ -34925,6 +35912,16 @@ export class RpgWorldEngine {
       nearHiddenPrison: this.nearHiddenPrison,
       nearPortal: this.nearPortal,
       nearDungeonExit: this.nearDungeonExit,
+      guidedOutsideZoneName:
+        this.worldMode === 'overworld' &&
+        this.guidedOutsideZoneId &&
+        this.getZoneIslandCounts(this.guidedOutsideZoneId).alive > 0
+          ? ZONE_INFO[this.guidedOutsideZoneId].name
+          : null,
+      guidedOutsideRemaining:
+        this.worldMode === 'overworld' && this.guidedOutsideZoneId
+          ? this.getZoneIslandCounts(this.guidedOutsideZoneId).alive
+          : 0,
       portalUnlocked:
         !IELTS_TEMPORARILY_LOCKED && (!this.settings.storyLocked || this.ribbons.size >= 6),
       dungeonState: this.dungeonState

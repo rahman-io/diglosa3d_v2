@@ -1464,7 +1464,13 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                     </span>
                   </span>
                 </div>
-                {stats.captiveRescued &&
+                {hud.guidedOutsideZoneName && (hud.guidedOutsideRemaining ?? 0) > 0 && (
+                  <div className="mt-0.5 truncate font-mono-nums text-[8.5px] font-black text-amber-200 sm:text-[9px]">
+                    🧭 Penjaga menuntun: Habisi {hud.guidedOutsideRemaining} monster luar di {hud.guidedOutsideZoneName}!
+                  </div>
+                )}
+                {!hud.guidedOutsideZoneName &&
+                  stats.captiveRescued &&
                   !hud.liberatedZones.includes(hud.activeZoneId) &&
                   (stats.zoneIslandRemaining ?? 0) > 0 && (
                     <div className="mt-0.5 truncate font-mono-nums text-[8.5px] font-extrabold text-amber-300 sm:text-[9px]">

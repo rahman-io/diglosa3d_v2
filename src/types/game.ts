@@ -464,6 +464,7 @@ export interface StoryDialogState {
     | 'dungeon_boss_defeat'
     | 'dungeon_prison_plea'
     | 'dungeon_rescue'
+    | 'dungeon_ribbon_reunion'
     | 'dungeon_reunion_exit'
     | 'cave_guardian';
   step: number;
@@ -508,6 +509,12 @@ export interface StoryDialogState {
     | 'captive_cry_plea'
     | 'hero_promise'
     | 'captive_hope';
+  dungeonRibbonReunionBeat?:
+    | 'guardian_beckon'
+    | 'walk_to_guardian'
+    | 'grateful_reunion'
+    | 'garden_transform'
+    | 'exit_ready';
   bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry' | 'remorse';
   heroExpression?: 'neutral' | 'fierce';
   captiveExpression?: 'neutral' | 'sad_injured' | 'happy';
@@ -673,6 +680,8 @@ export interface RpgHudSnapshot {
   nearPortal: boolean;
   nearDungeonExit: boolean;
   portalUnlocked: boolean;
+  guidedOutsideZoneName?: string | null;
+  guidedOutsideRemaining?: number;
   dungeonState: DungeonZoneState | null;
   areaMonsterStats: AreaMonsterStats;
   liberatedZones: ZoneId[];

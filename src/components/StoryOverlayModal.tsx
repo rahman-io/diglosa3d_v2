@@ -402,6 +402,11 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
       story.dungeonBossDefeatBeat === 'key_emerge' ||
       story.dungeonBossDefeatBeat === 'prisoners_celebrate');
 
+  const isRibbonReunionCinema =
+    story.kind === 'dungeon_ribbon_reunion' &&
+    (story.dungeonRibbonReunionBeat === 'walk_to_guardian' ||
+      story.dungeonRibbonReunionBeat === 'garden_transform');
+
   if (
     (story.kind === 'dungeon_intro' &&
       (story.dungeonIntroBeat === 'emerge' || story.dungeonIntroBeat === 'retreat')) ||
@@ -410,7 +415,8 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
         story.dungeonBossSummonBeat === 'boss_furious_summon')) ||
     (story.kind === 'dungeon_boss_solo_rage' && story.dungeonBossSoloBeat === 'rage_erupt') ||
     (story.kind === 'dungeon_prison_plea' && story.dungeonPrisonPleaBeat === 'discover') ||
-    isBossDefeatCinema
+    isBossDefeatCinema ||
+    isRibbonReunionCinema
   ) {
     const isPrisonPleaDiscover = story.kind === 'dungeon_prison_plea';
     const isPrisonerCelebrate =
@@ -419,8 +425,18 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     const isKeyEmerge =
       story.kind === 'dungeon_boss_defeat' &&
       story.dungeonBossDefeatBeat === 'key_emerge';
+    const isGardenTransform =
+      story.kind === 'dungeon_ribbon_reunion' &&
+      story.dungeonRibbonReunionBeat === 'garden_transform';
+    const isWalkToGuardian =
+      story.kind === 'dungeon_ribbon_reunion' &&
+      story.dungeonRibbonReunionBeat === 'walk_to_guardian';
     const cinemaBadge =
-      isPrisonerCelebrate
+      isGardenTransform
+        ? 'Taman Asri & Kupu-Kupu'
+        : isWalkToGuardian
+        ? 'Menuju Pintu Depan Gua'
+        : isPrisonerCelebrate
         ? 'Tahanan Bersukacita & Haru'
         : isKeyEmerge
         ? 'Kunci Penjara Muncul'
@@ -447,7 +463,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
                 style={{ transform: `translate3d(${lbl.x}px, ${lbl.y}px, 0) translate(-50%, -100%)` }}
                 className={`absolute left-0 top-0 whitespace-nowrap shadow-lg ${
                   lbl.kind === 'speech'
-                    ? isPrisonerCelebrate
+                    ? isPrisonerCelebrate || isGardenTransform || isWalkToGuardian
                       ? 'rounded-2xl border-2 border-emerald-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-emerald-100'
                       : isKeyEmerge
                       ? 'rounded-2xl border-2 border-amber-300 bg-slate-950/95 px-3 py-1 text-xs font-black text-amber-100'
@@ -467,7 +483,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
           <div className="flex min-w-0 items-center gap-2">
             <span
               className={`inline-flex shrink-0 items-center rounded-full border px-2.5 py-0.5 text-[10px] font-black uppercase tracking-wider sm:text-xs ${
-                isPrisonerCelebrate
+                isPrisonerCelebrate || isGardenTransform || isWalkToGuardian
                   ? 'border-emerald-300/80 bg-emerald-950/90 text-emerald-100'
                   : isKeyEmerge
                   ? 'border-amber-300/80 bg-amber-950/90 text-amber-100'
@@ -543,6 +559,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     story.kind === 'dungeon_prison_plea' ||
     story.kind === 'cave_guardian' ||
     story.kind === 'dungeon_rescue' ||
+    story.kind === 'dungeon_ribbon_reunion' ||
     story.kind === 'dungeon_reunion_exit';
 
   const caveStory = story.zoneId ? ZONE_CAVE_STORIES[story.zoneId] : null;
@@ -650,7 +667,8 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
         story.kind === 'dungeon_boss_summon' ||
         story.kind === 'dungeon_boss_solo_rage' ||
         story.kind === 'dungeon_boss_defeat' ||
-        story.kind === 'dungeon_prison_plea') &&
+        story.kind === 'dungeon_prison_plea' ||
+        story.kind === 'dungeon_ribbon_reunion') &&
         projectedLabels &&
         projectedLabels.length > 0 && (
         <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden">
