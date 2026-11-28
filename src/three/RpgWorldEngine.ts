@@ -8768,6 +8768,24 @@ export class RpgWorldEngine {
     );
   }
 
+  private isCaveDoorsLockedByMinions(zoneId: ZoneId): boolean {
+    if (zoneId !== 'desa_sapaan') return false;
+    if (!this.dungeonState || this.dungeonState.zoneId !== zoneId) return false;
+    if (
+      this.dungeonState.bossDefeated ||
+      this.dungeonState.bossSpawned ||
+      this.dungeonState.doorsCleared.length > 0
+    ) {
+      return false;
+    }
+    const nonBossAlive = this.dungeonMonsters.some(
+      (m) => m.alive && !m.isBoss && !m.isBossMinion,
+    );
+    const shooterAlive = this.shooters.some((s) => s.alive);
+    if (nonBossAlive || shooterAlive) return true;
+    return !this.caveDoorGuideSeenZones.has(zoneId);
+  }
+
   private getDoor5GateStatus(
     zoneId: ZoneId,
     cleared: Set<number>,
@@ -9853,9 +9871,6 @@ export class RpgWorldEngine {
     this.clearDungeonDoorGuideCutscene();
     if (!this.dungeonRig) return;
 
-    this.caveDoorGuideSeenZones.add(zoneId);
-    this.saveProgress();
-
     if (this.cameraMode === 'first_person') {
       this.cameraMode = 'third_back';
     }
@@ -10060,6 +10075,7 @@ export class RpgWorldEngine {
 
   private finishDungeonDoorGuideCutscene(): void {
     const dg = this.dungeonDoorGuideCutscene;
+    const finishedZoneId = dg?.zoneId ?? this.dungeonState?.zoneId;
     const doorName = dg?.doorName || 'Pintu Tantangan';
     const remDoors = dg?.remainingDoors ?? 5;
     if (dg) {
@@ -10069,6 +10085,10 @@ export class RpgWorldEngine {
         dg.doorPos.z - dg.heroDoorPos.z,
       );
       this.clearDungeonDoorGuideCutscene();
+    }
+
+    if (finishedZoneId) {
+      this.caveDoorGuideSeenZones.add(finishedZoneId);
     }
 
     this.heroVel.set(0, 0, 0);
@@ -10087,6 +10107,8 @@ export class RpgWorldEngine {
 
     this.storyDialog = null;
     this.phase = 'playing';
+    this.updateDungeonDoorVisuals();
+    this.saveProgress();
     this.applyCameraVisibilityAndControls();
     this.snapCameraBehindHero();
     this.showBanner(
@@ -12451,7 +12473,6 @@ export class RpgWorldEngine {
     }
 
     // If all 5 doors & monster waves already done (re-entering after Door 4), spawn Boss if not yet defeated
-    this.updateDungeonDoorVisuals();
     this.syncShootersForDifficulty();
     if (bossBeaten) {
       this.shooters.forEach((s) => {
@@ -12468,6 +12489,7 @@ export class RpgWorldEngine {
       }
     }
     this.syncDungeonMonsterStats();
+    this.updateDungeonDoorVisuals();
 
     this.nearbyNpcId = null;
     this.nearbyOverworldZoneDoor = null;
@@ -12537,11 +12559,12 @@ export class RpgWorldEngine {
     if (!this.dungeonRig || !this.dungeonState) return;
     const cleared = new Set(this.dungeonState.doorsCleared);
     const readyForDoor4 = this.getDoor5GateStatus(this.dungeonState.zoneId, cleared).ready;
+    const lockedByMinions = this.isCaveDoorsLockedByMinions(this.dungeonState.zoneId);
 
     for (const d of this.dungeonRig.doors) {
       if (cleared.has(d.index)) {
         updateDoorRigVisual(d, 'cleared');
-      } else if (d.index === 4 && !readyForDoor4) {
+      } else if (lockedByMinions || (d.index === 4 && !readyForDoor4)) {
         updateDoorRigVisual(d, 'locked');
       } else {
         updateDoorRigVisual(d, 'open');
@@ -16812,6 +16835,15 @@ export class RpgWorldEngine {
     const door = ZONE_DOORS[zId][doorIndex];
     if (!door) return;
 
+    if (this.isCaveDoorsLockedByMinions(zId)) {
+      soundEngine.playNo();
+      this.showBanner(
+        '🔒 Pintu tantangan terkunci! Kalahkan semua monster anak buah dulu sampai Penjaga datang menyampaikan petunjuk.',
+        3.8,
+      );
+      return;
+    }
+
     const cleared = new Set(this.dungeonState.doorsCleared);
     if (doorIndex === 4) {
       const gate = this.getDoor5GateStatus(zId, cleared);
@@ -20613,29 +20645,41 @@ export class RpgWorldEngine {
         : this.overworldClickables;
     const hits = this.raycaster.intersectObjects(targets, true);
     if (hits.length > 0) {
-      let obj: THREE.Object3D | null = hits[0].object;
-      while (
-        obj &&
-        !obj.userData.npcId &&
-        !obj.userData.monsterId &&
-        !obj.userData.portal &&
-        !obj.userData.driveableCar &&
-        !obj.userData.driveablePlane &&
-        !obj.userData.dungeonExit &&
-        !obj.userData.academyExit &&
-        !obj.userData.oceanExit &&
-        !obj.userData.oceanChestId &&
-        !obj.userData.biotaNodeId &&
-        !obj.userData.caveBlockId &&
-        !obj.userData.caveWeaponChest &&
-        !obj.userData.caveSeaWeaponChest &&
-        !obj.userData.craftingTable &&
-        !obj.userData.caveGuardian &&
-        !obj.userData.prisonKey &&
-        !obj.userData.hiddenPrison &&
-        obj.userData.doorIndex === undefined
-      ) {
-        obj = obj.parent;
+      const lockDoorsByMinions =
+        this.worldMode === 'dungeon' &&
+        Boolean(this.dungeonState && this.isCaveDoorsLockedByMinions(this.dungeonState.zoneId));
+      let obj: THREE.Object3D | null = null;
+      for (const hit of hits) {
+        let cur: THREE.Object3D | null = hit.object;
+        while (
+          cur &&
+          !cur.userData.npcId &&
+          !cur.userData.monsterId &&
+          !cur.userData.portal &&
+          !cur.userData.driveableCar &&
+          !cur.userData.driveablePlane &&
+          !cur.userData.dungeonExit &&
+          !cur.userData.academyExit &&
+          !cur.userData.oceanExit &&
+          !cur.userData.oceanChestId &&
+          !cur.userData.biotaNodeId &&
+          !cur.userData.caveBlockId &&
+          !cur.userData.caveWeaponChest &&
+          !cur.userData.caveSeaWeaponChest &&
+          !cur.userData.craftingTable &&
+          !cur.userData.caveGuardian &&
+          !cur.userData.prisonKey &&
+          !cur.userData.hiddenPrison &&
+          cur.userData.doorIndex === undefined
+        ) {
+          cur = cur.parent;
+        }
+        if (!cur) continue;
+        if (lockDoorsByMinions && cur.userData.doorIndex !== undefined) {
+          continue;
+        }
+        obj = cur;
+        break;
       }
       if (obj) {
         if (obj.userData.driveableCar && this.worldMode === 'overworld') {
@@ -20843,6 +20887,9 @@ export class RpgWorldEngine {
           return;
         }
         if (obj.userData.doorIndex !== undefined && this.worldMode === 'dungeon') {
+          if (this.dungeonState && this.isCaveDoorsLockedByMinions(this.dungeonState.zoneId)) {
+            return;
+          }
           this.openDungeonDoor(Number(obj.userData.doorIndex));
           return;
         }
@@ -32012,17 +32059,21 @@ export class RpgWorldEngine {
         this.collectCaveSeaWeaponChest();
       }
 
-      let bestDoor: number | null = null;
-      let bestDoorDist = this.dungeonState.zoneId === 'desa_sapaan' ? 5.2 : 4.6;
-      for (const door of ZONE_DOORS[this.dungeonState.zoneId]) {
-        if (Math.abs(this.heroPos.y - (door.y ?? 0)) > 3.4) continue;
-        const d = Math.hypot(this.heroPos.x - door.x, this.heroPos.z - door.z);
-        if (d < bestDoorDist) {
-          bestDoorDist = d;
-          bestDoor = door.index;
+      if (this.isCaveDoorsLockedByMinions(this.dungeonState.zoneId)) {
+        this.nearbyDoorIndex = null;
+      } else {
+        let bestDoor: number | null = null;
+        let bestDoorDist = this.dungeonState.zoneId === 'desa_sapaan' ? 5.2 : 4.6;
+        for (const door of ZONE_DOORS[this.dungeonState.zoneId]) {
+          if (Math.abs(this.heroPos.y - (door.y ?? 0)) > 3.4) continue;
+          const d = Math.hypot(this.heroPos.x - door.x, this.heroPos.z - door.z);
+          if (d < bestDoorDist) {
+            bestDoorDist = d;
+            bestDoor = door.index;
+          }
         }
+        this.nearbyDoorIndex = bestDoor;
       }
-      this.nearbyDoorIndex = bestDoor;
     } else if (this.worldMode === 'academy') {
       this.nearbyDoorIndex = null;
       this.nearbyOverworldZoneDoor = null;
@@ -34717,9 +34768,15 @@ export class RpgWorldEngine {
         const cleared = new Set(this.dungeonState.doorsCleared);
         const gate = this.getDoor5GateStatus(this.dungeonState.zoneId, cleared);
         const readyForDoor4 = gate.ready;
+        const lockedByMinions = this.isCaveDoorsLockedByMinions(this.dungeonState.zoneId);
+        const remainingMinions = lockedByMinions
+          ? this.dungeonMonsters.filter((m) => m.alive && !m.isBoss && !m.isBossMinion).length +
+            this.shooters.filter((s) => s.alive).length
+          : 0;
         for (const door of ZONE_DOORS[this.dungeonState.zoneId]) {
           const isCleared = cleared.has(door.index);
-          const isLocked = door.index === 4 && !readyForDoor4 && !isCleared;
+          const isMinionLocked = lockedByMinions && !isCleared;
+          const isLocked = isMinionLocked || (door.index === 4 && !readyForDoor4 && !isCleared);
           const doorLabelOffset =
             door.index === 4 && this.dungeonState.zoneId === 'desa_sapaan' ? 9.5 : 5.2;
           const dp = projectPoint(door.x, (door.y ?? 0) + doorLabelOffset, door.z);
@@ -34735,6 +34792,10 @@ export class RpgWorldEngine {
                 : `${door.index + 1}. ${door.name}`,
               subtext: isCleared
                 ? 'Sudah Dijawab ✓'
+                : isMinionLocked
+                ? remainingMinions > 0
+                  ? `Terkunci · Kalahkan ${remainingMinions} Monster dulu`
+                  : 'Terkunci · Tunggu Penjaga datang'
                 : isLocked
                 ? gate.labelSubtext
                 : door.modeLabel,
