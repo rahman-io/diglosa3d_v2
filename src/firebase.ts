@@ -38,7 +38,7 @@ function createFirestoreInstance(): Firestore {
   }
   try {
     const settings: FirestoreSettings = {
-      experimentalAutoDetectLongPolling: true,
+      experimentalForceLongPolling: true,
     };
     return initializeFirestore(app, settings, databaseId);
   } catch {

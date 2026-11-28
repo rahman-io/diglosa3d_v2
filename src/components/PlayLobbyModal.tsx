@@ -14,10 +14,8 @@ import {
   Heart,
   LogIn,
   LogOut,
-  MapPin,
   Play,
   RotateCw,
-  Shuffle,
   Sparkles,
   Swords,
   User as UserIcon,
@@ -36,7 +34,6 @@ import {
   MultiplayerMemberDoc,
   MultiplayerRoomDoc,
   PlayModeType,
-  SpawnPreference,
 } from '../types/game';
 import type { LobbyDraftState, LobbyWizardStep } from '../utils/sessionStage';
 import { HeroPreviewCanvas } from './HeroPreviewCanvas';
@@ -62,7 +59,7 @@ interface PlayLobbyModalProps {
   onUpdateRoomGroupName?: (groupName: string) => Promise<void>;
   onSignIn: () => Promise<void>;
   onContinueSolo: () => void;
-  onConfirmSolo: (difficulty: DifficultyMode, spawnMode: SpawnPreference) => void;
+  onConfirmSolo: (difficulty: DifficultyMode) => void;
   onRejoinRoom: () => Promise<void>;
   onDismissResumableRoom: () => Promise<void>;
   onCreateGroupRoom: (difficulty: DifficultyMode, groupName: string) => Promise<void>;
@@ -195,9 +192,6 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
   const [difficulty, setDifficulty] = useState<DifficultyMode>(
     () => restoredLobbyDraft?.difficulty ?? initialDifficulty,
   );
-  const [spawnPref, setSpawnPref] = useState<SpawnPreference>(
-    () => restoredLobbyDraft?.spawnPref ?? 'random',
-  );
   const [joinCode, setJoinCode] = useState(() => restoredLobbyDraft?.joinCode ?? '');
   const [editingRoomGroup, setEditingRoomGroup] = useState(false);
   const [roomGroupDraft, setRoomGroupDraft] = useState('');
@@ -216,7 +210,6 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
         setWizardStep(restoredLobbyDraft.wizardStep);
         setPlayMode(restoredLobbyDraft.playMode);
         setDifficulty(restoredLobbyDraft.difficulty);
-        setSpawnPref(restoredLobbyDraft.spawnPref);
         setJoinCode(restoredLobbyDraft.joinCode);
       } else {
         setDifficulty(initialDifficulty);
@@ -231,10 +224,9 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
       wizardStep,
       playMode,
       difficulty,
-      spawnPref,
       joinCode,
     });
-  }, [open, wizardStep, playMode, difficulty, spawnPref, joinCode, onLobbyDraftChange]);
+  }, [open, wizardStep, playMode, difficulty, joinCode, onLobbyDraftChange]);
 
   useEffect(() => {
     if (!open) return;
@@ -945,7 +937,7 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                             key={card.id}
                             type="button"
                             onClick={() => setDifficulty(card.id)}
-                            onDoubleClick={() => onConfirmSolo(card.id, spawnPref)}
+                            onDoubleClick={() => onConfirmSolo(card.id)}
                             className={`group relative flex min-h-[165px] flex-col justify-between overflow-hidden rounded-2xl border-2 text-left transition-all duration-200 sm:min-h-[245px] ${
                               isSelected
                                 ? `${card.borderSelected} ${card.glowClass} scale-[1.01] brightness-105`
@@ -1005,71 +997,16 @@ export const PlayLobbyModal: React.FC<PlayLobbyModalProps> = ({
                       })}
                     </div>
 
-                    {/* Spawn Option + Solo CTA */}
-                    <div className="flex flex-col justify-between gap-2.5 rounded-2xl border border-white/12 bg-slate-900/75 px-3.5 py-2.5 sm:flex-row sm:items-center">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="text-[11px] font-bold text-slate-300">Lokasi Spawn</span>
-                        <button
-                          type="button"
-                          onClick={() => setSpawnPref('random')}
-                          className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-extrabold transition ${
-                            spawnPref === 'random'
-                              ? 'border-cyan-300 bg-cyan-500/20 text-cyan-100'
-                              : 'border-white/15 bg-slate-950/60 text-slate-300 hover:border-white/35'
-                          }`}
-                        >
-                          <Shuffle className="h-3 w-3" />
-                          <span>Acak Aman (8 Titik)</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => setSpawnPref('default')}
-                          className={`inline-flex items-center gap-1.5 rounded-xl border px-2.5 py-1 text-[11px] font-extrabold transition ${
-                            spawnPref === 'default'
-                              ? 'border-amber-300 bg-amber-500/20 text-amber-100'
-                              : 'border-white/15 bg-slate-950/60 text-slate-300 hover:border-white/35'
-                          }`}
-                        >
-                          <MapPin className="h-3 w-3" />
-                          <span>Desa Sapaan (Standar)</span>
-                        </button>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-2">
-                        {hasSavedGame && (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => {
-                              if (resumableRoom) {
-                                void runAction(async () => {
-                                  await onDismissResumableRoom();
-                                  onContinueSolo();
-                                });
-                              } else {
-                                onContinueSolo();
-                              }
-                            }}
-                            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-emerald-300/65 bg-gradient-to-r from-emerald-500 to-teal-600 px-4 py-2.5 text-sm font-black text-white shadow-[0_6px_22px_rgba(16,185,129,0.35)] transition hover:brightness-110 active:translate-y-0.5 disabled:opacity-50 sm:w-auto"
-                          >
-                            <Play className="h-4 w-4" />
-                            <span>Lanjutkan Save Solo</span>
-                          </button>
-                        )}
-
-                        <button
-                          type="button"
-                          onClick={() => onConfirmSolo(difficulty, spawnPref)}
-                          className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-sky-300/60 bg-gradient-to-r from-sky-500 to-blue-600 px-5 py-2.5 text-sm font-black text-white shadow-[0_6px_22px_rgba(14,165,233,0.4)] transition hover:brightness-110 active:translate-y-0.5 sm:w-auto sm:min-w-[200px]"
-                        >
-                          <span>
-                            {hasSavedGame
-                              ? `Mulai Baru (${activeDiffSpec.title})`
-                              : `Mulai Solo (${activeDiffSpec.title})`}
-                          </span>
-                          <ChevronRight className="h-4 w-4" />
-                        </button>
-                      </div>
+                    {/* Solo CTA */}
+                    <div className="flex justify-end rounded-2xl border border-white/12 bg-slate-900/75 px-3.5 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => onConfirmSolo(difficulty)}
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-sky-300/60 bg-gradient-to-r from-sky-500 to-blue-600 px-5 py-2.5 text-sm font-black text-white shadow-[0_6px_22px_rgba(14,165,233,0.4)] transition hover:brightness-110 active:translate-y-0.5 sm:w-auto sm:min-w-[200px]"
+                      >
+                        <span>Mulai Solo ({activeDiffSpec.title})</span>
+                        <ChevronRight className="h-4 w-4" />
+                      </button>
                     </div>
                   </>
                 ) : !isVerifiedUser ? (

@@ -6,7 +6,6 @@ import type {
   GamePhase,
   LearningSessionContext,
   PlayModeType,
-  SpawnPreference,
   WaveMissionState,
 } from '../types/game';
 
@@ -16,7 +15,6 @@ export interface LobbyDraftState {
   wizardStep: LobbyWizardStep;
   playMode: PlayModeType;
   difficulty: DifficultyMode;
-  spawnPref: SpawnPreference;
   joinCode: string;
 }
 
@@ -76,7 +74,6 @@ export function loadActiveSessionStage(): ActiveSessionSnapshot | null {
               : 'character',
         playMode: parsed.lobbyDraft?.playMode ?? 'solo',
         difficulty: parsed.lobbyDraft?.difficulty ?? 'petualang',
-        spawnPref: parsed.lobbyDraft?.spawnPref ?? 'random',
         joinCode: typeof parsed.lobbyDraft?.joinCode === 'string' ? parsed.lobbyDraft.joinCode : '',
       },
       mpRoomId: typeof parsed.mpRoomId === 'string' ? parsed.mpRoomId : null,

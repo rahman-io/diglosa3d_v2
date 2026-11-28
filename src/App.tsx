@@ -134,7 +134,6 @@ import {
   MultiplayerRoomDoc,
   RoomChatMessage,
   RpgHudSnapshot,
-  SpawnPreference,
   UserProfileRecord,
   WaveMissionState,
 } from './types/game';
@@ -314,7 +313,6 @@ function DiglosaRpgApp() {
         wizardStep: 'character',
         playMode: 'solo',
         difficulty: 'petualang',
-        spawnPref: 'random',
         joinCode: '',
       },
   );
@@ -2081,7 +2079,7 @@ function DiglosaRpgApp() {
   }, [hud.hasSavedGame, resumableRoom, handleStartNew]);
 
   const handleConfirmSolo = useCallback(
-    (difficulty: DifficultyMode, spawnMode: SpawnPreference) => {
+    (difficulty: DifficultyMode) => {
       if (getAlwaysFullscreenPref()) void requestAppFullscreen();
       if (activeRoom) {
         void handleLeaveMultiplayerRoom(false).catch(() => undefined);
@@ -2115,7 +2113,7 @@ function DiglosaRpgApp() {
       engineRef.current?.setLocalAppearance(characterId, playerName);
       engineRef.current?.setMultiplayerActive(false);
       engineRef.current?.startNewGame(hud.settings.aimMode, difficulty, {
-        spawnMode,
+        spawnMode: 'default',
         characterId,
         playerName,
         waveSeed,
