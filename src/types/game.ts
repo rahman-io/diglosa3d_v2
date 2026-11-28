@@ -446,6 +446,18 @@ export interface ProjectedLabel {
   subtext?: string;
 }
 
+export interface CitizenGreetingLabel {
+  id: string;
+  speakerName: string;
+  badge: string;
+  textId: string;
+  textEn: string;
+  mood: 'admire' | 'cheer' | 'grateful';
+  x: number;
+  y: number;
+  progress: number;
+}
+
 export interface StoryDialogState {
   kind:
     | 'prologue'
@@ -697,6 +709,7 @@ export interface RpgHudSnapshot {
   ieltsScores: Record<'listening' | 'reading' | 'writing' | 'speaking' | 'full', number>;
   quests: RpgQuestState[];
   projectedLabels: ProjectedLabel[];
+  citizenGreetings: CitizenGreetingLabel[];
   bannerMessage: string | null;
   caveCountdown?: {
     step: 3 | 2 | 1 | 'go';

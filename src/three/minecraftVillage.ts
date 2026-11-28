@@ -110,9 +110,16 @@ export interface VillagerActor {
     caveThresholdIdx: number;
   };
   caveTransitTimer?: number;
+  displayName: string;
+  roleBadge: string;
+  greetTimer: number;
+  greetCooldown: number;
+  greetVariant: number;
+  greetPause: number;
+  wasHeroNear: boolean;
 }
 
-interface GolemActor {
+export interface GolemActor {
   root: THREE.Group;
   bodyPivot: THREE.Group;
   headGroup: THREE.Group;
@@ -133,6 +140,13 @@ interface GolemActor {
   stuckTimer: number;
   avoidSign: number;
   interactable?: VillageInteractable;
+  displayName: string;
+  roleBadge: string;
+  greetTimer: number;
+  greetCooldown: number;
+  greetVariant: number;
+  greetPause: number;
+  wasHeroNear: boolean;
 }
 
 interface LlamaActor {
@@ -208,7 +222,46 @@ export interface MinecraftVillageRig {
     seeds: Float32Array;
     count: number;
   };
+  greetChimeRequested: boolean;
   disposables: Array<{ dispose: () => void }>;
+}
+
+const DESA_CHILD_ADMIRE_LINES = [
+  { id: 'Hore, Kak {player} lewat! Pahlawan paling keren sedunia!', en: 'Yay! Hero {player} is here!' },
+  { id: 'Kak {player} terkenal banget di desa! Semua anak mengagumimu!', en: 'Everyone here admires you, {player}!' },
+  { id: 'Terima kasih Kak {player}! Kami bisa main aman tanpa monster lagi!', en: 'Thank you for saving us, {player}!' },
+] as const;
+
+const DESA_YOUTH_ADMIRE_LINES = [
+  { id: 'Halo {player} sang penyelamat! Desa Sapaan damai berkat jasamu!', en: 'Hello {player}, savior of our village!' },
+  { id: 'Senang sekali melihat {player}! Kamu amat disenangi seluruh warga!', en: 'Everyone loves having you here, {player}!' },
+  { id: 'Wah, pahlawan besar kita {player}! Bunga dan panen ikut berseri!', en: 'Good day, beloved hero {player}!' },
+] as const;
+
+const DESA_ELDER_ADMIRE_LINES = [
+  { id: 'Salam hangat, {player}! Seluruh desa selalu mendoakan sang pahlawan!', en: 'Warm greetings, hero {player}!' },
+  { id: 'Nak {player} yang terkenal dan pemberani, terima kasih telah menyelamatkan kami!', en: 'Forever grateful to you, brave {player}!' },
+  { id: 'Desa ini tenteram dan penuh senyum karena keberanianmu, {player}!', en: 'Peace is ours thanks to you, {player}!' },
+] as const;
+
+const DESA_GOLEM_ADMIRE_LINES = [
+  { id: 'Bunga kuning ini untuk {player}, pahlawan kesayangan Desa Sapaan!', en: 'A golden flower for our hero {player}!' },
+  { id: 'Penjaga Plaza memberi hormat pada {player}, sang pembebas desa!', en: 'Saluting {player}, protector of peace!' },
+  { id: 'Seluruh warga & lebah merasa aman di bawah jasamu, {player}!', en: 'Our village shines safely thanks to you!' },
+] as const;
+
+export function getVillageActorGreetLine(v: VillagerActor): { id: string; en: string } {
+  const pool =
+    v.archetype === 'village_kid' || v.archetype === 'schoolgirl'
+      ? DESA_CHILD_ADMIRE_LINES
+      : v.archetype === 'grandma_herbalist' || v.archetype === 'village_elder'
+      ? DESA_ELDER_ADMIRE_LINES
+      : DESA_YOUTH_ADMIRE_LINES;
+  return pool[v.greetVariant % pool.length];
+}
+
+export function getGolemGreetLine(g: GolemActor): { id: string; en: string } {
+  return DESA_GOLEM_ADMIRE_LINES[g.greetVariant % DESA_GOLEM_ADMIRE_LINES.length];
 }
 
 export interface GuardPostRig {
@@ -658,6 +711,13 @@ export function createVillagerMesh(
     drivingVehicleId: null,
     vehicleCooldown: 0,
     zoneId: 'hub',
+    displayName: 'Warga Desa',
+    roleBadge: 'Warga',
+    greetTimer: 0,
+    greetCooldown: 0,
+    greetVariant: 0,
+    greetPause: 0,
+    wasHeroNear: false,
   };
 }
 
@@ -755,6 +815,13 @@ function createIronGolemMesh(palette: MaterialPalette, holdsFlower: boolean): Go
     holdsFlower,
     stuckTimer: 0,
     avoidSign: 1,
+    displayName: 'Iron Golem Desa',
+    roleBadge: 'Penjaga Plaza',
+    greetTimer: 0,
+    greetCooldown: 0,
+    greetVariant: 0,
+    greetPause: 0,
+    wasHeroNear: false,
   };
 }
 
@@ -1749,6 +1816,10 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
       }
     }
     v.zoneId = nearestZone;
+    v.displayName = cp.label ? cp.label.split(' (')[0].trim() : spec.displayNameId;
+    v.roleBadge = spec.professionId;
+    v.greetCooldown = (idx % 5) * 0.2;
+    v.greetVariant = idx;
     v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z), v.z);
     v.root.visible = false;
     const id = `villager_${cp.archetype}_${idx}`;
@@ -2231,6 +2302,7 @@ export function createMinecraftVillageWorld(palette: MaterialPalette): Minecraft
     moonGroup,
     starMat,
     breezeMotes: { mesh: moteMesh, seeds: moteSeeds, count: moteCount },
+    greetChimeRequested: false,
     disposables,
   };
 }
@@ -2676,11 +2748,16 @@ export function updateMinecraftVillage(
   }
 
   const allSixLiberated = Boolean(liberatedZones && liberatedZones.size >= 6);
+  const desaLiberated = Boolean(liberatedZones && liberatedZones.has('desa_sapaan'));
+  rig.greetChimeRequested = false;
 
   // 1. Villagers & Citizens: 60fps nearby animation + 8x distance-throttled movement on outer islands
   for (let i = 0; i < rig.villagers.length; i++) {
     const v = rig.villagers[i];
     const inter = v.interactable;
+    if (v.greetTimer > 0) v.greetTimer = Math.max(0, v.greetTimer - dt);
+    if (v.greetCooldown > 0) v.greetCooldown = Math.max(0, v.greetCooldown - dt);
+    if (v.greetPause > 0) v.greetPause = Math.max(0, v.greetPause - dt);
 
     if (!v.alive) {
       if (v.root.visible) v.root.visible = false;
@@ -2974,6 +3051,65 @@ export function updateMinecraftVillage(
     }
     v.bodyPivot.rotation.x = THREE.MathUtils.damp(v.bodyPivot.rotation.x, 0, 12, dt);
 
+    // Desa Sapaan liberated citizens: warmly pause, turn, bounce, and wave whenever player passes near!
+    if (desaLiberated && v.zoneId === 'desa_sapaan' && hasHeroDist && !shouldGoHome) {
+      const greetNear = distSq <= 5.2 * 5.2;
+      if (distSq > 8.2 * 8.2 && v.greetCooldown > 0.75) {
+        v.greetCooldown = 0.75;
+      }
+      if (greetNear && ((!v.wasHeroNear && v.greetCooldown <= 0) || (v.greetTimer <= 0 && v.greetCooldown <= 0))) {
+        v.greetTimer = 3.8;
+        v.greetCooldown = 8.5;
+        v.greetPause = 1.75;
+        v.greetVariant = (v.greetVariant + 1) % 3;
+        rig.greetChimeRequested = true;
+      }
+      v.wasHeroNear = greetNear;
+
+      if (v.greetPause > 0 || (greetNear && v.greetTimer > 0.4)) {
+        const targetYaw = Math.atan2(heroX! - v.x, heroZ! - v.z);
+        let gDiff = targetYaw - v.yaw;
+        while (gDiff > Math.PI) gDiff -= Math.PI * 2;
+        while (gDiff < -Math.PI) gDiff += Math.PI * 2;
+        v.yaw += gDiff * (1 - Math.exp(-10 * dt));
+        v.root.position.set(v.x, getArchipelagoGroundY(v.x, v.z), v.z);
+        v.root.rotation.y = v.yaw;
+
+        v.leftLeg.rotation.x = THREE.MathUtils.damp(v.leftLeg.rotation.x, 0, 14, dt);
+        v.rightLeg.rotation.x = THREE.MathUtils.damp(v.rightLeg.rotation.x, 0, 14, dt);
+        const joyHop = Math.abs(Math.sin(elapsed * 5.4 + i)) * 0.068;
+        v.bodyPivot.position.y = THREE.MathUtils.damp(v.bodyPivot.position.y, joyHop, 16, dt);
+        v.headGroup.rotation.y = THREE.MathUtils.damp(
+          v.headGroup.rotation.y,
+          Math.sin(elapsed * 2.8 + i) * 0.14,
+          10,
+          dt,
+        );
+        v.headGroup.rotation.x = THREE.MathUtils.damp(
+          v.headGroup.rotation.x,
+          -0.06 + Math.sin(elapsed * 4.5 + i) * 0.04,
+          10,
+          dt,
+        );
+        const sy = 1 + breath * 0.036;
+        const sxz = 1 / Math.sqrt(sy);
+        v.bodyPivot.scale.set(v.baseScaleXZ * sxz, v.baseScaleY * sy, v.baseScaleXZ * sxz);
+
+        const waveX = -2.08 + Math.sin(elapsed * 10.2 + i) * 0.36;
+        v.rightArm.rotation.x = THREE.MathUtils.damp(v.rightArm.rotation.x, waveX, 16, dt);
+        v.rightArm.rotation.z = THREE.MathUtils.damp(v.rightArm.rotation.z, -0.22, 14, dt);
+        v.leftArm.rotation.x = THREE.MathUtils.damp(v.leftArm.rotation.x, v.baseLeftArmX - 0.14, 12, dt);
+        v.leftArm.rotation.z = THREE.MathUtils.damp(v.leftArm.rotation.z, v.baseLeftArmZ, 12, dt);
+        if (inter) {
+          inter.x = v.x;
+          inter.z = v.z;
+        }
+        continue;
+      }
+    } else {
+      v.wasHeroNear = false;
+    }
+
     if (!shouldGoHome && v.pauseTimer > 0) {
       v.pauseTimer -= dt;
       v.leftLeg.rotation.x = THREE.MathUtils.damp(v.leftLeg.rotation.x, 0, 14, dt);
@@ -3240,6 +3376,10 @@ export function updateMinecraftVillage(
   // 2. Iron Golems heavy steady patrol with distance throttling + cached interactable
   for (let i = 0; i < rig.golems.length; i++) {
     const g = rig.golems[i];
+    if (g.greetTimer > 0) g.greetTimer = Math.max(0, g.greetTimer - dt);
+    if (g.greetCooldown > 0) g.greetCooldown = Math.max(0, g.greetCooldown - dt);
+    if (g.greetPause > 0) g.greetPause = Math.max(0, g.greetPause - dt);
+
     const minGolemSq = getMinViewerDistSq(g.x, g.z, heroX, heroZ, camX, camZ);
     if (allowVisibilityCull) {
       const wantVis = minGolemSq <= 145 * 145;
@@ -3253,6 +3393,7 @@ export function updateMinecraftVillage(
     const isNearGolem = !hasHeroDist || gDistSqHero <= animDistSqLimit;
 
     if (!isNearGolem) {
+      g.wasHeroNear = false;
       if (((i + _villageAnimCounter) & 7) !== 0) continue;
       const stepDt = Math.min(0.24, dt * 8);
       if (g.pauseTimer > 0) {
@@ -3292,6 +3433,62 @@ export function updateMinecraftVillage(
     const gBlink = computeVillageBlink(elapsed, 2.2 + i * 1.9);
     g.leftEye.scale.y = gBlink;
     g.rightEye.scale.y = gBlink;
+
+    if (desaLiberated && i === 0 && hasHeroDist) {
+      const gGreetNear = gDistSqHero <= 6.2 * 6.2;
+      if (gDistSqHero > 9.2 * 9.2 && g.greetCooldown > 0.75) {
+        g.greetCooldown = 0.75;
+      }
+      if (gGreetNear && ((!g.wasHeroNear && g.greetCooldown <= 0) || (g.greetTimer <= 0 && g.greetCooldown <= 0))) {
+        g.greetTimer = 4.0;
+        g.greetCooldown = 9.5;
+        g.greetPause = 1.9;
+        g.greetVariant = (g.greetVariant + 1) % 3;
+        rig.greetChimeRequested = true;
+      }
+      g.wasHeroNear = gGreetNear;
+
+      if (g.greetPause > 0 || (gGreetNear && g.greetTimer > 0.5)) {
+        const targetYaw = Math.atan2(heroX! - g.x, heroZ! - g.z);
+        let gd = targetYaw - g.yaw;
+        while (gd > Math.PI) gd -= Math.PI * 2;
+        while (gd < -Math.PI) gd += Math.PI * 2;
+        g.yaw += gd * (1 - Math.exp(-7 * dt));
+        g.root.position.set(g.x, getArchipelagoGroundY(g.x, g.z), g.z);
+        g.root.rotation.y = g.yaw;
+        g.leftLeg.rotation.x = THREE.MathUtils.damp(g.leftLeg.rotation.x, 0, 12, dt);
+        g.rightLeg.rotation.x = THREE.MathUtils.damp(g.rightLeg.rotation.x, 0, 12, dt);
+        g.headGroup.rotation.x = THREE.MathUtils.damp(
+          g.headGroup.rotation.x,
+          Math.sin(elapsed * 3.2) * 0.12 + 0.08,
+          10,
+          dt,
+        );
+        g.headGroup.rotation.y = THREE.MathUtils.damp(g.headGroup.rotation.y, 0, 10, dt);
+        if (g.holdsFlower) {
+          g.leftArm.rotation.x = THREE.MathUtils.damp(
+            g.leftArm.rotation.x,
+            -1.08 + Math.sin(elapsed * 3.0) * 0.1,
+            10,
+            dt,
+          );
+        }
+        g.rightArm.rotation.x = THREE.MathUtils.damp(
+          g.rightArm.rotation.x,
+          -1.42 + Math.sin(elapsed * 6.2) * 0.24,
+          12,
+          dt,
+        );
+        const sy = 1 + breath * 0.034;
+        const sxz = 1 / Math.sqrt(sy);
+        g.bodyPivot.scale.set(sxz, sy, sxz);
+        if (g.interactable) {
+          g.interactable.x = g.x;
+          g.interactable.z = g.z;
+        }
+        continue;
+      }
+    }
 
     if (g.pauseTimer > 0) {
       g.pauseTimer -= dt;

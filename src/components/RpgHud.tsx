@@ -10,6 +10,8 @@ import {
   ParkingCircle,
   RotateCw,
   Search,
+  Sparkles,
+  Star,
   User as UserIcon,
   X,
   Zap,
@@ -31,7 +33,7 @@ import {
   WEAPONS,
   ZONE_DOORS,
 } from '../data/diglosaCatalog';
-import { CameraMode, DivingGearId, LiveMapSnapshot, OceanMaterials, PlaneAmmoType, RpgHudSnapshot, SwimStyleId, SwimStylePreference, WeaponId } from '../types/game';
+import { CameraMode, CitizenGreetingLabel, DivingGearId, LiveMapSnapshot, OceanMaterials, PlaneAmmoType, RpgHudSnapshot, SwimStyleId, SwimStylePreference, WeaponId } from '../types/game';
 import { DIVING_GEAR_DEFS } from '../three/oceanWorld';
 import { SEA_BIOTA_CATALOG } from '../three/seaBiotaCatalog';
 import { getWeaponThumbnails } from '../utils/weaponThumbnails';
@@ -107,6 +109,88 @@ const PLANE_AMMO_OPTIONS: Array<{
     activeBorder: 'border-cyan-300 bg-cyan-500/25 text-cyan-100 ring-1 ring-cyan-300/80',
   },
 ];
+
+const CitizenGreetingBubbles = React.memo(function CitizenGreetingBubbles({
+  greetings,
+}: {
+  greetings: CitizenGreetingLabel[];
+}) {
+  if (greetings.length === 0) return null;
+  return (
+    <>
+      {greetings.map((g) => {
+        const enterT = g.progress < 0.14 ? g.progress / 0.14 : 1;
+        const exitT = g.progress > 0.78 ? Math.max(0, (1 - g.progress) / 0.22) : 1;
+        const opacity = Math.max(0, Math.min(1, Math.min(enterT, exitT)));
+        const scale = 0.9 + 0.1 * enterT;
+        const isGrateful = g.mood === 'grateful';
+        const isCheer = g.mood === 'cheer';
+        return (
+          <div
+            key={g.id}
+            style={{
+              transform: `translate3d(${g.x}px, ${g.y}px, 0) translate(-50%, -100%) scale(${scale.toFixed(3)})`,
+              opacity: opacity.toFixed(3),
+              transition: 'transform 110ms linear, opacity 130ms ease-out',
+              willChange: 'transform, opacity',
+            }}
+            className="pointer-events-none fixed left-0 top-0 z-20 max-w-[232px] select-none sm:max-w-[264px]"
+          >
+            <div
+              className={`relative rounded-2xl border-2 px-3 py-1.5 shadow-[0_6px_16px_rgba(120,53,15,0.28)] ${
+                isGrateful
+                  ? 'border-rose-400 bg-[#fff1f2]'
+                  : isCheer
+                  ? 'border-emerald-500 bg-[#ecfdf5]'
+                  : 'border-amber-500 bg-[#fffbeb]'
+              }`}
+            >
+              <div className="mb-0.5 flex items-center gap-1.5">
+                <span
+                  className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wide text-white ${
+                    isGrateful
+                      ? 'bg-rose-500'
+                      : isCheer
+                      ? 'bg-emerald-600'
+                      : 'bg-amber-500'
+                  }`}
+                >
+                  {isGrateful ? (
+                    <Heart className="h-2.5 w-2.5 fill-current" />
+                  ) : isCheer ? (
+                    <Sparkles className="h-2.5 w-2.5" />
+                  ) : (
+                    <Star className="h-2.5 w-2.5 fill-current" />
+                  )}
+                  <span>{g.speakerName}</span>
+                </span>
+                <span className="truncate text-[9px] font-bold text-[#92400e]/85">
+                  {g.badge}
+                </span>
+              </div>
+              <p className="text-[11px] font-extrabold leading-snug text-[#451a03] sm:text-[11.5px]">
+                {g.textId}
+              </p>
+              <p className="mt-0.5 text-[9.5px] font-bold italic leading-tight text-[#b45309]">
+                “{g.textEn}”
+              </p>
+              <span
+                aria-hidden="true"
+                className={`absolute -bottom-[7px] left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 border-b-2 border-r-2 ${
+                  isGrateful
+                    ? 'border-rose-400 bg-[#fff1f2]'
+                    : isCheer
+                    ? 'border-emerald-500 bg-[#ecfdf5]'
+                    : 'border-amber-500 bg-[#fffbeb]'
+                }`}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </>
+  );
+});
 
 interface RpgHudProps {
   hud: RpgHudSnapshot;
@@ -766,6 +850,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
           )}
         </div>
       ))}
+
+      {/* Liberated Desa Sapaan: Always-visible lightweight admiration greetings when player passes citizens */}
+      {hud.phase === 'playing' && !hud.storyDialog && hud.citizenGreetings && hud.citizenGreetings.length > 0 && (
+        <CitizenGreetingBubbles greetings={hud.citizenGreetings} />
+      )}
 
       {/* TOP-LEFT: Minimalist GTA Circular Minimap Radar + ML-style Gold Weapon/Tool Switcher */}
       <div className="pointer-events-none fixed left-2.5 top-2.5 z-20 flex flex-col items-start gap-1.5 sm:left-4 sm:top-4">

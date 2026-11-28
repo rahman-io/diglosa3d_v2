@@ -210,12 +210,19 @@ export const DESA_COMMUNITY_SCENARIOS: DesaCommunityScenarioDef[] = [
   },
 ];
 
+export interface DesaAdmireLine {
+  id: string;
+  en: string;
+}
+
 export interface DesaCaveCitizenActor {
   id: string;
   name: string;
+  roleBadge: string;
   scenarioTitle: string;
   dialogueId: string;
   dialogueEn: string;
+  admireLines: ReadonlyArray<DesaAdmireLine>;
   activity: DesaCitizenActivity;
   mesh: THREE.Group;
   waypoints: Array<[number, number]>;
@@ -229,6 +236,10 @@ export interface DesaCaveCitizenActor {
   phase: number;
   gateTransit?: boolean;
   transitHideTimer: number;
+  greetTimer: number;
+  greetCooldown: number;
+  greetVariant: number;
+  wasHeroNear: boolean;
 }
 
 export interface DesaCaveLivingWorldState {
@@ -236,6 +247,7 @@ export interface DesaCaveLivingWorldState {
   waterwheel: THREE.Object3D | null;
   actors: DesaCaveCitizenActor[];
   actorById: Map<string, DesaCaveCitizenActor>;
+  greetChimeRequested: boolean;
 }
 
 const _citizenTargetPos = { x: 0, z: 0 };
@@ -421,9 +433,11 @@ export function initDesaCaveLivingWorld(
   const plans: Array<{
     id: string;
     name: string;
+    roleBadge: string;
     scenarioTitle: string;
     dialogueId: string;
     dialogueEn: string;
+    admireLines: ReadonlyArray<DesaAdmireLine>;
     activity: DesaCitizenActivity;
     mesh: THREE.Group;
     prop?: 'crate' | 'watering_can' | 'broom' | 'hoe' | 'bucket' | 'book' | 'lantern';
@@ -434,9 +448,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'adult_1',
       name: 'Pak Darma',
+      roleBadge: 'Petani Irigasi',
       scenarioTitle: 'Irigasi Sungai Kristal',
       dialogueId: 'Air Sungai Kristal kini jernih! Kami alirkan lewat saluran bambu untuk menyuburkan kebun gua.',
       dialogueEn: 'Let us channel the clean river water to our garden!',
+      admireLines: [
+        {
+          id: 'Halo {player}, pahlawan kebanggaan kami! Sungai ini jernih berkat jasamu!',
+          en: 'Hello {player}! You are our beloved hero!',
+        },
+        {
+          id: 'Wah, sang penyelamat {player} lewat! Semua warga kagum padamu!',
+          en: 'Everyone here admires you, {player}!',
+        },
+      ],
       activity: 'irrigate',
       mesh: getOrCreateMesh('adult_1', 'mother', 0x0f766e, 0x1e293b, 1.06, true),
       prop: 'hoe',
@@ -450,9 +475,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'adult_2',
       name: 'Bu Sari',
+      roleBadge: 'Pekebun Gua',
       scenarioTitle: 'Berkebun Sayur Segar Gua',
       dialogueId: 'Wortel, kubis, dan tomat tumbuh subur sekali di sini! Ayo ikut panen bersama!',
       dialogueEn: 'Good morning! I am watering the fresh vegetables.',
+      admireLines: [
+        {
+          id: 'Selamat datang {player}! Berkat kamu, kebun kami damai dan subur!',
+          en: 'Welcome, {player}! Thank you for saving us!',
+        },
+        {
+          id: 'Lihat siapa yang datang! {player} pahlawan paling disenangi di desa ini!',
+          en: 'Good morning, dear hero {player}!',
+        },
+      ],
       activity: 'water_plants',
       mesh: getOrCreateMesh('adult_2', 'mother', 0xe11d48, 0x451a03, 1.02),
       prop: 'watering_can',
@@ -467,9 +503,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'adult_5',
       name: 'Pak Tono',
+      roleBadge: 'Penimba Sumur',
       scenarioTitle: 'Menimba Air Sumur Tua',
       dialogueId: 'Sumur tua ini airnya sejuk dan segar. Cukup untuk dapur umum maupun menyiram bunga!',
       dialogueEn: 'Thank you for helping me carry fresh water!',
+      admireLines: [
+        {
+          id: 'Salam hormat, {player}! Nama besarmu selalu kami kenang di Desa Sapaan!',
+          en: 'Thank you forever, {player}!',
+        },
+        {
+          id: 'Senang sekali melihat {player} lewat! Terima kasih telah membebaskan kami!',
+          en: 'So happy to see you, {player}!',
+        },
+      ],
       activity: 'fetch_water',
       mesh: getOrCreateMesh('adult_5', 'mother', 0x4d7c0f, 0x64748b, 1.05, true),
       prop: 'bucket',
@@ -484,9 +531,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'adult_4',
       name: 'Mbak Wulan',
+      roleBadge: 'Dapur Warga',
       scenarioTitle: 'Dapur Umum & Berbagi Panen',
       dialogueId: 'Sup sayur hangat sudah siap! Warga yang selesai berkebun silakan mampir mencicipi.',
       dialogueEn: 'Welcome! Please enjoy this warm meal together.',
+      admireLines: [
+        {
+          id: 'Hai {player} sang pahlawan! Sup hangat ini khusus untuk tamu teristimewa!',
+          en: 'Welcome {player}! Our greatest hero!',
+        },
+        {
+          id: 'Kami semua senang dan kagum sama {player}! Desa ini aman berkatmu!',
+          en: 'We all adore you, {player}!',
+        },
+      ],
       activity: 'cook_share',
       mesh: getOrCreateMesh('adult_4', 'mother', 0xd97706, 0x27272a, 1.0),
       waypoints: [
@@ -499,9 +557,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'adult_3',
       name: 'Bang Jaka',
+      roleBadge: 'Pengangkut Panen',
       scenarioTitle: 'Mengangkut Hasil Panen',
       dialogueId: 'Dengan gotong royong, mengangkut keranjang panen ke desa jadi terasa ringan dan cepat!',
       dialogueEn: 'Many hands make heavy work light!',
+      admireLines: [
+        {
+          id: 'Mantap, {player}! Kamu pahlawan terkenal sejagat Desa Sapaan!',
+          en: 'Hello legend {player}! Awesome to see you!',
+        },
+        {
+          id: 'Luar biasa {player}! Berkat keberanianmu, kami bisa bekerja dengan tenang!',
+          en: 'Thank you for bringing peace, {player}!',
+        },
+      ],
       activity: 'carry_crate',
       mesh: getOrCreateMesh('adult_3', 'student', 0x2563eb, 0x0f172a, 1.08, true),
       prop: 'crate',
@@ -516,9 +585,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'child_2',
       name: 'Sinta',
+      roleBadge: 'Perawat Herba',
       scenarioTitle: 'Merawat Taman Obat Barat',
       dialogueId: 'Tanaman obat dan bunga di taman barat wangi sekali! Kami menyiramnya bergantian tiap pagi.',
       dialogueEn: 'Take care of the herbs and flowers every day.',
+      admireLines: [
+        {
+          id: 'Kak {player}!! Hebat banget sudah menyelamatkan gua dan pulau kami!',
+          en: 'Hi {player}! You are my favorite hero!',
+        },
+        {
+          id: 'Halo Kak {player}! Semua bunga ikut mekar menyambut sang penyelamat!',
+          en: 'Welcome back, hero {player}!',
+        },
+      ],
       activity: 'water_plants',
       mesh: getOrCreateMesh('child_2', 'girl', 0xa855f7, 0x1e293b, 0.76),
       prop: 'watering_can',
@@ -532,9 +612,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'child_3',
       name: 'Tobi',
+      roleBadge: 'Penjaga Lentera',
       scenarioTitle: 'Merawat Lentera Jalan Gua',
       dialogueId: 'Semua lentera teras depan menyala hangat supaya warga bisa keluar-masuk gua dengan aman.',
       dialogueEn: 'Good evening! The cave path is bright and safe.',
+      admireLines: [
+        {
+          id: 'Halo Kak {player}! Kamu keren sekali, seluruh warga mengagumimu!',
+          en: 'Hello {player}! You are so brave!',
+        },
+        {
+          id: 'Wah ada Kak {player}! Jalan gua terang dan aman berkat Kakak!',
+          en: 'Our hero {player} is here!',
+        },
+      ],
       activity: 'repair_lantern',
       mesh: getOrCreateMesh('child_3', 'student', 0x10b981, 0x713f12, 0.74, true),
       prop: 'lantern',
@@ -549,9 +640,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'helper_ujang',
       name: 'Kang Ujang',
+      roleBadge: 'Perawat Jembatan',
       scenarioTitle: 'Merawat & Menyapu Jembatan Batu',
       dialogueId: 'Jembatan batu sungai sudah kubersihkan dari lumut licin. Silakan menyeberang dengan nyaman!',
       dialogueEn: 'Please cross the stone bridge safely!',
+      admireLines: [
+        {
+          id: 'Sugeng rawuh, {player}! Jembatan ini bersih dan aman untuk sang pahlawan!',
+          en: 'Welcome, {player}! Cross safely, hero!',
+        },
+        {
+          id: 'Wah, pahlawan {player} lewat! Semua warga bangga padamu!',
+          en: 'So proud to greet you, {player}!',
+        },
+      ],
       activity: 'sweep_bridge',
       mesh: getOrCreateMesh('helper_ujang', 'student', 0x0ea5e9, 0x334155, 1.02, true),
       prop: 'broom',
@@ -566,9 +668,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'raka',
       name: 'Kakak Raka',
+      roleBadge: 'Taman Baca',
       scenarioTitle: 'Taman Baca & Belajar Kosakata',
       dialogueId: 'Teras atas ini sekarang jadi Taman Baca Desa! Ayo latihan kosakata baru bersama kami.',
       dialogueEn: 'Hello, friend! Let us read and learn together.',
+      admireLines: [
+        {
+          id: 'Halo {player}! Kisah heroikmu jadi panutan di Taman Baca kami!',
+          en: 'Hello {player}! You inspire everyone here!',
+        },
+        {
+          id: 'Senang sekali melihat {player}! Terima kasih telah memulihkan kedamaian!',
+          en: 'Good day, savior {player}!',
+        },
+      ],
       activity: 'teach_read',
       mesh: getOrCreateMesh('raka', 'student', 0x0284c7, 0x1e293b, 1.05, true),
       prop: 'book',
@@ -581,9 +694,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'rani',
       name: 'Rani',
+      roleBadge: 'Sahabat Desa',
       scenarioTitle: 'Belajar Ceria di Taman Atas',
       dialogueId: 'Terima kasih Kakak Pahlawan! Sekarang aku, Kak Raka, dan semua warga bebas beraktivitas di gua!',
       dialogueEn: 'Hello! Thank you for making our home peaceful!',
+      admireLines: [
+        {
+          id: 'Kak {player}!! Aku dan seluruh warga tidak akan pernah lupa kebaikanmu!',
+          en: 'Thank you so much, {player}!',
+        },
+        {
+          id: 'Horeee Kak {player} datang! Pahlawan paling baik dan hebat!',
+          en: 'Hello, my hero {player}!',
+        },
+      ],
       activity: 'teach_read',
       mesh: getOrCreateMesh('rani', 'girl', 0xf43f5e),
       waypoints: [
@@ -596,9 +720,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'child_1',
       name: 'Bimo',
+      roleBadge: 'Anak Ceria',
       scenarioTitle: 'Bermain Aman di Halaman Gua',
       dialogueId: 'Hore! Tidak ada monster lagi! Kami bebas bermain petak umpet di taman bunga plaza!',
       dialogueEn: 'Goodbye fear, hello happy playtime!',
+      admireLines: [
+        {
+          id: 'Yey, Kak {player} lewat! Kakak keren banget sudah mengusir semua monster!',
+          en: 'Yay, hello hero {player}!',
+        },
+        {
+          id: 'Halo Kak {player}! Aku mau jadi sekuat dan sebaik Kakak nanti!',
+          en: 'You are so cool, {player}!',
+        },
+      ],
       activity: 'play_kids',
       mesh: getOrCreateMesh('child_1', 'student', 0xf97316, 0x451a03, 0.78, true),
       waypoints: [
@@ -611,9 +746,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'child_4',
       name: 'Naya',
+      roleBadge: 'Penyambut Cilik',
       scenarioTitle: 'Bermain & Menyapa Warga',
       dialogueId: 'Lihat kupu-kupunya beterbangan! Aku suka membantu menyapa tamu di halaman gua!',
       dialogueEn: 'Good morning! Look at the pretty butterflies!',
+      admireLines: [
+        {
+          id: 'Halo Kak {player} yang terkenal! Semua anak di desa kagum sekali padamu!',
+          en: 'Hello famous hero {player}!',
+        },
+        {
+          id: 'Selamat datang kembali, Kak {player}! Kami senang sekali lihat Kakak!',
+          en: 'Welcome! So happy to see you, {player}!',
+        },
+      ],
       activity: 'play_kids',
       mesh: getOrCreateMesh('child_4', 'girl', 0xec4899, 0x3b0764, 0.72),
       waypoints: [
@@ -626,9 +772,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'helper_rudi',
       name: 'Paman Rudi',
+      roleBadge: 'Penjaga Sungai',
       scenarioTitle: 'Menjaga Kejernihan Sungai Kristal',
       dialogueId: 'Aliran air terjun Sungai Kristal tetap bersih dan ikannya mulai berenang kembali!',
       dialogueEn: 'Keep the crystal river clean for everyone.',
+      admireLines: [
+        {
+          id: 'Salam hangat, {player}! Berkatmu, Sungai Kristal kembali tenang dan indah!',
+          en: 'Warm greetings, hero {player}!',
+        },
+        {
+          id: 'Lihat, pahlawan kita {player} hadir! Terima kasih sudah menjaga desa kami!',
+          en: 'Thank you for protecting us, {player}!',
+        },
+      ],
       activity: 'tend_river',
       mesh: getOrCreateMesh('helper_rudi', 'mother', 0x0d9488, 0x1e293b, 1.04, true),
       waypoints: [
@@ -641,9 +798,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'helper_lilis',
       name: 'Ibu Lilis',
+      roleBadge: 'Pembibit Pohon',
       scenarioTitle: 'Mengolah Kompos & Bibit Pohon',
       dialogueId: 'Guguran daun dari taman kami olah jadi kompos untuk bibit pohon baru di sayap timur!',
       dialogueEn: 'Healthy soil grows strong trees and food.',
+      admireLines: [
+        {
+          id: 'Nak {player}! Wajahmu selalu bikin hati warga tenteram dan gembira!',
+          en: 'Bless you, dear {player}!',
+        },
+        {
+          id: 'Salam hangat, {player}! Desa Sapaan makmur karena jasa penyelamatanmu!',
+          en: 'Welcome home, hero {player}!',
+        },
+      ],
       activity: 'compost_soil',
       mesh: getOrCreateMesh('helper_lilis', 'mother', 0x84cc16, 0x451a03, 1.0),
       prop: 'hoe',
@@ -657,9 +825,20 @@ export function initDesaCaveLivingWorld(
     {
       id: 'helper_salim',
       name: 'Kakek Salim',
+      roleBadge: 'Sesepuh Gerbang',
       scenarioTitle: 'Penyambut Pintu Depan Gua',
       dialogueId: 'Pintu gua sekarang terbuka lebar! Warga desa bebas keluar masuk membantu kebun di dalam gua.',
       dialogueEn: 'Welcome inside! Feel safe and at home.',
+      admireLines: [
+        {
+          id: 'Selamat datang, {player} sang penyelamat! Pintu desa selalu terbuka untukmu!',
+          en: 'Welcome, our beloved savior {player}!',
+        },
+        {
+          id: 'Kakek dan semua warga amat berterima kasih padamu, {player}!',
+          en: 'We are forever grateful, {player}!',
+        },
+      ],
       activity: 'greet_gate',
       mesh: getOrCreateMesh('helper_salim', 'mother', 0x78350f, 0xe2e8f0, 1.02, true),
       waypoints: [
@@ -704,9 +883,11 @@ export function initDesaCaveLivingWorld(
     const actor: DesaCaveCitizenActor = {
       id: p.id,
       name: p.name,
+      roleBadge: p.roleBadge,
       scenarioTitle: p.scenarioTitle,
       dialogueId: p.dialogueId,
       dialogueEn: p.dialogueEn,
+      admireLines: p.admireLines,
       activity: p.activity,
       mesh: p.mesh,
       waypoints: p.waypoints,
@@ -720,12 +901,16 @@ export function initDesaCaveLivingWorld(
       phase: idx * 0.77,
       gateTransit: p.gateTransit,
       transitHideTimer: 0,
+      greetTimer: 0,
+      greetCooldown: (idx % 5) * 0.15,
+      greetVariant: idx % p.admireLines.length,
+      wasHeroNear: false,
     };
     actors.push(actor);
     actorById.set(actor.id, actor);
   });
 
-  return { propsGroup, waterwheel, actors, actorById };
+  return { propsGroup, waterwheel, actors, actorById, greetChimeRequested: false };
 }
 
 function animateCaveCitizenPose(
@@ -733,6 +918,7 @@ function animateCaveCitizenPose(
   elapsed: number,
   moving: boolean,
   heroNear: boolean,
+  isGreeting: boolean,
 ): void {
   const rig = actor.mesh.userData.captiveRig as CaptiveAnimRig | undefined;
   if (!rig) return;
@@ -740,7 +926,7 @@ function animateCaveCitizenPose(
 
   if (rig.sadGroup) rig.sadGroup.visible = false;
   if (rig.injuryArmBandage) rig.injuryArmBandage.visible = false;
-  if (rig.sparkleGroup) rig.sparkleGroup.visible = heroNear;
+  if (rig.sparkleGroup) rig.sparkleGroup.visible = heroNear || isGreeting;
 
   const breath = Math.sin(t * 2.8);
   const sy = 1 + breath * 0.036;
@@ -759,9 +945,9 @@ function animateCaveCitizenPose(
   }
 
   if (rig.headGroup) {
-    if (heroNear && !moving) {
-      rig.headGroup.rotation.y = Math.sin(t * 2.4) * 0.14;
-      rig.headGroup.rotation.x = -0.05;
+    if ((heroNear || isGreeting) && !moving) {
+      rig.headGroup.rotation.y = Math.sin(t * 2.8) * 0.16;
+      rig.headGroup.rotation.x = -0.06 + Math.sin(t * 4.6) * 0.04;
     } else {
       rig.headGroup.rotation.y = Math.sin(t * 1.6) * 0.18;
       rig.headGroup.rotation.x =
@@ -773,12 +959,12 @@ function animateCaveCitizenPose(
 
   if (!rig.leftArm || !rig.rightArm) return;
 
-  if (heroNear && !moving) {
+  if ((heroNear || isGreeting) && !moving) {
     // Cheerful friendly wave to hero
-    rig.rightArm.rotation.x = -2.05 + Math.sin(t * 9.5) * 0.34;
-    rig.rightArm.rotation.z = -0.18;
-    rig.leftArm.rotation.x = -0.22;
-    rig.leftArm.rotation.z = 0;
+    rig.rightArm.rotation.x = -2.08 + Math.sin(t * 10.2) * 0.36;
+    rig.rightArm.rotation.z = -0.2;
+    rig.leftArm.rotation.x = isGreeting ? -0.35 + Math.cos(t * 5.0) * 0.12 : -0.22;
+    rig.leftArm.rotation.z = isGreeting ? 0.1 : 0;
     rig.bodyPivot.rotation.x = 0;
     return;
   }
@@ -874,7 +1060,10 @@ export function updateDesaCaveLivingWorld(
   heroX: number,
   heroZ: number,
   lowEndMode: boolean,
+  heroFullyLiberated = false,
 ): void {
+  state.greetChimeRequested = false;
+
   if (state.waterwheel) {
     state.waterwheel.rotation.z -= dt * 1.45;
   }
@@ -883,6 +1072,13 @@ export function updateDesaCaveLivingWorld(
 
   for (let i = 0; i < state.actors.length; i++) {
     const a = state.actors[i];
+    if (a.greetTimer > 0) {
+      a.greetTimer = Math.max(0, a.greetTimer - dt);
+    }
+    if (a.greetCooldown > 0) {
+      a.greetCooldown = Math.max(0, a.greetCooldown - dt);
+    }
+
     if (a.transitHideTimer > 0) {
       a.transitHideTimer = Math.max(0, a.transitHideTimer - dt);
       if (a.transitHideTimer === 0) {
@@ -890,6 +1086,7 @@ export function updateDesaCaveLivingWorld(
         a.wpIdx = 0;
       } else {
         a.mesh.visible = false;
+        a.wasHeroNear = false;
         continue;
       }
     }
@@ -897,11 +1094,31 @@ export function updateDesaCaveLivingWorld(
     const dxHero = heroX - a.x;
     const dzHero = heroZ - a.z;
     const heroDistSq = dxHero * dxHero + dzHero * dzHero;
-    const heroNear = heroDistSq < 3.8 * 3.8;
-    let isMoving = false;
+    const heroNear = heroDistSq < 4.5 * 4.5;
+    if (heroDistSq > 7.4 * 7.4 && a.greetCooldown > 0.75) {
+      // Leaving range lets returning players always receive another warm greeting
+      a.greetCooldown = 0.75;
+    }
 
-    if (heroNear) {
-      a.yaw = Math.atan2(dxHero, dzHero);
+    if (heroFullyLiberated && heroNear) {
+      if ((!a.wasHeroNear && a.greetCooldown <= 0) || (a.greetTimer <= 0 && a.greetCooldown <= 0)) {
+        a.greetTimer = 3.8;
+        a.greetCooldown = 8.5;
+        a.greetVariant = (a.greetVariant + 1) % a.admireLines.length;
+        state.greetChimeRequested = true;
+      }
+    }
+    a.wasHeroNear = heroNear;
+
+    let isMoving = false;
+    const isGreetingStop = heroNear || (heroFullyLiberated && a.greetTimer > 1.8);
+
+    if (isGreetingStop) {
+      const targetYaw = Math.atan2(dxHero, dzHero);
+      let diff = targetYaw - a.yaw;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      a.yaw += diff * (1 - Math.exp(-10 * dt));
     } else if (a.pauseTimer > 0) {
       a.pauseTimer -= dt;
     } else if (a.waypoints.length > 1) {
@@ -935,15 +1152,18 @@ export function updateDesaCaveLivingWorld(
 
     const supY = sampleDesaCaveGroundY(a.x, a.z, a.y + 0.7);
     a.y = THREE.MathUtils.lerp(a.y, supY, 1 - Math.exp(-12 * dt));
+    const isGreeting = heroFullyLiberated && a.greetTimer > 0;
     const hop =
       isMoving || a.activity === 'play_kids'
         ? Math.abs(Math.sin(elapsed * (a.activity === 'play_kids' ? 9.5 : 8.2) + a.phase)) * 0.08
+        : isGreeting && heroNear
+        ? Math.abs(Math.sin(elapsed * 5.2 + a.phase)) * 0.065
         : 0;
     a.mesh.position.set(a.x, a.y + hop, a.z);
     a.mesh.rotation.y = a.yaw;
 
     if (!lowEndMode || heroDistSq <= maxBoneAnimDistSq) {
-      animateCaveCitizenPose(a, elapsed, isMoving, heroNear);
+      animateCaveCitizenPose(a, elapsed, isMoving, heroNear, isGreeting);
     }
   }
 }

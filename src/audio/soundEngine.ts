@@ -70,6 +70,7 @@ class SoundEngine {
   private clipTemplates: Partial<Record<AudioClipKey, HTMLAudioElement>> = {};
   private activeClips = new Set<HTMLAudioElement>();
   private lastClipAt: Partial<Record<AudioClipKey | 'monster_any', number>> = {};
+  private lastVillagerChimeAt = 0;
   private walkAudio: HTMLAudioElement | null = null;
   private isWalking = false;
   private swimAudio: HTMLAudioElement | null = null;
@@ -938,6 +939,15 @@ class SoundEngine {
     this.lastClipAt.button_click = nowMs;
     const freq = Math.max(320, Math.min(760, 520 + pitchOffset));
     this.beep(freq, 0.028, 'triangle', 0.026, freq + 35);
+  }
+
+  public playVillagerGreetChime(): void {
+    if (this.muted) return;
+    const nowMs = Date.now();
+    if (nowMs - this.lastVillagerChimeAt < 3200) return;
+    this.lastVillagerChimeAt = nowMs;
+    this.beep(587.33, 0.09, 'sine', 0.032, 659.25);
+    this.beep(880.0, 0.14, 'triangle', 0.028, 987.77, 0.07);
   }
 
   public stopSpeech(): void {

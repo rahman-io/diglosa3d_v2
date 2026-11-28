@@ -234,6 +234,7 @@ const INITIAL_HUD: RpgHudSnapshot = {
   },
   quests: [],
   projectedLabels: [],
+  citizenGreetings: [],
   bannerMessage: null,
   caveCountdown: null,
   storyDialog: null,
