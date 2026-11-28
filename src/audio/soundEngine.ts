@@ -415,6 +415,7 @@ class SoundEngine {
     this.syncAmbientPlayback();
     if (muted) {
       this.setCarEngine(false, 0);
+      this.stopSpeech();
     }
   }
 
@@ -929,15 +930,51 @@ class SoundEngine {
     this.beep(freq, 0.028, 'triangle', 0.026, freq + 35);
   }
 
-  public speakEnglish(text: string, rate = 0.88, pitch = 1.0): void {
-    if (this.muted || typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  public stopSpeech(): void {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
     try {
       window.speechSynthesis.cancel();
-      const utter = new SpeechSynthesisUtterance(text);
+    } catch {
+      // ignore speech synthesis restrictions
+    }
+  }
+
+  private pickEnglishVoice(): SpeechSynthesisVoice | null {
+    if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
+    try {
+      const voices = window.speechSynthesis.getVoices();
+      if (!voices || voices.length === 0) return null;
+      return (
+        voices.find((v) => v.lang.toLowerCase() === 'en-us') ||
+        voices.find((v) => v.lang.toLowerCase() === 'en-gb') ||
+        voices.find((v) => v.lang.toLowerCase().startsWith('en')) ||
+        null
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  public speakEnglish(text: string, rate = 0.88, pitch = 1.0): void {
+    const cleaned = text.trim();
+    if (!cleaned || this.muted || typeof window === 'undefined' || !('speechSynthesis' in window)) {
+      return;
+    }
+    try {
+      const synth = window.speechSynthesis;
+      synth.cancel();
+      if (synth.paused) {
+        synth.resume();
+      }
+      const utter = new SpeechSynthesisUtterance(cleaned);
       utter.lang = 'en-US';
-      utter.rate = rate;
-      utter.pitch = pitch;
-      window.speechSynthesis.speak(utter);
+      const voice = this.pickEnglishVoice();
+      if (voice) {
+        utter.voice = voice;
+      }
+      utter.rate = Math.max(0.4, Math.min(1.6, rate));
+      utter.pitch = Math.max(0.5, Math.min(1.5, pitch));
+      synth.speak(utter);
     } catch {
       // ignore speech synthesis restrictions
     }

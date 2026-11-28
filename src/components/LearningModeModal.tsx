@@ -20,10 +20,12 @@ import {
   DifficultyMode,
   LearningSessionContext,
   VocabEntry,
+  WordProgress,
 } from '../types/game';
 import {
   buildChallengeOfType,
   buildPeopleDuolingoDeck,
+  DesaVocabId,
   disableSpeakingTemporarily,
   DuolingoChallenge,
   isSpeakingTemporarilyDisabled,
@@ -42,6 +44,7 @@ interface LearningModeModalProps {
   session: LearningSessionContext | null;
   difficulty: DifficultyMode;
   qtimerEnabled: boolean;
+  wordProgress?: Record<string, WordProgress>;
   onRecordWord: (vocabId: string, ok: boolean, noLevel?: boolean) => void;
   onComplete: (
     ctx: LearningSessionContext,
@@ -82,6 +85,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
   session,
   difficulty,
   qtimerEnabled,
+  wordProgress,
   onRecordWord,
   onComplete,
   onClose,
@@ -146,6 +150,30 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
   const [timeLeft, setTimeLeft] = useState(activeMaxSec);
   const timeLeftRef = useRef(activeMaxSec);
   const scrollContainerRef = useRef<HTMLDivElement | null>(null);
+  const timersRef = useRef<number[]>([]);
+  const duoAdvancingRef = useRef(false);
+  const handleTimeoutRef = useRef<() => void>(() => {});
+
+  const clearAllTimers = () => {
+    timersRef.current.forEach((id) => window.clearTimeout(id));
+    timersRef.current = [];
+  };
+
+  const scheduleTimeout = (fn: () => void, delayMs: number) => {
+    const id = window.setTimeout(() => {
+      timersRef.current = timersRef.current.filter((t) => t !== id);
+      fn();
+    }, delayMs);
+    timersRef.current.push(id);
+    return id;
+  };
+
+  const handleClose = () => {
+    clearAllTimers();
+    soundEngine.stopSpeech();
+    onClose();
+  };
+
   const resetTimeLeft = (val: number) => {
     timeLeftRef.current = val;
     setTimeLeft(val);
@@ -160,6 +188,9 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
 
   // Reset on session change
   useEffect(() => {
+    clearAllTimers();
+    soundEngine.stopSpeech();
+    duoAdvancingRef.current = false;
     if (!session || words.length === 0) return;
     setIdx(0);
     setFlipped(false);
@@ -182,13 +213,18 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
       const deckSize = session.doorIndex === 4 ? 8 : 10;
       const deck = buildPeopleDuolingoDeck(deckSize, {
         allowSpeak: !isSpeakingTemporarilyDisabled(),
+        wordProgress,
+        preferredVocabIds: session.wordIds,
       });
       setDuoDeck(deck);
       setDuoIdx(0);
       const firstSec =
         deck[0]?.type === 'match_pairs' ? diffCfg.matchSec : Math.max(24, diffCfg.qSec * 2);
       resetTimeLeft(firstSec);
-      return;
+      return () => {
+        clearAllTimers();
+        soundEngine.stopSpeech();
+      };
     }
 
     setDuoDeck([]);
@@ -199,7 +235,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
       const round = buildMcqRound(words[0], session.mode === 'listen');
       setMcq(round);
       if (session.mode === 'listen') {
-        window.setTimeout(() => soundEngine.speakEnglish(words[0].word, 0.85), 350);
+        scheduleTimeout(() => soundEngine.speakEnglish(words[0].word, 0.85), 350);
       }
     } else if (session.mode === 'match') {
       const sub = words.slice(0, 8);
@@ -209,7 +245,17 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
       setMatchedIds([]);
       setMatchMoves(0);
     }
+
+    return () => {
+      clearAllTimers();
+      soundEngine.stopSpeech();
+    };
   }, [session, words, diffCfg.matchSec, diffCfg.qSec]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reset double-continue guard cleanly after each duoIdx or session change
+  useEffect(() => {
+    duoAdvancingRef.current = false;
+  }, [duoIdx, session]);
 
   // Countdown timer for qstrip / match board
   useEffect(() => {
@@ -228,14 +274,16 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
       setTimeLeft(next);
       if (next <= 0) {
         window.clearInterval(timer);
-        handleTimeout();
+        handleTimeoutRef.current();
       }
     }, 100);
     return () => window.clearInterval(timer);
-  });
+  }, [session, resultData, qtimerEnabled, isDesaDuolingo, duoAwaitingContinue, cekCepatPool, feedback]);
 
   const finishSession = (finalRight: number, finalTotal: number, cekPassed?: boolean) => {
     if (!session) return;
+    clearAllTimers();
+    soundEngine.stopSpeech();
     const pct = finalTotal > 0 ? Math.round((finalRight / finalTotal) * 100) : 100;
     const stars: 1 | 2 | 3 = pct >= 90 ? 3 : pct >= 60 ? 2 : 1;
     if (stars === 3) soundEngine.playFanfare();
@@ -263,13 +311,15 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
       const round = buildMcqRound(words[nextIdx], session.mode === 'listen');
       setMcq(round);
       if (session.mode === 'listen') {
-        window.setTimeout(() => soundEngine.speakEnglish(words[nextIdx].word, 0.85), 350);
+        scheduleTimeout(() => soundEngine.speakEnglish(words[nextIdx].word, 0.85), 350);
       }
     }
   };
 
   const advanceDuoCard = (nextRight: number, nextTotal: number) => {
-    if (!session) return;
+    if (!session || duoAdvancingRef.current) return;
+    duoAdvancingRef.current = true;
+    soundEngine.stopSpeech();
     const nextIdx = duoIdx + 1;
     setDuoAwaitingContinue(false);
     if (nextIdx >= duoDeck.length) {
@@ -323,7 +373,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
     setDuoDeck((prev) =>
       prev.map((card, i) =>
         i > duoIdx && card.type === 'speak'
-          ? buildChallengeOfType('word_bank_translate')
+          ? buildChallengeOfType('word_bank_translate', card.vocabId as DesaVocabId)
           : card,
       ),
     );
@@ -359,8 +409,10 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
     setFeedback({ ok: false, msg: `Waktu habis! Jawaban benar yaitu "${cur?.word}" (${cur?.meaningId})` });
     const nextTotal = totalAttempted + 1;
     setTotalAttempted(nextTotal);
-    window.setTimeout(() => advanceQuestion(idx + 1, rightCount, nextTotal), 1150);
+    scheduleTimeout(() => advanceQuestion(idx + 1, rightCount, nextTotal), 1150);
   };
+
+  handleTimeoutRef.current = handleTimeout;
 
   const handleCardMark = (knewIt: boolean) => {
     if (!session) return;
@@ -410,7 +462,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
       msg: ok ? 'Benar!' : `Kurang tepat! Jawaban benar yaitu "${round.choices[round.correctIdx]}"`,
     });
 
-    window.setTimeout(() => {
+    scheduleTimeout(() => {
       setFeedback(null);
       if (cekIdx + 1 >= cekCepatPool.length) {
         finishSession(nextCekRight, cekCepatPool.length, nextCekRight >= 2);
@@ -453,7 +505,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
     setCombo(nextCombo);
     setRightCount(nextRight);
     setTotalAttempted(nextTotal);
-    window.setTimeout(() => advanceQuestion(idx + 1, nextRight, nextTotal), 1000);
+    scheduleTimeout(() => advanceQuestion(idx + 1, nextRight, nextTotal), 1000);
   };
 
   const handleSubmitType = (e: React.FormEvent) => {
@@ -473,7 +525,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
       setTotalAttempted(nextTotal);
       soundEngine.playOk();
       setFeedback({ ok: true, msg: `Ejaan Sempurna! "${cur.word}" (+${gain} XP)` });
-      window.setTimeout(() => advanceQuestion(idx + 1, nextRight, nextTotal), 1000);
+      scheduleTimeout(() => advanceQuestion(idx + 1, nextRight, nextTotal), 1000);
     } else {
       const nextTries = typeTries + 1;
       setTypeTries(nextTries);
@@ -483,10 +535,10 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
         const nextTotal = totalAttempted + 1;
         setTotalAttempted(nextTotal);
         setFeedback({ ok: false, msg: `Jawaban benar yaitu "${cur.word}"` });
-        window.setTimeout(() => advanceQuestion(idx + 1, rightCount, nextTotal), 1200);
+        scheduleTimeout(() => advanceQuestion(idx + 1, rightCount, nextTotal), 1200);
       } else {
         setFeedback({ ok: false, msg: 'Masih kurang tepat, coba 1 kali lagi!' });
-        window.setTimeout(() => setFeedback(null), 800);
+        scheduleTimeout(() => setFeedback(null), 800);
       }
     }
   };
@@ -565,7 +617,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
               </div>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleClose}
                 aria-label="Tutup tantangan"
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-amber-300/60 bg-slate-900/95 text-amber-100 shadow"
               >
@@ -595,7 +647,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
 
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={handleClose}
                   aria-label="Tutup tantangan"
                   className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border-2 border-amber-300/60 bg-slate-900/95 text-amber-100 shadow-lg transition hover:bg-slate-800"
                 >
@@ -689,14 +741,16 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
                 )}
                 <RpgPillButton
                   variant="green"
-                  onClick={() =>
+                  onClick={() => {
+                    clearAllTimers();
+                    soundEngine.stopSpeech();
                     onComplete(
                       session,
                       resultData.pct,
                       xpEarned,
                       resultData.cekCepatPassed,
-                    )
-                  }
+                    );
+                  }}
                   className="w-full"
                 >
                   <span>Selesai &amp; Lanjutkan</span>

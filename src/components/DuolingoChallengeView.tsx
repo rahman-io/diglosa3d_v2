@@ -13,6 +13,7 @@ import {
   DuolingoChallenge,
   evaluateSpokenEnglish,
   evaluateWordBankAnswer,
+  VocabVisualSpec,
 } from '../data/duolingoChallenges';
 import { RpgChoiceCard, RpgChoiceTone, RpgPillButton } from './RpgUiKit';
 
@@ -109,10 +110,20 @@ const InteractiveSentence: React.FC<{
   const [openKey, setOpenKey] = useState<string | null>(null);
   const tokens = text.split(' ');
 
+  useEffect(() => {
+    if (!openKey) return;
+    const dismiss = () => setOpenKey(null);
+    window.addEventListener('pointerdown', dismiss);
+    return () => window.removeEventListener('pointerdown', dismiss);
+  }, [openKey]);
+
   return (
     <span className="inline-flex flex-wrap items-baseline gap-x-1.5 gap-y-1">
       {tokens.map((tok, i) => {
-        const clean = tok.toLowerCase().replace(/[^a-z0-9-]/g, '');
+        const clean = tok
+          .toLowerCase()
+          .replace(/['’]/g, '')
+          .replace(/[^a-z0-9-]/g, '');
         const hint = hints[clean];
         if (!hint) {
           return <span key={`${tok}_${i}`}>{tok}</span>;
@@ -199,6 +210,24 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
 
   const lastRelicTickRef = useRef(relicEliminateTick);
   const resolvedRef = useRef(false);
+  const continuedRef = useRef(false);
+  const pendingTimersRef = useRef<number[]>([]);
+
+  const clearPendingTimers = useCallback(() => {
+    for (const id of pendingTimersRef.current) {
+      window.clearTimeout(id);
+    }
+    pendingTimersRef.current = [];
+  }, []);
+
+  const scheduleSafeTimeout = useCallback((fn: () => void, ms: number) => {
+    const id = window.setTimeout(() => {
+      pendingTimersRef.current = pendingTimersRef.current.filter((t) => t !== id);
+      fn();
+    }, ms);
+    pendingTimersRef.current.push(id);
+    return id;
+  }, []);
 
   const clearSpeakTimers = useCallback(() => {
     if (stopSafetyTimerRef.current !== null) {
@@ -233,7 +262,10 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
   // Reset state whenever challenge.id changes
   useEffect(() => {
     stopMicResources();
+    clearPendingTimers();
+    soundEngine.stopSpeech();
     resolvedRef.current = false;
+    continuedRef.current = false;
     speakFinalizedRef.current = false;
     latestTranscriptRef.current = '';
     bestCandidatesRef.current = [];
@@ -299,23 +331,29 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
     // Auto-play audio for listen / word_bank / dialogue when unlocked
     if (!disabled) {
       if (challenge.type === 'listen_word_bank') {
-        window.setTimeout(() => soundEngine.speakEnglish(challenge.audioSentence, 0.9), 250);
+        scheduleSafeTimeout(() => soundEngine.speakEnglish(challenge.audioSentence, 0.9), 250);
       } else if (challenge.type === 'word_bank_translate' && challenge.audioLang === 'en') {
-        window.setTimeout(() => soundEngine.speakEnglish(challenge.audioText, 0.92), 250);
+        scheduleSafeTimeout(() => soundEngine.speakEnglish(challenge.audioText, 0.92), 250);
       } else if (challenge.type === 'dialogue_complete') {
-        window.setTimeout(() => soundEngine.speakEnglish(challenge.speakerALine, 0.92), 250);
+        scheduleSafeTimeout(() => soundEngine.speakEnglish(challenge.speakerALine, 0.92), 250);
       }
     }
 
     return () => {
       stopMicResources();
+      clearPendingTimers();
+      soundEngine.stopSpeech();
     };
   }, [challenge.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // When transitioning from locked (`disabled = true`, e.g. grab phase) to unlocked (`disabled = false`), speak listen prompt
+  // Also abort active mic/speech if parent locks the view mid-turn (e.g., duel timeout)
   const prevDisabledRef = useRef(disabled);
   useEffect(() => {
-    if (prevDisabledRef.current && !disabled) {
+    if (!prevDisabledRef.current && disabled) {
+      stopMicResources();
+      soundEngine.stopSpeech();
+    } else if (prevDisabledRef.current && !disabled) {
       if (challenge.type === 'listen_word_bank') {
         soundEngine.speakEnglish(challenge.audioSentence, 0.9);
       } else if (challenge.type === 'word_bank_translate' && challenge.audioLang === 'en') {
@@ -329,7 +367,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
       }
     }
     prevDisabledRef.current = disabled;
-  }, [disabled, challenge]);
+  }, [disabled, challenge, stopMicResources]);
 
   // Peluit relic elimination support
   useEffect(() => {
@@ -557,37 +595,43 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
     [challenge, clearSpeakTimers, finishOutcome],
   );
 
-  const stopAndEvaluateSpeak = useCallback(() => {
-    if (!isListening || isStoppingSpeak) return;
-    const sessionId = speakSessionIdRef.current;
-    setIsStoppingSpeak(true);
+  const triggerStopSpeak = useCallback(
+    (sessionId: number) => {
+      if (sessionId !== speakSessionIdRef.current || speakFinalizedRef.current) return;
+      setIsStoppingSpeak(true);
 
-    const rec = recognitionRef.current;
-    if (rec) {
-      try {
-        rec.stop();
-      } catch {
+      const rec = recognitionRef.current;
+      if (rec) {
+        try {
+          rec.stop();
+        } catch {
+          finalizeSpeakAttempt(sessionId);
+          return;
+        }
+      } else {
         finalizeSpeakAttempt(sessionId);
         return;
       }
-    } else {
-      finalizeSpeakAttempt(sessionId);
-      return;
-    }
 
-    // Safety fallback if browser does not fire onend promptly after stop()
-    if (stopSafetyTimerRef.current !== null) {
-      window.clearTimeout(stopSafetyTimerRef.current);
-    }
-    stopSafetyTimerRef.current = window.setTimeout(() => {
-      try {
-        recognitionRef.current?.abort();
-      } catch {
-        // ignore
+      if (stopSafetyTimerRef.current !== null) {
+        window.clearTimeout(stopSafetyTimerRef.current);
       }
-      finalizeSpeakAttempt(sessionId);
-    }, 850);
-  }, [isListening, isStoppingSpeak, finalizeSpeakAttempt]);
+      stopSafetyTimerRef.current = window.setTimeout(() => {
+        try {
+          recognitionRef.current?.abort();
+        } catch {
+          // ignore
+        }
+        finalizeSpeakAttempt(sessionId);
+      }, 850);
+    },
+    [finalizeSpeakAttempt],
+  );
+
+  const stopAndEvaluateSpeak = useCallback(() => {
+    if (!isListening || isStoppingSpeak) return;
+    triggerStopSpeak(speakSessionIdRef.current);
+  }, [isListening, isStoppingSpeak, triggerStopSpeak]);
 
   // Speaking challenge microphone handler (synchronous start for browser user-gesture compatibility)
   const handleStartSpeak = useCallback(() => {
@@ -605,7 +649,8 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
       return;
     }
 
-    // Clean up any leftover instance before starting fresh
+    // Stop any TTS playback before turning on microphone so TTS does not bleed into mic
+    soundEngine.stopSpeech();
     stopMicResources();
 
     const sessionId = speakSessionIdRef.current;
@@ -682,6 +727,21 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
           sessionId,
           'Izin mikrofon ditolak. Aktifkan mic atau tekan "Tak bisa bicara sekarang".',
         );
+      } else if (ev.error === 'audio-capture') {
+        finalizeSpeakAttempt(
+          sessionId,
+          'Perangkat mikrofon tidak ditemukan atau sedang dipakai aplikasi lain.',
+        );
+      } else if (ev.error === 'network') {
+        finalizeSpeakAttempt(
+          sessionId,
+          'Koneksi pengenalan suara terganggu. Coba ulangi atau klik "Tak bisa bicara sekarang".',
+        );
+      } else if (ev.error === 'language-not-supported') {
+        finalizeSpeakAttempt(
+          sessionId,
+          'Bahasa Inggris belum didukung pengenalan suara browser ini. Klik "Tak bisa bicara sekarang".',
+        );
       } else if (ev.error === 'no-speech') {
         finalizeSpeakAttempt(
           sessionId,
@@ -704,18 +764,9 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
 
     try {
       rec.start();
-      // Safety auto-stop after 12 seconds so recording never hangs indefinitely
+      // Safety auto-stop after 12 seconds using unified stop flow
       maxListenTimerRef.current = window.setTimeout(() => {
-        if (sessionId === speakSessionIdRef.current && !speakFinalizedRef.current) {
-          try {
-            recognitionRef.current?.stop();
-          } catch {
-            // ignore
-          }
-          stopSafetyTimerRef.current = window.setTimeout(() => {
-            finalizeSpeakAttempt(sessionId);
-          }, 800);
-        }
+        triggerStopSpeak(sessionId);
       }, 12000);
     } catch {
       finalizeSpeakAttempt(
@@ -733,6 +784,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
     clearSpeakTimers,
     finishOutcome,
     finalizeSpeakAttempt,
+    triggerStopSpeak,
   ]);
 
   // Animated wave bars while microphone is active
@@ -782,7 +834,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
         setMatchMistakes(nextMistakes);
         setWrongPairFlash({ leftId, rightId });
         onMatchMistake?.(leftId, nextMistakes);
-        window.setTimeout(() => setWrongPairFlash(null), 460);
+        scheduleSafeTimeout(() => setWrongPairFlash(null), 460);
       }
     },
     [
@@ -794,8 +846,16 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
       finishOutcome,
       matchMistakes,
       onMatchMistake,
+      scheduleSafeTimeout,
     ],
   );
+
+  const safeContinue = useCallback(() => {
+    if (!onContinue || continuedRef.current) return;
+    continuedRef.current = true;
+    soundEngine.stopSpeech();
+    onContinue();
+  }, [onContinue]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -804,7 +864,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
       if (phase === 'feedback') {
         if ((e.key === 'Enter' || e.code === 'Space') && onContinue) {
           e.preventDefault();
-          onContinue();
+          safeContinue();
         }
         return;
       }
@@ -812,6 +872,16 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
       if (e.key === 'Enter' && canCheck) {
         e.preventDefault();
         handleCheck();
+        return;
+      }
+
+      if (
+        (challenge.type === 'word_bank_translate' || challenge.type === 'listen_word_bank') &&
+        e.key === 'Backspace' &&
+        placedUids.length > 0
+      ) {
+        e.preventDefault();
+        setPlacedUids((prev) => prev.slice(0, -1));
         return;
       }
 
@@ -847,10 +917,12 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
     disabled,
     phase,
     onContinue,
+    safeContinue,
     canCheck,
     handleCheck,
     challenge,
     eliminatedChoiceIdxs,
+    placedUids.length,
     leftTiles,
     rightTiles,
     handlePickMatchTile,
@@ -864,11 +936,108 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
     [placedUids, bankTokens],
   );
 
-  const renderPeopleAvatar = (src: string, alt: string, sizeClass = 'h-16 w-16 sm:h-20 sm:w-20') => {
-    if (brokenImages[src]) {
+  const renderVisualTile = (visual: VocabVisualSpec, compact = false) => {
+    if (visual.kind === 'color') {
+      if (visual.pattern === 'rainbow') {
+        return (
+          <div
+            className="flex h-full w-full items-center justify-center rounded-xl border-2 border-white/80 shadow-inner"
+            style={{
+              background:
+                'conic-gradient(from 0deg, #ef4444, #f97316, #eab308, #22c55e, #3b82f6, #a855f7, #ec4899, #ef4444)',
+            }}
+          >
+            <div className="h-1/3 w-1/3 rounded-full border-2 border-white/90 bg-white/85 shadow" />
+          </div>
+        );
+      }
+      if (visual.pattern === 'dark') {
+        return (
+          <div
+            className="flex h-full w-full items-center justify-center rounded-xl border-2 shadow-inner"
+            style={{
+              background: 'linear-gradient(135deg, #020617 0%, #1e1b4b 55%, #0f172a 100%)',
+              borderColor: visual.borderHex ?? '#334155',
+            }}
+          >
+            <span className={compact ? 'text-xl' : 'text-3xl'}>🌑</span>
+          </div>
+        );
+      }
+      if (visual.pattern === 'light') {
+        return (
+          <div
+            className="flex h-full w-full items-center justify-center rounded-xl border-2 shadow-inner"
+            style={{
+              background: 'linear-gradient(135deg, #fefce8 0%, #fef08a 52%, #e0f2fe 100%)',
+              borderColor: visual.borderHex ?? '#eab308',
+            }}
+          >
+            <span className={compact ? 'text-xl' : 'text-3xl'}>✨</span>
+          </div>
+        );
+      }
       return (
         <div
-          className={`flex ${sizeClass} shrink-0 items-center justify-center rounded-2xl border border-amber-300/40 bg-amber-100/90 text-xs font-black text-amber-900`}
+          className="h-full w-full rounded-xl border-2 shadow-inner"
+          style={{
+            backgroundColor: visual.hex,
+            borderColor: visual.borderHex ?? 'rgba(255,255,255,0.65)',
+          }}
+        />
+      );
+    }
+
+    if (visual.kind === 'numeral') {
+      return (
+        <div className="flex h-full w-full items-center justify-center rounded-xl border border-amber-300/60 bg-gradient-to-br from-amber-200 via-yellow-100 to-orange-200 shadow-inner">
+          <span
+            className={`font-mono-nums font-black tracking-tight text-[#451a03] drop-shadow-[0_1px_0_rgba(255,255,255,0.8)] ${
+              compact
+                ? visual.text.length >= 3
+                  ? 'text-base'
+                  : 'text-xl'
+                : visual.text.length >= 3
+                ? 'text-3xl sm:text-4xl'
+                : 'text-4xl sm:text-5xl'
+            }`}
+          >
+            {visual.text}
+          </span>
+        </div>
+      );
+    }
+
+    return (
+      <div
+        className={`flex h-full w-full items-center justify-center rounded-xl border border-white/60 bg-gradient-to-br ${visual.gradient} shadow-inner`}
+      >
+        <span className={compact ? 'text-2xl sm:text-3xl' : 'text-4xl sm:text-5xl'}>
+          {visual.emoji}
+        </span>
+      </div>
+    );
+  };
+
+  const renderPeopleAvatar = (
+    src: string,
+    alt: string,
+    visual?: VocabVisualSpec,
+    sizeClass = 'h-16 w-16 sm:h-20 sm:w-20',
+  ) => {
+    if (visual) {
+      return (
+        <div
+          className={`flex ${sizeClass} shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-amber-300/45 bg-amber-50/95 p-1 shadow-md`}
+        >
+          {renderVisualTile(visual, true)}
+        </div>
+      );
+    }
+    if (!src || brokenImages[src]) {
+      return (
+        <div
+          className={`flex ${sizeClass} shrink-0 items-center justify-center rounded-2xl border border-amber-300/40 bg-amber-100/90 px-1 text-center text-xs font-black text-amber-900`}
         >
           {alt}
         </div>
@@ -942,7 +1111,9 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
                 className="flex flex-col items-center justify-between gap-2 p-2 text-center sm:p-3"
               >
                 <div className="flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border border-amber-900/15 bg-gradient-to-b from-[#fffdf7] to-[#fef3c7] p-1.5 shadow-inner">
-                  {brokenImages[opt.imageSrc] ? (
+                  {opt.visual ? (
+                    renderVisualTile(opt.visual)
+                  ) : !opt.imageSrc || brokenImages[opt.imageSrc] ? (
                     <span className="text-sm font-black text-amber-900">{opt.label}</span>
                   ) : (
                     <img
@@ -987,7 +1158,11 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
         <div className="space-y-3">
           {/* Character + Speech Bubble */}
           <div className="flex items-center gap-3">
-            {renderPeopleAvatar(challenge.speakerImage, challenge.speakerName)}
+            {renderPeopleAvatar(
+              challenge.speakerImage,
+              challenge.speakerName,
+              challenge.speakerVisual,
+            )}
             <div className="relative flex-1 rounded-2xl border border-amber-300/35 bg-slate-950/60 px-3.5 py-2.5 shadow-inner">
               <div className="flex items-center gap-2.5 text-sm font-bold text-white sm:text-base">
                 {challenge.audioLang === 'en' && (
@@ -1001,7 +1176,11 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
                     <Volume2 className="h-4 w-4" />
                   </button>
                 )}
-                <InteractiveSentence text={challenge.sourceText} hints={challenge.wordHints} />
+                <InteractiveSentence
+                  key={challenge.id}
+                  text={challenge.sourceText}
+                  hints={challenge.wordHints}
+                />
               </div>
               <div className="mt-1 text-[10px] font-semibold text-amber-200/65">
                 Sentuh kata bergaris putus-putus untuk melihat artinya
@@ -1072,19 +1251,27 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
       {challenge.type === 'speak' && (
         <div className="space-y-3">
           <div className="flex items-center gap-3">
-            {renderPeopleAvatar(challenge.speakerImage, challenge.speakerName)}
+            {renderPeopleAvatar(
+              challenge.speakerImage,
+              challenge.speakerName,
+              challenge.speakerVisual,
+            )}
             <div className="flex-1 rounded-2xl border border-amber-300/35 bg-slate-950/60 px-3.5 py-2.5 shadow-inner">
               <div className="flex items-center gap-2.5 text-sm font-bold text-white sm:text-base">
                 <button
                   type="button"
-                  disabled={disabled}
+                  disabled={disabled || isListening}
                   onClick={() => soundEngine.speakEnglish(challenge.targetSentence, 0.88)}
                   aria-label="Dengar contoh pengucapan"
                   className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-sky-300/50 bg-sky-500/25 text-sky-200 transition hover:bg-sky-500/40 disabled:opacity-50"
                 >
                   <Volume2 className="h-4 w-4" />
                 </button>
-                <InteractiveSentence text={challenge.targetSentence} hints={challenge.wordHints} />
+                <InteractiveSentence
+                  key={challenge.id}
+                  text={challenge.targetSentence}
+                  hints={challenge.wordHints}
+                />
               </div>
               <div className="mt-1 text-[10px] font-semibold text-amber-200/65">
                 Dengar contoh atau sentuh kata untuk arti
@@ -1157,6 +1344,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
               {renderPeopleAvatar(
                 challenge.speakerAImage,
                 challenge.speakerAName,
+                challenge.speakerAVisual,
                 'h-12 w-12 sm:h-14 sm:w-14',
               )}
               <div className="rounded-2xl border border-amber-300/30 bg-slate-900/90 px-3 py-2 text-xs font-bold text-white sm:text-sm">
@@ -1171,6 +1359,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
                     <Volume2 className="h-3.5 w-3.5" />
                   </button>
                   <InteractiveSentence
+                    key={challenge.id}
                     text={challenge.speakerALine}
                     hints={challenge.speakerAHints}
                   />
@@ -1194,6 +1383,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
               {renderPeopleAvatar(
                 challenge.speakerBImage,
                 challenge.speakerBName,
+                challenge.speakerBVisual,
                 'h-12 w-12 sm:h-14 sm:w-14',
               )}
             </div>
@@ -1472,7 +1662,7 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
             <RpgPillButton
               variant={isCorrect ? 'green' : 'red'}
               size="sm"
-              onClick={onContinue}
+              onClick={safeContinue}
             >
               <span>LANJUTKAN</span>
             </RpgPillButton>

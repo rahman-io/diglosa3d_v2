@@ -78,40 +78,109 @@ export const HEAD_FACE_VOCAB_IDS = [
 
 export const PERSONAL_INFO_VOCAB_IDS = [
   'v_5_name',
+  'v_5_last_name',
+  'v_5_age',
   'v_5_address',
   'v_5_birthday',
+  'v_5_birthdate',
+  'v_5_single',
   'v_5_married',
   'v_5_passport',
   'v_5_phone_number',
+  'v_5_question',
+  'v_5_answer',
 ] as const;
 
 export const GREETINGS_VOCAB_IDS = [
   'v_0_hello',
   'v_0_goodbye',
+  'v_0_hi',
+  'v_0_bye',
   'v_0_good_morning',
   'v_0_good_afternoon',
   'v_0_good_evening',
   'v_0_good_night',
   'v_0_thank_you',
+  'v_0_thanks',
+  'v_0_please',
+  'v_0_ok',
+  'v_0_yes',
+  'v_0_no',
+  'v_0_sorry',
   'v_0_welcome',
 ] as const;
 
-export const DESA_ILLUSTRATED_VOCAB_IDS = [
+export const NUMBERS_VOCAB_IDS = [
+  'v_2_zero',
+  'v_2_one',
+  'v_2_two',
+  'v_2_three',
+  'v_2_four',
+  'v_2_five',
+  'v_2_six',
+  'v_2_seven',
+  'v_2_eight',
+  'v_2_nine',
+  'v_2_ten',
+  'v_2_eleven',
+  'v_2_twelve',
+  'v_2_thirteen',
+  'v_2_fourteen',
+  'v_2_fifteen',
+  'v_2_sixteen',
+  'v_2_seventeen',
+  'v_2_eighteen',
+  'v_2_nineteen',
+  'v_2_twenty',
+  'v_2_thirty',
+  'v_2_forty',
+  'v_2_fifty',
+  'v_2_sixty',
+  'v_2_seventy',
+  'v_2_eighty',
+  'v_2_ninety',
+  'v_2_hundred',
+] as const;
+
+export const COLORS_VOCAB_IDS = [
+  'v_4_black',
+  'v_4_white',
+  'v_4_blue',
+  'v_4_green',
+  'v_4_yellow',
+  'v_4_red',
+  'v_4_pink',
+  'v_4_orange',
+  'v_4_purple',
+  'v_4_gray',
+  'v_4_brown',
+  'v_4_dark',
+  'v_4_light',
+  'v_4_color',
+] as const;
+
+export const DESA_ALL_VOCAB_IDS = [
   ...GREETINGS_VOCAB_IDS,
   ...PEOPLE_VOCAB_IDS,
+  ...NUMBERS_VOCAB_IDS,
   ...FAMILY_VOCAB_IDS,
+  ...COLORS_VOCAB_IDS,
+  ...PERSONAL_INFO_VOCAB_IDS,
   ...BODY_VOCAB_IDS,
   ...HEAD_FACE_VOCAB_IDS,
-  ...PERSONAL_INFO_VOCAB_IDS,
 ] as const;
+
+export const DESA_ILLUSTRATED_VOCAB_IDS = DESA_ALL_VOCAB_IDS;
 
 export type GreetingsVocabId = (typeof GREETINGS_VOCAB_IDS)[number];
 export type PeopleVocabId = (typeof PEOPLE_VOCAB_IDS)[number];
+export type NumbersVocabId = (typeof NUMBERS_VOCAB_IDS)[number];
 export type FamilyVocabId = (typeof FAMILY_VOCAB_IDS)[number];
+export type ColorsVocabId = (typeof COLORS_VOCAB_IDS)[number];
+export type PersonalInfoVocabId = (typeof PERSONAL_INFO_VOCAB_IDS)[number];
 export type BodyVocabId = (typeof BODY_VOCAB_IDS)[number];
 export type HeadFaceVocabId = (typeof HEAD_FACE_VOCAB_IDS)[number];
-export type PersonalInfoVocabId = (typeof PERSONAL_INFO_VOCAB_IDS)[number];
-export type DesaVocabId = (typeof DESA_ILLUSTRATED_VOCAB_IDS)[number];
+export type DesaVocabId = (typeof DESA_ALL_VOCAB_IDS)[number];
 
 export const VOCAB_IMAGE_BY_ID: Record<string, string> = {
   // People (14)
@@ -196,13 +265,101 @@ export const VOCAB_IMAGE_BY_ID: Record<string, string> = {
   v_0_welcome: './assets/vocab/greetings/welcome.png',
 };
 
+export type VocabVisualSpec =
+  | { kind: 'color'; hex: string; borderHex?: string; pattern?: 'dark' | 'light' | 'rainbow' }
+  | { kind: 'numeral'; text: string }
+  | { kind: 'emblem'; emoji: string; gradient: string };
+
+export const VOCAB_VISUAL_BY_ID: Record<string, VocabVisualSpec> = {
+  // Greetings emblems (8)
+  v_0_hi: { kind: 'emblem', emoji: '👋', gradient: 'from-amber-200 to-orange-300' },
+  v_0_bye: { kind: 'emblem', emoji: '🚶', gradient: 'from-sky-200 to-indigo-300' },
+  v_0_thanks: { kind: 'emblem', emoji: '💐', gradient: 'from-rose-200 to-pink-300' },
+  v_0_please: { kind: 'emblem', emoji: '🙏', gradient: 'from-teal-200 to-emerald-300' },
+  v_0_ok: { kind: 'emblem', emoji: '👌', gradient: 'from-lime-200 to-green-300' },
+  v_0_yes: { kind: 'emblem', emoji: '✅', gradient: 'from-emerald-200 to-teal-300' },
+  v_0_no: { kind: 'emblem', emoji: '❌', gradient: 'from-rose-200 to-red-300' },
+  v_0_sorry: { kind: 'emblem', emoji: '🙇', gradient: 'from-violet-200 to-purple-300' },
+
+  // Numbers 0..100 (29)
+  v_2_zero: { kind: 'numeral', text: '0' },
+  v_2_one: { kind: 'numeral', text: '1' },
+  v_2_two: { kind: 'numeral', text: '2' },
+  v_2_three: { kind: 'numeral', text: '3' },
+  v_2_four: { kind: 'numeral', text: '4' },
+  v_2_five: { kind: 'numeral', text: '5' },
+  v_2_six: { kind: 'numeral', text: '6' },
+  v_2_seven: { kind: 'numeral', text: '7' },
+  v_2_eight: { kind: 'numeral', text: '8' },
+  v_2_nine: { kind: 'numeral', text: '9' },
+  v_2_ten: { kind: 'numeral', text: '10' },
+  v_2_eleven: { kind: 'numeral', text: '11' },
+  v_2_twelve: { kind: 'numeral', text: '12' },
+  v_2_thirteen: { kind: 'numeral', text: '13' },
+  v_2_fourteen: { kind: 'numeral', text: '14' },
+  v_2_fifteen: { kind: 'numeral', text: '15' },
+  v_2_sixteen: { kind: 'numeral', text: '16' },
+  v_2_seventeen: { kind: 'numeral', text: '17' },
+  v_2_eighteen: { kind: 'numeral', text: '18' },
+  v_2_nineteen: { kind: 'numeral', text: '19' },
+  v_2_twenty: { kind: 'numeral', text: '20' },
+  v_2_thirty: { kind: 'numeral', text: '30' },
+  v_2_forty: { kind: 'numeral', text: '40' },
+  v_2_fifty: { kind: 'numeral', text: '50' },
+  v_2_sixty: { kind: 'numeral', text: '60' },
+  v_2_seventy: { kind: 'numeral', text: '70' },
+  v_2_eighty: { kind: 'numeral', text: '80' },
+  v_2_ninety: { kind: 'numeral', text: '90' },
+  v_2_hundred: { kind: 'numeral', text: '100' },
+
+  // Colors (14)
+  v_4_black: { kind: 'color', hex: '#111827', borderHex: '#4b5563' },
+  v_4_white: { kind: 'color', hex: '#ffffff', borderHex: '#94a3b8' },
+  v_4_blue: { kind: 'color', hex: '#2563eb' },
+  v_4_green: { kind: 'color', hex: '#16a34a' },
+  v_4_yellow: { kind: 'color', hex: '#facc15', borderHex: '#ca8a04' },
+  v_4_red: { kind: 'color', hex: '#dc2626' },
+  v_4_pink: { kind: 'color', hex: '#ec4899' },
+  v_4_orange: { kind: 'color', hex: '#f97316' },
+  v_4_purple: { kind: 'color', hex: '#9333ea' },
+  v_4_gray: { kind: 'color', hex: '#6b7280' },
+  v_4_brown: { kind: 'color', hex: '#78350f' },
+  v_4_dark: { kind: 'color', hex: '#090d16', borderHex: '#334155', pattern: 'dark' },
+  v_4_light: { kind: 'color', hex: '#fef9c3', borderHex: '#eab308', pattern: 'light' },
+  v_4_color: { kind: 'color', hex: '#f43f5e', pattern: 'rainbow' },
+
+  // Personal Information emblems (6)
+  v_5_last_name: { kind: 'emblem', emoji: '🏷️', gradient: 'from-amber-200 to-yellow-300' },
+  v_5_age: { kind: 'emblem', emoji: '⏳', gradient: 'from-cyan-200 to-sky-300' },
+  v_5_birthdate: { kind: 'emblem', emoji: '📅', gradient: 'from-indigo-200 to-blue-300' },
+  v_5_single: { kind: 'emblem', emoji: '🧑', gradient: 'from-emerald-200 to-lime-300' },
+  v_5_question: { kind: 'emblem', emoji: '❓', gradient: 'from-orange-200 to-amber-300' },
+  v_5_answer: { kind: 'emblem', emoji: '💬', gradient: 'from-fuchsia-200 to-purple-300' },
+};
+
 export function getVocabImage(vocabId: string): string | null {
   return VOCAB_IMAGE_BY_ID[vocabId] ?? null;
 }
 
+export function getVocabVisual(vocabId: string): VocabVisualSpec | undefined {
+  return VOCAB_VISUAL_BY_ID[vocabId];
+}
+
+function getVisualSignature(vocabId: string): string {
+  const img = VOCAB_IMAGE_BY_ID[vocabId];
+  if (img) return `img:${img}`;
+  const vis = VOCAB_VISUAL_BY_ID[vocabId];
+  if (!vis) return `id:${vocabId}`;
+  if (vis.kind === 'color') return `clr:${vis.pattern || ''}:${vis.hex}`;
+  if (vis.kind === 'numeral') return `num:${vis.text}`;
+  return `emb:${vis.emoji}`;
+}
+
 function getCategoryTag(vocabId: string): { upper: string; title: string } {
   if (vocabId.startsWith('v_0_')) return { upper: 'GREETINGS', title: 'Hello and Goodbye' };
+  if (vocabId.startsWith('v_2_')) return { upper: 'NUMBERS', title: 'Numbers 0 to 100' };
   if (vocabId.startsWith('v_3_')) return { upper: 'FAMILY', title: 'Family' };
+  if (vocabId.startsWith('v_4_')) return { upper: 'COLORS', title: 'Colors' };
   if (vocabId.startsWith('v_5_')) return { upper: 'PERSONAL INFO', title: 'Personal Information' };
   if (vocabId.startsWith('v_6_')) return { upper: 'THE BODY', title: 'The Body' };
   if (vocabId.startsWith('v_7_')) return { upper: 'HEAD & FACE', title: 'The Head and Face' };
@@ -216,7 +373,9 @@ function getCategoryPrefix(vocabId: string): string {
 
 function getCategoryPool(vocabId: string): readonly DesaVocabId[] {
   if (vocabId.startsWith('v_0_')) return GREETINGS_VOCAB_IDS;
+  if (vocabId.startsWith('v_2_')) return NUMBERS_VOCAB_IDS;
   if (vocabId.startsWith('v_3_')) return FAMILY_VOCAB_IDS;
+  if (vocabId.startsWith('v_4_')) return COLORS_VOCAB_IDS;
   if (vocabId.startsWith('v_5_')) return PERSONAL_INFO_VOCAB_IDS;
   if (vocabId.startsWith('v_6_')) return BODY_VOCAB_IDS;
   if (vocabId.startsWith('v_7_')) return HEAD_FACE_VOCAB_IDS;
@@ -227,6 +386,7 @@ export interface PictureChoiceOption {
   vocabId: string;
   label: string;
   imageSrc: string;
+  visual?: VocabVisualSpec;
 }
 
 export interface WordBankChallengeBase {
@@ -234,6 +394,7 @@ export interface WordBankChallengeBase {
   vocabId: string;
   categoryLabel: string;
   speakerImage: string;
+  speakerVisual?: VocabVisualSpec;
   speakerName: string;
   sourceText: string;
   audioText: string;
@@ -269,6 +430,7 @@ export type DuolingoChallenge =
       kicker: string;
       promptTitle: string;
       speakerImage: string;
+      speakerVisual?: VocabVisualSpec;
       speakerName: string;
       targetSentence: string;
       wordHints: Record<string, string>;
@@ -281,10 +443,12 @@ export type DuolingoChallenge =
       kicker: string;
       promptTitle: string;
       speakerAImage: string;
+      speakerAVisual?: VocabVisualSpec;
       speakerAName: string;
       speakerALine: string;
       speakerAHints: Record<string, string>;
       speakerBImage: string;
+      speakerBVisual?: VocabVisualSpec;
       speakerBName: string;
       choices: string[];
       correctIndex: number;
@@ -1230,6 +1394,597 @@ const WORD_BANK_SEEDS: WordBankSeed[] = [
     wordHints: { selamat: 'welcome (selamat datang)', datang: 'come', rumah: 'home' },
     translationNote: 'Welcome to our home!',
   },
+  // ---- GREETINGS REMAINING (8) ----
+  {
+    vocabId: 'v_0_hi',
+    direction: 'en_to_id',
+    speakerId: 'v_1_boy',
+    sourceText: 'Hi, how are you today?',
+    targetTokens: ['Hai,', 'apa', 'kabarmu', 'hari', 'ini?'],
+    acceptedVariants: ['hai bagaimana kabarmu hari ini'],
+    distractors: ['maaf', 'selamat tidur'],
+    wordHints: { hi: 'hai', how: 'bagaimana', today: 'hari ini' },
+    translationNote: 'Hai, apa kabarmu hari ini?',
+  },
+  {
+    vocabId: 'v_0_bye',
+    direction: 'id_to_en',
+    speakerId: 'v_1_girl',
+    sourceText: 'Sampai jumpa besok pagi!',
+    targetTokens: ['Bye,', 'see', 'you', 'tomorrow', 'morning!'],
+    acceptedVariants: ['bye see you tomorrow'],
+    distractors: ['welcome', 'sorry'],
+    wordHints: { sampai: 'sampai jumpa = bye', besok: 'tomorrow', pagi: 'morning' },
+    translationNote: 'Bye, see you tomorrow morning!',
+  },
+  {
+    vocabId: 'v_0_thanks',
+    direction: 'en_to_id',
+    speakerId: 'v_1_friend',
+    sourceText: 'Thanks for your kind help!',
+    targetTokens: ['Makasih', 'atas', 'bantuan', 'baikmu!'],
+    acceptedVariants: ['terima kasih atas bantuan baikmu', 'makasih untuk bantuanmu'],
+    distractors: ['tolong', 'tidak'],
+    wordHints: { thanks: 'makasih', kind: 'baik', help: 'bantuan' },
+    translationNote: 'Makasih atas bantuan baikmu!',
+  },
+  {
+    vocabId: 'v_0_please',
+    direction: 'id_to_en',
+    speakerId: 'v_1_woman',
+    sourceText: 'Tolong bantu teman saya',
+    targetTokens: ['Please', 'help', 'my', 'friend'],
+    distractors: ['sorry', 'goodbye'],
+    wordHints: { tolong: 'please', bantu: 'help', teman: 'friend' },
+    translationNote: 'Please help my friend',
+  },
+  {
+    vocabId: 'v_0_ok',
+    direction: 'en_to_id',
+    speakerId: 'v_1_boy',
+    sourceText: 'OK, let us go together!',
+    targetTokens: ['Baiklah,', 'ayo', 'kita', 'pergi', 'bersama!'],
+    acceptedVariants: ['oke ayo kita pergi bersama', 'ok ayo kita pergi bersama'],
+    distractors: ['tidak', 'maaf'],
+    wordHints: { ok: 'oke / baiklah', go: 'pergi', together: 'bersama' },
+    translationNote: 'Baiklah, ayo kita pergi bersama!',
+  },
+  {
+    vocabId: 'v_0_yes',
+    direction: 'id_to_en',
+    speakerId: 'v_1_girl',
+    sourceText: 'Ya, saya sudah siap sekarang',
+    targetTokens: ['Yes,', 'I', 'am', 'ready', 'now'],
+    distractors: ['no', 'sorry'],
+    wordHints: { ya: 'yes', siap: 'ready', sekarang: 'now' },
+    translationNote: 'Yes, I am ready now',
+  },
+  {
+    vocabId: 'v_0_no',
+    direction: 'en_to_id',
+    speakerId: 'v_1_man',
+    sourceText: 'No, that is not my bag',
+    targetTokens: ['Tidak,', 'itu', 'bukan', 'tas', 'saya'],
+    distractors: ['ya', 'tolong'],
+    wordHints: { no: 'tidak', not: 'bukan', bag: 'tas' },
+    translationNote: 'Tidak, itu bukan tas saya',
+  },
+  {
+    vocabId: 'v_0_sorry',
+    direction: 'id_to_en',
+    speakerId: 'v_1_boy',
+    sourceText: 'Maaf, saya datang terlambat',
+    targetTokens: ['Sorry,', 'I', 'came', 'late'],
+    acceptedVariants: ['sorry i am late'],
+    distractors: ['thanks', 'welcome'],
+    wordHints: { maaf: 'sorry', datang: 'came', terlambat: 'late' },
+    translationNote: 'Sorry, I came late',
+  },
+  // ---- PERSONAL INFO REMAINING (6) ----
+  {
+    vocabId: 'v_5_last_name',
+    direction: 'en_to_id',
+    speakerId: 'v_1_mr',
+    sourceText: 'What is your last name?',
+    targetTokens: ['Apa', 'nama', 'belakangmu?'],
+    acceptedVariants: ['apa marga kamu', 'apa nama belakang kamu'],
+    distractors: ['umurmu', 'paspor'],
+    wordHints: { last: 'belakang / marga', name: 'nama' },
+    translationNote: 'Apa nama belakangmu?',
+  },
+  {
+    vocabId: 'v_5_age',
+    direction: 'id_to_en',
+    speakerId: 'v_1_girl',
+    sourceText: 'Berapa umurmu sekarang?',
+    targetTokens: ['What', 'is', 'your', 'age', 'now?'],
+    acceptedVariants: ['how old are you now'],
+    distractors: ['name', 'address'],
+    wordHints: { umurmu: 'your age', sekarang: 'now' },
+    translationNote: 'What is your age now?',
+  },
+  {
+    vocabId: 'v_5_birthdate',
+    direction: 'en_to_id',
+    speakerId: 'v_1_woman',
+    sourceText: 'Write your full birthdate here',
+    targetTokens: ['Tulis', 'tanggal', 'lahirmu', 'di', 'sini'],
+    acceptedVariants: ['tulis tanggal lahir kamu di sini'],
+    distractors: ['alamatmu', 'namamu'],
+    wordHints: { write: 'tulis', full: 'lengkap', birthdate: 'tanggal lahir', here: 'di sini' },
+    translationNote: 'Tulis tanggal lahirmu di sini',
+  },
+  {
+    vocabId: 'v_5_single',
+    direction: 'id_to_en',
+    speakerId: 'v_1_miss',
+    sourceText: 'Kakak laki-lakiku masih lajang',
+    targetTokens: ['My', 'brother', 'is', 'still', 'single'],
+    distractors: ['married', 'passport'],
+    wordHints: { masih: 'still', lajang: 'single' },
+    translationNote: 'My brother is still single',
+  },
+  {
+    vocabId: 'v_5_question',
+    direction: 'en_to_id',
+    speakerId: 'v_1_woman',
+    sourceText: 'I have an easy question',
+    targetTokens: ['Saya', 'punya', 'pertanyaan', 'yang', 'mudah'],
+    acceptedVariants: ['saya ada satu pertanyaan mudah'],
+    distractors: ['jawaban', 'nomor'],
+    wordHints: { have: 'punya', easy: 'mudah', question: 'pertanyaan' },
+    translationNote: 'Saya punya pertanyaan yang mudah',
+  },
+  {
+    vocabId: 'v_5_answer',
+    direction: 'id_to_en',
+    speakerId: 'v_1_boy',
+    sourceText: 'Saya tahu jawaban yang benar',
+    targetTokens: ['I', 'know', 'the', 'right', 'answer'],
+    acceptedVariants: ['i know the correct answer'],
+    distractors: ['question', 'birthdate'],
+    wordHints: { tahu: 'know', benar: 'right / correct', jawaban: 'answer' },
+    translationNote: 'I know the right answer',
+  },
+  // ---- COLORS (14) ----
+  {
+    vocabId: 'v_4_black',
+    direction: 'en_to_id',
+    speakerId: 'v_4_black',
+    sourceText: 'The cat is black',
+    targetTokens: ['Kucing', 'itu', 'berwarna', 'hitam'],
+    acceptedVariants: ['kucing itu hitam'],
+    distractors: ['putih', 'merah'],
+    wordHints: { cat: 'kucing', black: 'hitam' },
+    translationNote: 'Kucing itu berwarna hitam',
+  },
+  {
+    vocabId: 'v_4_white',
+    direction: 'id_to_en',
+    speakerId: 'v_4_white',
+    sourceText: 'Gigi saya berwarna putih',
+    targetTokens: ['My', 'teeth', 'are', 'white'],
+    distractors: ['black', 'brown'],
+    wordHints: { gigi: 'teeth', putih: 'white' },
+    translationNote: 'My teeth are white',
+  },
+  {
+    vocabId: 'v_4_blue',
+    direction: 'en_to_id',
+    speakerId: 'v_4_blue',
+    sourceText: 'The ocean is bright blue',
+    targetTokens: ['Lautan', 'berwarna', 'biru', 'cerah'],
+    acceptedVariants: ['laut itu biru cerah'],
+    distractors: ['hijau', 'ungu'],
+    wordHints: { ocean: 'lautan', bright: 'cerah', blue: 'biru' },
+    translationNote: 'Lautan berwarna biru cerah',
+  },
+  {
+    vocabId: 'v_4_green',
+    direction: 'id_to_en',
+    speakerId: 'v_4_green',
+    sourceText: 'Daun di taman berwarna hijau',
+    targetTokens: ['Leaves', 'in', 'the', 'garden', 'are', 'green'],
+    distractors: ['yellow', 'pink'],
+    wordHints: { daun: 'leaves', taman: 'garden', hijau: 'green' },
+    translationNote: 'Leaves in the garden are green',
+  },
+  {
+    vocabId: 'v_4_yellow',
+    direction: 'en_to_id',
+    speakerId: 'v_4_yellow',
+    sourceText: 'The morning sun is yellow',
+    targetTokens: ['Matahari', 'pagi', 'berwarna', 'kuning'],
+    acceptedVariants: ['matahari pagi kuning'],
+    distractors: ['abu-abu', 'hitam'],
+    wordHints: { sun: 'matahari', morning: 'pagi', yellow: 'kuning' },
+    translationNote: 'Matahari pagi berwarna kuning',
+  },
+  {
+    vocabId: 'v_4_red',
+    direction: 'id_to_en',
+    speakerId: 'v_4_red',
+    sourceText: 'Saya membawa mawar merah',
+    targetTokens: ['I', 'bring', 'a', 'red', 'rose'],
+    distractors: ['blue', 'gray'],
+    wordHints: { membawa: 'bring', mawar: 'rose', merah: 'red' },
+    translationNote: 'I bring a red rose',
+  },
+  {
+    vocabId: 'v_4_pink',
+    direction: 'en_to_id',
+    speakerId: 'v_4_pink',
+    sourceText: 'She wears a pink scarf',
+    targetTokens: ['Dia', 'memakai', 'syal', 'merah', 'muda'],
+    acceptedVariants: ['dia memakai syal pink'],
+    distractors: ['cokelat', 'biru'],
+    wordHints: { wears: 'memakai', pink: 'merah muda', scarf: 'syal' },
+    translationNote: 'Dia memakai syal merah muda',
+  },
+  {
+    vocabId: 'v_4_orange',
+    direction: 'id_to_en',
+    speakerId: 'v_4_orange',
+    sourceText: 'Langit senja berwarna oranye',
+    targetTokens: ['The', 'sunset', 'sky', 'is', 'orange'],
+    distractors: ['purple', 'white'],
+    wordHints: { langit: 'sky', senja: 'sunset', oranye: 'orange' },
+    translationNote: 'The sunset sky is orange',
+  },
+  {
+    vocabId: 'v_4_purple',
+    direction: 'en_to_id',
+    speakerId: 'v_4_purple',
+    sourceText: 'Look at that purple flower',
+    targetTokens: ['Lihat', 'bunga', 'ungu', 'itu'],
+    distractors: ['kuning', 'hitam'],
+    wordHints: { look: 'lihat', purple: 'ungu', flower: 'bunga' },
+    translationNote: 'Lihat bunga ungu itu',
+  },
+  {
+    vocabId: 'v_4_gray',
+    direction: 'id_to_en',
+    speakerId: 'v_4_gray',
+    sourceText: 'Awan hujan itu berwarna abu-abu',
+    targetTokens: ['The', 'rain', 'cloud', 'is', 'gray'],
+    distractors: ['yellow', 'pink'],
+    wordHints: { awan: 'cloud', hujan: 'rain', 'abu-abu': 'gray' },
+    translationNote: 'The rain cloud is gray',
+  },
+  {
+    vocabId: 'v_4_brown',
+    direction: 'en_to_id',
+    speakerId: 'v_4_brown',
+    sourceText: 'He has brown hair',
+    targetTokens: ['Dia', 'punya', 'rambut', 'cokelat'],
+    distractors: ['ungu', 'hijau'],
+    wordHints: { brown: 'cokelat', hair: 'rambut' },
+    translationNote: 'Dia punya rambut cokelat',
+  },
+  {
+    vocabId: 'v_4_dark',
+    direction: 'id_to_en',
+    speakerId: 'v_4_dark',
+    sourceText: 'Malam ini langit sangat gelap',
+    targetTokens: ['Tonight', 'the', 'sky', 'is', 'very', 'dark'],
+    distractors: ['light', 'pink'],
+    wordHints: { malam: 'tonight', langit: 'sky', gelap: 'dark' },
+    translationNote: 'Tonight the sky is very dark',
+  },
+  {
+    vocabId: 'v_4_light',
+    direction: 'en_to_id',
+    speakerId: 'v_4_light',
+    sourceText: 'I like light blue color',
+    targetTokens: ['Saya', 'suka', 'warna', 'biru', 'terang'],
+    acceptedVariants: ['saya suka warna biru cerah'],
+    distractors: ['gelap', 'hitam'],
+    wordHints: { like: 'suka', light: 'terang / cerah', blue: 'biru', color: 'warna' },
+    translationNote: 'Saya suka warna biru terang',
+  },
+  {
+    vocabId: 'v_4_color',
+    direction: 'id_to_en',
+    speakerId: 'v_4_color',
+    sourceText: 'Apa warna kesukaanmu?',
+    targetTokens: ['What', 'is', 'your', 'favorite', 'color?'],
+    distractors: ['number', 'age'],
+    wordHints: { warna: 'color', kesukaanmu: 'your favorite' },
+    translationNote: 'What is your favorite color?',
+  },
+  // ---- NUMBERS 0..100 (29) ----
+  {
+    vocabId: 'v_2_zero',
+    direction: 'en_to_id',
+    speakerId: 'v_2_zero',
+    sourceText: 'Start counting from zero',
+    targetTokens: ['Mulai', 'menghitung', 'dari', 'nol'],
+    distractors: ['sepuluh', 'seratus'],
+    wordHints: { start: 'mulai', counting: 'menghitung', zero: 'nol' },
+    translationNote: 'Mulai menghitung dari nol',
+  },
+  {
+    vocabId: 'v_2_one',
+    direction: 'id_to_en',
+    speakerId: 'v_2_one',
+    sourceText: 'Saya punya satu sahabat',
+    targetTokens: ['I', 'have', 'one', 'best', 'friend'],
+    distractors: ['two', 'ten'],
+    wordHints: { satu: 'one', sahabat: 'best friend' },
+    translationNote: 'I have one best friend',
+  },
+  {
+    vocabId: 'v_2_two',
+    direction: 'en_to_id',
+    speakerId: 'v_2_two',
+    sourceText: 'We have two bright eyes',
+    targetTokens: ['Kita', 'punya', 'dua', 'mata', 'cerah'],
+    distractors: ['lima', 'nol'],
+    wordHints: { two: 'dua', bright: 'cerah', eyes: 'mata' },
+    translationNote: 'Kita punya dua mata cerah',
+  },
+  {
+    vocabId: 'v_2_three',
+    direction: 'id_to_en',
+    speakerId: 'v_2_three',
+    sourceText: 'Ada tiga anak di taman',
+    targetTokens: ['There', 'are', 'three', 'children', 'outside'],
+    acceptedVariants: ['there are three children in the park'],
+    distractors: ['four', 'zero'],
+    wordHints: { tiga: 'three', anak: 'children' },
+    translationNote: 'There are three children outside',
+  },
+  {
+    vocabId: 'v_2_four',
+    direction: 'en_to_id',
+    speakerId: 'v_2_four',
+    sourceText: 'Four people greet us',
+    targetTokens: ['Empat', 'orang', 'menyapa', 'kita'],
+    distractors: ['tujuh', 'sembilan'],
+    wordHints: { four: 'empat', people: 'orang', greet: 'menyapa' },
+    translationNote: 'Four people greet us',
+  },
+  {
+    vocabId: 'v_2_five',
+    direction: 'id_to_en',
+    speakerId: 'v_2_five',
+    sourceText: 'Lima jari di tangan kanan',
+    targetTokens: ['Five', 'fingers', 'on', 'right', 'hand'],
+    distractors: ['eight', 'two'],
+    wordHints: { lima: 'five', jari: 'fingers', tangan: 'hand' },
+    translationNote: 'Five fingers on right hand',
+  },
+  {
+    vocabId: 'v_2_six',
+    direction: 'en_to_id',
+    speakerId: 'v_2_six',
+    sourceText: 'Count up to six!',
+    targetTokens: ['Hitung', 'sampai', 'enam!'],
+    distractors: ['empat', 'dua belas'],
+    wordHints: { count: 'hitung', six: 'enam' },
+    translationNote: 'Hitung sampai enam!',
+  },
+  {
+    vocabId: 'v_2_seven',
+    direction: 'id_to_en',
+    speakerId: 'v_2_seven',
+    sourceText: 'Saya bangun pukul tujuh pagi',
+    targetTokens: ['I', 'wake', 'up', 'at', 'seven'],
+    distractors: ['eleven', 'zero'],
+    wordHints: { bangun: 'wake up', tujuh: 'seven' },
+    translationNote: 'I wake up at seven',
+  },
+  {
+    vocabId: 'v_2_eight',
+    direction: 'en_to_id',
+    speakerId: 'v_2_eight',
+    sourceText: 'Eight friends smile warmly',
+    targetTokens: ['Delapan', 'teman', 'tersenyum', 'hangat'],
+    distractors: ['sembilan', 'tiga'],
+    wordHints: { eight: 'delapan', friends: 'teman', smile: 'tersenyum' },
+    translationNote: 'Delapan teman tersenyum hangat',
+  },
+  {
+    vocabId: 'v_2_nine',
+    direction: 'id_to_en',
+    speakerId: 'v_2_nine',
+    sourceText: 'Adik saya berumur sembilan tahun',
+    targetTokens: ['My', 'brother', 'is', 'nine', 'years', 'old'],
+    distractors: ['six', 'thirty'],
+    wordHints: { sembilan: 'nine', tahun: 'years' },
+    translationNote: 'My brother is nine years old',
+  },
+  {
+    vocabId: 'v_2_ten',
+    direction: 'en_to_id',
+    speakerId: 'v_2_ten',
+    sourceText: 'We have ten clean fingers',
+    targetTokens: ['Kita', 'punya', 'sepuluh', 'jari', 'bersih'],
+    distractors: ['lima', 'seratus'],
+    wordHints: { ten: 'sepuluh', fingers: 'jari', clean: 'bersih' },
+    translationNote: 'Kita punya sepuluh jari bersih',
+  },
+  {
+    vocabId: 'v_2_eleven',
+    direction: 'id_to_en',
+    speakerId: 'v_2_eleven',
+    sourceText: 'Nomor rumahku adalah sebelas',
+    targetTokens: ['My', 'house', 'number', 'is', 'eleven'],
+    distractors: ['twelve', 'twenty'],
+    wordHints: { nomor: 'number', rumahku: 'my house', sebelas: 'eleven' },
+    translationNote: 'My house number is eleven',
+  },
+  {
+    vocabId: 'v_2_twelve',
+    direction: 'en_to_id',
+    speakerId: 'v_2_twelve',
+    sourceText: 'Twelve months in one year',
+    targetTokens: ['Dua', 'belas', 'bulan', 'dalam', 'setahun'],
+    distractors: ['sebelas', 'dua puluh'],
+    wordHints: { twelve: 'dua belas', months: 'bulan', year: 'tahun' },
+    translationNote: 'Dua belas bulan dalam setahun',
+  },
+  {
+    vocabId: 'v_2_thirteen',
+    direction: 'id_to_en',
+    speakerId: 'v_2_thirteen',
+    sourceText: 'Sepupuku berumur tiga belas',
+    targetTokens: ['My', 'cousin', 'is', 'thirteen'],
+    distractors: ['thirty', 'fourteen'],
+    wordHints: { sepupuku: 'my cousin', tiga: 'three', belas: 'tiga belas = thirteen' },
+    translationNote: 'My cousin is thirteen',
+  },
+  {
+    vocabId: 'v_2_fourteen',
+    direction: 'en_to_id',
+    speakerId: 'v_2_fourteen',
+    sourceText: 'Fourteen gifts on the table',
+    targetTokens: ['Empat', 'belas', 'hadiah', 'di', 'meja'],
+    distractors: ['empat puluh', 'lima belas'],
+    wordHints: { fourteen: 'empat belas', gifts: 'hadiah', table: 'meja' },
+    translationNote: 'Empat belas hadiah di meja',
+  },
+  {
+    vocabId: 'v_2_fifteen',
+    direction: 'id_to_en',
+    speakerId: 'v_2_fifteen',
+    sourceText: 'Lima belas anak bermain bola',
+    targetTokens: ['Fifteen', 'children', 'play', 'soccer'],
+    distractors: ['fifty', 'sixteen'],
+    wordHints: { lima: 'five', belas: 'lima belas = fifteen', bola: 'soccer' },
+    translationNote: 'Fifteen children play soccer',
+  },
+  {
+    vocabId: 'v_2_sixteen',
+    direction: 'en_to_id',
+    speakerId: 'v_2_sixteen',
+    sourceText: 'Sixteen blue flags wave',
+    targetTokens: ['Enam', 'belas', 'bendera', 'biru', 'berkibar'],
+    distractors: ['enam puluh', 'tujuh belas'],
+    wordHints: { sixteen: 'enam belas', blue: 'biru', flags: 'bendera' },
+    translationNote: 'Enam belas bendera biru berkibar',
+  },
+  {
+    vocabId: 'v_2_seventeen',
+    direction: 'id_to_en',
+    speakerId: 'v_2_seventeen',
+    sourceText: 'Tujuh belas lilin ulang tahun',
+    targetTokens: ['Seventeen', 'birthday', 'candles'],
+    distractors: ['seventy', 'eighteen'],
+    wordHints: { tujuh: 'seven', belas: 'tujuh belas = seventeen', lilin: 'candles' },
+    translationNote: 'Seventeen birthday candles',
+  },
+  {
+    vocabId: 'v_2_eighteen',
+    direction: 'en_to_id',
+    speakerId: 'v_2_eighteen',
+    sourceText: 'She turns eighteen today',
+    targetTokens: ['Dia', 'berusia', 'delapan', 'belas', 'hari', 'ini'],
+    distractors: ['delapan puluh', 'sembilan belas'],
+    wordHints: { eighteen: 'delapan belas', today: 'hari ini' },
+    translationNote: 'Dia berusia delapan belas hari ini',
+  },
+  {
+    vocabId: 'v_2_nineteen',
+    direction: 'id_to_en',
+    speakerId: 'v_2_nineteen',
+    sourceText: 'Ada sembilan belas buku biru',
+    targetTokens: ['There', 'are', 'nineteen', 'blue', 'books'],
+    distractors: ['ninety', 'twelve'],
+    wordHints: { sembilan: 'nine', belas: 'sembilan belas = nineteen', buku: 'books' },
+    translationNote: 'There are nineteen blue books',
+  },
+  {
+    vocabId: 'v_2_twenty',
+    direction: 'en_to_id',
+    speakerId: 'v_2_twenty',
+    sourceText: 'Twenty students say good morning',
+    targetTokens: ['Dua', 'puluh', 'murid', 'menyapa', 'selamat', 'pagi'],
+    distractors: ['dua belas', 'seratus'],
+    wordHints: { twenty: 'dua puluh', students: 'murid' },
+    translationNote: 'Dua puluh murid menyapa selamat pagi',
+  },
+  {
+    vocabId: 'v_2_thirty',
+    direction: 'id_to_en',
+    speakerId: 'v_2_thirty',
+    sourceText: 'Paman berumur tiga puluh tahun',
+    targetTokens: ['Uncle', 'is', 'thirty', 'years', 'old'],
+    distractors: ['thirteen', 'forty'],
+    wordHints: { paman: 'uncle', tiga: 'three', puluh: 'tiga puluh = thirty' },
+    translationNote: 'Uncle is thirty years old',
+  },
+  {
+    vocabId: 'v_2_forty',
+    direction: 'en_to_id',
+    speakerId: 'v_2_forty',
+    sourceText: 'Forty people live here',
+    targetTokens: ['Empat', 'puluh', 'orang', 'tinggal', 'di', 'sini'],
+    distractors: ['empat belas', 'lima puluh'],
+    wordHints: { forty: 'empat puluh', people: 'orang', live: 'tinggal' },
+    translationNote: 'Empat puluh orang tinggal di sini',
+  },
+  {
+    vocabId: 'v_2_fifty',
+    direction: 'id_to_en',
+    speakerId: 'v_2_fifty',
+    sourceText: 'Kakek memiliki lima puluh bunga',
+    targetTokens: ['Grandfather', 'has', 'fifty', 'flowers'],
+    distractors: ['fifteen', 'sixty'],
+    wordHints: { kakek: 'grandfather', lima: 'five', puluh: 'lima puluh = fifty', bunga: 'flowers' },
+    translationNote: 'Grandfather has fifty flowers',
+  },
+  {
+    vocabId: 'v_2_sixty',
+    direction: 'en_to_id',
+    speakerId: 'v_2_sixty',
+    sourceText: 'Sixty minutes in an hour',
+    targetTokens: ['Enam', 'puluh', 'menit', 'dalam', 'sejam'],
+    distractors: ['enam belas', 'tujuh puluh'],
+    wordHints: { sixty: 'enam puluh', minutes: 'menit', hour: 'jam' },
+    translationNote: 'Enam puluh menit dalam sejam',
+  },
+  {
+    vocabId: 'v_2_seventy',
+    direction: 'id_to_en',
+    speakerId: 'v_2_seventy',
+    sourceText: 'Nenek berusia tujuh puluh tahun',
+    targetTokens: ['Grandmother', 'is', 'seventy', 'years', 'old'],
+    distractors: ['seventeen', 'eighty'],
+    wordHints: { nenek: 'grandmother', tujuh: 'seven', puluh: 'tujuh puluh = seventy' },
+    translationNote: 'Grandmother is seventy years old',
+  },
+  {
+    vocabId: 'v_2_eighty',
+    direction: 'en_to_id',
+    speakerId: 'v_2_eighty',
+    sourceText: 'Eighty warm cookies for family',
+    targetTokens: ['Delapan', 'puluh', 'kue', 'hangat', 'untuk', 'keluarga'],
+    distractors: ['delapan belas', 'sembilan puluh'],
+    wordHints: { eighty: 'delapan puluh', cookies: 'kue', family: 'keluarga' },
+    translationNote: 'Delapan puluh kue hangat untuk keluarga',
+  },
+  {
+    vocabId: 'v_2_ninety',
+    direction: 'id_to_en',
+    speakerId: 'v_2_ninety',
+    sourceText: 'Nilai ujianku adalah sembilan puluh',
+    targetTokens: ['My', 'test', 'score', 'is', 'ninety'],
+    distractors: ['nineteen', 'hundred'],
+    wordHints: { nilai: 'score', ujianku: 'my test', sembilan: 'nine', puluh: 'sembilan puluh = ninety' },
+    translationNote: 'My test score is ninety',
+  },
+  {
+    vocabId: 'v_2_hundred',
+    direction: 'en_to_id',
+    speakerId: 'v_2_hundred',
+    sourceText: 'We scored one hundred percent!',
+    targetTokens: ['Kita', 'meraih', 'seratus', 'persen!'],
+    acceptedVariants: ['kami meraih seratus persen', 'kita mendapat seratus persen'],
+    distractors: ['nol', 'sepuluh'],
+    wordHints: { scored: 'meraih', hundred: 'seratus', percent: 'persen' },
+    translationNote: 'Kita meraih seratus persen!',
+  },
 ];
 
 // ============================================================================
@@ -1738,6 +2493,235 @@ const SPEAK_SEEDS: SpeakSeed[] = [
     wordHints: { welcome: 'selamat datang', home: 'rumah', inside: 'ke dalam' },
     translationNote: 'Selamat datang di rumah! Silakan masuk.',
   },
+  // ---- GREETINGS REMAINING (8) ----
+  {
+    vocabId: 'v_0_hi',
+    speakerId: 'v_1_boy',
+    sentence: 'Hi, how are you today?',
+    wordHints: { hi: 'hai', how: 'apa kabar', today: 'hari ini' },
+    translationNote: 'Hai, apa kabarmu hari ini?',
+  },
+  {
+    vocabId: 'v_0_bye',
+    speakerId: 'v_1_girl',
+    sentence: 'Bye! See you tomorrow morning!',
+    wordHints: { bye: 'sampai jumpa', tomorrow: 'besok', morning: 'pagi' },
+    translationNote: 'Sampai jumpa! Ketemu lagi besok pagi!',
+  },
+  {
+    vocabId: 'v_0_thanks',
+    speakerId: 'v_1_friend',
+    sentence: 'Thanks a lot, my good friend!',
+    wordHints: { thanks: 'makasih', lot: 'banyak', friend: 'teman' },
+    translationNote: 'Makasih banyak, teman baikku!',
+  },
+  {
+    vocabId: 'v_0_please',
+    speakerId: 'v_1_woman',
+    sentence: 'Please help me open the door.',
+    wordHints: { please: 'tolong / silakan', help: 'bantu', door: 'pintu' },
+    translationNote: 'Tolong bantu saya membuka pintu.',
+  },
+  {
+    vocabId: 'v_0_ok',
+    speakerId: 'v_1_boy',
+    sentence: 'OK, let us start right now!',
+    wordHints: { ok: 'oke / baiklah', start: 'mulai', now: 'sekarang' },
+    translationNote: 'Baiklah, ayo kita mulai sekarang!',
+  },
+  {
+    vocabId: 'v_0_yes',
+    speakerId: 'v_1_girl',
+    sentence: 'Yes, I am ready to speak English!',
+    wordHints: { yes: 'ya', ready: 'siap', speak: 'berbicara' },
+    translationNote: 'Ya, saya siap berbicara bahasa Inggris!',
+  },
+  {
+    vocabId: 'v_0_no',
+    speakerId: 'v_1_man',
+    sentence: 'No, that is not my passport.',
+    wordHints: { no: 'tidak', not: 'bukan', passport: 'paspor' },
+    translationNote: 'Tidak, itu bukan paspor saya.',
+  },
+  {
+    vocabId: 'v_0_sorry',
+    speakerId: 'v_1_boy',
+    sentence: 'Sorry, I arrived a bit late.',
+    wordHints: { sorry: 'maaf', arrived: 'tiba', late: 'terlambat' },
+    translationNote: 'Maaf, saya tiba agak terlambat.',
+  },
+  // ---- PERSONAL INFO REMAINING (6) ----
+  {
+    vocabId: 'v_5_last_name',
+    speakerId: 'v_1_mr',
+    sentence: 'What is your family last name?',
+    wordHints: { family: 'keluarga', last: 'belakang / marga', name: 'nama' },
+    translationNote: 'Apa nama belakang keluargamu?',
+  },
+  {
+    vocabId: 'v_5_age',
+    speakerId: 'v_1_girl',
+    sentence: 'My age is ten years old.',
+    wordHints: { age: 'umur / usia', ten: 'sepuluh', years: 'tahun' },
+    translationNote: 'Umur saya adalah sepuluh tahun.',
+  },
+  {
+    vocabId: 'v_5_birthdate',
+    speakerId: 'v_1_woman',
+    sentence: 'Write your full birthdate on the form.',
+    wordHints: { write: 'tulis', birthdate: 'tanggal lahir', form: 'formulir' },
+    translationNote: 'Tulis tanggal lahir lengkapmu di formulir.',
+  },
+  {
+    vocabId: 'v_5_single',
+    speakerId: 'v_1_miss',
+    sentence: 'My cousin is happy and still single.',
+    wordHints: { cousin: 'sepupu', still: 'masih', single: 'lajang' },
+    translationNote: 'Sepupu saya bahagia dan masih lajang.',
+  },
+  {
+    vocabId: 'v_5_question',
+    speakerId: 'v_1_woman',
+    sentence: 'I have an easy question for you.',
+    wordHints: { easy: 'mudah', question: 'pertanyaan' },
+    translationNote: 'Saya punya pertanyaan mudah untukmu.',
+  },
+  {
+    vocabId: 'v_5_answer',
+    speakerId: 'v_1_boy',
+    sentence: 'That is the right answer!',
+    wordHints: { right: 'benar', answer: 'jawaban' },
+    translationNote: 'Itu adalah jawaban yang benar!',
+  },
+  // ---- COLORS (14) ----
+  {
+    vocabId: 'v_4_black',
+    speakerId: 'v_4_black',
+    sentence: 'My hair is shiny black.',
+    wordHints: { hair: 'rambut', shiny: 'berkilau', black: 'hitam' },
+    translationNote: 'Rambut saya hitam berkilau.',
+  },
+  {
+    vocabId: 'v_4_white',
+    speakerId: 'v_4_white',
+    sentence: 'The clouds look bright white.',
+    wordHints: { clouds: 'awan', bright: 'cerah', white: 'putih' },
+    translationNote: 'Awan itu tampak putih cerah.',
+  },
+  {
+    vocabId: 'v_4_blue',
+    speakerId: 'v_4_blue',
+    sentence: 'The daytime sky is blue.',
+    wordHints: { sky: 'langit', blue: 'biru' },
+    translationNote: 'Langit siang hari berwarna biru.',
+  },
+  {
+    vocabId: 'v_4_green',
+    speakerId: 'v_4_green',
+    sentence: 'Fresh grass in the yard is green.',
+    wordHints: { grass: 'rumput', yard: 'halaman', green: 'hijau' },
+    translationNote: 'Rumput segar di halaman berwarna hijau.',
+  },
+  {
+    vocabId: 'v_4_yellow',
+    speakerId: 'v_4_yellow',
+    sentence: 'The morning sun shines bright yellow.',
+    wordHints: { sun: 'matahari', shines: 'bersinar', yellow: 'kuning' },
+    translationNote: 'Matahari pagi bersinar kuning cerah.',
+  },
+  {
+    vocabId: 'v_4_red',
+    speakerId: 'v_4_red',
+    sentence: 'She brings a lovely red rose.',
+    wordHints: { brings: 'membawa', red: 'merah', rose: 'mawar' },
+    translationNote: 'Dia membawa mawar merah yang indah.',
+  },
+  {
+    vocabId: 'v_4_pink',
+    speakerId: 'v_4_pink',
+    sentence: 'Her cheeks glow bright pink.',
+    wordHints: { cheeks: 'pipi', pink: 'merah muda' },
+    translationNote: 'Pipinya merona merah muda cerah.',
+  },
+  {
+    vocabId: 'v_4_orange',
+    speakerId: 'v_4_orange',
+    sentence: 'The evening sunset is warm orange.',
+    wordHints: { sunset: 'matahari terbenam', warm: 'hangat', orange: 'oranye' },
+    translationNote: 'Senja sore hari berwarna oranye hangat.',
+  },
+  {
+    vocabId: 'v_4_purple',
+    speakerId: 'v_4_purple',
+    sentence: 'I like that sweet purple flower.',
+    wordHints: { like: 'suka', purple: 'ungu', flower: 'bunga' },
+    translationNote: 'Saya suka bunga ungu yang manis itu.',
+  },
+  {
+    vocabId: 'v_4_gray',
+    speakerId: 'v_4_gray',
+    sentence: 'Grandfather wears a neat gray suit.',
+    wordHints: { grandfather: 'kakek', neat: 'rapi', gray: 'abu-abu' },
+    translationNote: 'Kakek memakai setelan abu-abu yang rapi.',
+  },
+  {
+    vocabId: 'v_4_brown',
+    speakerId: 'v_4_brown',
+    sentence: 'His eyes are warm brown.',
+    wordHints: { eyes: 'mata', brown: 'cokelat' },
+    translationNote: 'Matanya berwarna cokelat hangat.',
+  },
+  {
+    vocabId: 'v_4_dark',
+    speakerId: 'v_4_dark',
+    sentence: 'The night sky becomes very dark.',
+    wordHints: { night: 'malam', becomes: 'menjadi', dark: 'gelap' },
+    translationNote: 'Langit malam menjadi sangat gelap.',
+  },
+  {
+    vocabId: 'v_4_light',
+    speakerId: 'v_4_light',
+    sentence: 'She likes wearing light blue clothes.',
+    wordHints: { wearing: 'memakai', light: 'terang / muda', blue: 'biru' },
+    translationNote: 'Dia suka memakai pakaian biru muda.',
+  },
+  {
+    vocabId: 'v_4_color',
+    speakerId: 'v_4_color',
+    sentence: 'Blue is my favorite color!',
+    wordHints: { blue: 'biru', favorite: 'kesukaan', color: 'warna' },
+    translationNote: 'Biru adalah warna kesukaanku!',
+  },
+  // ---- NUMBERS 0..100 (29) ----
+  { vocabId: 'v_2_zero', speakerId: 'v_2_zero', sentence: 'Zero mistakes today!', wordHints: { zero: 'nol', mistakes: 'kesalahan' }, translationNote: 'Nol kesalahan hari ini!' },
+  { vocabId: 'v_2_one', speakerId: 'v_2_one', sentence: 'I have one big family.', wordHints: { one: 'satu', family: 'keluarga' }, translationNote: 'Saya punya satu keluarga besar.' },
+  { vocabId: 'v_2_two', speakerId: 'v_2_two', sentence: 'We have two eyes and two ears.', wordHints: { two: 'dua', eyes: 'mata', ears: 'telinga' }, translationNote: 'Kita punya dua mata dan dua telinga.' },
+  { vocabId: 'v_2_three', speakerId: 'v_2_three', sentence: 'Count from one to three!', wordHints: { count: 'hitung', one: 'satu', three: 'tiga' }, translationNote: 'Hitung dari satu sampai tiga!' },
+  { vocabId: 'v_2_four', speakerId: 'v_2_four', sentence: 'There are four people in my house.', wordHints: { four: 'empat', people: 'orang' }, translationNote: 'Ada empat orang di rumahku.' },
+  { vocabId: 'v_2_five', speakerId: 'v_2_five', sentence: 'I have five fingers on each hand.', wordHints: { five: 'lima', fingers: 'jari', hand: 'tangan' }, translationNote: 'Saya punya lima jari di setiap tangan.' },
+  { vocabId: 'v_2_six', speakerId: 'v_2_six', sentence: 'The clock strikes six in the morning.', wordHints: { clock: 'jam', six: 'enam', morning: 'pagi' }, translationNote: 'Jam berdentang enam kali di pagi hari.' },
+  { vocabId: 'v_2_seven', speakerId: 'v_2_seven', sentence: 'Seven colorful flags wave outside.', wordHints: { seven: 'tujuh', flags: 'bendera' }, translationNote: 'Tujuh bendera warna-warni berkibar di luar.' },
+  { vocabId: 'v_2_eight', speakerId: 'v_2_eight', sentence: 'My school starts at eight.', wordHints: { school: 'sekolah', starts: 'mulai', eight: 'delapan' }, translationNote: 'Sekolahku mulai pukul delapan.' },
+  { vocabId: 'v_2_nine', speakerId: 'v_2_nine', sentence: 'My little brother is nine years old.', wordHints: { brother: 'adik', nine: 'sembilan' }, translationNote: 'Adik laki-lakiku berumur sembilan tahun.' },
+  { vocabId: 'v_2_ten', speakerId: 'v_2_ten', sentence: 'Count from one to ten now!', wordHints: { count: 'hitung', ten: 'sepuluh' }, translationNote: 'Hitung dari satu sampai sepuluh sekarang!' },
+  { vocabId: 'v_2_eleven', speakerId: 'v_2_eleven', sentence: 'My home number is eleven.', wordHints: { home: 'rumah', number: 'nomor', eleven: 'sebelas' }, translationNote: 'Nomor rumahku adalah sebelas.' },
+  { vocabId: 'v_2_twelve', speakerId: 'v_2_twelve', sentence: 'There are twelve months every year.', wordHints: { twelve: 'dua belas', months: 'bulan', year: 'tahun' }, translationNote: 'Ada dua belas bulan setiap tahun.' },
+  { vocabId: 'v_2_thirteen', speakerId: 'v_2_thirteen', sentence: 'My cousin is thirteen years old.', wordHints: { cousin: 'sepupu', thirteen: 'tiga belas' }, translationNote: 'Sepupuku berumur tiga belas tahun.' },
+  { vocabId: 'v_2_fourteen', speakerId: 'v_2_fourteen', sentence: 'Fourteen students wave hello.', wordHints: { fourteen: 'empat belas', students: 'murid' }, translationNote: 'Empat belas murid melambaikan halo.' },
+  { vocabId: 'v_2_fifteen', speakerId: 'v_2_fifteen', sentence: 'Wait for fifteen minutes, please.', wordHints: { wait: 'tunggu', fifteen: 'lima belas', minutes: 'menit' }, translationNote: 'Tolong tunggu selama lima belas menit.' },
+  { vocabId: 'v_2_sixteen', speakerId: 'v_2_sixteen', sentence: 'Sixteen cookies are on the plate.', wordHints: { sixteen: 'enam belas', cookies: 'kue' }, translationNote: 'Enam belas kue ada di piring.' },
+  { vocabId: 'v_2_seventeen', speakerId: 'v_2_seventeen', sentence: 'Seventeen bright stars shine tonight.', wordHints: { seventeen: 'tujuh belas', stars: 'bintang' }, translationNote: 'Tujuh belas bintang cerah bersinar malam ini.' },
+  { vocabId: 'v_2_eighteen', speakerId: 'v_2_eighteen', sentence: 'My big sister is eighteen today!', wordHints: { sister: 'kakak', eighteen: 'delapan belas' }, translationNote: 'Kakak perempuanku berumur delapan belas hari ini!' },
+  { vocabId: 'v_2_nineteen', speakerId: 'v_2_nineteen', sentence: 'Nineteen friends came to my party.', wordHints: { nineteen: 'sembilan belas', party: 'pesta' }, translationNote: 'Sembilan belas teman datang ke pestaku.' },
+  { vocabId: 'v_2_twenty', speakerId: 'v_2_twenty', sentence: 'There are twenty houses in our village.', wordHints: { twenty: 'dua puluh', houses: 'rumah', village: 'desa' }, translationNote: 'Ada dua puluh rumah di desa kita.' },
+  { vocabId: 'v_2_thirty', speakerId: 'v_2_thirty', sentence: 'My uncle is thirty years old.', wordHints: { uncle: 'paman', thirty: 'tiga puluh' }, translationNote: 'Pamanku berumur tiga puluh tahun.' },
+  { vocabId: 'v_2_forty', speakerId: 'v_2_forty', sentence: 'Forty people gather in the square.', wordHints: { forty: 'empat puluh', gather: 'berkumpul' }, translationNote: 'Empat puluh orang berkumpul di alun-alun.' },
+  { vocabId: 'v_2_fifty', speakerId: 'v_2_fifty', sentence: 'Number fifty is on the blue door.', wordHints: { number: 'nomor', fifty: 'lima puluh', door: 'pintu' }, translationNote: 'Nomor lima puluh ada di pintu biru.' },
+  { vocabId: 'v_2_sixty', speakerId: 'v_2_sixty', sentence: 'One hour has sixty minutes.', wordHints: { hour: 'jam', sixty: 'enam puluh', minutes: 'menit' }, translationNote: 'Satu jam memiliki enam puluh menit.' },
+  { vocabId: 'v_2_seventy', speakerId: 'v_2_seventy', sentence: 'Grandmother is seventy years old.', wordHints: { grandmother: 'nenek', seventy: 'tujuh puluh' }, translationNote: 'Nenek berusia tujuh puluh tahun.' },
+  { vocabId: 'v_2_eighty', speakerId: 'v_2_eighty', sentence: 'Grandfather smiled at age eighty.', wordHints: { grandfather: 'kakek', eighty: 'delapan puluh' }, translationNote: 'Kakek tersenyum di usia delapan puluh.' },
+  { vocabId: 'v_2_ninety', speakerId: 'v_2_ninety', sentence: 'Her score jumped to ninety!', wordHints: { score: 'nilai', ninety: 'sembilan puluh' }, translationNote: 'Nilainya melonjak ke sembilan puluh!' },
+  { vocabId: 'v_2_hundred', speakerId: 'v_2_hundred', sentence: 'You get one hundred points!', wordHints: { one: 'satu', hundred: 'seratus', points: 'poin' }, translationNote: 'Kamu mendapat seratus poin!' },
 ];
 
 // ============================================================================
@@ -2416,6 +3400,391 @@ const DIALOGUE_SEEDS: DialogueSeed[] = [
     distractorReplies: ['Good night! Close the moon!', 'Goodbye! Leave the gate!'],
     translationNote: 'Selamat datang! Silakan langsung masuk ke rumah kami!',
   },
+  // ---- GREETINGS REMAINING (8) ----
+  {
+    vocabId: 'v_0_hi',
+    speakerAId: 'v_1_boy',
+    speakerAName: 'Bimo',
+    speakerALine: 'Hi! Good to see you at the market!',
+    speakerAHints: { hi: 'hai', market: 'pasar' },
+    speakerBId: 'v_1_girl',
+    speakerBName: 'Lina',
+    correctReply: 'Hi, Bimo! How are you?',
+    distractorReplies: ['Good night, sleep well!', 'Number fifty, please!'],
+    translationNote: 'Hai, Bimo! Apa kabarmu?',
+  },
+  {
+    vocabId: 'v_0_bye',
+    speakerAId: 'v_1_friend',
+    speakerAName: 'Rani',
+    speakerALine: 'The bus is leaving now. I have to go!',
+    speakerAHints: { leaving: 'berangkat', now: 'sekarang' },
+    speakerBId: 'v_1_boy',
+    speakerBName: 'Adi',
+    correctReply: 'Bye! See you tomorrow!',
+    distractorReplies: ['Welcome inside!', 'My favorite color is red!'],
+    translationNote: 'Sampai jumpa! Ketemu besok!',
+  },
+  {
+    vocabId: 'v_0_thanks',
+    speakerAId: 'v_1_girl',
+    speakerAName: 'Sinta',
+    speakerALine: 'Here is a cup of warm tea for you!',
+    speakerAHints: { warm: 'hangat', tea: 'teh' },
+    speakerBId: 'v_1_boy',
+    speakerBName: 'Dani',
+    correctReply: 'Thanks! You are so kind!',
+    distractorReplies: ['Sorry, my tooth hurts!', 'Bye, number zero!'],
+    translationNote: 'Makasih! Kamu sangat baik!',
+  },
+  {
+    vocabId: 'v_0_please',
+    speakerAId: 'v_1_woman',
+    speakerAName: 'Ibu Guru',
+    speakerALine: 'May I open the classroom window?',
+    speakerAHints: { open: 'buka', window: 'jendela' },
+    speakerBId: 'v_1_boy',
+    speakerBName: 'Raka',
+    correctReply: 'Yes, please open it!',
+    distractorReplies: ['No, my birthday is blue!', 'Goodbye, cheeks!'],
+    translationNote: 'Ya, silakan buka saja!',
+  },
+  {
+    vocabId: 'v_0_ok',
+    speakerAId: 'v_1_man',
+    speakerAName: 'Pak Budi',
+    speakerALine: 'Let us practice ten words together!',
+    speakerAHints: { practice: 'latihan', words: 'kata' },
+    speakerBId: 'v_1_girl',
+    speakerBName: 'Nadia',
+    correctReply: 'OK! Let us start right now!',
+    distractorReplies: ['Goodbye, father!', 'My nose is purple!'],
+    translationNote: 'Baiklah! Ayo kita mulai sekarang!',
+  },
+  {
+    vocabId: 'v_0_yes',
+    speakerAId: 'v_1_woman',
+    speakerAName: 'Nadia',
+    speakerALine: 'Are you ready for the adventure?',
+    speakerAHints: { ready: 'siap', adventure: 'petualangan' },
+    speakerBId: 'v_1_boy',
+    speakerBName: 'Bimo',
+    correctReply: 'Yes, I am completely ready!',
+    distractorReplies: ['Good evening, knee!', 'Sorry, eighty cookies.'],
+    translationNote: 'Ya, aku benar-benar siap!',
+  },
+  {
+    vocabId: 'v_0_no',
+    speakerAId: 'v_1_boy',
+    speakerAName: 'Fajar',
+    speakerALine: 'Is this black bag yours?',
+    speakerAHints: { black: 'hitam', bag: 'tas' },
+    speakerBId: 'v_1_girl',
+    speakerBName: 'Dina',
+    correctReply: 'No, my bag is blue.',
+    distractorReplies: ['Yes, I am a baby!', 'Good morning, stomach!'],
+    translationNote: 'Tidak, tasku berwarna biru.',
+  },
+  {
+    vocabId: 'v_0_sorry',
+    speakerAId: 'v_1_girl',
+    speakerAName: 'Rani',
+    speakerALine: 'Oops, you stepped on my shoe!',
+    speakerAHints: { stepped: 'menginjak', shoe: 'sepatu' },
+    speakerBId: 'v_1_boy',
+    speakerBName: 'Tobi',
+    correctReply: 'Oh, sorry! I did not see it.',
+    distractorReplies: ['Welcome, purple nose!', 'Happy birthday to ninety!'],
+    translationNote: 'Oh, maaf! Aku tidak melihatnya.',
+  },
+  // ---- PERSONAL INFO REMAINING (6) ----
+  {
+    vocabId: 'v_5_last_name',
+    speakerAId: 'v_1_mr',
+    speakerAName: 'Petugas',
+    speakerALine: 'Your first name is Bimo. What is your last name?',
+    speakerAHints: { first: 'depan', last: 'belakang / marga' },
+    speakerBId: 'v_1_boy',
+    speakerBName: 'Bimo',
+    correctReply: 'My last name is Pratama.',
+    distractorReplies: ['My last name is green.', 'Yes, ten knees!'],
+    translationNote: 'Nama belakang saya adalah Pratama.',
+  },
+  {
+    vocabId: 'v_5_age',
+    speakerAId: 'v_1_woman',
+    speakerAName: 'Ibu Sari',
+    speakerALine: 'Look at those ten candles! What is your age today?',
+    speakerAHints: { candles: 'lilin', age: 'umur / usia' },
+    speakerBId: 'v_1_girl',
+    speakerBName: 'Lina',
+    correctReply: 'My age is ten years old!',
+    distractorReplies: ['My age is a blue passport!', 'Good night, answer!'],
+    translationNote: 'Umur saya sepuluh tahun hari ini!',
+  },
+  {
+    vocabId: 'v_5_birthdate',
+    speakerAId: 'v_1_woman',
+    speakerAName: 'Staf Desa',
+    speakerALine: 'Could you share your full birthdate for our list?',
+    speakerAHints: { share: 'berbagi', birthdate: 'tanggal lahir', list: 'daftar' },
+    speakerBId: 'v_1_man',
+    speakerBName: 'Raka',
+    correctReply: 'Sure, my birthdate is May 12, 2005.',
+    distractorReplies: ['Sure, my birthdate is yellow.', 'Bye, thank you chin!'],
+    translationNote: 'Tentu, tanggal lahir saya 12 Mei 2005.',
+  },
+  {
+    vocabId: 'v_5_single',
+    speakerAId: 'v_3_aunt',
+    speakerAName: 'Bibi',
+    speakerALine: 'Does your big brother have a wife yet?',
+    speakerAHints: { big: 'kakak', wife: 'istri', yet: 'sudah' },
+    speakerBId: 'v_1_girl',
+    speakerBName: 'Maya',
+    correctReply: 'Not yet, he is still single.',
+    distractorReplies: ['Yes, he is one hundred.', 'No, my birthday is dark.'],
+    translationNote: 'Belum, dia masih lajang.',
+  },
+  {
+    vocabId: 'v_5_question',
+    speakerAId: 'v_1_boy',
+    speakerAName: 'Adi',
+    speakerALine: 'Raise your hand if you do not understand!',
+    speakerAHints: { raise: 'angkat', understand: 'mengerti' },
+    speakerBId: 'v_1_girl',
+    speakerBName: 'Sinta',
+    correctReply: 'Excuse me, I have a question!',
+    distractorReplies: ['Excuse me, I am brown!', 'Good night, passport!'],
+    translationNote: 'Permisi, saya punya pertanyaan!',
+  },
+  {
+    vocabId: 'v_5_answer',
+    speakerAId: 'v_1_woman',
+    speakerAName: 'Ibu Guru',
+    speakerALine: 'Who knows the right answer to this riddle?',
+    speakerAHints: { knows: 'tahu', answer: 'jawaban', riddle: 'teka-teki' },
+    speakerBId: 'v_1_boy',
+    speakerBName: 'Bimo',
+    correctReply: 'Me! I know the correct answer!',
+    distractorReplies: ['Me! My address is purple!', 'Sorry, twelve feet!'],
+    translationNote: 'Saya! Saya tahu jawaban yang benar!',
+  },
+  // ---- COLORS (14) ----
+  {
+    vocabId: 'v_4_black',
+    speakerAId: 'v_1_girl',
+    speakerAName: 'Dina',
+    speakerALine: 'Look at that crow in the tree! What color is it?',
+    speakerAHints: { crow: 'gagak', color: 'warna' },
+    speakerBId: 'v_4_black',
+    speakerBName: 'Raka',
+    correctReply: 'That crow is pitch black!',
+    distractorReplies: ['That crow is pink!', 'No, two mothers!'],
+    translationNote: 'Burung gagak itu berwarna hitam pekat!',
+  },
+  {
+    vocabId: 'v_4_white',
+    speakerAId: 'v_1_boy',
+    speakerAName: 'Bimo',
+    speakerALine: 'What color is fresh milk in the glass?',
+    speakerAHints: { milk: 'susu', glass: 'gelas' },
+    speakerBId: 'v_4_white',
+    speakerBName: 'Lina',
+    correctReply: 'Fresh milk is pure white!',
+    distractorReplies: ['Fresh milk is black!', 'Goodbye, eighty!'],
+    translationNote: 'Susu segar berwarna putih bersih!',
+  },
+  {
+    vocabId: 'v_4_blue',
+    speakerAId: 'v_1_man',
+    speakerAName: 'Pak Budi',
+    speakerALine: 'Look up! What color is the clear ocean and sky?',
+    speakerAHints: { clear: 'cerah', ocean: 'lautan', sky: 'langit' },
+    speakerBId: 'v_4_blue',
+    speakerBName: 'Sinta',
+    correctReply: 'Both are bright blue!',
+    distractorReplies: ['Both are brown!', 'Yes, my chin is ten.'],
+    translationNote: 'Keduanya berwarna biru cerah!',
+  },
+  {
+    vocabId: 'v_4_green',
+    speakerAId: 'v_1_woman',
+    speakerAName: 'Ibu',
+    speakerALine: 'The garden is full of healthy leaves!',
+    speakerAHints: { garden: 'taman', leaves: 'daun' },
+    speakerBId: 'v_4_green',
+    speakerBName: 'Adi',
+    correctReply: 'Yes! Everything looks fresh green!',
+    distractorReplies: ['Yes! Everything looks orange.', 'My name is zero.'],
+    translationNote: 'Ya! Semuanya tampak hijau segar!',
+  },
+  {
+    vocabId: 'v_4_yellow',
+    speakerAId: 'v_1_girl',
+    speakerAName: 'Maya',
+    speakerALine: 'What color are ripe lemons and the sun?',
+    speakerAHints: { ripe: 'matang', lemons: 'lemon' },
+    speakerBId: 'v_4_yellow',
+    speakerBName: 'Fajar',
+    correctReply: 'They are bright yellow!',
+    distractorReplies: ['They are dark gray!', 'Thank you, birthdate!'],
+    translationNote: 'Mereka berwarna kuning cerah!',
+  },
+  {
+    vocabId: 'v_4_red',
+    speakerAId: 'v_1_boy',
+    speakerAName: 'Arya',
+    speakerALine: 'What color are sweet strawberries and tomatoes?',
+    speakerAHints: { sweet: 'manis', tomatoes: 'tomat' },
+    speakerBId: 'v_4_red',
+    speakerBName: 'Rani',
+    correctReply: 'They are bright red!',
+    distractorReplies: ['They are purple!', 'No, please sit down.'],
+    translationNote: 'Mereka berwarna merah cerah!',
+  },
+  {
+    vocabId: 'v_4_pink',
+    speakerAId: 'v_1_girl',
+    speakerAName: 'Sinta',
+    speakerALine: 'Look at your strawberry ice cream cone!',
+    speakerAHints: { ice: 'es', cream: 'krim' },
+    speakerBId: 'v_4_pink',
+    speakerBName: 'Lina',
+    correctReply: 'Yes, strawberry ice cream is pink!',
+    distractorReplies: ['Yes, it is pitch black!', 'Good night, thirty!'],
+    translationNote: 'Ya, es krim stroberi berwarna merah muda!',
+  },
+  {
+    vocabId: 'v_4_orange',
+    speakerAId: 'v_1_woman',
+    speakerAName: 'Mama',
+    speakerALine: 'What color are fresh carrots in the basket?',
+    speakerAHints: { carrots: 'wortel', basket: 'keranjang' },
+    speakerBId: 'v_4_orange',
+    speakerBName: 'Bimo',
+    correctReply: 'Fresh carrots are bright orange!',
+    distractorReplies: ['Fresh carrots are blue!', 'Sorry, my passport hurts.'],
+    translationNote: 'Wortel segar berwarna oranye cerah!',
+  },
+  {
+    vocabId: 'v_4_purple',
+    speakerAId: 'v_1_girl',
+    speakerAName: 'Nadia',
+    speakerALine: 'Which crayon mixes red and blue together?',
+    speakerAHints: { mixes: 'mencampur', together: 'bersama' },
+    speakerBId: 'v_4_purple',
+    speakerBName: 'Dina',
+    correctReply: 'Red and blue make purple!',
+    distractorReplies: ['Red and blue make white!', 'Ten eyes and arms!'],
+    translationNote: 'Merah dan biru menghasilkan ungu!',
+  },
+  {
+    vocabId: 'v_4_gray',
+    speakerAId: 'v_1_man',
+    speakerAName: 'Kakek',
+    speakerALine: 'What color do you get by mixing black and white?',
+    speakerAHints: { mixing: 'mencampur' },
+    speakerBId: 'v_4_gray',
+    speakerBName: 'Raka',
+    correctReply: 'Black and white make gray!',
+    distractorReplies: ['Black and white make yellow!', 'Hello, my age is brown!'],
+    translationNote: 'Hitam dan putih menghasilkan abu-abu!',
+  },
+  {
+    vocabId: 'v_4_brown',
+    speakerAId: 'v_1_boy',
+    speakerAName: 'Tobi',
+    speakerALine: 'What color is chocolate ice cream and tree bark?',
+    speakerAHints: { chocolate: 'cokelat', bark: 'kulit kayu' },
+    speakerBId: 'v_4_brown',
+    speakerBName: 'Fajar',
+    correctReply: 'Chocolate and wood are brown!',
+    distractorReplies: ['Chocolate is bright pink!', 'Yes, forty necks!'],
+    translationNote: 'Cokelat dan kayu berwarna cokelat!',
+  },
+  {
+    vocabId: 'v_4_dark',
+    speakerAId: 'v_1_woman',
+    speakerAName: 'Ibu',
+    speakerALine: 'Do you want the bright blue shirt or the deep night shade?',
+    speakerAHints: { shade: 'nuansa warna' },
+    speakerBId: 'v_4_dark',
+    speakerBName: 'Raka',
+    correctReply: 'I prefer the dark blue one.',
+    distractorReplies: ['I prefer nineteen ears!', 'Thank you, zero!'],
+    translationNote: 'Saya lebih suka yang biru gelap.',
+  },
+  {
+    vocabId: 'v_4_light',
+    speakerAId: 'v_1_girl',
+    speakerAName: 'Lina',
+    speakerALine: 'This dark green paint feels too heavy.',
+    speakerAHints: { paint: 'cat', heavy: 'pekat / berat' },
+    speakerBId: 'v_4_light',
+    speakerBName: 'Sari',
+    correctReply: 'Let us try a soft light green instead!',
+    distractorReplies: ['Let us try eighty lips!', 'No, my uncle is purple.'],
+    translationNote: 'Ayo kita coba hijau terang yang lembut sebagai gantinya!',
+  },
+  {
+    vocabId: 'v_4_color',
+    speakerAId: 'v_1_friend',
+    speakerAName: 'Teman',
+    speakerALine: 'Blue, yellow, green, or red — which one do you like best?',
+    speakerAHints: { which: 'yang mana', best: 'paling' },
+    speakerBId: 'v_4_color',
+    speakerBName: 'Bimo',
+    correctReply: 'My favorite color is green!',
+    distractorReplies: ['My favorite baby is sixty!', 'Goodbye, answer!'],
+    translationNote: 'Warna kesukaan saya adalah hijau!',
+  },
+  // ---- NUMBERS 0..100 (29 grouped cleanly with category-exact focus) ----
+  { vocabId: 'v_2_zero', speakerAId: 'v_1_woman', speakerAName: 'Ibu Guru', speakerALine: 'There are no apples left in the box. How many are inside?', speakerAHints: { apples: 'apel', left: 'tersisa' }, speakerBId: 'v_2_zero', speakerBName: 'Bimo', correctReply: 'There are zero apples inside!', distractorReplies: ['There are fifty apples!', 'Yes, bright orange!'], translationNote: 'Ada nol apel di dalamnya!' },
+  { vocabId: 'v_2_one', speakerAId: 'v_1_boy', speakerAName: 'Adi', speakerALine: 'How many noses do you have on your face?', speakerAHints: { noses: 'hidung', face: 'wajah' }, speakerBId: 'v_2_one', speakerBName: 'Lina', correctReply: 'I have only one nose!', distractorReplies: ['I have ten noses!', 'My cheek is seventy!'], translationNote: 'Aku hanya punya satu hidung!' },
+  { vocabId: 'v_2_two', speakerAId: 'v_1_girl', speakerAName: 'Sinta', speakerALine: 'Count our hands! How many hands do you have?', speakerAHints: { count: 'hitung', hands: 'tangan' }, speakerBId: 'v_2_two', speakerBName: 'Raka', correctReply: 'I have two hands!', distractorReplies: ['I have nine hands!', 'My foot is gray!'], translationNote: 'Aku punya dua tangan!' },
+  { vocabId: 'v_2_three', speakerAId: 'v_1_boy', speakerAName: 'Dani', speakerALine: 'One, two, ... what number comes next?', speakerAHints: { comes: 'datang', next: 'berikutnya' }, speakerBId: 'v_2_three', speakerBName: 'Dina', correctReply: 'Number three comes next!', distractorReplies: ['Number eighty comes next!', 'My address is pink!'], translationNote: 'Angka tiga datang berikutnya!' },
+  { vocabId: 'v_2_four', speakerAId: 'v_1_man', speakerAName: 'Pak Budi', speakerALine: 'Two plus two equals how many?', speakerAHints: { plus: 'tambah', equals: 'sama dengan' }, speakerBId: 'v_2_four', speakerBName: 'Bimo', correctReply: 'Two plus two equals four!', distractorReplies: ['It equals forty!', 'Good night, cousin!'], translationNote: 'Dua tambah dua sama dengan empat!' },
+  { vocabId: 'v_2_five', speakerAId: 'v_1_woman', speakerAName: 'Mama', speakerALine: 'How many fingers are on one hand?', speakerAHints: { fingers: 'jari' }, speakerBId: 'v_2_five', speakerBName: 'Fajar', correctReply: 'There are five fingers on one hand!', distractorReplies: ['There are nineteen fingers!', 'My passport is brown!'], translationNote: 'Ada lima jari di satu tangan!' },
+  { vocabId: 'v_2_six', speakerAId: 'v_1_boy', speakerAName: 'Raka', speakerALine: 'Three plus three makes what number?', speakerAHints: { makes: 'menghasilkan' }, speakerBId: 'v_2_six', speakerBName: 'Maya', correctReply: 'Three plus three makes six!', distractorReplies: ['It makes sixteen!', 'Sorry, dark blue!'], translationNote: 'Tiga tambah tiga menjadi enam!' },
+  { vocabId: 'v_2_seven', speakerAId: 'v_1_woman', speakerAName: 'Ibu Guru', speakerALine: 'How many days are there in one week?', speakerAHints: { days: 'hari', week: 'minggu' }, speakerBId: 'v_2_seven', speakerBName: 'Rani', correctReply: 'There are seven days in one week!', distractorReplies: ['There are seventy days!', 'My stomach is black!'], translationNote: 'Ada tujuh hari dalam satu minggu!' },
+  { vocabId: 'v_2_eight', speakerAId: 'v_1_girl', speakerAName: 'Nadia', speakerALine: 'How many legs does a spider have?', speakerAHints: { spider: 'laba-laba', legs: 'kaki' }, speakerBId: 'v_2_eight', speakerBName: 'Adi', correctReply: 'A spider has eight legs!', distractorReplies: ['A spider has zero legs!', 'Welcome, white neck!'], translationNote: 'Laba-laba memiliki delapan kaki!' },
+  { vocabId: 'v_2_nine', speakerAId: 'v_1_boy', speakerAName: 'Tobi', speakerALine: 'Ten minus one leaves which number?', speakerAHints: { minus: 'dikurangi', leaves: 'menyisakan' }, speakerBId: 'v_2_nine', speakerBName: 'Sinta', correctReply: 'Ten minus one leaves nine!', distractorReplies: ['It leaves ninety!', 'Yes, my chin is married!'], translationNote: 'Sepuluh dikurangi satu menyisakan sembilan!' },
+  { vocabId: 'v_2_ten', speakerAId: 'v_1_woman', speakerAName: 'Ibu', speakerALine: 'Count both hands together! Five plus five equals...', speakerAHints: { both: 'kedua' }, speakerBId: 'v_2_ten', speakerBName: 'Bimo', correctReply: 'Five plus five equals ten!', distractorReplies: ['It equals zero!', 'Goodbye, green ear!'], translationNote: 'Lima tambah lima sama dengan sepuluh!' },
+  { vocabId: 'v_2_eleven', speakerAId: 'v_1_boy', speakerAName: 'Raka', speakerALine: 'Ten plus one makes which number?', speakerAHints: { plus: 'tambah' }, speakerBId: 'v_2_eleven', speakerBName: 'Lina', correctReply: 'Ten plus one is eleven!', distractorReplies: ['It is twenty!', 'My name is orange!'], translationNote: 'Sepuluh tambah satu adalah sebelas!' },
+  { vocabId: 'v_2_twelve', speakerAId: 'v_1_man', speakerAName: 'Pak Guru', speakerALine: 'How many months are in a year?', speakerAHints: { months: 'bulan', year: 'tahun' }, speakerBId: 'v_2_twelve', speakerBName: 'Dina', correctReply: 'There are twelve months in a year!', distractorReplies: ['There are two months!', 'My lips are forty!'], translationNote: 'Ada dua belas bulan dalam setahun!' },
+  { vocabId: 'v_2_thirteen', speakerAId: 'v_1_girl', speakerAName: 'Maya', speakerALine: 'What comes right after twelve?', speakerAHints: { after: 'setelah' }, speakerBId: 'v_2_thirteen', speakerBName: 'Fajar', correctReply: 'Thirteen comes after twelve!', distractorReplies: ['Thirty comes after twelve!', 'No, dark hair!'], translationNote: 'Tiga belas datang setelah dua belas!' },
+  { vocabId: 'v_2_fourteen', speakerAId: 'v_1_boy', speakerAName: 'Adi', speakerALine: 'Seven plus seven equals how many?', speakerAHints: { equals: 'sama dengan' }, speakerBId: 'v_2_fourteen', speakerBName: 'Rani', correctReply: 'Seven plus seven equals fourteen!', distractorReplies: ['It equals forty!', 'Hi, yellow arm!'], translationNote: 'Tujuh tambah tujuh sama dengan empat belas!' },
+  { vocabId: 'v_2_fifteen', speakerAId: 'v_1_woman', speakerAName: 'Ibu Sari', speakerALine: 'Ten plus five equals which number?', speakerAHints: { plus: 'tambah' }, speakerBId: 'v_2_fifteen', speakerBName: 'Bimo', correctReply: 'Ten plus five equals fifteen!', distractorReplies: ['It equals fifty!', 'My cousin is gray!'], translationNote: 'Sepuluh tambah lima sama dengan lima belas!' },
+  { vocabId: 'v_2_sixteen', speakerAId: 'v_1_boy', speakerAName: 'Dani', speakerALine: 'Eight plus eight equals how much?', speakerAHints: { much: 'berapa' }, speakerBId: 'v_2_sixteen', speakerBName: 'Nadia', correctReply: 'Eight plus eight equals sixteen!', distractorReplies: ['It equals sixty!', 'Thank you, knee!'], translationNote: 'Delapan tambah delapan sama dengan enam belas!' },
+  { vocabId: 'v_2_seventeen', speakerAId: 'v_1_girl', speakerAName: 'Sinta', speakerALine: 'What number stands between sixteen and eighteen?', speakerAHints: { between: 'di antara' }, speakerBId: 'v_2_seventeen', speakerBName: 'Raka', correctReply: 'Seventeen is right in the middle!', distractorReplies: ['Seventy is in the middle!', 'Please, black phone!'], translationNote: 'Tujuh belas tepat berada di tengah!' },
+  { vocabId: 'v_2_eighteen', speakerAId: 'v_1_boy', speakerAName: 'Fajar', speakerALine: 'Nine plus nine equals which number?', speakerAHints: { equals: 'sama dengan' }, speakerBId: 'v_2_eighteen', speakerBName: 'Lina', correctReply: 'Nine plus nine equals eighteen!', distractorReplies: ['It equals eighty!', 'Good afternoon, tooth!'], translationNote: 'Sembilan tambah sembilan sama dengan delapan belas!' },
+  { vocabId: 'v_2_nineteen', speakerAId: 'v_1_woman', speakerAName: 'Ibu Guru', speakerALine: 'One step before twenty is...', speakerAHints: { before: 'sebelum' }, speakerBId: 'v_2_nineteen', speakerBName: 'Adi', correctReply: 'One step before twenty is nineteen!', distractorReplies: ['It is ninety!', 'OK, pink stomach!'], translationNote: 'Satu langkah sebelum dua puluh adalah sembilan belas!' },
+  { vocabId: 'v_2_twenty', speakerAId: 'v_1_man', speakerAName: 'Pak Budi', speakerALine: 'Ten plus ten makes how many?', speakerAHints: { makes: 'menghasilkan' }, speakerBId: 'v_2_twenty', speakerBName: 'Dina', correctReply: 'Ten plus ten makes twenty!', distractorReplies: ['Ten plus ten makes twelve!', 'Sorry, brown leg!'], translationNote: 'Sepuluh tambah sepuluh menjadi dua puluh!' },
+  { vocabId: 'v_2_thirty', speakerAId: 'v_1_woman', speakerAName: 'Ibu Guru', speakerALine: 'How many days are there in most months?', speakerAHints: { days: 'hari', months: 'bulan' }, speakerBId: 'v_2_thirty', speakerBName: 'Raka', correctReply: 'Most months have thirty days!', distractorReplies: ['Most months have thirteen days!', 'Bye, my purple back!'], translationNote: 'Kebanyakan bulan memiliki tiga puluh hari!' },
+  { vocabId: 'v_2_forty', speakerAId: 'v_1_boy', speakerAName: 'Bimo', speakerALine: 'Twenty plus twenty equals how many?', speakerAHints: { equals: 'sama dengan' }, speakerBId: 'v_2_forty', speakerBName: 'Maya', correctReply: 'Twenty plus twenty equals forty!', distractorReplies: ['It equals fourteen!', 'Yes, single hair!'], translationNote: 'Dua puluh tambah dua puluh sama dengan empat puluh!' },
+  { vocabId: 'v_2_fifty', speakerAId: 'v_1_girl', speakerAName: 'Lina', speakerALine: 'Half of one hundred is which number?', speakerAHints: { half: 'setengah', hundred: 'seratus' }, speakerBId: 'v_2_fifty', speakerBName: 'Adi', correctReply: 'Half of one hundred is fifty!', distractorReplies: ['Half is fifteen!', 'No, my aunt is red!'], translationNote: 'Setengah dari seratus adalah lima puluh!' },
+  { vocabId: 'v_2_sixty', speakerAId: 'v_1_man', speakerAName: 'Kakek', speakerALine: 'How many minutes make one full hour?', speakerAHints: { minutes: 'menit', hour: 'jam' }, speakerBId: 'v_2_sixty', speakerBName: 'Sinta', correctReply: 'Sixty minutes make one hour!', distractorReplies: ['Sixteen minutes make an hour!', 'Welcome, cheek!'], translationNote: 'Enam puluh menit menjadi satu jam!' },
+  { vocabId: 'v_2_seventy', speakerAId: 'v_1_boy', speakerAName: 'Dani', speakerALine: 'Sixty plus ten equals which number?', speakerAHints: { plus: 'tambah' }, speakerBId: 'v_2_seventy', speakerBName: 'Fajar', correctReply: 'Sixty plus ten equals seventy!', distractorReplies: ['It equals seventeen!', 'Good night, white arm!'], translationNote: 'Enam puluh tambah sepuluh sama dengan tujuh puluh!' },
+  { vocabId: 'v_2_eighty', speakerAId: 'v_1_girl', speakerAName: 'Nadia', speakerALine: 'Forty plus forty equals how many?', speakerAHints: { forty: 'empat puluh' }, speakerBId: 'v_2_eighty', speakerBName: 'Rani', correctReply: 'Forty plus forty equals eighty!', distractorReplies: ['It equals eighteen!', 'Thanks, light face!'], translationNote: 'Empat puluh tambah empat puluh sama dengan delapan puluh!' },
+  { vocabId: 'v_2_ninety', speakerAId: 'v_1_woman', speakerAName: 'Ibu Sari', speakerALine: 'Ten less than one hundred is...', speakerAHints: { less: 'kurang dari', hundred: 'seratus' }, speakerBId: 'v_2_ninety', speakerBName: 'Bimo', correctReply: 'Ten less than one hundred is ninety!', distractorReplies: ['It is nineteen!', 'Bye, married question!'], translationNote: 'Sepuluh kurangnya dari seratus adalah sembilan puluh!' },
+  { vocabId: 'v_2_hundred', speakerAId: 'v_1_man', speakerAName: 'Pak Guru', speakerALine: 'You answered every single question! What is your full score?', speakerAHints: { answered: 'menjawab', full: 'sempurna / penuh', score: 'skor' }, speakerBId: 'v_2_hundred', speakerBName: 'Bimo', correctReply: 'My score is one hundred!', distractorReplies: ['My score is zero!', 'Sorry, light yellow ear!'], translationNote: 'Skorku adalah seratus!' },
+  // ---- REMAINING PEOPLE, FAMILY & BODY DIALOGUES (15) ----
+  { vocabId: 'v_1_man', speakerAId: 'v_1_woman', speakerAName: 'Ibu Sari', speakerALine: 'Who is wearing the neat blue shirt over there?', speakerAHints: { wearing: 'memakai', neat: 'rapi', shirt: 'kemeja' }, speakerBId: 'v_1_man', speakerBName: 'Budi', correctReply: 'That friendly man is my teacher!', distractorReplies: ['That small baby is my teacher!', 'Good night, blue passport!'], translationNote: 'Pria ramah itu adalah guruku!' },
+  { vocabId: 'v_1_woman', speakerAId: 'v_1_man', speakerAName: 'Pak Arif', speakerALine: 'Who is greeting the neighbors with a smile?', speakerAHints: { greeting: 'menyapa', neighbors: 'tetangga', smile: 'senyuman' }, speakerBId: 'v_1_woman', speakerBName: 'Nadia', correctReply: 'The kind woman in the colorful scarf!', distractorReplies: ['The little boy with soccer!', 'Sorry, my knee is twenty!'], translationNote: 'Wanita baik hati dengan syal warna-warni itu!' },
+  { vocabId: 'v_1_boy', speakerAId: 'v_1_girl', speakerAName: 'Sinta', speakerALine: 'Who is waving cheerfully near the school gate?', speakerAHints: { waving: 'melambai', cheerfully: 'riang', gate: 'gerbang' }, speakerBId: 'v_1_boy', speakerBName: 'Raka', correctReply: 'That energetic boy is my classmate!', distractorReplies: ['That elderly grandfather is my classmate!', 'Please, green stomach!'], translationNote: 'Anak laki-laki energik itu teman sekelasku!' },
+  { vocabId: 'v_1_girl', speakerAId: 'v_1_boy', speakerAName: 'Bimo', speakerALine: 'Who won first prize in the village story contest?', speakerAHints: { won: 'memenangkan', prize: 'hadiah', contest: 'lomba' }, speakerBId: 'v_1_girl', speakerBName: 'Lina', correctReply: 'The smart girl standing by the tree!', distractorReplies: ['The tall grandfather standing by the tree!', 'Goodbye, orange chin!'], translationNote: 'Anak perempuan pintar yang berdiri di dekat pohon itu!' },
+  { vocabId: 'v_3_parent', speakerAId: 'v_1_woman', speakerAName: 'Ibu Guru', speakerALine: 'Who takes care of the baby with so much love?', speakerAHints: { takes: 'mengurus / menjaga', care: 'perhatian', love: 'kasih sayang' }, speakerBId: 'v_3_parent', speakerBName: 'Orang Tua', correctReply: 'Every caring parent loves their child!', distractorReplies: ['Every blue number loves zero!', 'Thanks, gray cheek!'], translationNote: 'Setiap orang tua yang penyayang menyayangi anaknya!' },
+  { vocabId: 'v_3_child', speakerAId: 'v_3_grandfather', speakerAName: 'Kakek', speakerALine: 'Look how happy the little kid is playing with a toy plane!', speakerAHints: { happy: 'bahagia', playing: 'bermain', plane: 'pesawat' }, speakerBId: 'v_3_child', speakerBName: 'Anak', correctReply: 'Yes! A cheerful child makes the home bright!', distractorReplies: ['Yes! An adult passport makes tea!', 'No, dark birthday!'], translationNote: 'Ya! Anak yang ceria membuat rumah terasa cerah!' },
+  { vocabId: 'v_3_son', speakerAId: 'v_3_father', speakerAName: 'Ayah', speakerALine: 'Did you bring the football boots for practice?', speakerAHints: { bring: 'membawa', boots: 'sepatu', practice: 'latihan' }, speakerBId: 'v_3_son', speakerBName: 'Putra', correctReply: 'Yes, Dad! Your proud son is ready!', distractorReplies: ['Yes, Dad! Your proud daughter is uncle!', 'Welcome, ninety lips!'], translationNote: 'Ya, Ayah! Putra kebanggaanmu sudah siap!' },
+  { vocabId: 'v_3_daughter', speakerAId: 'v_3_mother', speakerAName: 'Ibu', speakerALine: 'Would you like to read this storybook together?', speakerAHints: { read: 'membaca', storybook: 'buku cerita', together: 'bersama' }, speakerBId: 'v_3_daughter', speakerBName: 'Putri', correctReply: 'Yes, Mom! Your daughter loves reading!', distractorReplies: ['Yes, Mom! Your grandfather loves sixty!', 'Bye, single stomach!'], translationNote: 'Ya, Bu! Putrimu suka sekali membaca!' },
+  { vocabId: 'v_3_family', speakerAId: 'v_1_friend', speakerAName: 'Dani', speakerALine: 'Are grandparents, parents, and children coming to dinner?', speakerAHints: { dinner: 'makan malam', coming: 'datang' }, speakerBId: 'v_3_family', speakerBName: 'Keluarga', correctReply: 'Yes! The whole family will gather tonight!', distractorReplies: ['Yes! The whole passport will gather!', 'OK, yellow nose!'], translationNote: 'Ya! Seluruh keluarga akan berkumpul malam ini!' },
+  { vocabId: 'v_3_grandchild', speakerAId: 'v_3_grandmother', speakerAName: 'Nenek', speakerALine: 'I baked warm chocolate cookies! Who gets the first one?', speakerAHints: { baked: 'memanggang', warm: 'hangat', cookies: 'kue' }, speakerBId: 'v_3_grandchild', speakerBName: 'Cucu', correctReply: 'Me, Grandma! Your lucky grandchild!', distractorReplies: ['Me, Grandma! Your adult address!', 'Sorry, dark arm!'], translationNote: 'Aku, Nenek! Cucu kesayanganmu yang beruntung!' },
+  { vocabId: 'v_3_niece', speakerAId: 'v_3_aunt', speakerAName: 'Bibi', speakerALine: 'Who gave you that pretty pink birthday ribbon?', speakerAHints: { gave: 'memberi', pretty: 'cantik', ribbon: 'pita' }, speakerBId: 'v_3_niece', speakerBName: 'Keponakan', correctReply: 'My aunt! She loves her little niece!', distractorReplies: ['My nephew! She loves eighty tooth!', 'Good morning, brown ear!'], translationNote: 'Bibiku! Beliau sangat menyayangi keponakan perempuannya!' },
+  { vocabId: 'v_3_nephew', speakerAId: 'v_3_uncle', speakerAName: 'Paman', speakerALine: 'Want an ice cream cone after our walk, buddy?', speakerAHints: { ice: 'es', walk: 'jalan-jalan', buddy: 'sobat' }, speakerBId: 'v_3_nephew', speakerBName: 'Keponakan', correctReply: 'Yes, Uncle! Your nephew would love one!', distractorReplies: ['Yes, Uncle! Your grandmother is forty!', 'Bye, red passport!'], translationNote: 'Mau, Paman! Keponakan laki-lakimu mau satu!' },
+  { vocabId: 'v_6_body', speakerAId: 'v_1_man', speakerAName: 'Pelatih', speakerALine: 'Do we stretch every morning before running?', speakerAHints: { stretch: 'peregangan', running: 'berlari' }, speakerBId: 'v_6_body', speakerBName: 'Raka', correctReply: 'Yes! Exercise keeps our whole body healthy!', distractorReplies: ['Yes! Exercise keeps our blue answer!', 'Good night, white phone!'], translationNote: 'Ya! Olahraga menjaga seluruh tubuh kita tetap sehat!' },
+  { vocabId: 'v_6_leg', speakerAId: 'v_1_boy', speakerAName: 'Bimo', speakerALine: 'Why do soccer players jump and sprint so well?', speakerAHints: { soccer: 'sepak bola', jump: 'melompat', sprint: 'lari cepat' }, speakerBId: 'v_6_leg', speakerBName: 'Adi', correctReply: 'Because every strong leg helps them run fast!', distractorReplies: ['Because every purple tooth helps them!', 'Hello, married cheek!'], translationNote: 'Karena setiap kaki yang kuat membantu mereka berlari cepat!' },
+  { vocabId: 'v_6_back', speakerAId: 'v_1_woman', speakerAName: 'Dokter', speakerALine: 'Why should we sit up straight at our desk?', speakerAHints: { sit: 'duduk', straight: 'tegak', desk: 'meja belajar' }, speakerBId: 'v_6_back', speakerBName: 'Maya', correctReply: 'Good posture protects our upper back!', distractorReplies: ['Good posture protects our yellow birthday!', 'Thanks, fourteen lips!'], translationNote: 'Postur yang baik melindungi punggung atas kita!' },
 ];
 
 // ============================================================================
@@ -2924,6 +4293,67 @@ const LISTEN_SEEDS: ListenSeed[] = [
     distractors: ['goodbye', 'night'],
     translationNote: 'Selamat datang di rumah kami!',
   },
+  // ---- GREETINGS REMAINING (8) ----
+  { vocabId: 'v_0_hi', sentence: 'Hi, my good friend!', tokens: ['Hi,', 'my', 'good', 'friend!'], distractors: ['bye', 'sorry'], translationNote: 'Hai, teman baikku!' },
+  { vocabId: 'v_0_bye', sentence: 'Bye, see you soon!', tokens: ['Bye,', 'see', 'you', 'soon!'], distractors: ['hi', 'welcome'], translationNote: 'Sampai jumpa segera!' },
+  { vocabId: 'v_0_thanks', sentence: 'Thanks for your help!', tokens: ['Thanks', 'for', 'your', 'help!'], distractors: ['sorry', 'no'], translationNote: 'Makasih atas bantuanmu!' },
+  { vocabId: 'v_0_please', sentence: 'Please open the door.', tokens: ['Please', 'open', 'the', 'door.'], distractors: ['sorry', 'bye'], translationNote: 'Tolong buka pintunya.' },
+  { vocabId: 'v_0_ok', sentence: 'Okay, let us start now!', tokens: ['Okay,', 'let', 'us', 'start', 'now!'], distractors: ['no', 'goodbye'], translationNote: 'Baiklah, ayo kita mulai sekarang!' },
+  { vocabId: 'v_0_yes', sentence: 'Yes, I am ready!', tokens: ['Yes,', 'I', 'am', 'ready!'], distractors: ['No', 'Sorry'], translationNote: 'Ya, saya sudah siap!' },
+  { vocabId: 'v_0_no', sentence: 'No, thank you very much.', tokens: ['No,', 'thank', 'you', 'very', 'much.'], distractors: ['Yes', 'Hi'], translationNote: 'Tidak, terima kasih banyak.' },
+  { vocabId: 'v_0_sorry', sentence: 'Sorry, I am late.', tokens: ['Sorry,', 'I', 'am', 'late.'], distractors: ['Thanks', 'Welcome'], translationNote: 'Maaf, saya terlambat.' },
+  // ---- PERSONAL INFO REMAINING (6) ----
+  { vocabId: 'v_5_last_name', sentence: 'Write your last name.', tokens: ['Write', 'your', 'last', 'name.'], distractors: ['age', 'passport'], translationNote: 'Tulis nama belakangmu.' },
+  { vocabId: 'v_5_age', sentence: 'What is your age?', tokens: ['What', 'is', 'your', 'age?'], distractors: ['address', 'color'], translationNote: 'Berapa usiamu?' },
+  { vocabId: 'v_5_birthdate', sentence: 'Check your full birthdate.', tokens: ['Check', 'your', 'full', 'birthdate.'], distractors: ['answer', 'single'], translationNote: 'Periksa tanggal lahirmu.' },
+  { vocabId: 'v_5_single', sentence: 'My cousin is still single.', tokens: ['My', 'cousin', 'is', 'still', 'single.'], distractors: ['married', 'question'], translationNote: 'Sepupuku masih lajang.' },
+  { vocabId: 'v_5_question', sentence: 'Ask an easy question.', tokens: ['Ask', 'an', 'easy', 'question.'], distractors: ['answer', 'age'], translationNote: 'Ajukan pertanyaan yang mudah.' },
+  { vocabId: 'v_5_answer', sentence: 'Give the right answer.', tokens: ['Give', 'the', 'right', 'answer.'], distractors: ['question', 'birthdate'], translationNote: 'Berikan jawaban yang benar.' },
+  // ---- COLORS (14) ----
+  { vocabId: 'v_4_black', sentence: 'Her cat is black.', tokens: ['Her', 'cat', 'is', 'black.'], distractors: ['white', 'pink'], translationNote: 'Kucingnya berwarna hitam.' },
+  { vocabId: 'v_4_white', sentence: 'Clean white paper.', tokens: ['Clean', 'white', 'paper.'], distractors: ['black', 'orange'], translationNote: 'Kertas putih yang bersih.' },
+  { vocabId: 'v_4_blue', sentence: 'Bright clear blue sky.', tokens: ['Bright', 'clear', 'blue', 'sky.'], distractors: ['brown', 'gray'], translationNote: 'Langit biru yang cerah.' },
+  { vocabId: 'v_4_green', sentence: 'Fresh green garden grass.', tokens: ['Fresh', 'green', 'garden', 'grass.'], distractors: ['purple', 'red'], translationNote: 'Rumput taman yang hijau segar.' },
+  { vocabId: 'v_4_yellow', sentence: 'Warm yellow morning sun.', tokens: ['Warm', 'yellow', 'morning', 'sun.'], distractors: ['black', 'blue'], translationNote: 'Matahari pagi kuning hangat.' },
+  { vocabId: 'v_4_red', sentence: 'A sweet red rose.', tokens: ['A', 'sweet', 'red', 'rose.'], distractors: ['gray', 'green'], translationNote: 'Sekuntum mawar merah manis.' },
+  { vocabId: 'v_4_pink', sentence: 'Soft pink strawberry cream.', tokens: ['Soft', 'pink', 'strawberry', 'cream.'], distractors: ['brown', 'dark'], translationNote: 'Krim stroberi merah muda lembut.' },
+  { vocabId: 'v_4_orange', sentence: 'Sweet orange pumpkin.', tokens: ['Sweet', 'orange', 'pumpkin.'], distractors: ['purple', 'white'], translationNote: 'Labu berwarna oranye manis.' },
+  { vocabId: 'v_4_purple', sentence: 'Nice purple flowers bloom.', tokens: ['Nice', 'purple', 'flowers', 'bloom.'], distractors: ['black', 'yellow'], translationNote: 'Bunga ungu yang indah bermekaran.' },
+  { vocabId: 'v_4_gray', sentence: 'Soft gray rain clouds.', tokens: ['Soft', 'gray', 'rain', 'clouds.'], distractors: ['pink', 'orange'], translationNote: 'Awan hujan abu-abu lembut.' },
+  { vocabId: 'v_4_brown', sentence: 'Warm brown chocolate.', tokens: ['Warm', 'brown', 'chocolate.'], distractors: ['blue', 'white'], translationNote: 'Cokelat berwarna cokelat hangat.' },
+  { vocabId: 'v_4_dark', sentence: 'The night is dark.', tokens: ['The', 'night', 'is', 'dark.'], distractors: ['light', 'yellow'], translationNote: 'Malam itu gelap.' },
+  { vocabId: 'v_4_light', sentence: 'Soft light blue shirt.', tokens: ['Soft', 'light', 'blue', 'shirt.'], distractors: ['dark', 'black'], translationNote: 'Kemeja biru muda yang lembut.' },
+  { vocabId: 'v_4_color', sentence: 'My favorite bright color.', tokens: ['My', 'favorite', 'bright', 'color.'], distractors: ['number', 'name'], translationNote: 'Warna cerah kesukaanku.' },
+  // ---- NUMBERS 0..100 (29) ----
+  { vocabId: 'v_2_zero', sentence: 'Count from number zero.', tokens: ['Count', 'from', 'number', 'zero.'], distractors: ['hundred', 'ten'], translationNote: 'Hitung dari angka nol.' },
+  { vocabId: 'v_2_one', sentence: 'One sunny morning.', tokens: ['One', 'sunny', 'morning.'], distractors: ['Two', 'Nine'], translationNote: 'Satu pagi yang cerah.' },
+  { vocabId: 'v_2_two', sentence: 'Two clean hands.', tokens: ['Two', 'clean', 'hands.'], distractors: ['Five', 'Seven'], translationNote: 'Dua tangan yang bersih.' },
+  { vocabId: 'v_2_three', sentence: 'One, two, three, go!', tokens: ['One,', 'two,', 'three,', 'go!'], distractors: ['five', 'eight'], translationNote: 'Satu, dua, tiga, mulai!' },
+  { vocabId: 'v_2_four', sentence: 'Four happy friends.', tokens: ['Four', 'happy', 'friends.'], distractors: ['Forty', 'Nine'], translationNote: 'Empat teman yang bahagia.' },
+  { vocabId: 'v_2_five', sentence: 'Five fingers on hand.', tokens: ['Five', 'fingers', 'on', 'hand.'], distractors: ['Fifty', 'Zero'], translationNote: 'Lima jari di tangan.' },
+  { vocabId: 'v_2_six', sentence: 'Six green apples.', tokens: ['Six', 'green', 'apples.'], distractors: ['Sixty', 'Two'], translationNote: 'Enam apel hijau.' },
+  { vocabId: 'v_2_seven', sentence: 'Seven days a week.', tokens: ['Seven', 'days', 'a', 'week.'], distractors: ['Seventy', 'Ten'], translationNote: 'Tujuh hari dalam seminggu.' },
+  { vocabId: 'v_2_eight', sentence: 'Wake up at eight.', tokens: ['Wake', 'up', 'at', 'eight.'], distractors: ['eighteen', 'four'], translationNote: 'Bangun pada pukul delapan.' },
+  { vocabId: 'v_2_nine', sentence: 'Nine bright stars.', tokens: ['Nine', 'bright', 'stars.'], distractors: ['Ninety', 'One'], translationNote: 'Sembilan bintang cerah.' },
+  { vocabId: 'v_2_ten', sentence: 'Count from one to ten.', tokens: ['Count', 'from', 'one', 'to', 'ten.'], distractors: ['twenty', 'zero'], translationNote: 'Hitung dari satu sampai sepuluh.' },
+  { vocabId: 'v_2_eleven', sentence: 'Number eleven is blue.', tokens: ['Number', 'eleven', 'is', 'blue.'], distractors: ['twelve', 'thirty'], translationNote: 'Nomor sebelas berwarna biru.' },
+  { vocabId: 'v_2_twelve', sentence: 'Twelve months every year.', tokens: ['Twelve', 'months', 'every', 'year.'], distractors: ['Twenty', 'Five'], translationNote: 'Dua belas bulan setiap tahun.' },
+  { vocabId: 'v_2_thirteen', sentence: 'Thirteen sweet cookies.', tokens: ['Thirteen', 'sweet', 'cookies.'], distractors: ['Thirty', 'Six'], translationNote: 'Tiga belas kue manis.' },
+  { vocabId: 'v_2_fourteen', sentence: 'Fourteen yellow flowers.', tokens: ['Fourteen', 'yellow', 'flowers.'], distractors: ['Forty', 'Seven'], translationNote: 'Empat belas bunga kuning.' },
+  { vocabId: 'v_2_fifteen', sentence: 'Fifteen minutes rest.', tokens: ['Fifteen', 'minutes', 'rest.'], distractors: ['Fifty', 'Ten'], translationNote: 'Istirahat lima belas menit.' },
+  { vocabId: 'v_2_sixteen', sentence: 'Sixteen blue balloons.', tokens: ['Sixteen', 'blue', 'balloons.'], distractors: ['Sixty', 'Eight'], translationNote: 'Enam belas balon biru.' },
+  { vocabId: 'v_2_seventeen', sentence: 'Seventeen birthday candles.', tokens: ['Seventeen', 'birthday', 'candles.'], distractors: ['Seventy', 'Nine'], translationNote: 'Tujuh belas lilin ulang tahun.' },
+  { vocabId: 'v_2_eighteen', sentence: 'She turns eighteen today.', tokens: ['She', 'turns', 'eighteen', 'today.'], distractors: ['eighty', 'eleven'], translationNote: 'Dia berusia delapan belas hari ini.' },
+  { vocabId: 'v_2_nineteen', sentence: 'Nineteen students smile.', tokens: ['Nineteen', 'students', 'smile.'], distractors: ['Ninety', 'Twelve'], translationNote: 'Sembilan belas murid tersenyum.' },
+  { vocabId: 'v_2_twenty', sentence: 'Twenty houses in village.', tokens: ['Twenty', 'houses', 'in', 'village.'], distractors: ['Twelve', 'Two'], translationNote: 'Dua puluh rumah di desa.' },
+  { vocabId: 'v_2_thirty', sentence: 'Thirty days this month.', tokens: ['Thirty', 'days', 'this', 'month.'], distractors: ['Thirteen', 'Three'], translationNote: 'Tiga puluh hari bulan ini.' },
+  { vocabId: 'v_2_forty', sentence: 'Forty friendly people.', tokens: ['Forty', 'friendly', 'people.'], distractors: ['Fourteen', 'Four'], translationNote: 'Empat puluh orang yang ramah.' },
+  { vocabId: 'v_2_fifty', sentence: 'Half of hundred is fifty.', tokens: ['Half', 'of', 'hundred', 'is', 'fifty.'], distractors: ['fifteen', 'five'], translationNote: 'Setengah dari seratus adalah lima puluh.' },
+  { vocabId: 'v_2_sixty', sentence: 'Sixty minutes in hour.', tokens: ['Sixty', 'minutes', 'in', 'hour.'], distractors: ['Sixteen', 'Six'], translationNote: 'Enam puluh menit dalam sejam.' },
+  { vocabId: 'v_2_seventy', sentence: 'Grandmother is seventy today.', tokens: ['Grandmother', 'is', 'seventy', 'today.'], distractors: ['seventeen', 'seven'], translationNote: 'Nenek berusia tujuh puluh hari ini.' },
+  { vocabId: 'v_2_eighty', sentence: 'Grandfather turned eighty.', tokens: ['Grandfather', 'turned', 'eighty.'], distractors: ['eighteen', 'eight'], translationNote: 'Kakek berusia delapan puluh.' },
+  { vocabId: 'v_2_ninety', sentence: 'She scored ninety points.', tokens: ['She', 'scored', 'ninety', 'points.'], distractors: ['nineteen', 'nine'], translationNote: 'Dia meraih sembilan puluh poin.' },
+  { vocabId: 'v_2_hundred', sentence: 'One hundred percent great!', tokens: ['One', 'hundred', 'percent', 'great!'], distractors: ['zero', 'ten'], translationNote: 'Seratus persen hebat!' },
 ];
 
 // ============================================================================
@@ -2931,29 +4361,29 @@ const LISTEN_SEEDS: ListenSeed[] = [
 // ============================================================================
 
 export function buildPeoplePictureChoice(targetId?: DesaVocabId): DuolingoChallenge {
-  const target = targetId ?? pickRandom(DESA_ILLUSTRATED_VOCAB_IDS);
+  const target = targetId ?? pickRandom(DESA_ALL_VOCAB_IDS);
   const entry = VOCAB_BY_ID[target]!;
-  const targetImg = VOCAB_IMAGE_BY_ID[target];
+  const targetSig = getVisualSignature(target);
   const tag = getCategoryTag(target);
 
-  // Prefer same-category distractors first, ensuring distinct images so cards are unambiguous
+  // Prefer same-category distractors first, ensuring distinct images/visuals so cards are unambiguous
   const sameCatPool = getCategoryPool(target);
   const distinctSameCat = shuffle(
-    sameCatPool.filter((id) => id !== target && VOCAB_IMAGE_BY_ID[id] !== targetImg),
+    sameCatPool.filter((id) => id !== target && getVisualSignature(id) !== targetSig),
   );
   const distinctAll = shuffle(
-    DESA_ILLUSTRATED_VOCAB_IDS.filter(
-      (id) => id !== target && VOCAB_IMAGE_BY_ID[id] !== targetImg,
+    DESA_ALL_VOCAB_IDS.filter(
+      (id) => id !== target && getVisualSignature(id) !== targetSig,
     ),
   );
 
   const chosenOthers: string[] = [];
-  const usedImgs = new Set<string>([targetImg]);
+  const usedSigs = new Set<string>([targetSig]);
   for (const id of [...distinctSameCat, ...distinctAll]) {
     if (chosenOthers.length >= 2) break;
-    const img = VOCAB_IMAGE_BY_ID[id];
-    if (!usedImgs.has(img)) {
-      usedImgs.add(img);
+    const sig = getVisualSignature(id);
+    if (!usedSigs.has(sig)) {
+      usedSigs.add(sig);
       chosenOthers.push(id);
     }
   }
@@ -2971,7 +4401,8 @@ export function buildPeoplePictureChoice(targetId?: DesaVocabId): DuolingoChalle
     options: optionIds.map((id) => ({
       vocabId: id,
       label: VOCAB_BY_ID[id]?.word ?? id,
-      imageSrc: VOCAB_IMAGE_BY_ID[id],
+      imageSrc: VOCAB_IMAGE_BY_ID[id] ?? '',
+      visual: VOCAB_VISUAL_BY_ID[id],
     })),
     correctIndex,
     translationNote: `${entry.word} = ${entry.meaningId}`,
@@ -2996,7 +4427,8 @@ export function buildPeopleWordBankTranslate(targetId?: DesaVocabId): DuolingoCh
         ? 'Tuliskan dalam bahasa Indonesia'
         : 'Tuliskan dalam bahasa Inggris',
     categoryLabel: tag.title,
-    speakerImage: VOCAB_IMAGE_BY_ID[seed.speakerId],
+    speakerImage: VOCAB_IMAGE_BY_ID[seed.speakerId] ?? '',
+    speakerVisual: VOCAB_VISUAL_BY_ID[seed.speakerId],
     speakerName: speakerEntry?.word ?? 'Warga Desa',
     sourceText: seed.sourceText,
     audioText: seed.direction === 'en_to_id' ? seed.sourceText : seed.targetTokens.join(' '),
@@ -3021,7 +4453,8 @@ export function buildPeopleSpeak(targetId?: DesaVocabId): DuolingoChallenge {
     vocabId: seed.vocabId,
     kicker: `UCAPKAN · ${tag.upper}`,
     promptTitle: 'Ucapkan kalimat ini',
-    speakerImage: VOCAB_IMAGE_BY_ID[seed.speakerId],
+    speakerImage: VOCAB_IMAGE_BY_ID[seed.speakerId] ?? '',
+    speakerVisual: VOCAB_VISUAL_BY_ID[seed.speakerId],
     speakerName: speakerEntry?.word ?? 'Warga Desa',
     targetSentence: seed.sentence,
     wordHints: seed.wordHints,
@@ -3055,11 +4488,13 @@ export function buildPeopleDialogueComplete(targetId?: DesaVocabId): DuolingoCha
     vocabId: seed.vocabId,
     kicker: `PERCAKAPAN · ${tag.upper}`,
     promptTitle: 'Lengkapi kalimatnya',
-    speakerAImage: VOCAB_IMAGE_BY_ID[seed.speakerAId],
+    speakerAImage: VOCAB_IMAGE_BY_ID[seed.speakerAId] ?? '',
+    speakerAVisual: VOCAB_VISUAL_BY_ID[seed.speakerAId],
     speakerAName: seed.speakerAName,
     speakerALine: seed.speakerALine,
     speakerAHints: seed.speakerAHints,
-    speakerBImage: VOCAB_IMAGE_BY_ID[seed.speakerBId],
+    speakerBImage: VOCAB_IMAGE_BY_ID[seed.speakerBId] ?? '',
+    speakerBVisual: VOCAB_VISUAL_BY_ID[seed.speakerBId],
     speakerBName: seed.speakerBName,
     choices: indexed.map((i) => i.text),
     correctIndex,
@@ -3086,7 +4521,7 @@ export function buildPeopleListenWordBank(targetId?: DesaVocabId): DuolingoChall
 }
 
 export function buildPeopleMatchPairs(preferredId?: DesaVocabId): DuolingoChallenge {
-  const target = preferredId ?? pickRandom(DESA_ILLUSTRATED_VOCAB_IDS);
+  const target = preferredId ?? pickRandom(DESA_ALL_VOCAB_IDS);
   const samePool = getCategoryPool(target);
   const rest = shuffle(samePool.filter((id) => id !== target));
   const picked = [target, ...rest.slice(0, 4)];
@@ -3120,6 +4555,21 @@ export const ALL_DUOLINGO_TYPES: DuolingoChallengeType[] = [
   'match_pairs',
 ];
 
+const DESA_VALID_SET = new Set<string>(DESA_ALL_VOCAB_IDS);
+
+function sanitizeDesaVocabPool(preferredIds?: readonly string[]): DesaVocabId[] {
+  if (!preferredIds || preferredIds.length === 0) return [];
+  const unique: DesaVocabId[] = [];
+  const seen = new Set<string>();
+  for (const id of preferredIds) {
+    if (DESA_VALID_SET.has(id) && !seen.has(id)) {
+      seen.add(id);
+      unique.push(id as DesaVocabId);
+    }
+  }
+  return unique;
+}
+
 export function buildChallengeOfType(
   type: DuolingoChallengeType,
   targetVocabId?: DesaVocabId,
@@ -3143,9 +4593,13 @@ export function buildChallengeOfType(
 export function pickSmartPeopleVocabId(
   progress: Record<string, WordProgress> = {},
   excludeVocabId?: string | null,
+  preferredVocabIds?: readonly string[],
 ): DesaVocabId {
-  const pool = DESA_ILLUSTRATED_VOCAB_IDS.filter((id) => id !== excludeVocabId);
-  const scored = (pool.length > 0 ? pool : DESA_ILLUSTRATED_VOCAB_IDS).map((id) => ({
+  const validPreferred = sanitizeDesaVocabPool(preferredVocabIds);
+  const basePool = validPreferred.length > 0 ? validPreferred : DESA_ALL_VOCAB_IDS;
+  const filtered = basePool.filter((id) => id !== excludeVocabId);
+  const candidates = filtered.length > 0 ? filtered : basePool;
+  const scored = candidates.map((id) => ({
     id,
     score: (progress[id]?.b || 0) + Math.random() * 2.5,
   }));
@@ -3155,6 +4609,7 @@ export function pickSmartPeopleVocabId(
 
 export function pickRandomPeopleChallenge(options?: {
   wordProgress?: Record<string, WordProgress>;
+  preferredVocabIds?: readonly string[];
   excludeType?: DuolingoChallengeType | null;
   excludeVocabId?: string | null;
   allowSpeak?: boolean;
@@ -3174,18 +4629,23 @@ export function pickRandomPeopleChallenge(options?: {
   const targetId = pickSmartPeopleVocabId(
     options?.wordProgress ?? {},
     options?.excludeVocabId,
+    options?.preferredVocabIds,
   );
   return buildChallengeOfType(chosenType, targetId);
 }
 
 /**
- * Builds a balanced deck of N Desa Sapaan (People + Family) Duolingo challenges
+ * Builds a balanced deck of N Desa Sapaan (all 126 A1 words across 8 topics) Duolingo challenges
  * ensuring all 6 challenge types appear randomly in the session
- * (no two consecutive challenges of the same type).
+ * (no two consecutive challenges of the same type) and respecting assigned door wordIds when provided.
  */
 export function buildPeopleDuolingoDeck(
   count = 10,
-  options?: { allowSpeak?: boolean; wordProgress?: Record<string, WordProgress> },
+  options?: {
+    allowSpeak?: boolean;
+    wordProgress?: Record<string, WordProgress>;
+    preferredVocabIds?: readonly string[];
+  },
 ): DuolingoChallenge[] {
   const allowSpeak = options?.allowSpeak ?? true;
   const baseTypes = ALL_DUOLINGO_TYPES.filter((t) => (allowSpeak ? true : t !== 'speak'));
@@ -3193,9 +4653,21 @@ export function buildPeopleDuolingoDeck(
   let prevType: DuolingoChallengeType | null = null;
   let prevVocab: string | null = null;
 
-  // Ensure every enabled type appears at least once in the first batch
   const guaranteed = shuffle(baseTypes);
-  const vocabCycle = shuffle(DESA_ILLUSTRATED_VOCAB_IDS);
+  const progress = options?.wordProgress ?? {};
+  const validPreferred = sanitizeDesaVocabPool(options?.preferredVocabIds);
+  const sortByMastery = (ids: readonly DesaVocabId[]) =>
+    [...ids]
+      .map((id) => ({ id, score: (progress[id]?.b || 0) + Math.random() * 1.8 }))
+      .sort((a, b) => a.score - b.score)
+      .map((x) => x.id);
+
+  const preferredOrdered = sortByMastery(validPreferred);
+  const remainingAll = sortByMastery(
+    DESA_ALL_VOCAB_IDS.filter((id) => !validPreferred.includes(id)),
+  );
+  const vocabCycle =
+    preferredOrdered.length > 0 ? [...preferredOrdered, ...remainingAll] : remainingAll;
 
   for (let i = 0; i < count; i++) {
     let type: DuolingoChallengeType;
@@ -3211,10 +4683,10 @@ export function buildPeopleDuolingoDeck(
       type = pickRandom(choices.length > 0 ? choices : baseTypes);
     }
 
-    const vocabId: DesaVocabId =
-      vocabCycle[i % vocabCycle.length] === prevVocab
-        ? vocabCycle[(i + 1) % vocabCycle.length]
-        : vocabCycle[i % vocabCycle.length];
+    let vocabId = vocabCycle[i % vocabCycle.length];
+    if (vocabId === prevVocab && vocabCycle.length > 1) {
+      vocabId = vocabCycle[(i + 1) % vocabCycle.length];
+    }
 
     const challenge = buildChallengeOfType(type, vocabId);
     deck.push(challenge);
@@ -3232,7 +4704,8 @@ export function normalizeSentenceText(input: string): string {
   return input
     .toLowerCase()
     .replace(/['’]/g, '')
-    .replace(/[^a-z0-9\s-]/g, ' ')
+    .replace(/-/g, ' ')
+    .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 }
@@ -3244,6 +4717,7 @@ export function evaluateWordBankAnswer(
 ): boolean {
   const userNorm = normalizeSentenceText(selectedTokens.join(' '));
   const targetNorm = normalizeSentenceText(targetTokens.join(' '));
+  if (!userNorm || !targetNorm) return false;
   if (userNorm === targetNorm) return true;
   if (acceptedVariants) {
     return acceptedVariants.some((v) => normalizeSentenceText(v) === userNorm);
@@ -3251,10 +4725,45 @@ export function evaluateWordBankAnswer(
   return false;
 }
 
+const NUMBER_WORDS_0_TO_100: Record<string, string> = {
+  '0': 'zero',
+  '1': 'one',
+  '2': 'two',
+  '3': 'three',
+  '4': 'four',
+  '5': 'five',
+  '6': 'six',
+  '7': 'seven',
+  '8': 'eight',
+  '9': 'nine',
+  '10': 'ten',
+  '11': 'eleven',
+  '12': 'twelve',
+  '13': 'thirteen',
+  '14': 'fourteen',
+  '15': 'fifteen',
+  '16': 'sixteen',
+  '17': 'seventeen',
+  '18': 'eighteen',
+  '19': 'nineteen',
+  '20': 'twenty',
+  '30': 'thirty',
+  '40': 'forty',
+  '50': 'fifty',
+  '60': 'sixty',
+  '70': 'seventy',
+  '80': 'eighty',
+  '90': 'ninety',
+  '100': 'one hundred',
+};
+
 const SPEECH_SYNONYMS: Record<string, string> = {
   mr: 'mister',
   mrs: 'missus',
   ms: 'miss',
+  ok: 'okay',
+  grey: 'gray',
+  hi: 'hi',
   im: 'i am',
   youre: 'you are',
   hes: 'he is',
@@ -3272,6 +4781,11 @@ function tokenizeSpoken(text: string): string[] {
   const words = norm.split(' ').filter(Boolean);
   const expanded: string[] = [];
   for (const w of words) {
+    const numRep = NUMBER_WORDS_0_TO_100[w];
+    if (numRep) {
+      expanded.push(...numRep.split(' '));
+      continue;
+    }
     const rep = SPEECH_SYNONYMS[w];
     if (rep) expanded.push(...rep.split(' '));
     else expanded.push(w);

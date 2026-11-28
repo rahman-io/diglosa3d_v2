@@ -159,6 +159,8 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
   const timeoutRef = useRef<number | null>(null);
   const grabTimerRef = useRef(diffCfg.grabSec);
   const answerTimerRef = useRef(diffCfg.duelAnswerSec);
+  const turnPhaseRef = useRef<'grab' | 'answer' | 'feedback'>('grab');
+  const isTerminalRef = useRef(false);
   const outerScrollRef = useRef<HTMLDivElement | null>(null);
   const innerScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -214,9 +216,13 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
   );
 
   const pickNextDuoChallenge = useCallback(
-    (lastDuo: DuolingoChallenge | null): DuolingoChallenge =>
+    (
+      lastDuo: DuolingoChallenge | null,
+      preferredVocabIds?: readonly string[],
+    ): DuolingoChallenge =>
       pickRandomPeopleChallenge({
         wordProgress,
+        preferredVocabIds,
         excludeType: lastDuo?.type ?? null,
         excludeVocabId: lastDuo?.vocabId ?? null,
         allowSpeak: !isSpeakingTemporarilyDisabled(),
@@ -273,12 +279,15 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
       setFeedbackMsg(null);
       setTurnFrozen(false);
     },
-    [diffCfg.grabSec, diffCfg.duelAnswerSec, hasSepatu],
+    [diffCfg.grabSec, getActiveDuelAnswerSec, hasSepatu],
   );
 
   // Initialize battle when battle changes
   useEffect(() => {
     clearPendingTimeout();
+    soundEngine.stopSpeech();
+    isTerminalRef.current = false;
+    turnPhaseRef.current = 'grab';
     if (!battle) return;
 
     const bossDef = battle.isZoneBoss ? BOSSES[battle.zoneId] : null;
@@ -305,14 +314,17 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
     setQuestion(firstQ);
     setPrevQuestion(null);
     if (battle.zoneId === 'desa_sapaan' && !battle.isAcademyShadow && !battle.isMixedChallenge) {
-      setDuoChallenge(pickNextDuoChallenge(null));
+      setDuoChallenge(pickNextDuoChallenge(null, battle.wordIds));
     } else {
       setDuoChallenge(null);
     }
     setPeluitEliminateTick(0);
     setupTurnModifiers(battle, firstQ, startHp, 0);
 
-    return () => clearPendingTimeout();
+    return () => {
+      clearPendingTimeout();
+      soundEngine.stopSpeech();
+    };
   }, [battle]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const scheduleNextTurn = useCallback(
@@ -326,12 +338,14 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
     ) => {
       clearPendingTimeout();
       timeoutRef.current = window.setTimeout(() => {
+        if (isTerminalRef.current) return;
         const nextQ = pickNextQuestion(b, curMonsterHp, nextTurnCount, currentQ, false);
         setPrevQuestion(currentQ);
         setQuestion(nextQ);
         if (b.zoneId === 'desa_sapaan' && !b.isAcademyShadow && !b.isMixedChallenge) {
-          setDuoChallenge(pickNextDuoChallenge(currentDuo));
+          setDuoChallenge(pickNextDuoChallenge(currentDuo, b.wordIds));
         }
+        turnPhaseRef.current = 'grab';
         setTurnCount(nextTurnCount);
         setTurnPhase('grab');
         setAnimEvent('idle');
@@ -342,7 +356,18 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
   );
 
   const handleMonsterAttack = useCallback(
-    (b: BattleContext, q: QuizQuestion | null, reasonMsg: string) => {
+    (
+      b: BattleContext,
+      q: QuizQuestion | null,
+      reasonMsg: string,
+      nextMonsterHpOverride?: number,
+    ) => {
+      if (turnPhaseRef.current === 'feedback' || isTerminalRef.current) return;
+      turnPhaseRef.current = 'feedback';
+      soundEngine.stopSpeech();
+
+      const effectiveMonsterHp = nextMonsterHpOverride ?? monsterHp;
+
       if (hasPerisai && !shieldUsed) {
         setShieldUsed(true);
         if (q) {
@@ -356,7 +381,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
         setFeedbackMsg(`🛡️ Perisai Panci menangkis serangan! (${reasonMsg}) Nyawamu aman!`);
         soundEngine.playPick();
         triggerAnim('monster_attack');
-        scheduleNextTurn(b, monsterHp, turnCount + 1, q, 1300, duoChallenge);
+        scheduleNextTurn(b, effectiveMonsterHp, turnCount + 1, q, 1300, duoChallenge);
         return;
       }
 
@@ -374,6 +399,9 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
       setFeedbackMsg(`${reasonMsg} (-1 ❤️)`);
 
       const isDefeatKo = nextHp <= 0;
+      if (isDefeatKo) {
+        isTerminalRef.current = true;
+      }
       triggerAnim(isDefeatKo ? 'hero_ko' : 'monster_attack');
 
       clearPendingTimeout();
@@ -381,16 +409,17 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
         if (isDefeatKo) {
           onBattleEnd('defeat', b);
         } else {
-          const nextQ = pickNextQuestion(b, monsterHp, turnCount + 1, q, false);
+          const nextQ = pickNextQuestion(b, effectiveMonsterHp, turnCount + 1, q, false);
           setPrevQuestion(q);
           setQuestion(nextQ);
           if (b.zoneId === 'desa_sapaan' && !b.isAcademyShadow && !b.isMixedChallenge) {
-            setDuoChallenge(pickNextDuoChallenge(duoChallenge));
+            setDuoChallenge(pickNextDuoChallenge(duoChallenge, b.wordIds));
           }
+          turnPhaseRef.current = 'grab';
           setTurnCount(turnCount + 1);
           setTurnPhase('grab');
           setAnimEvent('idle');
-          setupTurnModifiers(b, nextQ, monsterHp, turnCount + 1);
+          setupTurnModifiers(b, nextQ, effectiveMonsterHp, turnCount + 1);
         }
       }, isDefeatKo ? 1850 : 1350);
     },
@@ -416,6 +445,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
     if (!battle || turnPhase !== 'grab' || turnFrozen) return;
     let lastMs = performance.now();
     const interval = window.setInterval(() => {
+      if (turnPhaseRef.current !== 'grab' || isTerminalRef.current) return;
       const now = performance.now();
       const dt = (now - lastMs) / 1000;
       lastMs = now;
@@ -424,6 +454,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
       setGrabTimer(next);
       if (next <= 0) {
         window.clearInterval(interval);
+        if (turnPhaseRef.current !== 'grab' || isTerminalRef.current) return;
         // Monster steals turn! Uses monsterGuessAcc from difficulty
         const monsterHits = Math.random() < diffCfg.monsterGuessAcc;
         if (monsterHits) {
@@ -433,6 +464,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
             `Terlambat! ${battle.monsterName} merebut giliran & tepat menyerangmu!`,
           );
         } else {
+          turnPhaseRef.current = 'feedback';
           setTurnPhase('feedback');
           setFeedbackGood(true);
           setFeedbackMsg(
@@ -462,6 +494,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
     if (!battle || turnPhase !== 'answer' || diffCfg.duelAnswerSec <= 0 || turnFrozen) return;
     let lastMs = performance.now();
     const interval = window.setInterval(() => {
+      if (turnPhaseRef.current !== 'answer' || isTerminalRef.current) return;
       const now = performance.now();
       const dt = (now - lastMs) / 1000;
       lastMs = now;
@@ -470,6 +503,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
       setAnswerTimer(next);
       if (next <= 0) {
         window.clearInterval(interval);
+        if (turnPhaseRef.current !== 'answer' || isTerminalRef.current) return;
         handleMonsterAttack(
           battle,
           question,
@@ -489,14 +523,15 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
   ]);
 
   const handleGrab = useCallback(() => {
-    if (!battle || turnPhase !== 'grab') return;
+    if (!battle || turnPhaseRef.current !== 'grab' || isTerminalRef.current) return;
+    turnPhaseRef.current = 'answer';
     setTurnPhase('answer');
     triggerAnim('grab_ready');
     soundEngine.playDash();
     if (!isDesaDuolingo && question) {
       soundEngine.speakEnglish(question.audioWord);
     }
-  }, [battle, turnPhase, isDesaDuolingo, question, triggerAnim]);
+  }, [battle, isDesaDuolingo, question, triggerAnim]);
 
   const handleUsePeluit = () => {
     if (peluitUsed || turnPhase !== 'answer') return;
@@ -526,14 +561,16 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
 
   const handlePickChoice = useCallback(
     (idx: number) => {
-      if (!battle || !question || turnPhase !== 'answer') return;
+      if (!battle || !question || turnPhaseRef.current !== 'answer' || isTerminalRef.current) return;
       if (eliminatedChoices.includes(idx) || lockedChoiceIdx === idx) return;
 
       setSelectedIdx(idx);
       const isCorrect = idx === question.correctIndex;
-      setTurnPhase('feedback');
-
       if (isCorrect) {
+        turnPhaseRef.current = 'feedback';
+        setTurnPhase('feedback');
+        soundEngine.stopSpeech();
+
         const nextStreak = duelHitStreak + 1;
         setDuelHitStreak(nextStreak);
 
@@ -574,6 +611,9 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
         }
         const isTerminalVictory =
           nextMonsterHp <= 0 && (!bossDef || bossPhase >= bossDef.phases);
+        if (isTerminalVictory) {
+          isTerminalRef.current = true;
+        }
         triggerAnim(isTerminalVictory ? 'monster_ko' : 'hero_attack');
 
         clearPendingTimeout();
@@ -590,6 +630,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
               const nextQ = pickNextQuestion(battle, bossDef.hpPerPhase, turnCount + 1, question, turnFrozen);
               setPrevQuestion(question);
               setQuestion(nextQ);
+              turnPhaseRef.current = 'grab';
               setTurnCount(turnCount + 1);
               setTurnPhase('grab');
               setAnimEvent('idle');
@@ -601,6 +642,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
             const nextQ = pickNextQuestion(battle, nextMonsterHp, turnCount + 1, question, turnFrozen);
             setPrevQuestion(question);
             setQuestion(nextQ);
+            turnPhaseRef.current = 'grab';
             setTurnCount(turnCount + 1);
             setTurnPhase('grab');
             setAnimEvent('idle');
@@ -622,6 +664,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
           battle,
           question,
           `Salah! Jawaban yang benar adalah "${question.choices[question.correctIndex]}".${growNote}`,
+          nextBossHpAfterHeal,
         );
       }
     },
@@ -654,10 +697,14 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
 
   const handleDuoBattleResolved = useCallback(
     (outcome: DuolingoChallengeOutcome) => {
-      if (!battle || !duoChallenge || turnPhase !== 'answer') return;
+      if (!battle || !duoChallenge || turnPhaseRef.current !== 'answer' || isTerminalRef.current) {
+        return;
+      }
 
       // Safe bypass if player cannot speak right now
       if (outcome.skipped && duoChallenge.type === 'speak') {
+        turnPhaseRef.current = 'feedback';
+        soundEngine.stopSpeech();
         disableSpeakingTemporarily(15);
         setTurnPhase('feedback');
         setFeedbackGood(true);
@@ -666,12 +713,15 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
         return;
       }
 
-      setTurnPhase('feedback');
       const syntheticQ: QuizQuestion | null = question
         ? { ...question, vocabId: outcome.vocabId }
         : null;
 
       if (outcome.correct && !outcome.skipped) {
+        turnPhaseRef.current = 'feedback';
+        soundEngine.stopSpeech();
+        setTurnPhase('feedback');
+
         const nextStreak = duelHitStreak + 1;
         setDuelHitStreak(nextStreak);
 
@@ -707,6 +757,9 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
 
         const isTerminalVictory =
           nextMonsterHp <= 0 && (!bossDef || bossPhase >= bossDef.phases);
+        if (isTerminalVictory) {
+          isTerminalRef.current = true;
+        }
         triggerAnim(isTerminalVictory ? 'monster_ko' : 'hero_attack');
 
         clearPendingTimeout();
@@ -723,7 +776,8 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
               const nextQ = pickNextQuestion(battle, bossDef.hpPerPhase, turnCount + 1, question, turnFrozen);
               setPrevQuestion(question);
               setQuestion(nextQ);
-              setDuoChallenge(pickNextDuoChallenge(duoChallenge));
+              setDuoChallenge(pickNextDuoChallenge(duoChallenge, battle.wordIds));
+              turnPhaseRef.current = 'grab';
               setTurnCount(turnCount + 1);
               setTurnPhase('grab');
               setAnimEvent('idle');
@@ -735,7 +789,8 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
             const nextQ = pickNextQuestion(battle, nextMonsterHp, turnCount + 1, question, turnFrozen);
             setPrevQuestion(question);
             setQuestion(nextQ);
-            setDuoChallenge(pickNextDuoChallenge(duoChallenge));
+            setDuoChallenge(pickNextDuoChallenge(duoChallenge, battle.wordIds));
+            turnPhaseRef.current = 'grab';
             setTurnCount(turnCount + 1);
             setTurnPhase('grab');
             setAnimEvent('idle');
@@ -745,8 +800,10 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
       } else {
         const bossDef = battle.isZoneBoss ? BOSSES[battle.zoneId] : null;
         let growNote = '';
+        let nextBossHpAfterHeal = monsterHp;
         if (bossDef && bossDef.mechanic === 'grow' && monsterHp <= 10 && growHealsInPhase < 2) {
-          setMonsterHp(Math.min(monsterMaxHp, monsterHp + 1));
+          nextBossHpAfterHeal = Math.min(monsterMaxHp, monsterHp + 1);
+          setMonsterHp(nextBossHpAfterHeal);
           setGrowHealsInPhase((c) => c + 1);
           growNote = ' (🌿 Akar Bos tumbuh +1 HP!)';
         }
@@ -756,6 +813,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
           outcome.skipped
             ? `Giliran dilewati! ${battle.monsterName} menyerangmu!${growNote}`
             : `Kurang tepat! ${battle.monsterName} menyerangmu!${growNote}`,
+          nextBossHpAfterHeal,
         );
       }
     },
@@ -830,6 +888,15 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
   const isKoWin = animEvent === 'monster_ko';
   const isKoLoss = animEvent === 'hero_ko';
   const showKoOverlay = isKoWin || isKoLoss;
+  const isTerminalState = showKoOverlay || monsterHp <= 0 || localPlayerHp <= 0;
+
+  const handleFlee = () => {
+    if (isTerminalRef.current || isTerminalState) return;
+    isTerminalRef.current = true;
+    clearPendingTimeout();
+    soundEngine.stopSpeech();
+    onBattleEnd('fled', battle);
+  };
 
   return (
     <div
@@ -943,7 +1010,11 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
                   🛡️ {shieldUsed ? 'Terpakai' : 'Perisai Siap'}
                 </span>
               )}
-              {hasPeluit && turnPhase === 'answer' && !peluitUsed && (
+              {!isTerminalState &&
+                hasPeluit &&
+                turnPhase === 'answer' &&
+                !peluitUsed &&
+                !(isDesaDuolingo && duoChallenge?.type === 'speak') && (
                 <button
                   type="button"
                   onClick={handleUsePeluit}
@@ -952,7 +1023,7 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
                   <span>🎵 Peluit (-1 Opsi)</span>
                 </button>
               )}
-              {hasJam && turnPhase !== 'feedback' && !jamUsed && (
+              {!isTerminalState && hasJam && turnPhase !== 'feedback' && !jamUsed && (
                 <button
                   type="button"
                   onClick={handleUseJam}
@@ -1171,7 +1242,8 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
               <RpgPillButton
                 variant="red"
                 size="sm"
-                onClick={() => onBattleEnd('fled', battle)}
+                disabled={isTerminalState}
+                onClick={handleFlee}
               >
                 <Footprints className="h-3.5 w-3.5 shrink-0" />
                 <span>Kabur (-1 ❤️)</span>

@@ -9,18 +9,20 @@ import {
   pickRandomPeopleChallenge,
 } from '../data/duolingoChallenges';
 import { pickDistractors, VOCAB_BY_ID } from '../data/vocabCatalog';
-import { CaveSealContext } from '../types/game';
+import { CaveSealContext, WordProgress } from '../types/game';
 import { DuolingoChallengeOutcome, DuolingoChallengeView } from './DuolingoChallengeView';
 import { RpgBoardPanel } from './RpgUiKit';
 
 interface CaveSealModalProps {
   seal: CaveSealContext | null;
+  wordProgress?: Record<string, WordProgress>;
   onResolve: (blockId: string, correct: boolean, vocabId: string) => void;
   onClose: () => void;
 }
 
 export const CaveSealModal: React.FC<CaveSealModalProps> = ({
   seal,
+  wordProgress,
   onResolve,
   onClose,
 }) => {
@@ -28,6 +30,7 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
   const [duoChallenge, setDuoChallenge] = useState<DuolingoChallenge | null>(null);
   const [pendingOutcome, setPendingOutcome] = useState<DuolingoChallengeOutcome | null>(null);
   const resolveTimerRef = useRef<number | null>(null);
+  const duoSubmittedRef = useRef(false);
   const outerScrollRef = useRef<HTMLDivElement | null>(null);
   const innerScrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -52,11 +55,22 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
     };
   }, [seal, isDesaDuolingo]);
 
+  const handleClose = useCallback(() => {
+    if (resolveTimerRef.current !== null) {
+      window.clearTimeout(resolveTimerRef.current);
+      resolveTimerRef.current = null;
+    }
+    soundEngine.stopSpeech();
+    onClose();
+  }, [onClose]);
+
   useEffect(() => {
     if (resolveTimerRef.current !== null) {
       window.clearTimeout(resolveTimerRef.current);
       resolveTimerRef.current = null;
     }
+    soundEngine.stopSpeech();
+    duoSubmittedRef.current = false;
     setPickedIndex(null);
     setPendingOutcome(null);
 
@@ -68,11 +82,19 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
     if (seal.zoneId === 'desa_sapaan') {
       setDuoChallenge(
         pickRandomPeopleChallenge({
+          wordProgress,
+          preferredVocabIds: seal.vocabId ? [seal.vocabId] : undefined,
           allowSpeak: !isSpeakingTemporarilyDisabled(),
           allowMatch: true,
         }),
       );
-      return;
+      return () => {
+        if (resolveTimerRef.current !== null) {
+          window.clearTimeout(resolveTimerRef.current);
+          resolveTimerRef.current = null;
+        }
+        soundEngine.stopSpeech();
+      };
     }
 
     setDuoChallenge(null);
@@ -85,13 +107,15 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
         window.clearTimeout(resolveTimerRef.current);
         resolveTimerRef.current = null;
       }
+      soundEngine.stopSpeech();
     };
-  }, [seal, challenge]);
+  }, [seal, challenge, wordProgress]);
 
   const handleChoose = useCallback(
     (idx: number) => {
       if (!seal || !challenge || pickedIndex !== null) return;
       setPickedIndex(idx);
+      soundEngine.stopSpeech();
       const ok = idx === challenge.correctIndex;
       if (ok) soundEngine.playOk();
       else soundEngine.playWrongAnswer();
@@ -107,24 +131,28 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
     (outcome: DuolingoChallengeOutcome) => {
       if (!seal || !duoChallenge) return;
       if (outcome.skipped && duoChallenge.type === 'speak') {
+        soundEngine.stopSpeech();
         disableSpeakingTemporarily(15);
         setPendingOutcome(null);
         setDuoChallenge(
           pickRandomPeopleChallenge({
+            wordProgress,
+            preferredVocabIds: seal.vocabId ? [seal.vocabId] : undefined,
             allowSpeak: false,
             allowMatch: true,
-            excludeVocabId: duoChallenge.vocabId,
           }),
         );
         return;
       }
       setPendingOutcome(outcome);
     },
-    [seal, duoChallenge],
+    [seal, duoChallenge, wordProgress],
   );
 
   const handleDuoContinue = useCallback(() => {
-    if (!seal || !pendingOutcome) return;
+    if (!seal || !pendingOutcome || duoSubmittedRef.current) return;
+    duoSubmittedRef.current = true;
+    soundEngine.stopSpeech();
     onResolve(seal.blockId, pendingOutcome.correct && !pendingOutcome.skipped, pendingOutcome.vocabId);
   }, [seal, pendingOutcome, onResolve]);
 
@@ -133,7 +161,7 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Escape') {
         e.preventDefault();
-        onClose();
+        handleClose();
         return;
       }
       if (isDesaDuolingo || !challenge || pickedIndex !== null) return;
@@ -147,7 +175,7 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [seal, isDesaDuolingo, challenge, pickedIndex, onClose, handleChoose]);
+  }, [seal, isDesaDuolingo, challenge, pickedIndex, handleClose, handleChoose]);
 
   useEffect(() => {
     if (!seal) return;
@@ -189,7 +217,7 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
               </div>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={handleClose}
                 aria-label="Tutup"
                 className="rounded-xl border border-amber-300/35 bg-slate-900/80 p-1.5 text-amber-200 transition hover:bg-slate-800 hover:text-white"
               >
@@ -229,7 +257,7 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
             </div>
             <button
               type="button"
-              onClick={onClose}
+              onClick={handleClose}
               className="rounded-lg bg-slate-800 p-1.5 text-slate-300 hover:bg-slate-700 hover:text-white"
             >
               <X className="h-4 w-4" />

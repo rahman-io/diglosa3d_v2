@@ -3000,6 +3000,7 @@ function DiglosaRpgApp() {
         session={activeLearning}
         difficulty={hud.settings.difficulty}
         qtimerEnabled={hud.settings.qtimer}
+        wordProgress={hud.wordProgress}
         onRecordWord={(vocabId, ok, noLevel) =>
           engineRef.current?.recordWordAttempt(vocabId, ok, noLevel)
         }
@@ -3024,6 +3025,7 @@ function DiglosaRpgApp() {
 
       <CaveSealModal
         seal={activeCaveSeal}
+        wordProgress={hud.wordProgress}
         onResolve={(blockId, correct, vocabId) => {
           setActiveCaveSeal(null);
           engineRef.current?.resolveWordSeal(blockId, correct, vocabId);
