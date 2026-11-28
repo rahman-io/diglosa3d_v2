@@ -145,6 +145,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
     : 12;
   const [timeLeft, setTimeLeft] = useState(activeMaxSec);
   const timeLeftRef = useRef(activeMaxSec);
+  const scrollContainerRef = useRef<HTMLDivElement | null>(null);
   const resetTimeLeft = (val: number) => {
     timeLeftRef.current = val;
     setTimeLeft(val);
@@ -511,6 +512,17 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
     }
   };
 
+  const hasResult = Boolean(resultData);
+
+  // Scroll back to top whenever question/challenge advances so progress bar & timer are visible
+  useEffect(() => {
+    if (!session) return;
+    const rafId = window.requestAnimationFrame(() => {
+      scrollContainerRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [session, idx, duoIdx, cekIdx, hasResult]);
+
   if (!session) return null;
 
   const currentWord = words[idx];
@@ -521,6 +533,7 @@ export const LearningModeModal: React.FC<LearningModeModalProps> = ({
 
   return (
     <div
+      ref={scrollContainerRef}
       style={{ top: `${vp.offsetTop}px`, height: `${vp.height}px` }}
       className={`fixed left-0 right-0 z-50 flex justify-center overflow-y-auto overscroll-contain touch-pan-y bg-[#060b16]/78 ${
         isTightHeight ? 'items-start p-1.5 sm:p-3' : 'items-center p-2 sm:p-4'

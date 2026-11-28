@@ -28,6 +28,8 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
   const [duoChallenge, setDuoChallenge] = useState<DuolingoChallenge | null>(null);
   const [pendingOutcome, setPendingOutcome] = useState<DuolingoChallengeOutcome | null>(null);
   const resolveTimerRef = useRef<number | null>(null);
+  const outerScrollRef = useRef<HTMLDivElement | null>(null);
+  const innerScrollRef = useRef<HTMLDivElement | null>(null);
 
   const isDesaDuolingo = Boolean(seal && seal.zoneId === 'desa_sapaan');
 
@@ -147,14 +149,29 @@ export const CaveSealModal: React.FC<CaveSealModalProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [seal, isDesaDuolingo, challenge, pickedIndex, onClose, handleChoose]);
 
+  useEffect(() => {
+    if (!seal) return;
+    const rafId = window.requestAnimationFrame(() => {
+      outerScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      innerScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [seal, duoChallenge?.id]);
+
   if (!seal) return null;
   if (!isDesaDuolingo && !challenge) return null;
   if (isDesaDuolingo && !duoChallenge) return null;
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto overscroll-contain touch-pan-y bg-slate-950/80 p-2 sm:p-4">
+    <div
+      ref={outerScrollRef}
+      className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto overscroll-contain touch-pan-y bg-slate-950/80 p-2 sm:p-4"
+    >
       {isDesaDuolingo && duoChallenge ? (
-        <div className="my-auto max-h-[92dvh] w-full max-w-xl overflow-y-auto overscroll-contain touch-pan-y">
+        <div
+          ref={innerScrollRef}
+          className="my-auto max-h-[92dvh] w-full max-w-xl overflow-y-auto overscroll-contain touch-pan-y"
+        >
           <RpgBoardPanel>
             <div className="mb-3 flex items-start justify-between gap-3">
               <div className="flex items-center gap-2.5">

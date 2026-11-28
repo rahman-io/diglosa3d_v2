@@ -159,6 +159,8 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
   const timeoutRef = useRef<number | null>(null);
   const grabTimerRef = useRef(diffCfg.grabSec);
   const answerTimerRef = useRef(diffCfg.duelAnswerSec);
+  const outerScrollRef = useRef<HTMLDivElement | null>(null);
+  const innerScrollRef = useRef<HTMLDivElement | null>(null);
 
   const triggerAnim = useCallback((kind: BattleAnimEvent) => {
     setAnimEvent(kind);
@@ -803,6 +805,16 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
     return () => window.removeEventListener('keydown', onKey);
   }, [battle, turnPhase, isDesaDuolingo, handleGrab, handlePickChoice]);
 
+  // Scroll back to top whenever a new turn/challenge begins so HP hearts & AMBIL GILIRAN are always in view
+  useEffect(() => {
+    if (!battle || turnPhase === 'feedback') return;
+    const rafId = window.requestAnimationFrame(() => {
+      outerScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      innerScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+    return () => window.cancelAnimationFrame(rafId);
+  }, [battle, turnPhase, turnCount, question?.id, duoChallenge?.id]);
+
   if (!battle || !question) return null;
 
   const grabPct = Math.max(0, Math.min(100, (grabTimer / Math.max(0.5, grabWindowMax)) * 100));
@@ -820,8 +832,14 @@ export const BattleQuizModal: React.FC<BattleQuizModalProps> = ({
   const showKoOverlay = isKoWin || isKoLoss;
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto overscroll-contain touch-pan-y bg-[#060b16]/78 p-2 sm:p-4">
-      <div className="my-auto max-h-[95dvh] w-full max-w-2xl overflow-y-auto overscroll-contain touch-pan-y">
+    <div
+      ref={outerScrollRef}
+      className="fixed inset-0 z-40 flex items-center justify-center overflow-y-auto overscroll-contain touch-pan-y bg-[#060b16]/78 p-2 sm:p-4"
+    >
+      <div
+        ref={innerScrollRef}
+        className="my-auto max-h-[95dvh] w-full max-w-2xl overflow-y-auto overscroll-contain touch-pan-y"
+      >
         <RpgBoardPanel>
           {/* Inside-Panel Top Clash VS Header */}
           <div className="mb-2.5 grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-3">

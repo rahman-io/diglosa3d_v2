@@ -60,7 +60,9 @@ interface SpeechRecognitionAlternativeLike {
 
 interface SpeechRecognitionResultLike {
   isFinal: boolean;
+  length: number;
   0: SpeechRecognitionAlternativeLike;
+  [index: number]: SpeechRecognitionAlternativeLike | undefined;
 }
 
 interface SpeechRecognitionEventLike {
@@ -172,13 +174,17 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
 
   // 3. speak state
   const [isListening, setIsListening] = useState(false);
+  const [isStoppingSpeak, setIsStoppingSpeak] = useState(false);
   const [spokenText, setSpokenText] = useState('');
   const [speakError, setSpeakError] = useState<string | null>(null);
   const [waveLevels, setWaveLevels] = useState<number[]>(() => Array(22).fill(0.18));
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const micStreamRef = useRef<MediaStream | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const waveRafRef = useRef<number | null>(null);
+  const speakSessionIdRef = useRef(0);
+  const speakFinalizedRef = useRef(false);
+  const latestTranscriptRef = useRef('');
+  const bestCandidatesRef = useRef<string[]>([]);
+  const stopSafetyTimerRef = useRef<number | null>(null);
+  const maxListenTimerRef = useRef<number | null>(null);
   const speechSupported = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
 
   // 4. match_pairs state
@@ -194,11 +200,20 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
   const lastRelicTickRef = useRef(relicEliminateTick);
   const resolvedRef = useRef(false);
 
-  const stopMicResources = useCallback(() => {
-    if (waveRafRef.current !== null) {
-      cancelAnimationFrame(waveRafRef.current);
-      waveRafRef.current = null;
+  const clearSpeakTimers = useCallback(() => {
+    if (stopSafetyTimerRef.current !== null) {
+      window.clearTimeout(stopSafetyTimerRef.current);
+      stopSafetyTimerRef.current = null;
     }
+    if (maxListenTimerRef.current !== null) {
+      window.clearTimeout(maxListenTimerRef.current);
+      maxListenTimerRef.current = null;
+    }
+  }, []);
+
+  const stopMicResources = useCallback(() => {
+    speakSessionIdRef.current += 1;
+    clearSpeakTimers();
     if (recognitionRef.current) {
       try {
         recognitionRef.current.onresult = null;
@@ -210,22 +225,18 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
       }
       recognitionRef.current = null;
     }
-    if (micStreamRef.current) {
-      micStreamRef.current.getTracks().forEach((t) => t.stop());
-      micStreamRef.current = null;
-    }
-    if (audioCtxRef.current) {
-      void audioCtxRef.current.close().catch(() => undefined);
-      audioCtxRef.current = null;
-    }
     setIsListening(false);
+    setIsStoppingSpeak(false);
     setWaveLevels(Array(22).fill(0.18));
-  }, []);
+  }, [clearSpeakTimers]);
 
   // Reset state whenever challenge.id changes
   useEffect(() => {
     stopMicResources();
     resolvedRef.current = false;
+    speakFinalizedRef.current = false;
+    latestTranscriptRef.current = '';
+    bestCandidatesRef.current = [];
     setPhase('answering');
     setIsCorrect(false);
     setWasSkipped(false);
@@ -494,11 +505,95 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
     finishOutcome(false, true, `Dilewati. Jawaban benar: ${answerHint}`);
   }, [disabled, phase, challenge, finishOutcome, onDisableSpeaking]);
 
-  // Speaking challenge microphone handler
-  const handleStartSpeak = useCallback(async () => {
+  // Finalize & grade captured speech cleanly (used both by rec.onend and stop safety fallback)
+  const finalizeSpeakAttempt = useCallback(
+    (sessionId: number, emptyMessage?: string) => {
+      if (sessionId !== speakSessionIdRef.current || speakFinalizedRef.current) return;
+      speakFinalizedRef.current = true;
+      clearSpeakTimers();
+
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.onresult = null;
+          recognitionRef.current.onerror = null;
+          recognitionRef.current.onend = null;
+        } catch {
+          // ignore
+        }
+        recognitionRef.current = null;
+      }
+
+      setIsListening(false);
+      setIsStoppingSpeak(false);
+      setWaveLevels(Array(22).fill(0.18));
+
+      if (resolvedRef.current || challenge.type !== 'speak') return;
+
+      const candidates = [
+        latestTranscriptRef.current,
+        ...bestCandidatesRef.current,
+      ].filter((t) => t.trim().length > 0);
+
+      for (const candidate of candidates) {
+        const evalRes = evaluateSpokenEnglish(candidate, challenge.targetSentence);
+        if (evalRes.matched) {
+          finishOutcome(true, false, `Arti: ${challenge.translationNote}`);
+          return;
+        }
+      }
+
+      const heard = latestTranscriptRef.current.trim();
+      if (heard) {
+        setSpeakError(
+          `Terdengar "${heard}" — pelafalan belum cocok. Coba ucapkan lebih jelas atau klik "Tak bisa bicara sekarang".`,
+        );
+      } else {
+        setSpeakError(
+          emptyMessage ??
+            'Suara belum terekam. Pastikan izin mikrofon aktif, ucapkan lebih jelas, lalu tekan berhenti.',
+        );
+      }
+    },
+    [challenge, clearSpeakTimers, finishOutcome],
+  );
+
+  const stopAndEvaluateSpeak = useCallback(() => {
+    if (!isListening || isStoppingSpeak) return;
+    const sessionId = speakSessionIdRef.current;
+    setIsStoppingSpeak(true);
+
+    const rec = recognitionRef.current;
+    if (rec) {
+      try {
+        rec.stop();
+      } catch {
+        finalizeSpeakAttempt(sessionId);
+        return;
+      }
+    } else {
+      finalizeSpeakAttempt(sessionId);
+      return;
+    }
+
+    // Safety fallback if browser does not fire onend promptly after stop()
+    if (stopSafetyTimerRef.current !== null) {
+      window.clearTimeout(stopSafetyTimerRef.current);
+    }
+    stopSafetyTimerRef.current = window.setTimeout(() => {
+      try {
+        recognitionRef.current?.abort();
+      } catch {
+        // ignore
+      }
+      finalizeSpeakAttempt(sessionId);
+    }, 850);
+  }, [isListening, isStoppingSpeak, finalizeSpeakAttempt]);
+
+  // Speaking challenge microphone handler (synchronous start for browser user-gesture compatibility)
+  const handleStartSpeak = useCallback(() => {
     if (disabled || phase !== 'answering' || challenge.type !== 'speak') return;
     if (isListening) {
-      stopMicResources();
+      stopAndEvaluateSpeak();
       return;
     }
 
@@ -510,111 +605,150 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
       return;
     }
 
+    // Clean up any leftover instance before starting fresh
+    stopMicResources();
+
+    const sessionId = speakSessionIdRef.current;
+    speakFinalizedRef.current = false;
+    latestTranscriptRef.current = '';
+    bestCandidatesRef.current = [];
     setSpeakError(null);
     setSpokenText('');
+    setIsStoppingSpeak(false);
     setIsListening(true);
-
-    // Optional live waveform analyser
-    if (navigator.mediaDevices?.getUserMedia) {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        micStreamRef.current = stream;
-        const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-        const ctx = new AudioCtx();
-        audioCtxRef.current = ctx;
-        const src = ctx.createMediaStreamSource(stream);
-        const analyser = ctx.createAnalyser();
-        analyser.fftSize = 64;
-        src.connect(analyser);
-        const buf = new Uint8Array(analyser.frequencyBinCount);
-
-        const tickWave = () => {
-          if (!micStreamRef.current) return;
-          analyser.getByteFrequencyData(buf);
-          const nextBars = Array.from({ length: 22 }, (_, idx) => {
-            const sample = buf[Math.min(buf.length - 1, idx + 1)] ?? 0;
-            return Math.max(0.16, Math.min(1, sample / 190));
-          });
-          setWaveLevels(nextBars);
-          waveRafRef.current = requestAnimationFrame(tickWave);
-        };
-        waveRafRef.current = requestAnimationFrame(tickWave);
-      } catch {
-        // Fallback animated wave if analyser mic blocked while recognition still runs
-      }
-    }
 
     const rec = new Ctor();
     rec.lang = 'en-US';
-    rec.continuous = false;
+    rec.continuous = true;
     rec.interimResults = true;
-    rec.maxAlternatives = 3;
+    rec.maxAlternatives = 4;
     recognitionRef.current = rec;
 
     let handledMatch = false;
-    let latestTranscript = '';
 
     rec.onresult = (event) => {
-      const lastIdx = event.results.length - 1;
-      const res = event.results[lastIdx];
-      if (!res) return;
-      const text = res[0]?.transcript ?? '';
-      latestTranscript = text;
-      setSpokenText(text);
+      if (sessionId !== speakSessionIdRef.current || handledMatch || resolvedRef.current) return;
 
-      const evalRes = evaluateSpokenEnglish(text, challenge.targetSentence);
-      if (evalRes.matched && !handledMatch) {
-        handledMatch = true;
-        finishOutcome(true, false, `Arti: ${challenge.translationNote}`);
-      } else if (res.isFinal && !handledMatch) {
-        setSpeakError('Pelafalan belum terdengar jelas, coba ucapkan sekali lagi!');
+      const combinedParts: string[] = [];
+      const altCandidates: string[] = [];
+      for (let i = 0; i < event.results.length; i++) {
+        const res = event.results[i];
+        if (!res) continue;
+        const primary = res[0]?.transcript?.trim() ?? '';
+        if (primary) combinedParts.push(primary);
+        const altCount = typeof res.length === 'number' ? res.length : 1;
+        for (let a = 0; a < altCount; a++) {
+          const altText = res[a]?.transcript?.trim() ?? '';
+          if (altText) altCandidates.push(altText);
+        }
       }
-    };
 
-    rec.onerror = (ev) => {
-      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
-        setSpeakError('Izin mikrofon ditolak. Aktifkan mic atau tekan "Tak bisa bicara sekarang".');
-      } else if (ev.error === 'no-speech') {
-        setSpeakError('Suara belum terdeteksi. Coba dekatkan mikrofon dan bicara lebih jelas.');
-      } else if (ev.error !== 'aborted') {
-        setSpeakError('Gagal menangkap suara. Coba lagi atau lewati sementara.');
+      const fullTranscript = combinedParts.join(' ').trim();
+      if (fullTranscript) {
+        latestTranscriptRef.current = fullTranscript;
+        setSpokenText(fullTranscript);
       }
-      stopMicResources();
-    };
 
-    rec.onend = () => {
-      if (!handledMatch && latestTranscript) {
-        const evalRes = evaluateSpokenEnglish(latestTranscript, challenge.targetSentence);
+      const allToCheck = [fullTranscript, ...altCandidates].filter(Boolean);
+      bestCandidatesRef.current = Array.from(new Set(allToCheck));
+
+      for (const cand of bestCandidatesRef.current) {
+        const evalRes = evaluateSpokenEnglish(cand, challenge.targetSentence);
         if (evalRes.matched) {
           handledMatch = true;
+          speakFinalizedRef.current = true;
+          clearSpeakTimers();
+          try {
+            rec.onresult = null;
+            rec.onerror = null;
+            rec.onend = null;
+            rec.stop();
+          } catch {
+            // ignore
+          }
+          recognitionRef.current = null;
+          setIsListening(false);
+          setIsStoppingSpeak(false);
           finishOutcome(true, false, `Arti: ${challenge.translationNote}`);
           return;
         }
       }
-      stopMicResources();
+    };
+
+    rec.onerror = (ev) => {
+      if (sessionId !== speakSessionIdRef.current || handledMatch) return;
+      if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed') {
+        finalizeSpeakAttempt(
+          sessionId,
+          'Izin mikrofon ditolak. Aktifkan mic atau tekan "Tak bisa bicara sekarang".',
+        );
+      } else if (ev.error === 'no-speech') {
+        finalizeSpeakAttempt(
+          sessionId,
+          'Suara belum terdeteksi. Dekatkan mikrofon lalu coba ucapkan lagi.',
+        );
+      } else if (ev.error !== 'aborted') {
+        finalizeSpeakAttempt(
+          sessionId,
+          'Gagal menangkap suara. Coba lagi atau klik "Tak bisa bicara sekarang".',
+        );
+      } else {
+        finalizeSpeakAttempt(sessionId);
+      }
+    };
+
+    rec.onend = () => {
+      if (sessionId !== speakSessionIdRef.current || handledMatch) return;
+      finalizeSpeakAttempt(sessionId);
     };
 
     try {
       rec.start();
+      // Safety auto-stop after 12 seconds so recording never hangs indefinitely
+      maxListenTimerRef.current = window.setTimeout(() => {
+        if (sessionId === speakSessionIdRef.current && !speakFinalizedRef.current) {
+          try {
+            recognitionRef.current?.stop();
+          } catch {
+            // ignore
+          }
+          stopSafetyTimerRef.current = window.setTimeout(() => {
+            finalizeSpeakAttempt(sessionId);
+          }, 800);
+        }
+      }, 12000);
     } catch {
-      setSpeakError('Mikrofon sedang sibuk. Coba tekan lagi atau lewati sementara.');
-      stopMicResources();
+      finalizeSpeakAttempt(
+        sessionId,
+        'Mikrofon sedang sibuk. Coba tekan lagi atau klik "Tak bisa bicara sekarang".',
+      );
     }
-  }, [disabled, phase, challenge, isListening, stopMicResources, finishOutcome]);
+  }, [
+    disabled,
+    phase,
+    challenge,
+    isListening,
+    stopAndEvaluateSpeak,
+    stopMicResources,
+    clearSpeakTimers,
+    finishOutcome,
+    finalizeSpeakAttempt,
+  ]);
 
-  // Animated synthetic fallback wave when listening without WebAudio stream
+  // Animated wave bars while microphone is active
   useEffect(() => {
-    if (!isListening || micStreamRef.current) return;
+    if (!isListening) return;
     const id = window.setInterval(() => {
       const t = Date.now() / 130;
+      const boost = spokenText ? 0.14 : 0;
       setWaveLevels(
         Array.from({ length: 22 }, (_, i) =>
-          Math.max(0.18, Math.min(0.95, 0.35 + 0.5 * Math.abs(Math.sin(t + i * 0.45)))),
+          Math.max(0.18, Math.min(0.98, 0.34 + boost + 0.48 * Math.abs(Math.sin(t + i * 0.45)))),
         ),
       );
     }, 90);
     return () => window.clearInterval(id);
-  }, [isListening]);
+  }, [isListening, spokenText]);
 
   // Match-pair tile handler
   const handlePickMatchTile = useCallback(
@@ -960,13 +1094,13 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
 
           <button
             type="button"
-            disabled={disabled || phase !== 'answering'}
-            onClick={() => void handleStartSpeak()}
-            className={`flex min-h-[60px] w-full items-center justify-center gap-3 rounded-2xl border-2 px-4 py-3 font-black transition ${
+            disabled={disabled || phase !== 'answering' || isStoppingSpeak}
+            onClick={handleStartSpeak}
+            className={`flex min-h-[64px] w-full flex-col items-center justify-center gap-1.5 rounded-2xl border-2 px-4 py-2.5 font-black transition ${
               phase === 'feedback' && isCorrect
                 ? 'border-emerald-400 bg-emerald-950/65 text-emerald-200'
                 : isListening
-                ? 'border-sky-400 bg-sky-950/75 text-sky-200 shadow-[0_0_20px_rgba(56,189,248,0.35)]'
+                ? 'border-sky-400 bg-sky-950/80 text-sky-100 shadow-[0_0_20px_rgba(56,189,248,0.35)] hover:border-rose-300'
                 : 'border-amber-300/45 bg-slate-950/70 text-sky-200 hover:border-sky-400 hover:bg-slate-900/90'
             }`}
           >
@@ -976,15 +1110,20 @@ export const DuolingoChallengeView: React.FC<DuolingoChallengeViewProps> = ({
                 <span>Pengucapan Cocok!</span>
               </span>
             ) : isListening ? (
-              <div className="flex items-center gap-1.5" aria-label="Sedang mendengarkan">
-                {waveLevels.map((lvl, idx) => (
-                  <span
-                    key={idx}
-                    style={{ height: `${Math.round(8 + lvl * 24)}px` }}
-                    className="w-1 rounded-full bg-sky-400 transition-all duration-75"
-                  />
-                ))}
-              </div>
+              <>
+                <div className="flex h-7 items-center gap-1.5" aria-label="Sedang mendengarkan">
+                  {waveLevels.map((lvl, idx) => (
+                    <span
+                      key={idx}
+                      style={{ height: `${Math.round(8 + lvl * 20)}px` }}
+                      className="w-1 rounded-full bg-sky-400 transition-all duration-75"
+                    />
+                  ))}
+                </div>
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-sky-200">
+                  {isStoppingSpeak ? 'MENILAI REKAMAN SUARA...' : 'KETUK UNTUK BERHENTI & NILAI'}
+                </span>
+              </>
             ) : (
               <span className="inline-flex items-center gap-2 text-xs uppercase tracking-wider sm:text-sm">
                 {speechSupported ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5" />}
