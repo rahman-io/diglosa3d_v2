@@ -1609,6 +1609,10 @@ export class RpgWorldEngine {
   private rescueCaptiveEndPos = new THREE.Vector3();
   private bannerMessage: string | null = null;
   private bannerTimer = 0;
+  private caveCountdownTimer = 0;
+  private caveCountdownStep: 3 | 2 | 1 | 'go' | null = null;
+  private caveCountdownZoneName = '';
+  private caveCountdownPendingBanner: string | null = null;
   private lastHudPushMs = 0;
   private sideCamCacheKey = '';
   private sideCamCacheX = 0;
@@ -8889,15 +8893,28 @@ export class RpgWorldEngine {
     this.applyCameraVisibilityAndControls();
     this.snapCameraBehindHero();
     this.saveProgress();
-    if (zId) {
-      const st = ZONE_CAVE_STORIES[zId];
-      this.showBanner(
-        `Misi Gua ${ZONE_INFO[zId].name} yaitu membuka 5 Pintu, mengalahkan Bos, mengambil Kunci Penjara, dan menyelamatkan ${st.captiveName}!`,
-        4.8,
-      );
-    }
-    soundEngine.playBuild();
+    const missionBanner = zId
+      ? `Misi Gua ${ZONE_INFO[zId].name} yaitu membuka 5 Pintu, mengalahkan Bos, mengambil Kunci Penjara, dan menyelamatkan ${ZONE_CAVE_STORIES[zId].captiveName}!`
+      : null;
+    this.heldKeys.clear();
+    this.virtualMove.x = 0;
+    this.virtualMove.z = 0;
+    this.tapMoveTarget = null;
+    this.caveCountdownTimer = 3.1;
+    this.caveCountdownStep = 3;
+    this.caveCountdownZoneName = zId ? `Gua ${ZONE_INFO[zId].name}` : 'Gua Petualangan';
+    this.caveCountdownPendingBanner = missionBanner;
+    this.encounterGraceTimer = 0.8;
+    soundEngine.playCountdownTick(3);
     this.pushHud(true);
+  }
+
+  private isCaveCountdownBlocking(): boolean {
+    return (
+      this.worldMode === 'dungeon' &&
+      this.caveCountdownTimer > 0 &&
+      this.caveCountdownStep !== 'go'
+    );
   }
 
   private startDungeonRescueCutscene(zoneId: ZoneId): void {
@@ -10035,6 +10052,10 @@ export class RpgWorldEngine {
     this.nearPrisonKey = false;
     this.nearHiddenPrison = false;
     this.tapMoveTarget = null;
+    this.caveCountdownTimer = 0;
+    this.caveCountdownStep = null;
+    this.caveCountdownZoneName = '';
+    this.caveCountdownPendingBanner = null;
     this.clearDungeonBossIntro();
     this.clearDungeonBossSpawnCloud();
     this.clearDungeonBossSummonCutscene();
@@ -17885,7 +17906,14 @@ export class RpgWorldEngine {
   }
 
   public fireActiveWeapon(fromHold = false, skipTurnWait = false): void {
-    if (this.phase !== 'playing' || this.carMode !== 'none' || this.planeMode !== 'none') return;
+    if (
+      this.phase !== 'playing' ||
+      this.isCaveCountdownBlocking() ||
+      this.carMode !== 'none' ||
+      this.planeMode !== 'none'
+    ) {
+      return;
+    }
     if (this.isSwimming && this.worldMode !== 'ocean' && !this.isHeroUnderwater()) {
       const slotWpn = getWeaponIdFromHotbarSlot(this.activeHotbarSlot);
       const canShootWater = Boolean(
@@ -18323,7 +18351,15 @@ export class RpgWorldEngine {
   }
 
   private engageMonster(m: RoamingMonster): void {
-    if (m.combatOnly || m.isCaveMob || this.carMode !== 'none' || this.planeMode !== 'none') return;
+    if (
+      this.isCaveCountdownBlocking() ||
+      m.combatOnly ||
+      m.isCaveMob ||
+      this.carMode !== 'none' ||
+      this.planeMode !== 'none'
+    ) {
+      return;
+    }
     if (this.isBossSquadProtectedEnemy(m.id)) {
       this.notifyBossShieldBlocked();
       return;
@@ -23095,6 +23131,16 @@ export class RpgWorldEngine {
         continue;
       }
       const spec = MONSTER_SPECS[m.type];
+      if (this.isCaveCountdownBlocking() && m.alive) {
+        m.mesh.visible = true;
+        animateMonsterRig(m.mesh, {
+          mode: 'idle',
+          elapsed: this.elapsed,
+          phase: m.patrolPhase,
+          dt,
+        });
+        continue;
+      }
       if (!m.alive) {
         if (this.phase === 'playing' && m.respawnTimer > 0 && !isOverworldGuest) {
           m.respawnTimer -= dt;
@@ -25087,6 +25133,35 @@ export class RpgWorldEngine {
     } else {
       this.nearbyInjuredPeer = null;
     }
+    if (this.caveCountdownTimer > 0) {
+      this.caveCountdownTimer = Math.max(0, this.caveCountdownTimer - dt);
+      let nextStep: 3 | 2 | 1 | 'go' | null = null;
+      if (this.caveCountdownTimer > 2.3) nextStep = 3;
+      else if (this.caveCountdownTimer > 1.5) nextStep = 2;
+      else if (this.caveCountdownTimer > 0.7) nextStep = 1;
+      else if (this.caveCountdownTimer > 0) nextStep = 'go';
+      if (nextStep !== this.caveCountdownStep) {
+        this.caveCountdownStep = nextStep;
+        if (nextStep === 2 || nextStep === 1) {
+          soundEngine.playCountdownTick(nextStep);
+        } else if (nextStep === 'go') {
+          soundEngine.playCountdownTick('go');
+          soundEngine.playBuild();
+          this.encounterGraceTimer = Math.max(this.encounterGraceTimer, 0.9);
+        } else if (nextStep === null && this.caveCountdownPendingBanner) {
+          const msg = this.caveCountdownPendingBanner;
+          this.caveCountdownPendingBanner = null;
+          this.showBanner(msg, 4.6);
+        }
+        this.pushHud(true);
+      }
+    }
+    const countdownLocked = this.isCaveCountdownBlocking();
+    if (countdownLocked) {
+      this.jumpBufferTimer = 0;
+      this.pendingTurnShot = null;
+      this.encounterGraceTimer = Math.max(this.encounterGraceTimer, 0.35);
+    }
     if (this.jumpBufferTimer > 0) {
       this.jumpBufferTimer = Math.max(0, this.jumpBufferTimer - dt);
     }
@@ -25125,6 +25200,7 @@ export class RpgWorldEngine {
       this.voiceAutoFire = false;
     }
     const continuousHold =
+      !countdownLocked &&
       this.carMode === 'none' &&
       this.planeMode === 'none' &&
       (this.hudFireHeld ||
@@ -25179,6 +25255,11 @@ export class RpgWorldEngine {
           this.voiceSprint = false;
         }
       }
+    }
+
+    if (countdownLocked) {
+      mx = 0;
+      mz = 0;
     }
 
     if (Math.hypot(mx, mz) > 0.08) {
@@ -28206,6 +28287,21 @@ export class RpgWorldEngine {
           speed: 0,
           walkPhase: s.walkPhase,
           aimAlpha: 0.42,
+          recoil: 0,
+          hitSquash: 0,
+          elapsed: this.elapsed,
+          phase: s.phase,
+          dt,
+        });
+        continue;
+      }
+
+      if (this.worldMode === 'dungeon' && this.isCaveCountdownBlocking()) {
+        s.mesh.rotation.y = Math.atan2(this.heroPos.x - s.x, this.heroPos.z - s.z);
+        animateShooterRig(s.mesh, {
+          speed: 0,
+          walkPhase: s.walkPhase,
+          aimAlpha: 0.14,
           recoil: 0,
           hitSquash: 0,
           elapsed: this.elapsed,
@@ -31844,6 +31940,13 @@ export class RpgWorldEngine {
       quests: this.quests.map((q) => ({ ...q })),
       projectedLabels: this.computeLabels(),
       bannerMessage: this.bannerMessage,
+      caveCountdown:
+        this.worldMode === 'dungeon' && this.caveCountdownStep !== null
+          ? {
+              step: this.caveCountdownStep,
+              zoneName: this.caveCountdownZoneName,
+            }
+          : null,
       storyDialog: this.storyDialog ? { ...this.storyDialog } : null,
       settings: { ...this.settings },
       hasSavedGame: this.hasSave,

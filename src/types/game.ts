@@ -644,6 +644,10 @@ export interface RpgHudSnapshot {
   quests: RpgQuestState[];
   projectedLabels: ProjectedLabel[];
   bannerMessage: string | null;
+  caveCountdown?: {
+    step: 3 | 2 | 1 | 'go';
+    zoneName: string;
+  } | null;
   storyDialog: StoryDialogState | null;
   settings: GameSettings;
   hasSavedGame: boolean;

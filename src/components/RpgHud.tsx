@@ -1546,6 +1546,57 @@ export const RpgHud: React.FC<RpgHudProps> = ({
         </div>
       )}
 
+      {/* Cave Post-Cutscene 3-2-1 Battle Countdown */}
+      {hud.phase === 'playing' && hud.caveCountdown && (() => {
+        const isGo = hud.caveCountdown.step === 'go';
+        return (
+          <div
+            role="status"
+            aria-live="assertive"
+            aria-label="Hitung mundur siap bertempur"
+            className={`pointer-events-none fixed inset-0 z-30 flex flex-col items-center justify-center px-4 text-center select-none transition-colors duration-300 ${
+              isGo ? 'bg-transparent' : 'bg-slate-950/30'
+            }`}
+          >
+            <div
+              key={String(hud.caveCountdown.step)}
+              className={`flex max-w-md flex-col items-center rounded-3xl border px-7 py-5 shadow-2xl backdrop-blur-md transition-transform duration-200 sm:px-10 sm:py-6 ${
+                isGo
+                  ? 'border-emerald-300/80 bg-gradient-to-b from-emerald-700/92 to-slate-950/92 shadow-[0_0_55px_rgba(52,211,153,0.45)]'
+                  : 'border-amber-300/75 bg-gradient-to-b from-slate-900/92 to-slate-950/95 shadow-[0_0_50px_rgba(245,158,11,0.35)]'
+              }`}
+            >
+              <span className="text-xs font-bold tracking-wide text-amber-200/90 sm:text-sm">
+                {hud.caveCountdown.zoneName}
+              </span>
+              <h2 className="mt-1 text-base font-extrabold tracking-tight text-white sm:text-lg">
+                {isGo ? 'Ayo Kalahkan Semua Monster!' : 'Siap! Ayo Kalahkan Semua Monster!'}
+              </h2>
+
+              {isGo ? (
+                <div className="mt-2 flex flex-col items-center">
+                  <span className="text-4xl font-black tracking-tight text-emerald-300 drop-shadow-[0_4px_14px_rgba(0,0,0,0.65)] sm:text-5xl">
+                    MULAI!
+                  </span>
+                  <span className="mt-1 text-xs font-semibold text-emerald-100 sm:text-sm">
+                    Serang dan buka semua pintu gua!
+                  </span>
+                </div>
+              ) : (
+                <div className="mt-2 flex flex-col items-center">
+                  <span className="font-mono-nums text-6xl font-black leading-none text-amber-300 drop-shadow-[0_6px_18px_rgba(245,158,11,0.55)] sm:text-8xl">
+                    {hud.caveCountdown.step}
+                  </span>
+                  <span className="mt-1.5 text-xs font-semibold tracking-wider text-slate-300">
+                    Bersiap... pertarungan segera dimulai
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Compact Swim Hint & 10-Pose Style Selector when Hero is swimming in the sea */}
       {hud.phase === 'playing' && hud.isSwimming && (() => {
         const pref = hud.swimStylePreference ?? 'auto';
