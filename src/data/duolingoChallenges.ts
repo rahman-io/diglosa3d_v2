@@ -50,13 +50,27 @@ export const FAMILY_VOCAB_IDS = [
   'v_3_cousin',
 ] as const;
 
+export const BODY_VOCAB_IDS = [
+  'v_6_body',
+  'v_6_hand',
+  'v_6_arm',
+  'v_6_foot',
+  'v_6_head',
+  'v_6_leg',
+  'v_6_knee',
+  'v_6_back',
+  'v_6_stomach',
+] as const;
+
 export const DESA_ILLUSTRATED_VOCAB_IDS = [
   ...PEOPLE_VOCAB_IDS,
   ...FAMILY_VOCAB_IDS,
+  ...BODY_VOCAB_IDS,
 ] as const;
 
 export type PeopleVocabId = (typeof PEOPLE_VOCAB_IDS)[number];
 export type FamilyVocabId = (typeof FAMILY_VOCAB_IDS)[number];
+export type BodyVocabId = (typeof BODY_VOCAB_IDS)[number];
 export type DesaVocabId = (typeof DESA_ILLUSTRATED_VOCAB_IDS)[number];
 
 export const VOCAB_IMAGE_BY_ID: Record<string, string> = {
@@ -98,6 +112,17 @@ export const VOCAB_IMAGE_BY_ID: Record<string, string> = {
   v_3_niece: './assets/vocab/family/niece_nephew.png',
   v_3_nephew: './assets/vocab/family/niece_nephew.png',
   v_3_cousin: './assets/vocab/family/cousin.png',
+
+  // The Body (9)
+  v_6_body: './assets/vocab/body/body.png',
+  v_6_hand: './assets/vocab/body/hand.png',
+  v_6_arm: './assets/vocab/body/arm.png',
+  v_6_foot: './assets/vocab/body/foot.png',
+  v_6_head: './assets/vocab/body/head.png',
+  v_6_leg: './assets/vocab/body/leg.png',
+  v_6_knee: './assets/vocab/body/knee.png',
+  v_6_back: './assets/vocab/body/back.png',
+  v_6_stomach: './assets/vocab/body/stomach.png',
 };
 
 export function getVocabImage(vocabId: string): string | null {
@@ -106,7 +131,19 @@ export function getVocabImage(vocabId: string): string | null {
 
 function getCategoryTag(vocabId: string): { upper: string; title: string } {
   if (vocabId.startsWith('v_3_')) return { upper: 'FAMILY', title: 'Family' };
+  if (vocabId.startsWith('v_6_')) return { upper: 'THE BODY', title: 'The Body' };
   return { upper: 'PEOPLE', title: 'People' };
+}
+
+function getCategoryPrefix(vocabId: string): string {
+  const parts = vocabId.split('_');
+  return parts.length >= 2 ? `${parts[0]}_${parts[1]}_` : 'v_1_';
+}
+
+function getCategoryPool(vocabId: string): readonly DesaVocabId[] {
+  if (vocabId.startsWith('v_3_')) return FAMILY_VOCAB_IDS;
+  if (vocabId.startsWith('v_6_')) return BODY_VOCAB_IDS;
+  return PEOPLE_VOCAB_IDS;
 }
 
 export interface PictureChoiceOption {
@@ -714,6 +751,114 @@ const WORD_BANK_SEEDS: WordBankSeed[] = [
     wordHints: { sepupu: 'cousin', tinggal: 'lives', 'dekat sini': 'near here' },
     translationNote: 'My cousin lives near here',
   },
+
+  // ---- THE BODY ----
+  {
+    vocabId: 'v_6_body',
+    direction: 'en_to_id',
+    speakerId: 'v_6_body',
+    sourceText: 'Keep your body healthy',
+    targetTokens: ['Jaga', 'tubuhmu', 'tetap', 'sehat'],
+    acceptedVariants: ['jaga badanmu tetap sehat', 'jaga tubuh kamu tetap sehat'],
+    distractors: ['sakit', 'tidur'],
+    wordHints: { keep: 'jaga', body: 'tubuh / badan', healthy: 'sehat' },
+    translationNote: 'Jaga tubuhmu tetap sehat',
+  },
+  {
+    vocabId: 'v_6_hand',
+    direction: 'en_to_id',
+    speakerId: 'v_1_boy',
+    sourceText: 'Wash your hands first',
+    targetTokens: ['Cuci', 'tanganmu', 'dulu'],
+    acceptedVariants: ['cuci tangan kamu dulu'],
+    distractors: ['kaki', 'kepala'],
+    wordHints: { wash: 'cuci', hands: 'tangan', first: 'terlebih dahulu' },
+    translationNote: 'Cuci tanganmu dulu',
+  },
+  {
+    vocabId: 'v_6_hand',
+    direction: 'id_to_en',
+    speakerId: 'v_1_girl',
+    sourceText: 'Angkat tangan kananmu',
+    targetTokens: ['Raise', 'your', 'right', 'hand'],
+    distractors: ['foot', 'head'],
+    wordHints: { angkat: 'raise', kanan: 'right', tangan: 'hand' },
+    translationNote: 'Raise your right hand',
+  },
+  {
+    vocabId: 'v_6_arm',
+    direction: 'en_to_id',
+    speakerId: 'v_1_man',
+    sourceText: 'He has strong arms',
+    targetTokens: ['Dia', 'punya', 'lengan', 'yang', 'kuat'],
+    acceptedVariants: ['dia memiliki lengan kuat'],
+    distractors: ['lutut', 'perut'],
+    wordHints: { has: 'punya', strong: 'kuat', arms: 'lengan' },
+    translationNote: 'Dia punya lengan yang kuat',
+  },
+  {
+    vocabId: 'v_6_foot',
+    direction: 'en_to_id',
+    speakerId: 'v_1_boy',
+    sourceText: 'My left foot hurts',
+    targetTokens: ['Telapak', 'kaki', 'kiri', 'saya', 'sakit'],
+    acceptedVariants: ['kaki kiri saya sakit'],
+    distractors: ['tangan', 'punggung'],
+    wordHints: { left: 'kiri', foot: 'telapak kaki', hurts: 'sakit' },
+    translationNote: 'Telapak kaki kiri saya sakit',
+  },
+  {
+    vocabId: 'v_6_head',
+    direction: 'id_to_en',
+    speakerId: 'v_6_head',
+    sourceText: 'Anggukkan kepalamu sekarang',
+    targetTokens: ['Nod', 'your', 'head', 'now'],
+    distractors: ['knee', 'stomach'],
+    wordHints: { anggukkan: 'nod', kepalamu: 'your head', sekarang: 'now' },
+    translationNote: 'Nod your head now',
+  },
+  {
+    vocabId: 'v_6_leg',
+    direction: 'id_to_en',
+    speakerId: 'v_1_boy',
+    sourceText: 'Saya berlari dengan kakiku',
+    targetTokens: ['I', 'run', 'with', 'my', 'legs'],
+    distractors: ['arms', 'head'],
+    wordHints: { berlari: 'run', kakiku: 'my legs' },
+    translationNote: 'I run with my legs',
+  },
+  {
+    vocabId: 'v_6_knee',
+    direction: 'en_to_id',
+    speakerId: 'v_1_boy',
+    sourceText: 'Bend your knees slowly',
+    targetTokens: ['Tekuk', 'lututmu', 'perlahan'],
+    acceptedVariants: ['tekuk lutut kamu perlahan'],
+    distractors: ['lengan', 'kepala'],
+    wordHints: { bend: 'tekuk', knees: 'lutut', slowly: 'perlahan' },
+    translationNote: 'Tekuk lututmu perlahan',
+  },
+  {
+    vocabId: 'v_6_back',
+    direction: 'en_to_id',
+    speakerId: 'v_1_man',
+    sourceText: 'My back is tired',
+    targetTokens: ['Punggung', 'saya', 'lelah'],
+    acceptedVariants: ['punggungku capek'],
+    distractors: ['perut', 'tangan'],
+    wordHints: { back: 'punggung', tired: 'lelah / pegal' },
+    translationNote: 'Punggung saya lelah',
+  },
+  {
+    vocabId: 'v_6_stomach',
+    direction: 'id_to_en',
+    speakerId: 'v_1_boy',
+    sourceText: 'Perut saya sudah kenyang',
+    targetTokens: ['My', 'stomach', 'is', 'full'],
+    distractors: ['knee', 'arm'],
+    wordHints: { perut: 'stomach', kenyang: 'full' },
+    translationNote: 'My stomach is full',
+  },
 ];
 
 // ============================================================================
@@ -975,6 +1120,71 @@ const SPEAK_SEEDS: SpeakSeed[] = [
     sentence: 'Hello, my dear cousin!',
     wordHints: { hello: 'halo', cousin: 'sepupu' },
     translationNote: 'Halo, sepupu tersayangku!',
+  },
+
+  // ---- THE BODY ----
+  {
+    vocabId: 'v_6_body',
+    speakerId: 'v_6_body',
+    sentence: 'Move your body every morning.',
+    wordHints: { move: 'gerakkan', body: 'tubuh / badan', morning: 'pagi' },
+    translationNote: 'Gerakkan tubuhmu setiap pagi.',
+  },
+  {
+    vocabId: 'v_6_hand',
+    speakerId: 'v_1_boy',
+    sentence: 'Wash your hands before eating.',
+    wordHints: { wash: 'cuci', hands: 'tangan', before: 'sebelum', eating: 'makan' },
+    translationNote: 'Cuci tanganmu sebelum makan.',
+  },
+  {
+    vocabId: 'v_6_arm',
+    speakerId: 'v_1_man',
+    sentence: 'My arm is very strong.',
+    wordHints: { arm: 'lengan', very: 'sangat', strong: 'kuat' },
+    translationNote: 'Lengan saya sangat kuat.',
+  },
+  {
+    vocabId: 'v_6_foot',
+    speakerId: 'v_1_boy',
+    sentence: 'Put shoes on your feet.',
+    wordHints: { put: 'pakai', shoes: 'sepatu', feet: 'telapak kaki' },
+    translationNote: 'Pakailah sepatu di kakimu.',
+  },
+  {
+    vocabId: 'v_6_head',
+    speakerId: 'v_6_head',
+    sentence: 'Wear a hat on your head.',
+    wordHints: { wear: 'pakai', hat: 'topi', head: 'kepala' },
+    translationNote: 'Pakailah topi di kepalamu.',
+  },
+  {
+    vocabId: 'v_6_leg',
+    speakerId: 'v_1_boy',
+    sentence: 'I have two long legs.',
+    wordHints: { two: 'dua', long: 'panjang', legs: 'kaki / tungkai' },
+    translationNote: 'Saya memiliki dua kaki yang panjang.',
+  },
+  {
+    vocabId: 'v_6_knee',
+    speakerId: 'v_1_boy',
+    sentence: 'Ouch, my knee hurts a little.',
+    wordHints: { ouch: 'aduh', knee: 'lutut', hurts: 'sakit' },
+    translationNote: 'Aduh, lututku sedikit sakit.',
+  },
+  {
+    vocabId: 'v_6_back',
+    speakerId: 'v_1_man',
+    sentence: 'Sit straight to protect your back.',
+    wordHints: { straight: 'tegak', protect: 'melindungi', back: 'punggung' },
+    translationNote: 'Duduk tegak untuk menjaga punggungmu.',
+  },
+  {
+    vocabId: 'v_6_stomach',
+    speakerId: 'v_1_boy',
+    sentence: 'My stomach is full and happy!',
+    wordHints: { stomach: 'perut', full: 'kenyang', happy: 'senang' },
+    translationNote: 'Perutku kenyang dan senang!',
   },
 ];
 
@@ -1274,6 +1484,80 @@ const DIALOGUE_SEEDS: DialogueSeed[] = [
     distractorReplies: ['Hi, wife! Good night!', 'One hundred parents!'],
     translationNote: 'Hai, sepupu! Senang melihatmu!',
   },
+
+  // ---- THE BODY ----
+  {
+    vocabId: 'v_6_hand',
+    speakerAId: 'v_3_mom',
+    speakerAName: 'Mama',
+    speakerALine: 'Dinner is ready! Are you clean?',
+    speakerAHints: { dinner: 'makan malam', ready: 'siap', clean: 'bersih' },
+    speakerBId: 'v_1_boy',
+    speakerBName: 'Bimo',
+    correctReply: 'Yes, I washed both my hands!',
+    distractorReplies: ['Yes, my back is a hat!', 'Goodbye, stomach!'],
+    translationNote: 'Ya, aku sudah mencuci kedua tanganku!',
+  },
+  {
+    vocabId: 'v_6_arm',
+    speakerAId: 'v_1_boy',
+    speakerAName: 'Adi',
+    speakerALine: 'Wow, can you lift that heavy box?',
+    speakerAHints: { lift: 'mengangkat', heavy: 'berat', box: 'kotak' },
+    speakerBId: 'v_1_man',
+    speakerBName: 'Kak Rian',
+    correctReply: 'Sure! My arms are strong!',
+    distractorReplies: ['No, my knee is a book!', 'Good morning, hand!'],
+    translationNote: 'Tentu! Lenganku kuat!',
+  },
+  {
+    vocabId: 'v_6_head',
+    speakerAId: 'v_1_girl',
+    speakerAName: 'Lina',
+    speakerALine: 'Where do you wear your helmet?',
+    speakerAHints: { where: 'di mana', wear: 'memakai', helmet: 'helm' },
+    speakerBId: 'v_6_head',
+    speakerBName: 'Tobi',
+    correctReply: 'I put it on my head!',
+    distractorReplies: ['I put it on my stomach!', 'She is my sister.'],
+    translationNote: 'Aku memakainya di kepalaku!',
+  },
+  {
+    vocabId: 'v_6_knee',
+    speakerAId: 'v_3_dad',
+    speakerAName: 'Papa',
+    speakerALine: 'Why did you stop running, buddy?',
+    speakerAHints: { why: 'mengapa', stop: 'berhenti', running: 'berlari' },
+    speakerBId: 'v_1_boy',
+    speakerBName: 'Raka',
+    correctReply: 'I fell and hurt my knee.',
+    distractorReplies: ['I hurt my grandmother.', 'Thank you, leg!'],
+    translationNote: 'Aku terjatuh dan lututku terluka.',
+  },
+  {
+    vocabId: 'v_6_stomach',
+    speakerAId: 'v_3_grandmother',
+    speakerAName: 'Nenek',
+    speakerALine: 'Do you want another warm cookie?',
+    speakerAHints: { want: 'ingin', another: 'lagi', cookie: 'kue' },
+    speakerBId: 'v_1_boy',
+    speakerBName: 'Fajar',
+    correctReply: 'No thanks, my stomach is full!',
+    distractorReplies: ['No thanks, my head is tall!', 'Hello, my arm!'],
+    translationNote: 'Tidak terima kasih, perutku sudah kenyang!',
+  },
+  {
+    vocabId: 'v_6_foot',
+    speakerAId: 'v_1_woman',
+    speakerAName: 'Ibu Guru',
+    speakerALine: 'Ready for the race? Lace up your shoes!',
+    speakerAHints: { race: 'lomba lari', lace: 'ikat', shoes: 'sepatu' },
+    speakerBId: 'v_1_girl',
+    speakerBName: 'Sinta',
+    correctReply: 'Ready! My feet are fast today!',
+    distractorReplies: ['Ready! My back is sleeping!', 'Welcome, body!'],
+    translationNote: 'Siap! Kakiku cepat hari ini!',
+  },
 ];
 
 // ============================================================================
@@ -1536,6 +1820,71 @@ const LISTEN_SEEDS: ListenSeed[] = [
     distractors: ['parent', 'wife'],
     translationNote: 'Lambaikan tangan ke sepupu saya!',
   },
+
+  // ---- THE BODY ----
+  {
+    vocabId: 'v_6_body',
+    sentence: 'Keep your body healthy.',
+    tokens: ['Keep', 'your', 'body', 'healthy.'],
+    distractors: ['knee', 'table'],
+    translationNote: 'Jaga tubuhmu tetap sehat.',
+  },
+  {
+    vocabId: 'v_6_hand',
+    sentence: 'Clap your hands now!',
+    tokens: ['Clap', 'your', 'hands', 'now!'],
+    distractors: ['feet', 'head'],
+    translationNote: 'Tepuk tanganmu sekarang!',
+  },
+  {
+    vocabId: 'v_6_arm',
+    sentence: 'Strong arm and hand.',
+    tokens: ['Strong', 'arm', 'and', 'hand.'],
+    distractors: ['leg', 'back'],
+    translationNote: 'Lengan dan tangan yang kuat.',
+  },
+  {
+    vocabId: 'v_6_foot',
+    sentence: 'Wash your right foot.',
+    tokens: ['Wash', 'your', 'right', 'foot.'],
+    distractors: ['arm', 'head'],
+    translationNote: 'Cuci telapak kaki kananmu.',
+  },
+  {
+    vocabId: 'v_6_head',
+    sentence: 'Touch your head gently.',
+    tokens: ['Touch', 'your', 'head', 'gently.'],
+    distractors: ['knee', 'stomach'],
+    translationNote: 'Sentuh kepalamu dengan lembut.',
+  },
+  {
+    vocabId: 'v_6_leg',
+    sentence: 'Run with strong legs.',
+    tokens: ['Run', 'with', 'strong', 'legs.'],
+    distractors: ['hands', 'back'],
+    translationNote: 'Berlari dengan kaki yang kuat.',
+  },
+  {
+    vocabId: 'v_6_knee',
+    sentence: 'Bend your left knee.',
+    tokens: ['Bend', 'your', 'left', 'knee.'],
+    distractors: ['head', 'arm'],
+    translationNote: 'Tekuk lutut kirimu.',
+  },
+  {
+    vocabId: 'v_6_back',
+    sentence: 'Rest your tired back.',
+    tokens: ['Rest', 'your', 'tired', 'back.'],
+    distractors: ['hand', 'foot'],
+    translationNote: 'Istirahatkan punggungmu yang lelah.',
+  },
+  {
+    vocabId: 'v_6_stomach',
+    sentence: 'My stomach is happy.',
+    tokens: ['My', 'stomach', 'is', 'happy.'],
+    distractors: ['knee', 'leg'],
+    translationNote: 'Perut saya senang.',
+  },
 ];
 
 // ============================================================================
@@ -1549,7 +1898,7 @@ export function buildPeoplePictureChoice(targetId?: DesaVocabId): DuolingoChalle
   const tag = getCategoryTag(target);
 
   // Prefer same-category distractors first, ensuring distinct images so cards are unambiguous
-  const sameCatPool = target.startsWith('v_3_') ? FAMILY_VOCAB_IDS : PEOPLE_VOCAB_IDS;
+  const sameCatPool = getCategoryPool(target);
   const distinctSameCat = shuffle(
     sameCatPool.filter((id) => id !== target && VOCAB_IMAGE_BY_ID[id] !== targetImg),
   );
@@ -1645,12 +1994,10 @@ export function buildPeopleDialogueComplete(targetId?: DesaVocabId): DuolingoCha
   const candidates = targetId
     ? DIALOGUE_SEEDS.filter((s) => s.vocabId === targetId)
     : DIALOGUE_SEEDS;
-  const sameCategoryFallback =
-    targetId && targetId.startsWith('v_3_')
-      ? DIALOGUE_SEEDS.filter((s) => s.vocabId.startsWith('v_3_'))
-      : targetId
-      ? DIALOGUE_SEEDS.filter((s) => s.vocabId.startsWith('v_1_'))
-      : DIALOGUE_SEEDS;
+  const prefix = targetId ? getCategoryPrefix(targetId) : '';
+  const sameCategoryFallback = prefix
+    ? DIALOGUE_SEEDS.filter((s) => s.vocabId.startsWith(prefix))
+    : DIALOGUE_SEEDS;
   const seed = pickRandom(
     candidates.length > 0
       ? candidates
@@ -1701,7 +2048,7 @@ export function buildPeopleListenWordBank(targetId?: DesaVocabId): DuolingoChall
 
 export function buildPeopleMatchPairs(preferredId?: DesaVocabId): DuolingoChallenge {
   const target = preferredId ?? pickRandom(DESA_ILLUSTRATED_VOCAB_IDS);
-  const samePool = target.startsWith('v_3_') ? FAMILY_VOCAB_IDS : PEOPLE_VOCAB_IDS;
+  const samePool = getCategoryPool(target);
   const rest = shuffle(samePool.filter((id) => id !== target));
   const picked = [target, ...rest.slice(0, 4)];
   const primaryId = picked[0];
