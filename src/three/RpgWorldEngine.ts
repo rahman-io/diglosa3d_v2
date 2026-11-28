@@ -170,15 +170,18 @@ import {
   appendVehicleVillageColliders,
   ArchipelagoRig,
   BRIDGE_SPANS,
+  clampPosToStarterZone,
   constrainHeroToWorldBounds,
   constrainToWalkableArchipelago,
   createArchipelagoWorld,
+  DESA_SCHOOL_ANCHOR,
   FLIGHT_WORLD_LIMIT,
   freezeStaticSubtree,
   getArchipelagoGroundY,
   getArchipelagoSeabedY,
   getIslandDiskAtPosition,
   IELTS_TEMPORARILY_LOCKED,
+  isAllowedStarterWorldPos,
   ISLAND_DISKS,
   islandContourRadius,
   isWalkableArchipelago,
@@ -260,7 +263,12 @@ import {
 import {
   AIRBASE_ISLANDS,
   getAirbaseRunwaySpawn,
+  sampleAirbaseTerrain,
 } from './airbaseIslands';
+import {
+  buildDiverseNpcRig,
+  DiverseNpcRigResult,
+} from './diverseNpcs';
 import {
   createWorldObstacles,
   getObstacleSupportHeight,
@@ -607,6 +615,8 @@ interface SavedStatePayload {
   hutanSatwaRefugeeStorySeen?: boolean;
   hutanSatwaRefugeeResting?: boolean;
   activeMissionGuideZone?: ZoneId | null;
+  otherIslandsUnlocked?: boolean;
+  schoolGuideActive?: boolean;
 }
 
 export interface SavedGameSummary {
@@ -730,6 +740,11 @@ export interface RpgEngineCallbacks {
   onOpenAcademyExam: (skill: 'listening' | 'reading' | 'writing' | 'speaking' | 'full') => void;
   onOpenCaveSeal: (seal: CaveSealContext) => void;
   onOpenCrafting: () => void;
+  onOpenIslandPaywall?: (
+    reason: 'post_refugee' | 'locked_zone' | 'locked_bridge',
+    targetZoneId?: ZoneId,
+  ) => void;
+  onOpenDesaSchool?: () => void;
   onMultiplayerPacket?: (pkt: P2pReliableMessage, targetUid?: string) => void;
 }
 
@@ -1708,6 +1723,25 @@ export class RpgWorldEngine {
   private hutanSatwaRefugeeStorySeen = false;
   private hutanSatwaRefugeeResting = false;
   private activeMissionGuideZone: ZoneId | null = null;
+  private otherIslandsUnlocked = false;
+  private schoolGuideActive = false;
+  private lastLockPromptMs = 0;
+  private schoolTeacherRig: DiverseNpcRigResult | null = null;
+  private schoolTeacherAlertMesh: THREE.Mesh | null = null;
+  private villagerSchoolCutscene: {
+    step: number;
+    timer: number;
+    actors: Array<{
+      actor: VillagerActor;
+      origX: number;
+      origZ: number;
+      origYaw: number;
+      origPauseTimer: number;
+      origGreetTimer: number;
+      gatherX: number;
+      gatherZ: number;
+    }>;
+  } | null = null;
   private restingSurvivorsRig: DesaRestingSurvivorsRig | null = null;
   private hutanSatwaRefugeeCutscene: {
     beat:
@@ -2574,6 +2608,8 @@ export class RpgWorldEngine {
         hutanSatwaRefugeeStorySeen: this.hutanSatwaRefugeeStorySeen,
         hutanSatwaRefugeeResting: this.hutanSatwaRefugeeResting,
         activeMissionGuideZone: this.activeMissionGuideZone,
+        otherIslandsUnlocked: this.otherIslandsUnlocked,
+        schoolGuideActive: this.schoolGuideActive,
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
       this.hasSave = true;
@@ -2772,6 +2808,8 @@ export class RpgWorldEngine {
       this.hutanSatwaRefugeeStorySeen = Boolean(data.hutanSatwaRefugeeStorySeen);
       this.hutanSatwaRefugeeResting = Boolean(data.hutanSatwaRefugeeResting);
       this.activeMissionGuideZone = data.activeMissionGuideZone ?? null;
+      this.otherIslandsUnlocked = Boolean(data.otherIslandsUnlocked);
+      this.schoolGuideActive = Boolean(data.schoolGuideActive);
       this.syncReunitedCaptivesAndGates();
       this.syncRestingSurvivorsRig();
       return true;
@@ -3032,6 +3070,37 @@ export class RpgWorldEngine {
         fleeDirZ: 1,
       });
     }
+
+    // Spawn Ibu Guru Ratna di depan bangunan Sekolah Desa Sapaan
+    const teacherY = getArchipelagoGroundY(
+      DESA_SCHOOL_ANCHOR.teacherX,
+      DESA_SCHOOL_ANCHOR.teacherZ,
+    );
+    const teacherRig = buildDiverseNpcRig('school_teacher', this.palette, true);
+    teacherRig.root.position.set(
+      DESA_SCHOOL_ANCHOR.teacherX,
+      teacherY,
+      DESA_SCHOOL_ANCHOR.teacherZ,
+    );
+    teacherRig.root.rotation.y = DESA_SCHOOL_ANCHOR.rotY;
+    teacherRig.root.traverse((o) => {
+      o.userData.npcId = 'npc_guru_desa';
+    });
+    this.overworldGroup.add(teacherRig.root);
+    this.overworldClickables.push(teacherRig.root);
+    this.schoolTeacherRig = teacherRig;
+
+    const teacherAlert = new THREE.Mesh(
+      new THREE.OctahedronGeometry(0.36, 0),
+      this.palette.getMat(0x34d399, 'emissive'),
+    );
+    teacherAlert.position.set(
+      DESA_SCHOOL_ANCHOR.teacherX,
+      teacherY + 3.45,
+      DESA_SCHOOL_ANCHOR.teacherZ,
+    );
+    this.overworldGroup.add(teacherAlert);
+    this.schoolTeacherAlertMesh = teacherAlert;
   }
 
   private isNpcOnDuty(shift: 'day' | 'night'): boolean {
@@ -3329,7 +3398,67 @@ export class RpgWorldEngine {
     return this.localPlayerName.trim() || 'Hoot';
   }
 
+  private openDesaSchoolFromNpc(): void {
+    const tx = DESA_SCHOOL_ANCHOR.teacherX;
+    const tz = DESA_SCHOOL_ANCHOR.teacherZ;
+    this.heroYaw = Math.atan2(tx - this.heroPos.x, tz - this.heroPos.z);
+    this.hero.body.rotation.y = this.heroYaw;
+    if (this.schoolTeacherRig) {
+      this.schoolTeacherRig.root.rotation.y = Math.atan2(
+        this.heroPos.x - tx,
+        this.heroPos.z - tz,
+      );
+    }
+    this.schoolGuideActive = false;
+    this.saveProgress();
+    this.openDesaSchool();
+  }
+
+  public openDesaSchool(): void {
+    this.phase = 'learning';
+    this.heldKeys.clear();
+    this.tapMoveTarget = null;
+    this.applyCameraVisibilityAndControls();
+    soundEngine.playPick();
+    this.callbacks.onOpenDesaSchool?.();
+    this.pushHud(true);
+  }
+
+  public unlockOtherIslands(): void {
+    this.otherIslandsUnlocked = true;
+    this.schoolGuideActive = false;
+    this.saveProgress();
+    soundEngine.playQuestComplete();
+    this.showBanner(
+      '🔓 Akses semua pulau & lautan Nusantara Kata kini terbuka! Selamat melanjutkan petualangan!',
+      5.2,
+    );
+    this.pushHud(true);
+  }
+
+  private triggerLockedBorderPrompt(
+    reason: 'locked_zone' | 'locked_bridge',
+    targetZoneId: ZoneId | undefined,
+    bannerMsg: string,
+    forceModal = false,
+  ): void {
+    const now = Date.now();
+    this.showBanner(bannerMsg, 4.4);
+    if (!forceModal && now - this.lastLockPromptMs < 10000) {
+      return;
+    }
+    this.lastLockPromptMs = now;
+    soundEngine.playNo();
+    this.heldKeys.clear();
+    this.tapMoveTarget = null;
+    this.callbacks.onOpenIslandPaywall?.(reason, targetZoneId);
+  }
+
   private interactWithOverworldNpc(npcId: string): void {
+    if (npcId === 'npc_guru_desa') {
+      this.openDesaSchoolFromNpc();
+      return;
+    }
     const def = getZoneNpcById(npcId);
     const npc = this.npcs.get(npcId);
     if (!def || !npc) return;
@@ -6557,6 +6686,10 @@ export class RpgWorldEngine {
     this.hutanSatwaRefugeeStorySeen = false;
     this.hutanSatwaRefugeeResting = false;
     this.activeMissionGuideZone = null;
+    this.otherIslandsUnlocked = false;
+    this.schoolGuideActive = false;
+    this.lastLockPromptMs = 0;
+    this.clearVillagerSchoolCutscene();
     this.clearIslandLiberationCutscene();
     this.clearHutanSatwaRefugeeCutscene();
     this.syncRestingSurvivorsRig();
@@ -8795,6 +8928,19 @@ export class RpgWorldEngine {
       }
       return;
     }
+
+    if (this.storyDialog.kind === 'desa_school_invite') {
+      const vc = this.villagerSchoolCutscene;
+      const nextStep = this.storyDialog.step + 1;
+      if (nextStep <= 3 && vc) {
+        vc.step = nextStep;
+        vc.timer = 0;
+        this.applyVillagerSchoolCutsceneStep(nextStep);
+      } else {
+        this.finishVillagerSchoolCutscene();
+      }
+      return;
+    }
   }
 
   public skipStory(): void {
@@ -8854,6 +9000,8 @@ export class RpgWorldEngine {
       } else if (hs && hs.beat !== 'plea_confirm') {
         this.finishHutanSatwaRefugeeCutscene();
       }
+    } else if (this.storyDialog.kind === 'desa_school_invite') {
+      this.finishVillagerSchoolCutscene();
     } else if (this.storyDialog.kind === 'area_cleared') {
       const guidedZone = this.guidedOutsideZoneId;
       this.storyDialog = null;
@@ -12059,6 +12207,15 @@ export class RpgWorldEngine {
     isMixedChallenge = false,
     resumeSavedPos = false,
   ): void {
+    if (!this.otherIslandsUnlocked && zoneId !== 'desa_sapaan') {
+      this.triggerLockedBorderPrompt(
+        'locked_zone',
+        zoneId,
+        `🔒 Area ${ZONE_INFO[zoneId]?.name || zoneId} terkunci sebelum pembelian misi pulau berikutnya!`,
+        true,
+      );
+      return;
+    }
     if (this.worldMode === 'overworld' && !resumeSavedPos) {
       this.savedOverworldHeroPos.copy(this.heroPos);
     }
@@ -12911,6 +13068,15 @@ export class RpgWorldEngine {
   }
 
   public enterAcademy(resumeSavedPos = false): void {
+    if (!this.otherIslandsUnlocked) {
+      this.triggerLockedBorderPrompt(
+        'locked_zone',
+        'gua_portal',
+        '🔒 Pulau lain & Istana IELTS terkunci sebelum pembelian akses kepulauan.',
+        true,
+      );
+      return;
+    }
     if (IELTS_TEMPORARILY_LOCKED) {
       this.showBanner(
         '🔒 Istana IELTS sedang ditutup sementara! Nikmati petualangan di 6 pulau Nusantara Kata terlebih dahulu.',
@@ -13900,6 +14066,15 @@ export class RpgWorldEngine {
   }
 
   public enterOceanWorld(resumeSavedPos = false, preserveDiveEntry = false): void {
+    if (!this.otherIslandsUnlocked) {
+      this.triggerLockedBorderPrompt(
+        'locked_zone',
+        'hutan_satwa',
+        '🔒 Laut pulau lain terkunci sebelum dibeli! Kamu tetap bisa melawan monster laut di pesisir Pulau Desa Sapaan.',
+        true,
+      );
+      return;
+    }
     if (this.worldMode === 'overworld' && !resumeSavedPos) {
       this.savedOverworldHeroPos.copy(this.heroPos);
     }
@@ -15653,6 +15828,16 @@ export class RpgWorldEngine {
         const prevZ = pl.pos.z;
         pl.pos.x += Math.sin(pl.yaw) * pl.speed * dt;
         pl.pos.z += Math.cos(pl.yaw) * pl.speed * dt;
+        if (!this.otherIslandsUnlocked && !isAllowedStarterWorldPos(pl.pos.x, pl.pos.z)) {
+          pl.pos.x = prevX;
+          pl.pos.z = prevZ;
+          pl.speed *= 0.3;
+          this.triggerLockedBorderPrompt(
+            'locked_bridge',
+            'hutan_satwa',
+            '🔒 Pulau & laut di luar Desa Sapaan terkunci sebelum pembelian misi lanjutan!',
+          );
+        }
         const s = sampleArchipelagoTerrain(pl.pos.x, pl.pos.z);
         if (!s.isLandOrBridge || s.groundY < -0.05) {
           if (pl.speed > 10 && !climbHeld) {
@@ -15741,6 +15926,20 @@ export class RpgWorldEngine {
         pl.pos.x += Math.sin(pl.yaw) * pl.speed * dt;
         pl.pos.z += Math.cos(pl.yaw) * pl.speed * dt;
         pl.pos.y = THREE.MathUtils.clamp(pl.pos.y + pl.vy * dt, 0.55, 86);
+
+        if (!this.otherIslandsUnlocked && !isAllowedStarterWorldPos(pl.pos.x, pl.pos.z)) {
+          clampPosToStarterZone(pl.pos, 2.5);
+          const backYaw = Math.atan2(-pl.pos.x, 134 - pl.pos.z);
+          let dYaw = backYaw - pl.yaw;
+          while (dYaw > Math.PI) dYaw -= Math.PI * 2;
+          while (dYaw < -Math.PI) dYaw += Math.PI * 2;
+          pl.yaw += dYaw * 2.6 * dt;
+          this.triggerLockedBorderPrompt(
+            'locked_bridge',
+            'hutan_satwa',
+            '🔒 Wilayah udara pulau lain masih terkunci sebelum dibeli!',
+          );
+        }
 
         // Keep within expansive 3-airbase flight airspace (soft turn-back clamp)
         const distOrigin = Math.hypot(pl.pos.x, pl.pos.z);
@@ -16197,6 +16396,19 @@ export class RpgWorldEngine {
       const carHeight = active ? active.height : 3.48;
       const carRadius = Math.max(carHalfW, 1.55);
       constrainHeroToWorldBounds(this.carPos, carHalfW + 0.35);
+      if (
+        !this.otherIslandsUnlocked &&
+        (!isAllowedStarterWorldPos(this.carPos.x, this.carPos.z) ||
+          sampleAirbaseTerrain(this.carPos.x, this.carPos.z) !== null)
+      ) {
+        clampPosToStarterZone(this.carPos, carHalfW + 0.5);
+        this.carSpeed *= 0.15;
+        this.triggerLockedBorderPrompt(
+          'locked_bridge',
+          'hutan_satwa',
+          '🔒 Jembatan menuju pulau berikutnya terkunci! Beli akses pulau atau kembali ke Desa Sapaan.',
+        );
+      }
 
       const checkWaterEdge = sampleArchipelagoTerrain(this.carPos.x, this.carPos.z);
       if (!checkWaterEdge.isLandOrBridge || checkWaterEdge.groundY < -0.18) {
@@ -17742,6 +17954,15 @@ export class RpgWorldEngine {
   }
 
   public teleportToZone(zoneId: ZoneId): void {
+    if (!this.otherIslandsUnlocked && zoneId !== 'desa_sapaan') {
+      this.triggerLockedBorderPrompt(
+        'locked_zone',
+        zoneId,
+        `🔒 Pulau ${ZONE_INFO[zoneId]?.name || zoneId} terkunci sebelum pembelian misi lanjutan!`,
+        true,
+      );
+      return;
+    }
     if (this.worldMode !== 'overworld') {
       this.exitDungeon();
     }
@@ -27221,6 +27442,20 @@ export class RpgWorldEngine {
     this.phase = 'playing';
     this.applyCameraVisibilityAndControls();
     this.snapCameraBehindHero();
+
+    if (!this.otherIslandsUnlocked) {
+      this.activeMissionGuideZone = null;
+      this.showBanner(
+        '🔒 Pengarahan selesai! Untuk lanjut ke Pulau Hutan Satwa & pulau berikutnya, beli akses pulau dulu.',
+        5.5,
+      );
+      this.saveProgress();
+      this.pushHud(true);
+      this.lastLockPromptMs = Date.now();
+      this.callbacks.onOpenIslandPaywall?.('post_refugee', 'hutan_satwa');
+      return;
+    }
+
     if (continued) {
       this.showBanner(
         '🧭 Panduan Hutan Satwa aktif! Maya & Raka kini beristirahat & berobat aman di Desa Sapaan. Ikuti penunjuk rute ke Jembatan Utara!',
@@ -27233,6 +27468,198 @@ export class RpgWorldEngine {
       );
     }
     this.saveProgress();
+    this.pushHud(true);
+  }
+
+  public startVillagerSchoolInviteScene(): void {
+    if (this.worldMode !== 'overworld') {
+      this.exitDungeon();
+    }
+    this.clearVillagerSchoolCutscene();
+    const candidates = this.villageRig.villagers.filter(
+      (v) => v.alive && v.zoneId === 'desa_sapaan' && !v.drivingVehicleId,
+    );
+    const picked = candidates.slice(0, 3);
+    const hx = this.heroPos.x;
+    const hz = this.heroPos.z;
+    const fwdX = Math.sin(this.heroYaw);
+    const fwdZ = Math.cos(this.heroYaw);
+    const rightX = Math.cos(this.heroYaw);
+    const rightZ = -Math.sin(this.heroYaw);
+
+    const actors = picked.map((actor, idx) => {
+      const lateral = (idx - (picked.length - 1) * 0.5) * 2.15;
+      const pos = {
+        x: hx + fwdX * 3.8 + rightX * lateral,
+        z: hz + fwdZ * 3.8 + rightZ * lateral,
+      };
+      constrainToWalkableArchipelago(pos, 0.7);
+      const entry = {
+        actor,
+        origX: actor.x,
+        origZ: actor.z,
+        origYaw: actor.yaw,
+        origPauseTimer: actor.pauseTimer,
+        origGreetTimer: actor.greetTimer,
+        gatherX: pos.x,
+        gatherZ: pos.z,
+      };
+      actor.x = pos.x;
+      actor.z = pos.z;
+      actor.yaw = Math.atan2(hx - pos.x, hz - pos.z);
+      actor.pauseTimer = 15;
+      actor.greetTimer = 15;
+      actor.root.position.set(pos.x, getArchipelagoGroundY(pos.x, pos.z), pos.z);
+      actor.root.rotation.y = actor.yaw;
+      return entry;
+    });
+
+    this.villagerSchoolCutscene = {
+      step: 0,
+      timer: 0,
+      actors,
+    };
+    this.phase = 'story';
+    this.storyTimer = 0;
+    this.heldKeys.clear();
+    this.tapMoveTarget = null;
+    this.applyCameraVisibilityAndControls();
+    this.applyVillagerSchoolCutsceneStep(0);
+  }
+
+  private applyVillagerSchoolCutsceneStep(step: number): void {
+    const pName = this.getPlayerDisplayName();
+    if (step === 0) {
+      soundEngine.playPick();
+      this.storyDialog = {
+        kind: 'desa_school_invite',
+        step: 0,
+        maxStep: 3,
+        speakerName: 'Pak Tani & Warga Desa (1/3)',
+        speakerRole: 'Nasihat Warga Desa Sapaan',
+        speakerKind: 'villagers',
+        villagerArchetypes: ['farmer_boy', 'florist_girl'],
+        speakerSide: 'npc',
+        textEn: `It is completely fine, ${pName}! While waiting to unlock the other islands, Desa Sapaan is your home—you can keep living peacefully with us and protect our coastline.`,
+        textId: `Tidak apa-apa, ${pName}! Selama pulau lain belum terbuka, Desa Sapaan tetap terbuka untukmu—kamu bisa melanjutkan kehidupan sehari-hari bersama kami dan menjaga pesisir desa.`,
+        accentColor: '#10b981',
+      };
+    } else if (step === 1) {
+      soundEngine.playPick();
+      this.storyDialog = {
+        kind: 'desa_school_invite',
+        step: 1,
+        maxStep: 3,
+        speakerName: 'Ibu Bunga & Warga Desa (2/3)',
+        speakerRole: 'Ajakan Belajar ke Sekolah Desa',
+        speakerKind: 'villagers',
+        villagerArchetypes: ['florist_girl', 'village_elder'],
+        speakerSide: 'npc',
+        textEn: 'Before sailing further one day, come study with us at the small Sekolah Desa Sapaan near the village square to master all 126 greeting, family, body, and daily words!',
+        textId: 'Agar kosakata Bahasa Inggrismu makin kuat, kami sarankan pergi ke bangunan Sekolah Desa Sapaan di alun-alun untuk berlatih ulang seluruh 126 kosakata Desa Sapaan!',
+        accentColor: '#f59e0b',
+      };
+    } else if (step === 2) {
+      soundEngine.playGuardianCall();
+      this.storyDialog = {
+        kind: 'desa_school_invite',
+        step: 2,
+        maxStep: 3,
+        speakerName: 'Sesepuh Kampung & Warga (3/3)',
+        speakerRole: 'Temui Ibu Guru Ratna di Sekolah',
+        speakerKind: 'villagers',
+        villagerArchetypes: ['school_teacher', 'farmer_boy'],
+        speakerSide: 'npc',
+        textEn: 'Meet Ibu Guru Ratna inside Sekolah Desa Sapaan! She gives clear teacher explanations and 6 interactive English challenges for every word!',
+        textId: 'Temuilah Ibu Guru Ratna di Sekolah Desa Sapaan sebelah selatan taman! Beliau tidak hanya memberi soal latihan 6 mode, tapi juga menjelaskan arti, aturan, dan cara pemakaian tiap katanya dengan jelas.',
+        accentColor: '#10b981',
+      };
+    } else {
+      soundEngine.playHeroDefiance();
+      this.storyDialog = {
+        kind: 'desa_school_invite',
+        step: 3,
+        maxStep: 3,
+        speakerName: pName,
+        speakerRole: 'Siap Belajar Bersama Ibu Guru',
+        speakerKind: 'hero',
+        speakerSide: 'hero',
+        textEn: 'Thank you, everyone! I will walk to Sekolah Desa Sapaan right now and learn from Ibu Guru Ratna!',
+        textId: 'Terima kasih atas saran kalian bertiga! Aku akan langsung menuju Sekolah Desa Sapaan untuk berguru dan berlatih bersama Ibu Guru Ratna.',
+        accentColor: '#38bdf8',
+      };
+    }
+    this.pushHud(true);
+  }
+
+  private updateVillagerSchoolCutscene(dt: number): void {
+    const vc = this.villagerSchoolCutscene;
+    if (!vc) return;
+    vc.timer += dt;
+    let sumX = 0;
+    let sumZ = 0;
+    for (let i = 0; i < vc.actors.length; i++) {
+      const a = vc.actors[i];
+      a.actor.x = a.gatherX;
+      a.actor.z = a.gatherZ;
+      a.actor.yaw = Math.atan2(this.heroPos.x - a.gatherX, this.heroPos.z - a.gatherZ);
+      a.actor.root.position.set(
+        a.gatherX,
+        getArchipelagoGroundY(a.gatherX, a.gatherZ),
+        a.gatherZ,
+      );
+      a.actor.root.rotation.y = a.actor.yaw;
+      sumX += a.gatherX;
+      sumZ += a.gatherZ;
+    }
+    const midX = vc.actors.length > 0 ? sumX / vc.actors.length : DESA_SCHOOL_ANCHOR.teacherX;
+    const midZ = vc.actors.length > 0 ? sumZ / vc.actors.length : DESA_SCHOOL_ANCHOR.teacherZ;
+    this.heroYaw = Math.atan2(midX - this.heroPos.x, midZ - this.heroPos.z);
+    this.hero.body.rotation.y = this.heroYaw;
+    this.animateHeroConversation(this.storyDialog?.speakerSide === 'hero', dt);
+    this.updateHarvestDialogueCamera(
+      this.heroPos.x,
+      this.heroPos.y,
+      this.heroPos.z,
+      midX,
+      getArchipelagoGroundY(midX, midZ),
+      midZ,
+      dt,
+    );
+  }
+
+  private clearVillagerSchoolCutscene(): void {
+    const vc = this.villagerSchoolCutscene;
+    if (!vc) return;
+    for (const item of vc.actors) {
+      item.actor.x = item.origX;
+      item.actor.z = item.origZ;
+      item.actor.yaw = item.origYaw;
+      item.actor.pauseTimer = item.origPauseTimer;
+      item.actor.greetTimer = item.origGreetTimer;
+      item.actor.root.position.set(
+        item.origX,
+        getArchipelagoGroundY(item.origX, item.origZ),
+        item.origZ,
+      );
+      item.actor.root.rotation.y = item.origYaw;
+    }
+    this.villagerSchoolCutscene = null;
+  }
+
+  private finishVillagerSchoolCutscene(): void {
+    this.clearVillagerSchoolCutscene();
+    this.storyDialog = null;
+    this.schoolGuideActive = true;
+    this.phase = 'playing';
+    this.applyCameraVisibilityAndControls();
+    this.snapCameraBehindHero();
+    this.saveProgress();
+    soundEngine.playPick();
+    this.showBanner(
+      '🏫 Ikuti penunjuk arah menuju Sekolah Desa Sapaan dan temui Ibu Guru Ratna untuk belajar kosakata!',
+      6.0,
+    );
     this.pushHud(true);
   }
 
@@ -27971,6 +28398,11 @@ export class RpgWorldEngine {
 
     if (this.storyDialog?.kind === 'hutan_satwa_refugee' && this.hutanSatwaRefugeeCutscene) {
       this.updateHutanSatwaRefugeeCutscene(dt);
+      return;
+    }
+
+    if (this.storyDialog?.kind === 'desa_school_invite' && this.villagerSchoolCutscene) {
+      this.updateVillagerSchoolCutscene(dt);
       return;
     }
 
@@ -30742,6 +31174,41 @@ export class RpgWorldEngine {
       npcIdx++;
     }
 
+    if (this.schoolTeacherRig) {
+      const tx = DESA_SCHOOL_ANCHOR.teacherX;
+      const tz = DESA_SCHOOL_ANCHOR.teacherZ;
+      const distTeacher = Math.hypot(this.heroPos.x - tx, this.heroPos.z - tz);
+      const tBlink = computeBlinkScale(this.elapsed, 1.35);
+      this.schoolTeacherRig.leftEye.scale.y = tBlink;
+      this.schoolTeacherRig.rightEye.scale.y = tBlink;
+      const breathe = 1 + Math.sin(this.elapsed * 2.1) * 0.025;
+      this.schoolTeacherRig.bodyPivot.scale.set(
+        this.schoolTeacherRig.baseScaleXZ,
+        this.schoolTeacherRig.baseScaleY * breathe,
+        this.schoolTeacherRig.baseScaleXZ,
+      );
+      if (distTeacher < 6.0 && this.phase === 'playing') {
+        this.schoolTeacherRig.root.rotation.y = Math.atan2(
+          this.heroPos.x - tx,
+          this.heroPos.z - tz,
+        );
+        this.schoolTeacherRig.rightArm.rotation.x =
+          this.schoolTeacherRig.baseRightArmX - 0.35 + Math.sin(this.elapsed * 3.8) * 0.18;
+      } else {
+        this.schoolTeacherRig.root.rotation.y = DESA_SCHOOL_ANCHOR.rotY;
+        this.schoolTeacherRig.rightArm.rotation.x = this.schoolTeacherRig.baseRightArmX;
+      }
+      if (this.schoolTeacherAlertMesh) {
+        this.schoolTeacherAlertMesh.visible = this.phase === 'playing';
+        if (this.schoolTeacherAlertMesh.visible) {
+          const ty = getArchipelagoGroundY(tx, tz);
+          this.schoolTeacherAlertMesh.position.y =
+            ty + 3.45 + Math.sin(this.elapsed * 3.2) * 0.22;
+          this.schoolTeacherAlertMesh.rotation.y += dt * 2.2;
+        }
+      }
+    }
+
     if (this.worldMode === 'overworld' && this.reunitedCaptives.size > 0) {
       const desaClearedAll = this.liberatedZones.has('desa_sapaan');
       for (const [zId, entry] of this.reunitedCaptives.entries()) {
@@ -31960,6 +32427,13 @@ export class RpgWorldEngine {
         const ny = getArchipelagoGroundY(npc.x, npc.z);
         pushHeroCircle(npc.x, ny, npc.z, 1.05, 2.4);
       }
+      pushHeroCircle(
+        DESA_SCHOOL_ANCHOR.teacherX,
+        getArchipelagoGroundY(DESA_SCHOOL_ANCHOR.teacherX, DESA_SCHOOL_ANCHOR.teacherZ),
+        DESA_SCHOOL_ANCHOR.teacherZ,
+        0.95,
+        2.4,
+      );
 
       // Prevent Hero from walking through Villagers, Golems, Llamas, Critters & Pillagers
       for (const v of this.villageRig.villagers) {
@@ -32022,6 +32496,26 @@ export class RpgWorldEngine {
       }
 
       resolveHeroTerrainWalls();
+
+      if (
+        !this.otherIslandsUnlocked &&
+        (!isAllowedStarterWorldPos(this.heroPos.x, this.heroPos.z) ||
+          sampleAirbaseTerrain(this.heroPos.x, this.heroPos.z) !== null)
+      ) {
+        if (sampleAirbaseTerrain(this.heroPos.x, this.heroPos.z) !== null) {
+          this.heroPos.x = prevHeroX;
+          this.heroPos.z = prevHeroZ;
+        }
+        clampPosToStarterZone(this.heroPos, 0.72);
+        this.heroVel.x = 0;
+        this.heroVel.z = 0;
+        this.tapMoveTarget = null;
+        this.triggerLockedBorderPrompt(
+          'locked_bridge',
+          'hutan_satwa',
+          '🔒 Pulau & laut di luar Desa Sapaan masih terkunci sebelum dibeli! Laut pesisir Desa Sapaan tetap terbuka.',
+        );
+      }
 
       // Ensure obstacle/vehicle/entity push never shoves hero inside an unclimbable steep cliff wall
       const postPushSample = sampleArchipelagoTerrain(this.heroPos.x, this.heroPos.z);
@@ -33304,6 +33798,16 @@ export class RpgWorldEngine {
           if (score < bestNpcScore) {
             bestNpcScore = score;
             bestNpc = npc.id;
+          }
+        }
+        const tx = DESA_SCHOOL_ANCHOR.teacherX;
+        const tz = DESA_SCHOOL_ANCHOR.teacherZ;
+        const ty = getArchipelagoGroundY(tx, tz);
+        if (Math.abs(this.heroPos.y - ty) <= 3.5) {
+          const dtTeacher = Math.hypot(this.heroPos.x - tx, this.heroPos.z - tz);
+          if (dtTeacher < 5.4 && dtTeacher - 0.65 < bestNpcScore) {
+            bestNpcScore = dtTeacher - 0.65;
+            bestNpc = 'npc_guru_desa';
           }
         }
       }
@@ -36283,6 +36787,47 @@ export class RpgWorldEngine {
       return labels;
     }
 
+    if (this.villagerSchoolCutscene && this.storyDialog?.kind === 'desa_school_invite') {
+      const vc = this.villagerSchoolCutscene;
+      if (this.storyDialog.speakerSide === 'hero') {
+        const hp = projectPoint(this.heroPos.x, this.heroPos.y + 2.7, this.heroPos.z);
+        if (hp) {
+          labels.push({
+            id: 'school_invite_hero',
+            x: hp.x,
+            y: hp.y,
+            title: '🏫 Aku segera ke Sekolah Desa Sapaan!',
+            kind: 'speech',
+          });
+        }
+      } else {
+        const speakerIdx = Math.min(vc.step, Math.max(0, vc.actors.length - 1));
+        const activeActor = vc.actors[speakerIdx]?.actor;
+        if (activeActor) {
+          const ap = projectPoint(
+            activeActor.x,
+            getArchipelagoGroundY(activeActor.x, activeActor.z) + 2.4,
+            activeActor.z,
+          );
+          if (ap) {
+            labels.push({
+              id: `school_invite_v_${speakerIdx}`,
+              x: ap.x,
+              y: ap.y,
+              title:
+                vc.step === 0
+                  ? '🏡 Desa Sapaan selalu menyambutmu!'
+                  : vc.step === 1
+                  ? '📚 Ayo ulangi 126 kosakata di sekolah!'
+                  : '👩‍🏫 Temui Ibu Guru Ratna di Sekolah Desa!',
+              kind: 'speech',
+            });
+          }
+        }
+      }
+      return labels;
+    }
+
     if (this.villageAmbushState?.active) {
       const amb = this.villageAmbushState;
       const showAmbNpcLabels =
@@ -36902,6 +37447,25 @@ export class RpgWorldEngine {
             ? `🔑 ${door.label} (Dijaga ${activeNightDef.name})`
             : `🌙 ${door.label} · ${activeNightDef.name} Siaga`,
           kind: 'door',
+        });
+      }
+    }
+
+    const sx = DESA_SCHOOL_ANCHOR.teacherX;
+    const sz = DESA_SCHOOL_ANCHOR.teacherZ;
+    const distSchool = Math.hypot(this.heroPos.x - sx, this.heroPos.z - sz);
+    if (this.phase === 'playing' && (this.schoolGuideActive || distSchool < 20)) {
+      const sp = projectPoint(sx, getArchipelagoGroundY(sx, sz) + 4.15, sz);
+      if (sp) {
+        labels.push({
+          id: 'desa_school_teacher',
+          x: sp.x,
+          y: sp.y,
+          title:
+            this.nearbyNpcId === 'npc_guru_desa'
+              ? '👩‍🏫 Ibu Guru Ratna · Tekan E untuk Belajar'
+              : '🏫 Sekolah Desa Sapaan · Temui Ibu Guru',
+          kind: 'npc_alert',
         });
       }
     }
@@ -38105,6 +38669,15 @@ export class RpgWorldEngine {
         }
       }
       blips.push({
+        id: 'desa_school',
+        x: DESA_SCHOOL_ANCHOR.teacherX,
+        z: DESA_SCHOOL_ANCHOR.teacherZ,
+        kind: 'school',
+        color: this.schoolGuideActive ? '#facc15' : '#10b981',
+        needsHelp: this.schoolGuideActive,
+        label: 'Sekolah Desa Sapaan (Ibu Guru)',
+      });
+      blips.push({
         id: 'portal',
         x: OVERWORLD_ANCHORS.portal.x,
         z: OVERWORLD_ANCHORS.portal.z,
@@ -38872,6 +39445,10 @@ export class RpgWorldEngine {
           ? getNextHutanSatwaGuideCheckpoint(this.heroPos.x, this.heroPos.z)?.hintShort ??
             'Temui Ranger Rimba di Hutan Satwa'
           : null,
+      otherIslandsUnlocked: this.otherIslandsUnlocked,
+      schoolGuideActive: this.schoolGuideActive,
+      nearSchoolTeacher:
+        this.worldMode === 'overworld' && this.nearbyNpcId === 'npc_guru_desa',
       portalUnlocked:
         !IELTS_TEMPORARILY_LOCKED && (!this.settings.storyLocked || this.ribbons.size >= 6),
       dungeonState: this.dungeonState

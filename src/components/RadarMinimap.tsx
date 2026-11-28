@@ -238,6 +238,20 @@ export const SpotLegendIcon: React.FC<{ kind: RadarBlipKind; className?: string 
       </svg>
     );
   }
+  if (kind === 'school') {
+    return (
+      <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
+        <path
+          d="M3 10.5L12 4l9 6.5v9.5H3v-9.5z"
+          fill="#10b981"
+          stroke="#0f172a"
+          strokeWidth="1.6"
+          strokeLinejoin="round"
+        />
+        <rect x="9.5" y="13" width="5" height="7" fill="#fef08a" stroke="#0f172a" strokeWidth="1.2" />
+      </svg>
+    );
+  }
   if (kind === 'door') {
     return (
       <svg viewBox="0 0 24 24" className={className} fill="none" aria-hidden="true">
@@ -919,6 +933,22 @@ function drawIcon(
     ctx.beginPath();
     ctx.arc(0, -0.6, 2.2, 0, Math.PI * 2);
     ctx.fill();
+  } else if (kind === 'school') {
+    ctx.lineWidth = 1.6;
+    ctx.strokeStyle = '#0f172a';
+    ctx.fillStyle = color || '#10b981';
+    ctx.beginPath();
+    ctx.moveTo(0, -6.4);
+    ctx.lineTo(6.4, -1.0);
+    ctx.lineTo(-6.4, -1.0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = '#fef3c7';
+    ctx.fillRect(-4.6, -1.0, 9.2, 6.2);
+    ctx.strokeRect(-4.6, -1.0, 9.2, 6.2);
+    ctx.fillStyle = '#047857';
+    ctx.fillRect(-1.5, 1.4, 3.0, 3.8);
   } else if (kind === 'key') {
     ctx.beginPath();
     ctx.arc(0, 0, 7.6, 0, Math.PI * 2);
@@ -1681,7 +1711,8 @@ export const Kingdom3DMap: React.FC<Kingdom3DMapProps> = ({
                 b.kind === 'sky_monster' ||
                 b.kind === 'car' ||
                 b.kind === 'plane' ||
-                b.kind === 'airbase',
+                b.kind === 'airbase' ||
+                b.kind === 'school',
             )
             .sort((a, b) => mapRank(a.kind) - mapRank(b.kind));
 

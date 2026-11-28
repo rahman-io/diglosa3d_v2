@@ -6,15 +6,17 @@ import { AssetDownloaderScreen } from './components/AssetDownloaderScreen';
 import { BattleQuizModal } from './components/BattleQuizModal';
 import { CaveCraftingModal } from './components/CaveCraftingModal';
 import { CaveSealModal } from './components/CaveSealModal';
+import { DesaSchoolModal } from './components/DesaSchoolModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { MultiplayerHudOverlay } from './components/MultiplayerHudOverlay';
-import { PlayLobbyModal } from './components/PlayLobbyModal';
 import { GameOverModal } from './components/GameOverModal';
 import { AcademySkillMode, IeltsAcademyModal } from './components/IeltsAcademyModal';
+import { IslandPaywallModal, IslandPaywallReason } from './components/IslandPaywallModal';
 import { LeaderboardModal } from './components/LeaderboardModal';
 import { LearningModeModal } from './components/LearningModeModal';
 import { LoginGateScreen } from './components/LoginGateScreen';
+import { MultiplayerHudOverlay } from './components/MultiplayerHudOverlay';
 import { NpcDialogueModal } from './components/NpcDialogueModal';
+import { PlayLobbyModal } from './components/PlayLobbyModal';
 import { ProfileModal } from './components/ProfileModal';
 import {
   getGlobalPwaInstallState,
@@ -137,6 +139,7 @@ import {
   RpgHudSnapshot,
   UserProfileRecord,
   WaveMissionState,
+  ZoneId,
 } from './types/game';
 
 const INITIAL_HUD: RpgHudSnapshot = {
@@ -204,6 +207,9 @@ const INITIAL_HUD: RpgHudSnapshot = {
   portalUnlocked: true,
   activeMissionGuideZone: null,
   activeMissionGuideHint: null,
+  otherIslandsUnlocked: false,
+  schoolGuideActive: false,
+  nearSchoolTeacher: false,
   dungeonState: null,
   areaMonsterStats: {
     context: 'overworld_day',
@@ -299,6 +305,11 @@ function DiglosaRpgApp() {
   const [activeAcademySkill, setActiveAcademySkill] = useState<AcademySkillMode | null>(null);
   const [activeCaveSeal, setActiveCaveSeal] = useState<CaveSealContext | null>(null);
   const [craftingOpen, setCraftingOpen] = useState(false);
+  const [desaSchoolOpen, setDesaSchoolOpen] = useState(false);
+  const [paywallModal, setPaywallModal] = useState<{
+    reason: IslandPaywallReason;
+    targetZoneId?: ZoneId | null;
+  } | null>(null);
   const [dialogueNpcId, setDialogueNpcId] = useState<string | null>(null);
   const [sideTab, setSideTab] = useState<SideModalTab>(null);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -821,6 +832,9 @@ function DiglosaRpgApp() {
         onOpenAcademyExam: (skill) => setActiveAcademySkill(skill),
         onOpenCaveSeal: (seal) => setActiveCaveSeal(seal),
         onOpenCrafting: () => setCraftingOpen(true),
+        onOpenIslandPaywall: (reason, targetZoneId) =>
+          setPaywallModal({ reason, targetZoneId }),
+        onOpenDesaSchool: () => setDesaSchoolOpen(true),
         onMultiplayerPacket: (pkt, targetUid) => {
           const transport = transportRef.current;
           if (!transport) return;
@@ -1007,6 +1021,20 @@ function DiglosaRpgApp() {
           engineRef.current?.setPhase('playing');
           return;
         }
+        if (paywallModal) {
+          if (paywallModal.reason === 'post_refugee') {
+            setPaywallModal(null);
+            engineRef.current?.startVillagerSchoolInviteScene();
+          } else {
+            setPaywallModal(null);
+          }
+          return;
+        }
+        if (desaSchoolOpen) {
+          setDesaSchoolOpen(false);
+          engineRef.current?.setPhase('playing');
+          return;
+        }
         if (dialogueNpcId) {
           setDialogueNpcId(null);
           engineRef.current?.setPhase('playing');
@@ -1028,7 +1056,9 @@ function DiglosaRpgApp() {
         !activeCaveSeal &&
         !craftingOpen &&
         !activeAcademySkill &&
-        !dialogueNpcId
+        !dialogueNpcId &&
+        !paywallModal &&
+        !desaSchoolOpen
       ) {
         const target = e.code === 'KeyM' ? 'map' : 'guide';
         setSideTab((prev) => (prev === target ? null : target));
@@ -1053,6 +1083,8 @@ function DiglosaRpgApp() {
     activeCaveSeal,
     craftingOpen,
     activeAcademySkill,
+    paywallModal,
+    desaSchoolOpen,
   ]);
 
   // Save best score & sync on Game Over
@@ -2534,7 +2566,9 @@ function DiglosaRpgApp() {
         profileOpen ||
         leaderboardOpen ||
         Boolean(sideTab) ||
-        Boolean(vsIntroData)));
+        Boolean(vsIntroData) ||
+        Boolean(paywallModal) ||
+        desaSchoolOpen));
 
   useEffect(() => {
     engineRef.current?.setBackgroundIdle(shouldIdle3dWorld);
@@ -2957,6 +2991,8 @@ function DiglosaRpgApp() {
             craftingOpen ||
             Boolean(dialogueNpcId) ||
             Boolean(sideTab) ||
+            Boolean(paywallModal) ||
+            desaSchoolOpen ||
             profileOpen ||
             resumePromptOpen ||
             retryConfirmOpen ||
@@ -3050,6 +3086,35 @@ function DiglosaRpgApp() {
           setCraftingOpen(false);
           engineRef.current?.setPhase('playing');
         }}
+      />
+
+      <DesaSchoolModal
+        open={desaSchoolOpen}
+        playerName={playerName}
+        wordProgress={hud.wordProgress}
+        onRecordWord={(vocabId, correct, noLevel) =>
+          engineRef.current?.recordWordAttempt(vocabId, correct, noLevel)
+        }
+        onClose={() => {
+          setDesaSchoolOpen(false);
+          engineRef.current?.setPhase('playing');
+        }}
+      />
+
+      <IslandPaywallModal
+        open={Boolean(paywallModal)}
+        reason={paywallModal?.reason ?? 'post_refugee'}
+        targetZoneId={paywallModal?.targetZoneId}
+        playerName={playerName}
+        onDecline={() => {
+          setPaywallModal(null);
+          engineRef.current?.startVillagerSchoolInviteScene();
+        }}
+        onUnlocked={() => {
+          setPaywallModal(null);
+          engineRef.current?.unlockOtherIslands();
+        }}
+        onClose={() => setPaywallModal(null)}
       />
 
       <BattleQuizModal

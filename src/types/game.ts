@@ -492,6 +492,7 @@ export interface StoryDialogState {
     | 'dungeon_reunion_exit'
     | 'island_liberation'
     | 'hutan_satwa_refugee'
+    | 'desa_school_invite'
     | 'cave_guardian';
   step: number;
   maxStep?: number;
@@ -602,7 +603,8 @@ export type RadarBlipKind =
   | 'hero_friend'
   | 'car'
   | 'plane'
-  | 'airbase';
+  | 'airbase'
+  | 'school';
 
 export interface RadarBlip {
   id: string;
@@ -719,6 +721,9 @@ export interface RpgHudSnapshot {
   guidedOutsideRemaining?: number;
   activeMissionGuideZone?: ZoneId | null;
   activeMissionGuideHint?: string | null;
+  otherIslandsUnlocked: boolean;
+  schoolGuideActive: boolean;
+  nearSchoolTeacher: boolean;
   dungeonState: DungeonZoneState | null;
   areaMonsterStats: AreaMonsterStats;
   liberatedZones: ZoneId[];

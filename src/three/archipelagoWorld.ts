@@ -50,6 +50,14 @@ export const OVERWORLD_ANCHORS = {
   } as Record<ZoneId, { x: number; z: number; rotY: number }>,
 } as const;
 
+export const DESA_SCHOOL_ANCHOR = {
+  buildingX: 3.5,
+  buildingZ: 151.5,
+  teacherX: -1.4,
+  teacherZ: 151.5,
+  rotY: -Math.PI / 2,
+} as const;
+
 export const OVERWORLD_ZONE_DOORS: Record<
   ZoneId,
   { x: number; y: number; z: number; npcId: string; label: string }
@@ -146,6 +154,66 @@ export const ISLAND_DISKS: IslandDisk[] = [
   // 135m (radius 67.5m) Full-Scale Crystal Canyon ("Gua Portal") matching level design overview!
   { id: 'gua_portal', cx: 20, cz: -174, radius: 67.5, groundY: 14.0 },
 ];
+
+export const STARTER_DESA_CENTER_X = 0;
+export const STARTER_DESA_CENTER_Z = 134;
+export const STARTER_DESA_MAX_RADIUS = 98;
+export const STARTER_DESA_MIN_Z = 60.5;
+
+export function isAllowedStarterWorldPos(x: number, z: number): boolean {
+  if (!Number.isFinite(x) || !Number.isFinite(z)) return false;
+  if (z < STARTER_DESA_MIN_Z) return false;
+  if (Math.hypot(x - STARTER_DESA_CENTER_X, z - STARTER_DESA_CENTER_Z) > STARTER_DESA_MAX_RADIUS) {
+    return false;
+  }
+  for (let i = 0; i < ISLAND_DISKS.length; i++) {
+    const d = ISLAND_DISKS[i];
+    if (d.id === 'desa_sapaan') continue;
+    if (Math.hypot(x - d.cx, z - d.cz) <= d.radius + 3.5) {
+      return false;
+    }
+  }
+  if (sampleAirbaseTerrain(x, z) !== null) return false;
+  return true;
+}
+
+export function clampPosToStarterZone(pos: { x: number; z: number }, margin = 0.85): boolean {
+  let clamped = false;
+  const minZ = STARTER_DESA_MIN_Z + margin;
+  if (pos.z < minZ) {
+    pos.z = minZ;
+    clamped = true;
+  }
+  const dx = pos.x - STARTER_DESA_CENTER_X;
+  const dz = pos.z - STARTER_DESA_CENTER_Z;
+  const maxR = STARTER_DESA_MAX_RADIUS - margin;
+  const dist = Math.hypot(dx, dz);
+  if (dist > maxR && dist > 0.0001) {
+    pos.x = STARTER_DESA_CENTER_X + (dx / dist) * maxR;
+    pos.z = STARTER_DESA_CENTER_Z + (dz / dist) * maxR;
+    clamped = true;
+  }
+  for (let i = 0; i < ISLAND_DISKS.length; i++) {
+    const d = ISLAND_DISKS[i];
+    if (d.id === 'desa_sapaan') continue;
+    const ox = pos.x - d.cx;
+    const oz = pos.z - d.cz;
+    const od = Math.hypot(ox, oz);
+    const minDiskD = d.radius + 3.5 + margin;
+    if (od < minDiskD) {
+      const nx = od > 0.001 ? ox / od : 0;
+      const nz = od > 0.001 ? oz / od : 1;
+      pos.x = d.cx + nx * minDiskD;
+      pos.z = d.cz + nz * minDiskD;
+      clamped = true;
+    }
+  }
+  if (pos.z < minZ) {
+    pos.z = minZ;
+    clamped = true;
+  }
+  return clamped;
+}
 
 export const SEA_ISLETS: SeaIslet[] = [
   { id: 'islet_sw', cx: -74, cz: 126, radius: 7.4, peakY: 4.2, theme: 'sand_green' },
@@ -603,7 +671,8 @@ function sampleIslandInterior(
       segDist(-2.0, 112.0, 11.0, 118.5) <= 2.0 ||
       segDist(11.0, 118.5, 15.2, 118.0) <= 2.0 ||
       segDist(-2.0, 112.0, -5.0, 146.0) <= 2.0 ||
-      segDist(-5.0, 146.0, 0.0, 170.0) <= 2.0;
+      segDist(-5.0, 146.0, 0.0, 170.0) <= 2.0 ||
+      segDist(-3.8, 151.5, 0.2, 151.5) <= 2.0;
     if (onVillagePath) {
       return { y: 2.6, surface: 'road' };
     }
@@ -655,6 +724,7 @@ function sampleIslandInterior(
     h = padBlend(wx, wz, -6.5, 111.5, 3.0, 6.0, 2.6, h); // village_well
     h = padBlend(wx, wz, 11.5, 109.0, 3.0, 6.0, 2.6, h); // guardPost
     h = rectBlend(wx, wz, 0.0, 9.0, 130.0, 138.0, 3.5, 2.6, h); // Wheat Farm meadow
+    h = rectBlend(wx, wz, -2.5, 8.2, 147.0, 156.0, 3.0, 2.6, h); // Sekolah Desa Sapaan pad
 
     // Gentle sloping sandy beaches around NW/West/South rim for swim-outs
     if (dist > effR - 6.2 && (wx < 22.0 || wz > 142.0)) {
@@ -3010,6 +3080,115 @@ export function createArchipelagoWorld(
     cliffBlocks.push({ x: -1.5, y: signY + 1.1, z: 131.5, sx: 0.35, sy: 2.2, sz: 0.35, color: 0x5c3a1e });
     cliffBlocks.push({ x: -1.5, y: signY + 1.85, z: 131.5, sx: 1.8, sy: 0.95, sz: 0.28, color: 0xb88a4c });
     obstacles.push({ x: -1.5, z: 131.5, halfW: 0.91, halfD: 0.21, minY: signY, maxY: signY + 2.4 });
+
+    // Sekolah Desa Sapaan (Small Village Schoolhouse at x=3.5, z=151.5 facing West toward footpath)
+    {
+      const schX = DESA_SCHOOL_ANCHOR.buildingX;
+      const schZ = DESA_SCHOOL_ANCHOR.buildingZ;
+      const sy = getArchipelagoGroundY(schX, schZ);
+      const schoolGroup = new THREE.Group();
+      schoolGroup.position.set(schX, sy, schZ);
+      schoolGroup.rotation.y = DESA_SCHOOL_ANCHOR.rotY;
+
+      const creamMat = palette.getMat(0xfef3c7, 'matte');
+      const boardMat = palette.getMat(0x064e3b, 'matte');
+      const winGlassMat = palette.getMat(0x7dd3fc, 'gloss');
+      const roofTerraMat = palette.getMat(0xc2410c, 'matte');
+      const roofTrimMat = palette.getMat(0xd97706, 'matte');
+      const goldBellMat = palette.getMat(0xfacc15, 'metal');
+
+      const addSchoolBox = (
+        geo: THREE.BoxGeometry,
+        mat: THREE.Material,
+        px: number,
+        py: number,
+        pz: number,
+        castShadow = true,
+        occluder = false,
+      ) => {
+        disposables.push(geo);
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(px, py, pz);
+        m.castShadow = castShadow;
+        m.receiveShadow = true;
+        schoolGroup.add(m);
+        if (occluder) cameraOccluders.push(m);
+        return m;
+      };
+
+      // Stone foundation plinth & front porch + 2 wide cobblestone steps (local +Z faces West!)
+      addSchoolBox(new THREE.BoxGeometry(5.6, 0.42, 6.2), cobbleMat, 0, 0.21, 0, false);
+      addSchoolBox(new THREE.BoxGeometry(3.4, 0.36, 1.35), plankMat, 0, 0.18, 3.65, false);
+      addSchoolBox(new THREE.BoxGeometry(2.6, 0.18, 0.72), cobbleMat, 0, 0.09, 4.45, false);
+
+      // Warm cream schoolhouse body + timber frame corner beams
+      addSchoolBox(new THREE.BoxGeometry(5.2, 3.3, 5.7), creamMat, 0, 2.05, 0, true, true);
+      [
+        [-2.52, -2.78],
+        [2.52, -2.78],
+        [-2.52, 2.78],
+        [2.52, 2.78],
+      ].forEach(([cx, cz]) => {
+        addSchoolBox(new THREE.BoxGeometry(0.42, 3.55, 0.42), spruceMat, cx, 2.05, cz);
+      });
+      // Timber horizontal sill & fascia beam
+      addSchoolBox(new THREE.BoxGeometry(5.55, 0.28, 6.05), spruceMat, 0, 3.74, 0);
+
+      // Stepped pitched terracotta gable roof + wooden bell turret crest
+      for (let tier = 0; tier < 5; tier++) {
+        const rw = 6.1 - tier * 1.05;
+        const rh = 0.46;
+        addSchoolBox(
+          new THREE.BoxGeometry(rw, rh, 6.65),
+          tier % 2 === 0 ? roofTerraMat : roofTrimMat,
+          0,
+          4.08 + tier * 0.44,
+          0,
+          true,
+          tier === 0,
+        );
+      }
+      // Small wooden roof bell tower + golden school bell
+      addSchoolBox(new THREE.BoxGeometry(1.25, 0.85, 1.25), spruceMat, 0, 6.22, 1.6);
+      addSchoolBox(new THREE.BoxGeometry(1.5, 0.34, 1.5), roofTerraMat, 0, 6.78, 1.6);
+      const bellGeo = new THREE.CylinderGeometry(0.22, 0.34, 0.44, 8);
+      disposables.push(bellGeo);
+      const bellMesh = new THREE.Mesh(bellGeo, goldBellMat);
+      bellMesh.position.set(0, 6.2, 1.6);
+      schoolGroup.add(bellMesh);
+
+      // Front wooden door, porch canopy, wooden pillars, chalkboard signboard & 2 warm lanterns
+      addSchoolBox(new THREE.BoxGeometry(1.55, 2.55, 0.24), spruceMat, 0, 1.68, 2.88);
+      addSchoolBox(new THREE.BoxGeometry(0.18, 0.24, 0.32), goldBellMat, 0.52, 1.55, 2.94, false);
+      addSchoolBox(new THREE.BoxGeometry(3.6, 0.26, 1.45), roofTerraMat, 0, 3.32, 3.55);
+      [-1.48, 1.48].forEach((px) => {
+        addSchoolBox(new THREE.BoxGeometry(0.28, 2.95, 0.28), spruceMat, px, 1.84, 4.12);
+        const lantern = addSchoolBox(new THREE.BoxGeometry(0.32, 0.4, 0.32), magmaHotMat, px, 2.86, 4.28, false);
+        lantern.userData.isFlame = true;
+        torchesFlame.push(lantern);
+      });
+      // Emerald chalkboard sign framed in oak wood above the school entrance ("SEKOLAH DESA")
+      addSchoolBox(new THREE.BoxGeometry(2.85, 0.92, 0.18), spruceMat, 0, 4.02, 3.12);
+      addSchoolBox(new THREE.BoxGeometry(2.55, 0.68, 0.2), boardMat, 0, 4.02, 3.16, false);
+
+      // Side & front classroom windows with wooden frames
+      [-1.65, 1.65].forEach((wx) => {
+        addSchoolBox(new THREE.BoxGeometry(1.08, 1.15, 0.22), spruceMat, wx, 2.05, 2.86);
+        addSchoolBox(new THREE.BoxGeometry(0.84, 0.9, 0.26), winGlassMat, wx, 2.05, 2.88, false);
+      });
+      [-1.35, 1.35].forEach((wz) => {
+        [-2.64, 2.64].forEach((sx) => {
+          addSchoolBox(new THREE.BoxGeometry(0.22, 1.18, 1.25), spruceMat, sx, 2.05, wz);
+          addSchoolBox(new THREE.BoxGeometry(0.26, 0.92, 0.98), winGlassMat, sx, 2.05, wz, false);
+        });
+      });
+
+      group.add(schoolGroup);
+      obstacles.push(
+        { x: schX, z: schZ, halfW: 3.15, halfD: 2.85, minY: sy, maxY: sy + 7.2 },
+        { x: schX - 3.65, z: schZ, halfW: 0.68, halfD: 1.75, minY: sy, maxY: sy + 0.55 },
+      );
+    }
 
     // Pohon Desa (T: 6m - 10m!) stylized voxel oak trees across terraces & meadow
     const desaTreeSpots: Array<[number, number, number, number]> = [

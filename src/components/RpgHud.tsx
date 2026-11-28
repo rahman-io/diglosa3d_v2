@@ -617,7 +617,12 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
   const nearbyOverworldNpc =
     hud.worldMode === 'overworld' && hud.nearbyNpcId
-      ? getZoneNpcById(hud.nearbyNpcId)
+      ? hud.nearbyNpcId === 'npc_guru_desa'
+        ? {
+            id: 'npc_guru_desa',
+            name: 'Ibu Guru Ratna (Sekolah Desa)',
+          }
+        : getZoneNpcById(hud.nearbyNpcId)
       : null;
   const nearbyOverworldDoorNpc =
     hud.worldMode === 'overworld' && hud.nearbyOverworldZoneDoor
@@ -1578,6 +1583,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                       🧭 Rute Hutan Satwa: {hud.activeMissionGuideHint}
                     </div>
                   )}
+                {hud.schoolGuideActive && (
+                  <div className="mt-0.5 truncate font-mono-nums text-[8.5px] font-black text-amber-200 sm:text-[9px]">
+                    🏫 Sekolah Desa Sapaan: Temui Ibu Guru Ratna untuk mengulang kosakata
+                  </div>
+                )}
               </div>
             );
           })()}

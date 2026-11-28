@@ -616,6 +616,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     story.kind === 'dungeon_ribbon_reunion' ||
     story.kind === 'dungeon_reunion_exit' ||
     story.kind === 'island_liberation' ||
+    story.kind === 'desa_school_invite' ||
     (story.kind === 'hutan_satwa_refugee' && !story.awaitingChoice);
 
   const caveStory = story.zoneId ? ZONE_CAVE_STORIES[story.zoneId] : null;
@@ -737,7 +738,8 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
         story.kind === 'dungeon_prison_plea' ||
         story.kind === 'dungeon_ribbon_reunion' ||
         story.kind === 'island_liberation' ||
-        story.kind === 'hutan_satwa_refugee') &&
+        story.kind === 'hutan_satwa_refugee' ||
+        story.kind === 'desa_school_invite') &&
         projectedLabels &&
         projectedLabels.length > 0 && (
         <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden">

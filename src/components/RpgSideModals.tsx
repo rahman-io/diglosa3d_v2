@@ -472,6 +472,7 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                       const isHere = hud.activeZoneId === zId;
                       const isLib = hud.liberatedZones.includes(zId);
                       const isRescued = (hud.captiveRescuedZones ?? []).includes(zId);
+                      const isPaidLocked = !hud.otherIslandsUnlocked && zId !== 'desa_sapaan';
                       const doorsDone = (hud.areaDoorsCleared[zId] || []).length;
                       const spotKindMap: Record<ZoneId, RadarBlipKind> = {
                         desa_sapaan: 'spot_desa',
@@ -505,14 +506,22 @@ export const RpgSideModals: React.FC<RpgSideModalsProps> = ({
                               </span>
                               <span
                                 className={`shrink-0 font-mono-nums text-[11px] font-extrabold ${
-                                  isLib
+                                  isPaidLocked
+                                    ? 'text-amber-300'
+                                    : isLib
                                     ? 'text-emerald-300'
                                     : isRescued
                                     ? 'text-amber-300'
                                     : 'text-rose-300'
                                 }`}
                               >
-                                {isLib ? '☀️ Cerah' : isRescued ? 'Tawanan ✓ · Kabut' : `${doorsDone}/5 Pintu`}
+                                {isPaidLocked
+                                  ? '🔒 Berbayar'
+                                  : isLib
+                                  ? '☀️ Cerah'
+                                  : isRescued
+                                  ? 'Tawanan ✓ · Kabut'
+                                  : `${doorsDone}/5 Pintu`}
                               </span>
                             </div>
                             <p className="mt-1 text-xs font-medium leading-snug text-slate-200/90">
