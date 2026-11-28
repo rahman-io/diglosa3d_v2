@@ -457,6 +457,7 @@ export interface StoryDialogState {
     | 'defeat_exit'
     | 'dungeon_intro'
     | 'dungeon_prison_torment'
+    | 'dungeon_door_guide'
     | 'dungeon_boss_summon'
     | 'dungeon_boss_solo_rage'
     | 'dungeon_prison_plea'
@@ -483,6 +484,7 @@ export interface StoryDialogState {
     | 'cell_2_cry'
     | 'cell_3_threat'
     | 'cell_3_cry';
+  dungeonDoorGuideBeat?: 'guardian_enter' | 'lead_to_door' | 'explain_doors';
   dungeonBossSummonBeat?:
     | 'emerge_shock'
     | 'boss_shock_talk'

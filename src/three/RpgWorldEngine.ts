@@ -65,6 +65,7 @@ import {
   DayPhaseId,
   DifficultyMode,
   DivingGearId,
+  DoorDef,
   DungeonZoneState,
   GamePhase,
   GameSettings,
@@ -517,6 +518,7 @@ interface SavedStatePayload {
   settings: GameSettings;
   introDone: boolean;
   caveIntrosSeen?: ZoneId[];
+  caveDoorGuideSeenZones?: ZoneId[];
   prisonPleaSeenZones?: ZoneId[];
   prisonPleaSeenCells?: string[];
   unlockedPrisonCells?: string[];
@@ -1336,6 +1338,7 @@ export class RpgWorldEngine {
   // Story choreography state
   private introDone = false;
   private caveIntrosSeen = new Set<ZoneId>();
+  private caveDoorGuideSeenZones = new Set<ZoneId>();
   private defeatedBossZones = new Set<ZoneId>();
   private storyDialog: StoryDialogState | null = null;
   private storyTimer = 0;
@@ -1497,6 +1500,27 @@ export class RpgWorldEngine {
       gatePos: THREE.Vector3;
       phase: number;
     }>;
+  } | null = null;
+  private dungeonDoorGuideCutscene: {
+    zoneId: ZoneId;
+    beat: 'guardian_enter' | 'lead_to_door' | 'explain_doors';
+    timer: number;
+    doorIndex: number;
+    doorName: string;
+    doorPos: THREE.Vector3;
+    doorFrontPos: THREE.Vector3;
+    guardianMesh: THREE.Group;
+    cutsceneLight: THREE.PointLight;
+    guardianStartPos: THREE.Vector3;
+    guardianMeetPos: THREE.Vector3;
+    guardianDoorPos: THREE.Vector3;
+    heroStartPos: THREE.Vector3;
+    heroMeetPos: THREE.Vector3;
+    heroDoorPos: THREE.Vector3;
+    sameFloorWalk: boolean;
+    cameraCutApplied: boolean;
+    beaconAccum: number;
+    remainingDoors: number;
   } | null = null;
   private reunionCutscene: {
     zoneId: ZoneId;
@@ -2269,6 +2293,7 @@ export class RpgWorldEngine {
         settings: this.settings,
         introDone: this.introDone,
         caveIntrosSeen: Array.from(this.caveIntrosSeen),
+        caveDoorGuideSeenZones: Array.from(this.caveDoorGuideSeenZones),
         prisonPleaSeenZones: Array.from(this.prisonPleaSeenZones),
         prisonPleaSeenCells: Array.from(this.prisonPleaSeenCells),
         unlockedPrisonCells: Array.from(this.unlockedPrisonCells),
@@ -2407,6 +2432,7 @@ export class RpgWorldEngine {
       }
       this.introDone = Boolean(data.introDone);
       this.caveIntrosSeen = new Set(data.caveIntrosSeen || []);
+      this.caveDoorGuideSeenZones = new Set(data.caveDoorGuideSeenZones || []);
       this.prisonPleaSeenZones = new Set(data.prisonPleaSeenZones || []);
       this.prisonPleaSeenCells = new Set(data.prisonPleaSeenCells || []);
       this.unlockedPrisonCells = new Set(data.unlockedPrisonCells || []);
@@ -6103,6 +6129,7 @@ export class RpgWorldEngine {
     this.ieltsScores = { listening: 0, reading: 0, writing: 0, speaking: 0, full: 0 };
     this.introDone = false;
     this.caveIntrosSeen.clear();
+    this.caveDoorGuideSeenZones.clear();
     this.prisonPleaSeenZones.clear();
     this.prisonPleaSeenCells.clear();
     this.unlockedPrisonCells.clear();
@@ -7942,6 +7969,11 @@ export class RpgWorldEngine {
       return;
     }
 
+    if (this.storyDialog.kind === 'dungeon_door_guide') {
+      this.advanceDungeonDoorGuideCutscene();
+      return;
+    }
+
     if (this.storyDialog.kind === 'dungeon_boss_summon') {
       const cs = this.dungeonBossSummonCutscene;
       if (!cs) {
@@ -8217,6 +8249,8 @@ export class RpgWorldEngine {
       this.finishVillageRescueEscort();
     } else if (this.storyDialog.kind === 'dungeon_prison_torment') {
       this.skipPreBossPrisonTormentFilm();
+    } else if (this.storyDialog.kind === 'dungeon_door_guide') {
+      this.finishDungeonDoorGuideCutscene();
     } else if (this.storyDialog.kind === 'dungeon_intro') {
       this.finishDungeonIntroCutscene();
     } else if (this.storyDialog.kind === 'dungeon_boss_summon') {
@@ -8900,13 +8934,13 @@ export class RpgWorldEngine {
         roleKind: 'monster_threat',
         variant: 'siblings',
         speakerName: 'Penjaga Bayangan Sel 1',
-        speakerRole: 'Sel 1 (Tebing Timur Laut) · Ancaman Monster',
+        speakerRole: 'Sel 1 di Tebing Timur Laut berisi ancaman monster',
         monsterType: 'stone_gargoyle',
         bossExpression: 'angry',
         textEn:
-          'Shut up and stop crying, weak siblings! Nobody from Desa Sapaan is coming to save you—our Boss owns your lives in this dark cave forever!',
+          'Shut up and stop crying, weak siblings! Nobody from Desa Sapaan is coming to save you, because our Boss owns your lives in this dark cave forever!',
         textId:
-          'Diam kalian berdua dan berhenti menangis! Kakak beradik lemah seperti kalian tidak akan pernah ditolong siapa pun—selama-lamanya kalian jadi tawanan kami di gua gelap ini!',
+          'Diam kalian berdua dan berhenti menangis! Kakak beradik lemah seperti kalian tidak akan pernah ditolong siapa pun karena kalian akan selamanya menjadi tawanan di gua gelap ini!',
         guardBubble: '😈 "Diam dan berhenti menangis, bocah lemah!"',
         captiveBubble: '😨 "Hiks... jangan gedor jerujinya..."',
         accentColor: '#dc2626',
@@ -8916,14 +8950,14 @@ export class RpgWorldEngine {
         beat: 'cell_1_cry',
         roleKind: 'captive_cry',
         variant: 'siblings',
-        speakerName: 'Rani & Kakak Raka',
-        speakerRole: 'Sel 1 (Rani & Kakak Raka) · Menahan Tangis & Ketakutan',
+        speakerName: 'Rani dan Kakak Raka',
+        speakerRole: 'Sel 1 Rani dan Kakak Raka yang menahan tangis',
         monsterType: 'stone_gargoyle',
         bossExpression: 'menace',
         textEn:
           "Hiks... Kak Raka, they keep slamming the iron bars and screaming at us! I'm so scared... Please, someone out there, come save us!",
         textId:
-          'Hiks... Kak Raka, monster-monster itu terus menggedor jeruji besi dan membentak kita... Rani takut sekali! Siapa pun di luar sana, kumohon tolong selamatkan kami!',
+          'Hiks... Kak Raka, para monster itu terus menggedor jeruji besi dan membentak kita... Rani takut sekali! Siapa pun di luar sana, kumohon tolong selamatkan kami!',
         guardBubble: '👿 "Percuma kalian berteriak minta tolong!"',
         captiveBubble: '😭 "Hiks... Kak Raka aku takut... Tolong kami!"',
         accentColor: '#38bdf8',
@@ -8934,13 +8968,13 @@ export class RpgWorldEngine {
         roleKind: 'monster_threat',
         variant: 'children',
         speakerName: 'Algojo Bayangan Sel 2',
-        speakerRole: 'Sel 2 (Tebing Barat) · Teror Terhadap 4 Anak Desa',
+        speakerRole: 'Sel 2 di Tebing Barat berisi teror terhadap empat anak desa',
         monsterType: 'dire_wolf',
         bossExpression: 'menace',
         textEn:
-          'Hahaha! Look at you four trembling little kids! Cry louder for your mothers—not a single hero dares step into this cave for you!',
+          'Hahaha! Look at you four trembling little kids! Cry louder for your mothers, since not a single hero dares step into this cave for you!',
         textId:
-          'Hahaha! Lihatlah empat bocah cengeng ini gemetar ketakutan! Menangislah memanggil ibu kalian sekeras-kerasnya—tidak ada pahlawan yang berani turun ke gua ini!',
+          'Hahaha! Lihatlah empat bocah cengeng ini gemetar ketakutan! Menangislah memanggil ibu kalian sekeras mungkin sebab tidak ada pahlawan yang berani turun ke gua ini!',
         guardBubble: '😈 "Menangislah! Tidak ada yang berani menolong!"',
         captiveBubble: '😨 "Tolooong... kami takut sekali!"',
         accentColor: '#e11d48',
@@ -8950,15 +8984,15 @@ export class RpgWorldEngine {
         beat: 'cell_2_cry',
         roleKind: 'captive_cry',
         variant: 'children',
-        speakerName: '4 Anak Desa (Bimo, Sinta, Tobi & Naya)',
-        speakerRole: 'Sel 2 (4 Anak Desa) · Tangisan Pilu Memanggil Ibu',
+        speakerName: 'Empat Anak Desa yaitu Bimo, Sinta, Tobi, dan Naya',
+        speakerRole: 'Sel 2 empat anak desa yang menangis memanggil ibu',
         monsterType: 'dire_wolf',
         bossExpression: 'menace',
         textEn:
           "Hiks... Mom! Dad! It's freezing cold and those monsters won't stop roaring at the gate... Please somebody help the four of us!",
         textId:
           'Hiks... Ibu... Ayah... badan kami menggigil dan monster itu terus mengaum menakuti kami di balik jeruji... Kumohon siapa pun, selamatkan kami berempat!',
-        guardBubble: '👿 "Tutup mulut kalian, anak-anak cengeng!"',
+        guardBubble: '👿 "Tutup mulut kalian, anak yang cengeng!"',
         captiveBubble: '😭 "Hiks... Ibu... Ayah... tolong kami berempat!"',
         accentColor: '#38bdf8',
       },
@@ -8968,15 +9002,15 @@ export class RpgWorldEngine {
         roleKind: 'monster_threat',
         variant: 'adults',
         speakerName: 'Kepala Penjaga Sel 3',
-        speakerRole: 'Sel 3 (Sayap Tenggara) · Intimidasi Kejam Terhadap Warga',
+        speakerRole: 'Sel 3 di Sayap Tenggara berisi intimidasi terhadap warga',
         monsterType: 'minotaur_brute',
         bossExpression: 'angry',
         textEn:
           'Kneel in despair, elders of Desa Sapaan! We locked your children in cages on the cliffs above, and none of you will ever see the sun again!',
         textId:
-          'Berlututlah kalian warga Desa Sapaan! Anak-anak kalian sudah kami kurung di tebing atas, dan tidak satu pun dari kalian akan melihat matahari lagi!',
+          'Berlututlah kalian warga Desa Sapaan! Seluruh anak kalian sudah kami kurung di tebing atas dan tidak satu pun dari kalian akan melihat matahari lagi!',
         guardBubble: '💥 "Kalian tidak akan pernah melihat matahari lagi!"',
-        captiveBubble: '😰 "Jangan sakiti anak-anak kami...!"',
+        captiveBubble: '😰 "Jangan sakiti anak kami...!"',
         accentColor: '#b91c1c',
       },
       {
@@ -8984,16 +9018,16 @@ export class RpgWorldEngine {
         beat: 'cell_3_cry',
         roleKind: 'captive_cry',
         variant: 'adults',
-        speakerName: '5 Warga Desa (Pak Darma, Bu Sari, Bang Jaka, Mbak Wulan & Pak Tono)',
-        speakerRole: 'Sel 3 (5 Warga Dewasa) · Rintihan Putus Asa',
+        speakerName: 'Lima Warga Desa yaitu Pak Darma, Bu Sari, Bang Jaka, Mbak Wulan, dan Pak Tono',
+        speakerRole: 'Sel 3 lima warga dewasa yang merintih putus asa',
         monsterType: 'minotaur_brute',
         bossExpression: 'angry',
         textEn:
           'Hiks... have mercy, please leave the children alone! Pak Darma is badly hurt and our strength is gone... Heavens, please send a hero to save our village!',
         textId:
-          'Hiks... kumohon jangan sakiti anak-anak kami... Pak Darma sudah terluka parah dan tenaga kami habis... Tuhan, kirimkanlah pahlawan untuk menyelamatkan kami semua!',
+          'Hiks... kumohon jangan sakiti anak kami... Pak Darma sudah terluka parah dan tenaga kami habis... Tuhan, kirimkanlah pahlawan untuk menyelamatkan kami semua!',
         guardBubble: '👿 "Menyerahlah! Tidak akan ada yang datang!"',
-        captiveBubble: '😭 "Kirimkanlah pahlawan... selamatkan anak-anak kami!"',
+        captiveBubble: '😭 "Kirimkanlah pahlawan... selamatkan semua warga dan anak kami!"',
         accentColor: '#38bdf8',
       },
     ];
@@ -9461,6 +9495,510 @@ export class RpgWorldEngine {
     this.spawnBurst(cloudPos.x, cloudPos.y + 2.1, cloudPos.z, 0x4c1d95, 24);
     this.spawnBurst(cloudPos.x, cloudPos.y + 1.8, cloudPos.z, 0xf43f5e, 14);
     this.pushHud(true);
+  }
+
+  private clearDungeonDoorGuideCutscene(): void {
+    const dg = this.dungeonDoorGuideCutscene;
+    if (!dg) return;
+    if (dg.cutsceneLight.parent) {
+      dg.cutsceneLight.parent.remove(dg.cutsceneLight);
+    }
+    dg.cutsceneLight.dispose();
+    if (dg.guardianMesh.parent) {
+      dg.guardianMesh.parent.remove(dg.guardianMesh);
+    }
+    dg.guardianMesh.traverse((obj) => {
+      if (obj instanceof THREE.Mesh) obj.geometry.dispose();
+    });
+    this.dungeonDoorGuideCutscene = null;
+  }
+
+  private checkAndTriggerDungeonDoorGuideCutscene(): void {
+    if (this.worldMode !== 'dungeon' || !this.dungeonState || !this.dungeonRig) return;
+    if (this.phase !== 'playing' || this.storyDialog || this.isCaveCountdownBlocking()) return;
+    const zId = this.dungeonState.zoneId;
+    if (this.dungeonState.bossDefeated || this.dungeonState.bossSpawned) return;
+    if (this.caveDoorGuideSeenZones.has(zId)) return;
+    if (this.dungeonTotalSpawned <= 0 || this.dungeonState.allEnemiesRemaining > 0) return;
+
+    const nonBossAlive = this.dungeonMonsters.some(
+      (m) => m.alive && !m.isBoss && !m.isBossMinion,
+    );
+    const shooterAlive = this.shooters.some((s) => s.alive);
+    if (nonBossAlive || shooterAlive) return;
+
+    const clearedSet = new Set(this.dungeonState.doorsCleared);
+    const remainingDoorIndices = [0, 1, 2, 3, 4].filter((idx) => !clearedSet.has(idx));
+    if (remainingDoorIndices.length === 0) return;
+
+    const preferredIndices = remainingDoorIndices.filter((idx) => idx < 4);
+    const pool = preferredIndices.length > 0 ? preferredIndices : remainingDoorIndices;
+    const doorDefs = ZONE_DOORS[zId];
+    let bestDoor = doorDefs[pool[0]];
+    let bestScore = Infinity;
+    for (const idx of pool) {
+      const def = doorDefs[idx];
+      if (!def) continue;
+      const dy = Math.abs((def.y ?? 0) - this.heroPos.y);
+      const dist = Math.hypot(def.x - this.heroPos.x, def.z - this.heroPos.z);
+      const score = dy * 14 + dist;
+      if (score < bestScore) {
+        bestScore = score;
+        bestDoor = def;
+      }
+    }
+    if (!bestDoor) return;
+
+    this.startDungeonDoorGuideCutscene(zId, bestDoor, remainingDoorIndices.length);
+  }
+
+  private startDungeonDoorGuideCutscene(
+    zoneId: ZoneId,
+    doorDef: DoorDef,
+    remainingDoors: number,
+  ): void {
+    this.clearDungeonDoorGuideCutscene();
+    if (!this.dungeonRig) return;
+
+    this.caveDoorGuideSeenZones.add(zoneId);
+    this.saveProgress();
+
+    if (this.cameraMode === 'first_person') {
+      this.cameraMode = 'third_back';
+    }
+    this.phase = 'story';
+    this.heldKeys.clear();
+    this.tapMoveTarget = null;
+    this.applyCameraVisibilityAndControls();
+    this.storyTimer = 0;
+
+    const caveStory = ZONE_CAVE_STORIES[zoneId];
+    const pName = this.getPlayerDisplayName();
+    const gAddr = formatGuardianAddress(caveStory.guardianId, pName, this.localCharacterId);
+    const doorY = doorDef.y ?? 0;
+    const doorPos = new THREE.Vector3(doorDef.x, doorY, doorDef.z);
+    const doorRotY = doorDef.rotY ?? Math.atan2(-doorDef.x, -doorDef.z);
+    const fx = Math.sin(doorRotY);
+    const fz = Math.cos(doorRotY);
+    const rx = fz;
+    const rz = -fx;
+
+    const doorFrontPos = new THREE.Vector3(
+      doorPos.x + fx * 3.8,
+      doorY,
+      doorPos.z + fz * 3.8,
+    );
+    const guardianDoorPos = new THREE.Vector3(
+      doorPos.x + fx * 3.55 + rx * 1.15,
+      doorY,
+      doorPos.z + fz * 3.55 + rz * 1.15,
+    );
+    const heroDoorPos = new THREE.Vector3(
+      doorPos.x + fx * 3.55 - rx * 1.05,
+      doorY,
+      doorPos.z + fz * 3.55 - rz * 1.05,
+    );
+
+    const heroStartPos = this.heroPos.clone();
+    const heroMeetPos = this.heroPos.clone();
+
+    const hb = Math.max(8, this.dungeonRig.halfBound - 2.5);
+    const spawnRef = this.dungeonRig.spawnPos;
+    let exX = spawnRef.x - heroStartPos.x;
+    let exZ = spawnRef.z - heroStartPos.z;
+    const exLen = Math.hypot(exX, exZ);
+    if (exLen < 1.2) {
+      exX = fx;
+      exZ = fz;
+    } else {
+      exX /= exLen;
+      exZ /= exLen;
+    }
+    const px = -exZ;
+    const pz = exX;
+
+    const guardianStartPos = new THREE.Vector3(
+      THREE.MathUtils.clamp(heroStartPos.x + exX * 6.5, -hb, hb),
+      heroStartPos.y,
+      THREE.MathUtils.clamp(heroStartPos.z + exZ * 6.5, -hb, hb),
+    );
+    const guardianMeetPos = new THREE.Vector3(
+      THREE.MathUtils.clamp(heroStartPos.x + exX * 1.65 + px * 0.9, -hb, hb),
+      heroStartPos.y,
+      THREE.MathUtils.clamp(heroStartPos.z + exZ * 1.65 + pz * 0.9, -hb, hb),
+    );
+
+    const distToDoor = Math.hypot(
+      doorFrontPos.x - heroStartPos.x,
+      doorFrontPos.z - heroStartPos.z,
+    );
+    const sameFloorWalk = Math.abs(doorY - heroStartPos.y) < 1.2 && distToDoor <= 24;
+
+    const guardianMesh = createZoneNpc(caveStory.guardianId, this.palette);
+    guardianMesh.position.copy(guardianStartPos);
+    guardianMesh.rotation.y = Math.atan2(
+      heroStartPos.x - guardianStartPos.x,
+      heroStartPos.z - guardianStartPos.z,
+    );
+    this.dungeonRig.group.add(guardianMesh);
+
+    const cutsceneLight = new THREE.PointLight(0xfef3c7, 3.6, 26, 1.4);
+    cutsceneLight.position.set(heroStartPos.x, heroStartPos.y + 3.4, heroStartPos.z);
+    this.dungeonRig.group.add(cutsceneLight);
+
+    this.dungeonDoorGuideCutscene = {
+      zoneId,
+      beat: 'guardian_enter',
+      timer: 0,
+      doorIndex: doorDef.index,
+      doorName: doorDef.name,
+      doorPos,
+      doorFrontPos,
+      guardianMesh,
+      cutsceneLight,
+      guardianStartPos,
+      guardianMeetPos,
+      guardianDoorPos,
+      heroStartPos,
+      heroMeetPos,
+      heroDoorPos,
+      sameFloorWalk,
+      cameraCutApplied: false,
+      beaconAccum: 0,
+      remainingDoors,
+    };
+
+    const enterEn = `Thank goodness you defeated every guard monster in this cave, ${gAddr}! I rushed inside to meet you because an urgent task is waiting next.`;
+    const enterId = `Syukurlah semua monster penjaga di gua ini berhasil kamu kalahkan, ${gAddr}! Saya segera menyusul masuk ke dalam karena masih ada tugas penting yang harus kamu lakukan berikutnya.`;
+
+    this.storyDialog = {
+      kind: 'dungeon_door_guide',
+      step: 0,
+      maxStep: 2,
+      zoneId,
+      dungeonDoorGuideBeat: 'guardian_enter',
+      speakerName: caveStory.guardianName,
+      speakerRole: `Penjaga Zona ${ZONE_INFO[zoneId].name} yang Tiba di Dalam Gua`,
+      speakerKind: 'npc',
+      speakerNpcId: caveStory.guardianId,
+      speakerSide: 'npc',
+      heroExpression: 'neutral',
+      textEn: enterEn,
+      textId: enterId,
+      accentColor: caveStory.accentColor,
+    };
+
+    soundEngine.playDoor();
+    soundEngine.playPick();
+    this.spawnBurst(guardianStartPos.x, guardianStartPos.y + 1.4, guardianStartPos.z, 0xfacc15, 22);
+    this.spawnBurst(guardianStartPos.x, guardianStartPos.y + 1.4, guardianStartPos.z, 0x38bdf8, 14);
+    soundEngine.speakEnglish(enterEn, 0.9, 1.0);
+    this.pushHud(true);
+  }
+
+  private advanceDungeonDoorGuideCutscene(): void {
+    const dg = this.dungeonDoorGuideCutscene;
+    if (!dg) {
+      this.finishDungeonDoorGuideCutscene();
+      return;
+    }
+    const caveStory = ZONE_CAVE_STORIES[dg.zoneId];
+    const pName = this.getPlayerDisplayName();
+    const gAddr = formatGuardianAddress(caveStory.guardianId, pName, this.localCharacterId);
+
+    if (dg.beat === 'guardian_enter') {
+      dg.beat = 'lead_to_door';
+      dg.timer = 0;
+      dg.cameraCutApplied = false;
+      const leadEn = `Come walk with me to the ${dg.doorName} challenge door right over there so you can see what you need to complete next!`;
+      const leadId = `Ayo ikut saya sebentar menuju pintu tantangan ${dg.doorName} di sebelah sana agar kamu tahu langsung apa yang harus diselesaikan selanjutnya!`;
+      this.storyDialog = {
+        kind: 'dungeon_door_guide',
+        step: 1,
+        maxStep: 2,
+        zoneId: dg.zoneId,
+        dungeonDoorGuideBeat: 'lead_to_door',
+        speakerName: caveStory.guardianName,
+        speakerRole: 'Mengajak Menuju Salah Satu Pintu Tantangan',
+        speakerKind: 'npc',
+        speakerNpcId: caveStory.guardianId,
+        speakerSide: 'npc',
+        heroExpression: 'neutral',
+        textEn: leadEn,
+        textId: leadId,
+        accentColor: caveStory.accentColor,
+      };
+      soundEngine.playPick();
+      soundEngine.speakEnglish(leadEn, 0.9, 1.0);
+      this.pushHud(true);
+      return;
+    }
+
+    if (dg.beat === 'lead_to_door') {
+      dg.beat = 'explain_doors';
+      dg.timer = 0;
+      const explainEn = `Now that all guard monsters are gone, your next step is to clear the challenges at all five cave doors, and this ${dg.doorName} door before us is one of them. Complete the remaining ${dg.remainingDoors} doors, ${gAddr}, so the Cave Boss appears and you can seize the Prison Key!`;
+      const explainId = `Karena semua monster anak buah sudah habis, sekarang kamu wajib menyelesaikan tantangan di lima pintu gua, dan pintu ${dg.doorName} yang saya tunjuk ini adalah salah satunya. Selesaikan ${dg.remainingDoors} pintu tersisa agar Bos Gua muncul kembali dan Kunci Penjara untuk menyelamatkan para tawanan bisa kamu rebut!`;
+      this.storyDialog = {
+        kind: 'dungeon_door_guide',
+        step: 2,
+        maxStep: 2,
+        zoneId: dg.zoneId,
+        dungeonDoorGuideBeat: 'explain_doors',
+        speakerName: caveStory.guardianName,
+        speakerRole: 'Petunjuk Lima Pintu Tantangan Gua',
+        speakerKind: 'npc',
+        speakerNpcId: caveStory.guardianId,
+        speakerSide: 'npc',
+        heroExpression: 'fierce',
+        textEn: explainEn,
+        textId: explainId,
+        accentColor: '#f59e0b',
+      };
+      this.spawnBurst(dg.doorPos.x, dg.doorPos.y + 2.2, dg.doorPos.z, 0xfacc15, 26);
+      soundEngine.playFanfare();
+      soundEngine.speakEnglish(explainEn, 0.89, 1.0);
+      this.pushHud(true);
+      return;
+    }
+
+    this.finishDungeonDoorGuideCutscene();
+  }
+
+  private finishDungeonDoorGuideCutscene(): void {
+    const dg = this.dungeonDoorGuideCutscene;
+    const doorName = dg?.doorName || 'Pintu Tantangan';
+    const remDoors = dg?.remainingDoors ?? 5;
+    if (dg) {
+      this.heroPos.copy(dg.heroDoorPos);
+      this.heroYaw = Math.atan2(
+        dg.doorPos.x - dg.heroDoorPos.x,
+        dg.doorPos.z - dg.heroDoorPos.z,
+      );
+      this.clearDungeonDoorGuideCutscene();
+    }
+
+    this.heroVel.set(0, 0, 0);
+    this.heroVelY = 0;
+    this.heroOnGround = true;
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.leftLeg.rotation.x = 0;
+    this.hero.rightLeg.rotation.x = 0;
+    this.hero.leftArm.rotation.set(0, 0, 0);
+    this.hero.rightArm.rotation.set(0, 0, 0);
+    this.hero.upperBody.rotation.set(0, 0, 0);
+    this.hero.headGroup.rotation.set(0, 0, 0);
+    this.hero.body.position.y = 0;
+    this.hero.body.rotation.y = this.heroYaw;
+    setHeroFacialExpression(this.hero, 'neutral', this.elapsed, false);
+
+    this.storyDialog = null;
+    this.phase = 'playing';
+    this.applyCameraVisibilityAndControls();
+    this.snapCameraBehindHero();
+    this.showBanner(
+      `Semua monster sudah habis dan sekarang selesaikan ${remDoors} pintu tantangan gua termasuk pintu ${doorName} di hadapanmu ini!`,
+      5.2,
+    );
+    this.pushHud(true);
+  }
+
+  private updateDungeonDoorGuideCutscene(dt: number): void {
+    const dg = this.dungeonDoorGuideCutscene;
+    if (!dg || !this.dungeonRig) return;
+    dg.timer += dt;
+    dg.beaconAccum += dt;
+    const t = dg.timer;
+
+    const hBlink = computeBlinkScale(this.elapsed, 0.25);
+    this.hero.leftEye.scale.y = hBlink;
+    this.hero.rightEye.scale.y = hBlink;
+    const breathSy = 1 + Math.sin(this.elapsed * 3.0) * 0.04;
+    this.hero.body.scale.set(1 / Math.sqrt(breathSy), breathSy, 1 / Math.sqrt(breathSy));
+
+    const doorRotY = Math.atan2(
+      dg.doorFrontPos.x - dg.doorPos.x,
+      dg.doorFrontPos.z - dg.doorPos.z,
+    );
+    const fx = Math.sin(doorRotY);
+    const fz = Math.cos(doorRotY);
+    const rx = fz;
+    const rz = -fx;
+
+    if (dg.beaconAccum >= 0.48) {
+      dg.beaconAccum = 0;
+      this.spawnBurst(
+        dg.doorPos.x + (Math.random() - 0.5) * 1.2,
+        dg.doorPos.y + 2.5 + Math.random() * 0.8,
+        dg.doorPos.z + (Math.random() - 0.5) * 1.2,
+        0xfacc15,
+        6,
+      );
+    }
+
+    if (dg.beat === 'guardian_enter') {
+      const p = THREE.MathUtils.clamp(t / 1.45, 0, 1);
+      const easeOut = 1 - Math.pow(1 - p, 2);
+      dg.guardianMesh.position.lerpVectors(dg.guardianStartPos, dg.guardianMeetPos, easeOut);
+      const isMoving = p < 0.96;
+      dg.guardianMesh.rotation.y = Math.atan2(
+        this.heroPos.x - dg.guardianMesh.position.x,
+        this.heroPos.z - dg.guardianMesh.position.z,
+      );
+      animateZoneNpc(
+        dg.guardianMesh,
+        this.elapsed,
+        0.5,
+        true,
+        dt,
+        isMoving ? 'walk' : 'stand',
+      );
+
+      this.heroPos.copy(dg.heroMeetPos);
+      this.heroYaw = Math.atan2(
+        dg.guardianMesh.position.x - this.heroPos.x,
+        dg.guardianMesh.position.z - this.heroPos.z,
+      );
+      this.hero.leftLeg.rotation.x *= 0.8;
+      this.hero.rightLeg.rotation.x *= 0.8;
+      this.hero.body.position.y = 0;
+      setHeroFacialExpression(this.hero, 'neutral', this.elapsed, false);
+
+      const midX = (this.heroPos.x + dg.guardianMesh.position.x) * 0.5;
+      const midZ = (this.heroPos.z + dg.guardianMesh.position.z) * 0.5;
+      dg.cutsceneLight.position.set(midX, this.heroPos.y + 3.2, midZ);
+      this.playerCaveLight.position.copy(dg.cutsceneLight.position);
+
+      _v1.set(
+        this.heroPos.x - rx * 3.8 + fx * 1.6,
+        this.heroPos.y + 2.35,
+        this.heroPos.z - rz * 3.8 + fz * 1.6,
+      );
+      _v2.set(midX, this.heroPos.y + 1.35, midZ);
+    } else if (dg.beat === 'lead_to_door') {
+      const walkStartG = dg.sameFloorWalk
+        ? dg.guardianMeetPos
+        : new THREE.Vector3(
+            dg.doorPos.x + fx * 9.2 + rx * 1.25,
+            dg.doorPos.y,
+            dg.doorPos.z + fz * 9.2 + rz * 1.25,
+          );
+      const walkStartH = dg.sameFloorWalk
+        ? dg.heroMeetPos
+        : new THREE.Vector3(
+            dg.doorPos.x + fx * 9.2 - rx * 1.15,
+            dg.doorPos.y,
+            dg.doorPos.z + fz * 9.2 - rz * 1.15,
+          );
+
+      const p = THREE.MathUtils.clamp(t / 2.2, 0, 1);
+      dg.guardianMesh.position.lerpVectors(walkStartG, dg.guardianDoorPos, p);
+      this.heroPos.lerpVectors(walkStartH, dg.heroDoorPos, p);
+
+      const isWalking = p < 0.97;
+      if (isWalking) {
+        this.walkCycle += dt * 11;
+        const swing = Math.sin(this.walkCycle) * 0.52;
+        this.hero.leftLeg.rotation.x = swing;
+        this.hero.rightLeg.rotation.x = -swing;
+        this.hero.leftArm.rotation.x = -swing * 0.65;
+        this.hero.rightArm.rotation.x = swing * 0.5;
+        this.hero.body.position.y = Math.abs(Math.sin(this.walkCycle)) * 0.09;
+      } else {
+        this.hero.leftLeg.rotation.x *= 0.8;
+        this.hero.rightLeg.rotation.x *= 0.8;
+        this.hero.leftArm.rotation.x *= 0.8;
+        this.hero.rightArm.rotation.x *= 0.8;
+        this.hero.body.position.y = 0;
+      }
+
+      const lookX = isWalking ? dg.doorPos.x : dg.guardianMesh.position.x;
+      const lookZ = isWalking ? dg.doorPos.z : dg.guardianMesh.position.z;
+      this.heroYaw = Math.atan2(lookX - this.heroPos.x, lookZ - this.heroPos.z);
+      dg.guardianMesh.rotation.y = Math.atan2(
+        dg.doorPos.x - dg.guardianMesh.position.x,
+        dg.doorPos.z - dg.guardianMesh.position.z,
+      );
+      animateZoneNpc(
+        dg.guardianMesh,
+        this.elapsed,
+        0.5,
+        true,
+        dt,
+        isWalking ? 'walk' : 'stand',
+      );
+      setHeroFacialExpression(this.hero, 'neutral', this.elapsed, false);
+
+      dg.cutsceneLight.position.set(
+        (this.heroPos.x + dg.doorPos.x) * 0.5,
+        this.heroPos.y + 3.4,
+        (this.heroPos.z + dg.doorPos.z) * 0.5,
+      );
+      this.playerCaveLight.position.copy(dg.cutsceneLight.position);
+
+      _v1.set(
+        this.heroPos.x + fx * 4.4 + rx * 2.2,
+        this.heroPos.y + 2.8,
+        this.heroPos.z + fz * 4.4 + rz * 2.2,
+      );
+      _v2.set(
+        THREE.MathUtils.lerp(this.heroPos.x, dg.doorPos.x, 0.45),
+        this.heroPos.y + 1.75,
+        THREE.MathUtils.lerp(this.heroPos.z, dg.doorPos.z, 0.45),
+      );
+
+      if (!dg.sameFloorWalk && !dg.cameraCutApplied) {
+        dg.cameraCutApplied = true;
+        this.camera.position.copy(_v1);
+        this.controls.target.copy(_v2);
+        this.controls.update();
+      }
+    } else {
+      // explain_doors: both stand right before the glowing challenge door while guardian points it out
+      dg.guardianMesh.position.copy(dg.guardianDoorPos);
+      this.heroPos.copy(dg.heroDoorPos);
+      this.hero.leftLeg.rotation.x *= 0.8;
+      this.hero.rightLeg.rotation.x *= 0.8;
+      this.hero.leftArm.rotation.x *= 0.8;
+      this.hero.rightArm.rotation.x *= 0.8;
+      this.hero.body.position.y = 0;
+
+      const oscLook = Math.sin(this.elapsed * 1.4) > 0.15;
+      dg.guardianMesh.rotation.y = oscLook
+        ? Math.atan2(dg.doorPos.x - dg.guardianDoorPos.x, dg.doorPos.z - dg.guardianDoorPos.z)
+        : Math.atan2(this.heroPos.x - dg.guardianDoorPos.x, this.heroPos.z - dg.guardianDoorPos.z);
+      this.heroYaw = Math.atan2(
+        dg.doorPos.x - this.heroPos.x,
+        dg.doorPos.z - this.heroPos.z,
+      );
+      animateZoneNpc(dg.guardianMesh, this.elapsed, 0.5, true, dt, 'stand');
+      setHeroFacialExpression(this.hero, 'fierce', this.elapsed, false);
+
+      dg.cutsceneLight.position.set(
+        dg.doorPos.x + fx * 3.8,
+        dg.doorPos.y + 3.5,
+        dg.doorPos.z + fz * 3.8,
+      );
+      this.playerCaveLight.position.copy(dg.cutsceneLight.position);
+
+      _v1.set(
+        dg.doorPos.x + fx * 7.6 - rx * 2.1,
+        dg.doorPos.y + 2.65,
+        dg.doorPos.z + fz * 7.6 - rz * 2.1,
+      );
+      _v2.set(
+        THREE.MathUtils.lerp(dg.doorPos.x, dg.doorFrontPos.x, 0.35),
+        dg.doorPos.y + 1.85,
+        THREE.MathUtils.lerp(dg.doorPos.z, dg.doorFrontPos.z, 0.35),
+      );
+    }
+
+    this.hero.root.position.copy(this.heroPos);
+    this.hero.body.rotation.y = this.heroYaw;
+
+    const camLerp = 1 - Math.exp(-5.6 * dt);
+    this.camera.position.lerp(_v1, camLerp);
+    this.controls.target.lerp(_v2, camLerp);
   }
 
   private finishDungeonIntroCutscene(): void {
@@ -10783,6 +11321,7 @@ export class RpgWorldEngine {
     this.caveCountdownZoneName = '';
     this.caveCountdownPendingBanner = null;
     this.clearDungeonPreBossPrisonFilm();
+    this.clearDungeonDoorGuideCutscene();
     this.clearDungeonBossIntro();
     this.clearDungeonBossSpawnCloud();
     this.clearDungeonBossSummonCutscene();
@@ -16740,12 +17279,13 @@ export class RpgWorldEngine {
         soundEngine.playWin();
         this.showBanner(
           remainingNonBoss > 0
-            ? `${battle.monsterName} kalah! Sisa ${remainingNonBoss} Monster Kata.`
-            : 'Semua Monster Kata kalah! Jika Pintu 1–4 sudah lulus, buka Pintu ke-5 untuk memanggil Bos!',
+            ? `${battle.monsterName} kalah dan sisa ${remainingNonBoss} Monster Kata.`
+            : 'Semua Monster Kata sudah kalah! Mari lihat petunjuk langkah berikutnya di dalam gua!',
           3.4,
         );
       }
       this.syncDungeonMonsterStats();
+      this.checkAndTriggerDungeonDoorGuideCutscene();
       this.checkAreaTrophy(this.dungeonState.zoneId);
     } else {
       // Overworld Surface or Sky English-Challenge Monster defeated, scale XP, Diamonds, Ammo & Survival Heart!
@@ -17866,8 +18406,8 @@ export class RpgWorldEngine {
       this.updateDungeonDoorVisuals();
       this.showBanner(
         remainingNonBoss > 0
-          ? `⚔️ ${m.name} kalah dalam duel aksi! +${m.rewardXp} XP · +${diamondDrop} 💎 · +${ammoDrop} Peluru (Sisa ${remainingNonBoss} Monster Kata)`
-          : '⚔️ Semua Monster Kata kalah! Jika Pintu 1–4 sudah lulus, buka Pintu ke-5 untuk memanggil Bos!',
+          ? `⚔️ ${m.name} kalah dalam duel aksi! Tersisa ${remainingNonBoss} Monster Kata lagi.`
+          : '⚔️ Semua Monster Kata sudah kalah! Mari lihat petunjuk langkah berikutnya di dalam gua!',
         3.4,
       );
     } else {
@@ -17889,6 +18429,7 @@ export class RpgWorldEngine {
       this.checkZoneFogClear(m.zoneId, true);
     }
     this.syncDungeonMonsterStats();
+    this.checkAndTriggerDungeonDoorGuideCutscene();
     this.saveProgress();
     this.pushHud(true);
   }
@@ -23626,6 +24167,11 @@ export class RpgWorldEngine {
       return;
     }
 
+    if (this.storyDialog?.kind === 'dungeon_door_guide' && this.dungeonDoorGuideCutscene) {
+      this.updateDungeonDoorGuideCutscene(dt);
+      return;
+    }
+
     if (this.storyDialog?.kind === 'dungeon_boss_summon' && this.dungeonBossSummonCutscene) {
       this.updateDungeonBossSummonCutscene(dt);
       return;
@@ -29276,6 +29822,7 @@ export class RpgWorldEngine {
         }
         this.checkBossSummonWaveCleared();
         this.syncDungeonMonsterStats();
+        this.checkAndTriggerDungeonDoorGuideCutscene();
 
         const heroDist = Math.hypot(this.heroPos.x - tnt.x, this.heroPos.z - tnt.z);
         if (
@@ -30277,6 +30824,7 @@ export class RpgWorldEngine {
                 dropText += ' · +1 💎!';
               }
               this.syncDungeonMonsterStats();
+              this.checkAndTriggerDungeonDoorGuideCutscene();
               this.showBanner(`Penembak Kalah! ${dropText}`, 2.4);
               this.saveProgress();
               this.pushHud(true);
@@ -30977,6 +31525,45 @@ export class RpgWorldEngine {
               : 'Melihat para tawanan menangis di balik sel besi',
           kind: pc.beat === 'hero_promise' ? 'speech' : 'thought',
         });
+      }
+      return labels;
+    }
+
+    if (
+      this.dungeonDoorGuideCutscene &&
+      this.storyDialog?.kind === 'dungeon_door_guide'
+    ) {
+      const dg = this.dungeonDoorGuideCutscene;
+      const gp = projectPoint(
+        dg.guardianMesh.position.x,
+        dg.guardianMesh.position.y + 2.45,
+        dg.guardianMesh.position.z,
+      );
+      if (gp) {
+        labels.push({
+          id: 'door_guide_guardian_lbl',
+          x: gp.x,
+          y: gp.y,
+          title:
+            dg.beat === 'guardian_enter'
+              ? 'Syukurlah semua monster sudah kalah!'
+              : dg.beat === 'lead_to_door'
+                ? 'Ayo ikut ke pintu tantangan itu!'
+                : 'Selesaikan lima pintu agar Bos muncul!',
+          kind: 'speech',
+        });
+      }
+      if (dg.beat !== 'guardian_enter') {
+        const dp = projectPoint(dg.doorPos.x, dg.doorPos.y + 4.35, dg.doorPos.z);
+        if (dp) {
+          labels.push({
+            id: 'door_guide_door_lbl',
+            x: dp.x,
+            y: dp.y,
+            title: `Pintu Tantangan ${dg.doorName}`,
+            kind: 'thought',
+          });
+        }
       }
       return labels;
     }
