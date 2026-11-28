@@ -150,8 +150,10 @@ import {
   freezeStaticSubtree,
   getArchipelagoGroundY,
   getArchipelagoSeabedY,
+  getIslandDiskAtPosition,
   IELTS_TEMPORARILY_LOCKED,
   ISLAND_DISKS,
+  islandContourRadius,
   isWalkableArchipelago,
   OVERWORLD_ANCHORS,
   OVERWORLD_ZONE_DOORS,
@@ -647,10 +649,10 @@ const _skyDayCol = new THREE.Color(0x9cd6fc);
 const _skyDawnCol = new THREE.Color(0xfdba74);
 const _skyDuskCol = new THREE.Color(0xf97316);
 const _skyNightCol = new THREE.Color(0x091128);
-const _skyTenseMistCol = new THREE.Color(0x475569);
-const _skyDayMistCol = new THREE.Color(0xb4c4d4);
-const _mistDayCol = new THREE.Color(0xdbeafe);
-const _mistNightCol = new THREE.Color(0x64748b);
+const _skyTenseMistCol = new THREE.Color(0x232d40);
+const _skyDayMistCol = new THREE.Color(0x5b6a7e);
+const _mistDayCol = new THREE.Color(0x8796ab);
+const _mistNightCol = new THREE.Color(0x263246);
 const _sunDayCol = new THREE.Color(0xfff4d6);
 const _sunDawnCol = new THREE.Color(0xfdba74);
 const _sunNightCol = new THREE.Color(0x93c5fd);
@@ -2926,9 +2928,34 @@ export class RpgWorldEngine {
     return (shift === 'night') === isNight;
   }
 
+  private getClosestVillageIslandId(x: number, z: number): ZoneId | null {
+    let bestId: ZoneId | null = null;
+    let bestEdgeDist = Infinity;
+    for (let i = 0; i < ISLAND_DISKS.length; i++) {
+      const disk = ISLAND_DISKS[i];
+      if (disk.id === 'hub') continue;
+      const edgeDist = Math.hypot(x - disk.cx, z - disk.cz) - disk.radius;
+      if (edgeDist < bestEdgeDist) {
+        bestEdgeDist = edgeDist;
+        bestId = disk.id;
+      }
+    }
+    return bestId;
+  }
+
   private isMonsterOnIsland(m: RoamingMonster, zoneId: ZoneId): boolean {
+    if (m.isSkyMonster) return false;
     const disk = ISLAND_DISKS.find((d) => d.id === zoneId);
-    if (!disk) return m.zoneId === zoneId;
+    if (!disk || disk.id === 'hub') return false;
+    if (m.isSeaMonster) {
+      if (m.zoneId !== zoneId) return false;
+      const seaCoastReach = disk.radius + (zoneId === 'desa_sapaan' ? 24 : 34);
+      const distHome = Math.hypot(m.homeX - disk.cx, m.homeZ - disk.cz);
+      return (
+        distHome <= seaCoastReach &&
+        this.getClosestVillageIslandId(m.homeX, m.homeZ) === zoneId
+      );
+    }
     const reach = disk.radius + 8;
     return (
       Math.hypot(m.homeX - disk.cx, m.homeZ - disk.cz) <= reach ||
@@ -2936,11 +2963,109 @@ export class RpgWorldEngine {
     );
   }
 
+  private getZoneIslandBreakdown(zoneId: ZoneId): {
+    total: number;
+    alive: number;
+    defeated: number;
+    landAlive: number;
+    seaAlive: number;
+  } {
+    let total = 0;
+    let landAlive = 0;
+    let seaAlive = 0;
+    for (let i = 0; i < this.monsters.length; i++) {
+      const m = this.monsters[i];
+      if (!this.isMonsterOnIsland(m, zoneId)) continue;
+      total++;
+      if (m.alive) landAlive++;
+    }
+    for (let i = 0; i < this.seaMonsters.length; i++) {
+      const m = this.seaMonsters[i];
+      if (!this.isMonsterOnIsland(m, zoneId)) continue;
+      total++;
+      if (m.alive) seaAlive++;
+    }
+    const alive = landAlive + seaAlive;
+    return {
+      total,
+      alive,
+      defeated: Math.max(0, total - alive),
+      landAlive,
+      seaAlive,
+    };
+  }
+
   private getZoneIslandCounts(zoneId: ZoneId): { total: number; alive: number; defeated: number } {
-    const islandMobs = this.monsters.filter((m) => this.isMonsterOnIsland(m, zoneId));
-    const total = islandMobs.length;
-    const alive = islandMobs.filter((m) => m.alive).length;
-    return { total, alive, defeated: Math.max(0, total - alive) };
+    const { total, alive, defeated } = this.getZoneIslandBreakdown(zoneId);
+    return { total, alive, defeated };
+  }
+
+  private canOverworldMonsterEngageTarget(
+    m: RoamingMonster,
+    targetX: number,
+    targetZ: number,
+  ): boolean {
+    if (this.worldMode !== 'overworld') return true;
+    const targetIsland = getIslandDiskAtPosition(targetX, targetZ, 5.5);
+
+    if (m.isSeaMonster) {
+      // Coastal sea monsters never attack a player standing on a different island
+      if (targetIsland) {
+        return targetIsland.id === m.zoneId;
+      }
+      if (this.isSwimming || this.isHeroUnderwater() || this.planeMode === 'flying') {
+        const homeDisk = ISLAND_DISKS.find((d) => d.id === m.zoneId);
+        if (homeDisk) {
+          const distHome = Math.hypot(targetX - homeDisk.cx, targetZ - homeDisk.cz);
+          if (
+            distHome <= homeDisk.radius + (m.zoneId === 'desa_sapaan' ? 30 : 42) &&
+            this.getClosestVillageIslandId(targetX, targetZ) === m.zoneId
+          ) {
+            return true;
+          }
+        }
+        return this.getClosestVillageIslandId(targetX, targetZ) === m.zoneId;
+      }
+      return false;
+    }
+
+    if (m.isSkyMonster) {
+      const mobIsland = getIslandDiskAtPosition(m.homeX, m.homeZ, 12);
+      if (mobIsland) {
+        return targetIsland?.id === mobIsland.id;
+      }
+      if (targetIsland) {
+        return targetIsland.id === m.zoneId;
+      }
+      return (
+        this.planeMode === 'flying' ||
+        this.getClosestVillageIslandId(targetX, targetZ) === m.zoneId
+      );
+    }
+
+    const mobIsland = getIslandDiskAtPosition(m.homeX, m.homeZ, 10);
+    if (mobIsland) {
+      return targetIsland?.id === mobIsland.id;
+    }
+    if (targetIsland) {
+      return targetIsland.id === m.zoneId;
+    }
+    return false;
+  }
+
+  private canOverworldShooterEngageTarget(
+    sx: number,
+    sz: number,
+    targetX: number,
+    targetZ: number,
+  ): boolean {
+    if (this.worldMode !== 'overworld') return true;
+    const shooterIsland = getIslandDiskAtPosition(sx, sz, 10);
+    const targetIsland = getIslandDiskAtPosition(targetX, targetZ, 5.5);
+    if (shooterIsland) {
+      return targetIsland?.id === shooterIsland.id;
+    }
+    return true;
   }
 
   private checkZoneFogClear(zoneId: ZoneId, announce = true): boolean {
@@ -2975,7 +3100,7 @@ export class RpgWorldEngine {
       soundEngine.playFanfare();
       this.spawnBurst(this.heroPos.x, this.heroPos.y + 2.0, this.heroPos.z, 0x34d399, 40);
       this.showBanner(
-        `☀️ Seluruh monster di ${ZONE_INFO[zoneId].name} berhasil dikalahkan! Kabut pulau menghilang dan wilayah bebas sepenuhnya!`,
+        `☀️ Seluruh monster darat & pesisir di ${ZONE_INFO[zoneId].name} berhasil dikalahkan! Kabut pulau menghilang dan wilayah bebas sepenuhnya!`,
         5.8,
       );
       this.saveProgress();
@@ -2987,20 +3112,22 @@ export class RpgWorldEngine {
   private getNearestGuidedOutsideMonster(zoneId: ZoneId): RoamingMonster | null {
     let best: RoamingMonster | null = null;
     let bestDistSq = Infinity;
-    for (let i = 0; i < this.monsters.length; i++) {
-      const m = this.monsters[i];
-      if (!m.alive || !this.isMonsterOnIsland(m, zoneId)) continue;
-      const dSq = (m.x - this.heroPos.x) ** 2 + (m.z - this.heroPos.z) ** 2;
-      if (dSq < bestDistSq) {
-        bestDistSq = dSq;
-        best = m;
+    for (const pool of [this.monsters, this.seaMonsters]) {
+      for (let i = 0; i < pool.length; i++) {
+        const m = pool[i];
+        if (!m.alive || !this.isMonsterOnIsland(m, zoneId)) continue;
+        const dSq = (m.x - this.heroPos.x) ** 2 + (m.z - this.heroPos.z) ** 2;
+        if (dSq < bestDistSq) {
+          bestDistSq = dSq;
+          best = m;
+        }
       }
     }
     return best;
   }
 
   private guidePlayerTowardRemainingOutsideMonster(zoneId: ZoneId): void {
-    const { alive } = this.getZoneIslandCounts(zoneId);
+    const { alive, landAlive, seaAlive } = this.getZoneIslandBreakdown(zoneId);
     if (alive <= 0) {
       if (this.guidedOutsideZoneId === zoneId) this.guidedOutsideZoneId = null;
       return;
@@ -3008,6 +3135,12 @@ export class RpgWorldEngine {
     this.guidedOutsideZoneId = zoneId;
     const nearest = this.getNearestGuidedOutsideMonster(zoneId);
     const activeDef = getActiveZoneNpcDef(zoneId, this.getCurrentDayPhase() === 'malam');
+    const detailTxt =
+      landAlive > 0 && seaAlive > 0
+        ? ` (${landAlive} darat + ${seaAlive} laut pesisir)`
+        : seaAlive > 0
+        ? ` (monster laut pesisir — serang dari tepi pantai/berenang!)`
+        : '';
     if (nearest) {
       this.heroYaw = Math.atan2(nearest.x - this.heroPos.x, nearest.z - this.heroPos.z);
       this.hero.body.rotation.y = this.heroYaw;
@@ -3023,12 +3156,12 @@ export class RpgWorldEngine {
       }
       soundEngine.playGuardianCall();
       this.showBanner(
-        `🧭 ${activeDef.name} menuntunmu menuju ${nearest.name} (${Math.round(len)}m) — habisi ${alive} monster luar tersisa di ${ZONE_INFO[zoneId].name}!`,
+        `🧭 ${activeDef.name} menuntunmu menuju ${nearest.name} (${Math.round(len)}m) — habisi ${alive} monster tersisa${detailTxt} di ${ZONE_INFO[zoneId].name}!`,
         6.2,
       );
     } else {
       this.showBanner(
-        `🧭 ${activeDef.name} menuntunmu: Habisi ${alive} monster luar tersisa di ${ZONE_INFO[zoneId].name}!`,
+        `🧭 ${activeDef.name} menuntunmu: Habisi ${alive} monster tersisa${detailTxt} di ${ZONE_INFO[zoneId].name}!`,
         5.5,
       );
     }
@@ -4360,14 +4493,17 @@ export class RpgWorldEngine {
       const fade = this.zoneMistFade[zId] ?? (this.liberatedZones.has(zId) ? 0 : 1);
       mist.visible = fade > 0.01;
       const mat = mist.material as THREE.MeshBasicMaterial;
-      mat.opacity = 0.2 * fade;
+      mat.opacity = 0.42 * fade;
       mist.scale.setScalar(1 + (1 - fade) * 0.55);
     });
     if (this.worldMistMesh && this.worldMistSeeds.length > 0) {
+      const hubCleared = this.liberatedZones.size >= 6 ? 0 : 1;
       for (let i = 0; i < this.worldMistSeeds.length; i++) {
         const s = this.worldMistSeeds[i];
         const fade =
-          s.zoneId && s.zoneId !== 'hub'
+          s.zoneId === 'hub'
+            ? hubCleared
+            : s.zoneId
             ? this.zoneMistFade[s.zoneId] ?? (this.liberatedZones.has(s.zoneId) ? 0 : 1)
             : 1;
         _cloudPos.set(s.baseX, s.baseY + (1 - fade) * 4.5, s.baseZ);
@@ -5053,17 +5189,22 @@ export class RpgWorldEngine {
     this.syncOverworldMonstersByDiff();
     this.initSeaMonsters();
     this.initSkyMonsters();
-    if (
-      (hasSavedWaveMission || canRestoreNight || canRestoreDay) &&
-      this.restoredDefeatedSeaSkyIds.size > 0
-    ) {
-      for (const pool of [this.seaMonsters, this.skyMonsters]) {
-        for (const m of pool) {
-          if (!this.restoredDefeatedSeaSkyIds.has(m.id)) continue;
+    if (this.restoredDefeatedSeaSkyIds.size > 0 || this.liberatedZones.size > 0) {
+      for (const m of this.seaMonsters) {
+        if (
+          this.restoredDefeatedSeaSkyIds.has(m.id) ||
+          (this.liberatedZones.has(m.zoneId) && this.isMonsterOnIsland(m, m.zoneId))
+        ) {
           m.alive = false;
           m.respawnTimer = 0;
           m.mesh.visible = false;
         }
+      }
+      for (const m of this.skyMonsters) {
+        if (!this.restoredDefeatedSeaSkyIds.has(m.id)) continue;
+        m.alive = false;
+        m.respawnTimer = 0;
+        m.mesh.visible = false;
       }
     }
     this.restoredDefeatedSeaSkyIds.clear();
@@ -5593,13 +5734,17 @@ export class RpgWorldEngine {
   ): void {
     const myUid = this.localMultiplayerUid || 'local';
     m.alive = false;
-    m.respawnTimer = this.isOverworldChallengeNoRespawn()
-      ? 0
-      : m.isSeaMonster
-      ? 45
-      : m.isSkyMonster
-      ? 50
-      : 0;
+    m.respawnTimer =
+      this.isOverworldChallengeNoRespawn() ||
+      this.isMonsterOnIsland(m, m.zoneId) ||
+      this.captiveRescuedZones.has(m.zoneId) ||
+      this.liberatedZones.has(m.zoneId)
+        ? 0
+        : m.isSeaMonster
+        ? 45
+        : m.isSkyMonster
+        ? 50
+        : 0;
     m.aggroActive = false;
     m.windupTimer = -1;
     m.lungeTimer = 0;
@@ -11285,11 +11430,13 @@ export class RpgWorldEngine {
       for (let di = 0; di < ISLAND_DISKS.length; di++) {
         const disk = ISLAND_DISKS[di];
         const dist = Math.hypot(this.heroPos.x - disk.cx, this.heroPos.z - disk.cz);
-        if (dist <= disk.radius + 14) {
+        const effR = islandContourRadius(disk, this.heroPos.x, this.heroPos.z);
+        if (dist <= effR + 22) {
+          const boundaryFade = 1 - THREE.MathUtils.smoothstep(dist, effR + 6, effR + 22);
           if (disk.id === 'hub') {
-            if (this.liberatedZones.size >= 6) islandClearRatio = 1;
+            if (this.liberatedZones.size >= 6) islandClearRatio = boundaryFade;
           } else if (this.liberatedZones.has(disk.id)) {
-            islandClearRatio = 1 - (this.zoneMistFade[disk.id] ?? 0);
+            islandClearRatio = (1 - (this.zoneMistFade[disk.id] ?? 0)) * boundaryFade;
           }
           break;
         }
@@ -11311,11 +11458,11 @@ export class RpgWorldEngine {
     if (inPrologueScene2) {
       _skyColorScratch.lerp(_hemiGndNightCol, 0.35 + stormMistT * 0.45);
     } else if (!inProloguePeaceful) {
-      // Kabut tebal menyelimuti pulau yang belum dibebaskan; pulau yang bebas bersinar cerah
-      _skyColorScratch.lerp(_skyDayMistCol, effectiveDaylight * 0.62 * mistBlend);
+      // Kabut tebal & mencekam menyelimuti seluruh pulau/desa yang belum bebas; pulau bebas bersinar normal
+      _skyColorScratch.lerp(_skyDayMistCol, effectiveDaylight * 0.72 * mistBlend);
       _skyColorScratch.lerp(
         _skyTenseMistCol,
-        THREE.MathUtils.lerp(0.42, 0.36, effectiveDaylight) * mistBlend,
+        THREE.MathUtils.lerp(0.62, 0.54, effectiveDaylight) * mistBlend,
       );
     }
 
@@ -11323,7 +11470,7 @@ export class RpgWorldEngine {
     if (this.scene.fog instanceof THREE.FogExp2) {
       this.scene.fog.color.copy(_skyColorScratch);
       const mistFogDensity =
-        THREE.MathUtils.lerp(0.042, 0.029, daylight) + twilightGlow * 0.005;
+        THREE.MathUtils.lerp(0.05, 0.036, daylight) + twilightGlow * 0.006;
       const clearFogDensity = THREE.MathUtils.lerp(0.0068, 0.0042, effectiveDaylight);
       this.scene.fog.density = inPrologueScene2
         ? THREE.MathUtils.lerp(0.014, this.storyTimer >= 10.2 ? 0.028 : 0.036, stormMistT)
@@ -11334,15 +11481,15 @@ export class RpgWorldEngine {
 
     if (this.worldMistMesh && this.worldMistMat) {
       this.worldMistMesh.visible = !inProloguePeaceful;
-      this.worldMistMat.color.copy(_mistNightCol).lerp(_mistDayCol, daylight * 0.86);
+      this.worldMistMat.color.copy(_mistNightCol).lerp(_mistDayCol, daylight * 0.78);
       this.worldMistMat.opacity = inPrologueScene2
-        ? THREE.MathUtils.lerp(0.06, 0.36, stormMistT)
-        : THREE.MathUtils.lerp(0.36, 0.27, daylight) + twilightGlow * 0.04;
+        ? THREE.MathUtils.lerp(0.08, 0.48, stormMistT)
+        : THREE.MathUtils.lerp(0.56, 0.44, daylight) + twilightGlow * 0.05;
     }
 
     const moodLightFactor = inProloguePeaceful
       ? 1.0
-      : THREE.MathUtils.lerp(THREE.MathUtils.lerp(0.92, 0.78, daylight), 1.06, islandClearRatio);
+      : THREE.MathUtils.lerp(THREE.MathUtils.lerp(0.76, 0.62, daylight), 1.08, islandClearRatio);
     _hemiSkyScratch
       .copy(_hemiSkyNightCol)
       .lerp(_hemiSkyDayCol, effectiveDaylight)
@@ -12819,14 +12966,28 @@ export class RpgWorldEngine {
           ? ` (Sebagai catatan, Pita Merah 3D tersembunyi masih ada di dalam gua kalau ingin kamu ambil kembali.)`
           : '';
 
+        const { landAlive, seaAlive } = this.getZoneIslandBreakdown(exitedZoneId);
+        const outsideDescEn =
+          landAlive > 0 && seaAlive > 0
+            ? `${remOutside} monster(s) (${landAlive} on the island and ${seaAlive} in coastal waters)`
+            : seaAlive > 0
+            ? `${remOutside} coastal sea monster(s)`
+            : `${remOutside} monster(s)`;
+        const outsideDescId =
+          landAlive > 0 && seaAlive > 0
+            ? `${remOutside} monster (${landAlive} di daratan pulau dan ${seaAlive} monster laut di pesisir)`
+            : seaAlive > 0
+            ? `${remOutside} monster laut di pesisir`
+            : `${remOutside} monster di luar gua`;
+
         const missionTextEn =
           remOutside > 0
-            ? `${personalizePlayerText(story.rescueGuardianEn, gAddr)} ${story.captiveName} is safely back and ${boss.name} is defeated! Your final mission is to defeat the remaining ${remOutside} monster(s) around ${ZONE_INFO[exitedZoneId].name} so the island fog lifts forever!${ribbonReminderEn}`
+            ? `${personalizePlayerText(story.rescueGuardianEn, gAddr)} ${story.captiveName} is safely back and ${boss.name} is defeated! Your final mission is to defeat the remaining ${outsideDescEn} around ${ZONE_INFO[exitedZoneId].name} so the island fog lifts forever!${ribbonReminderEn}`
             : `${personalizePlayerText(story.rescueGuardianEn, gAddr)} ${story.captiveName} is safe, ${boss.name} is defeated, and every monster in ${ZONE_INFO[exitedZoneId].name} is gone so the island fog has completely lifted!${ribbonReminderEn}`;
 
         const missionTextId =
           remOutside > 0
-            ? `${story.captiveName} berhasil kembali dengan selamat dan Bos ${boss.name} di ${ZONE_INFO[exitedZoneId].name} telah dikalahkan! Misi terakhirmu adalah menghabisi ${remOutside} monster tersisa di luar gua di pulau ${ZONE_INFO[exitedZoneId].name} agar kabut pulau ini hilang sepenuhnya!${ribbonReminderId}`
+            ? `${story.captiveName} berhasil kembali dengan selamat dan Bos ${boss.name} di ${ZONE_INFO[exitedZoneId].name} telah dikalahkan! Misi terakhirmu adalah menghabisi ${outsideDescId} pulau ${ZONE_INFO[exitedZoneId].name} agar kabut pulau ini hilang sepenuhnya!${ribbonReminderId}`
             : `${story.captiveName} selamat, Bos ${boss.name} kalah, dan seluruh monster di pulau ${ZONE_INFO[exitedZoneId].name} telah habis sehingga kabut pulau pun menghilang cerah!${ribbonReminderId}`;
 
         this.storyDialog = {
@@ -13060,14 +13221,28 @@ export class RpgWorldEngine {
       ? ` (Sebagai catatan, Pita Merah 3D tersembunyi masih ada di dalam gua kalau ingin kamu ambil kembali.)`
       : '';
 
+    const { landAlive, seaAlive } = this.getZoneIslandBreakdown(zoneId);
+    const outsideDescEn =
+      landAlive > 0 && seaAlive > 0
+        ? `${remOutside} monster(s) (${landAlive} on the island and ${seaAlive} in coastal waters)`
+        : seaAlive > 0
+        ? `${remOutside} coastal sea monster(s)`
+        : `${remOutside} monster(s)`;
+    const outsideDescId =
+      landAlive > 0 && seaAlive > 0
+        ? `${remOutside} monster (${landAlive} di daratan pulau dan ${seaAlive} monster laut di pesisir)`
+        : seaAlive > 0
+        ? `${remOutside} monster laut di pesisir`
+        : `${remOutside} monster di luar gua`;
+
     const missionTextEn =
       remOutside > 0
-        ? `${personalizePlayerText(story.rescueGuardianEn, gAddr)} ${rescuedDisplayEn} are safely back and ${boss.name} is defeated! Your final mission is to defeat the remaining ${remOutside} monster(s) around ${ZONE_INFO[zoneId].name} so the island fog lifts forever!${ribbonReminderEn}`
+        ? `${personalizePlayerText(story.rescueGuardianEn, gAddr)} ${rescuedDisplayEn} are safely back and ${boss.name} is defeated! Your final mission is to defeat the remaining ${outsideDescEn} around ${ZONE_INFO[zoneId].name} so the island fog lifts forever!${ribbonReminderEn}`
         : `${personalizePlayerText(story.rescueGuardianEn, gAddr)} ${rescuedDisplayEn} are safe, ${boss.name} is defeated, and every monster in ${ZONE_INFO[zoneId].name} is gone so the island fog has completely lifted!${ribbonReminderEn}`;
 
     const missionTextId =
       remOutside > 0
-        ? `${rescuedDisplayName} berhasil kembali dengan selamat dan Bos ${boss.name} di ${ZONE_INFO[zoneId].name} telah dikalahkan! Misi terakhirmu adalah menghabisi ${remOutside} monster tersisa di luar gua di pulau ${ZONE_INFO[zoneId].name} agar kabut pulau ini hilang sepenuhnya!${ribbonReminderId}`
+        ? `${rescuedDisplayName} berhasil kembali dengan selamat dan Bos ${boss.name} di ${ZONE_INFO[zoneId].name} telah dikalahkan! Misi terakhirmu adalah menghabisi ${outsideDescId} pulau ${ZONE_INFO[zoneId].name} agar kabut pulau ini hilang sepenuhnya!${ribbonReminderId}`
         : `${rescuedDisplayName} selamat, Bos ${boss.name} kalah, dan seluruh monster di pulau ${ZONE_INFO[zoneId].name} telah habis sehingga kabut pulau pun menghilang cerah!${ribbonReminderId}`;
 
     this.reunionCutscene = {
@@ -16422,13 +16597,17 @@ export class RpgWorldEngine {
         } else {
           // NPC-driven vehicle crushes monster cleanly
           m.alive = false;
-          m.respawnTimer = this.isOverworldChallengeNoRespawn()
-            ? 0
-            : m.isSeaMonster
-            ? 45
-            : m.isSkyMonster
-            ? 50
-            : 0;
+          m.respawnTimer =
+            this.isOverworldChallengeNoRespawn() ||
+            this.isMonsterOnIsland(m, m.zoneId) ||
+            this.captiveRescuedZones.has(m.zoneId) ||
+            this.liberatedZones.has(m.zoneId)
+              ? 0
+              : m.isSeaMonster
+              ? 45
+              : m.isSkyMonster
+              ? 50
+              : 0;
           m.aggroActive = false;
           m.windupTimer = -1;
           m.lungeTimer = 0;
@@ -18754,7 +18933,10 @@ export class RpgWorldEngine {
     m.respawnTimer =
       this.worldMode === 'dungeon' ||
       this.worldMode === 'ocean' ||
-      this.isOverworldChallengeNoRespawn()
+      this.isOverworldChallengeNoRespawn() ||
+      this.isMonsterOnIsland(m, m.zoneId) ||
+      this.captiveRescuedZones.has(m.zoneId) ||
+      this.liberatedZones.has(m.zoneId)
         ? 0
         : m.isSeaMonster
         ? 45
@@ -21387,23 +21569,24 @@ export class RpgWorldEngine {
 
     let seedIdx = 0;
     for (const disk of ISLAND_DISKS) {
-      const count = disk.id === 'desa_sapaan' ? 18 : 11;
+      const count = disk.id === 'desa_sapaan' ? 24 : 22;
       for (let i = 0; i < count; i++) {
         const angle = (i / count) * Math.PI * 2 + (seedIdx % 5) * 0.21;
-        const rRatio = disk.id === 'desa_sapaan' ? 0.14 + ((i * 7) % 10) * 0.082 : 0.18 + ((i * 5) % 10) * 0.08;
+        const rRatio = 0.14 + ((i * 7) % 10) * 0.088;
         const rad = disk.radius * rRatio;
         const wx = disk.cx + Math.cos(angle) * rad;
         const wz = disk.cz + Math.sin(angle) * rad;
         const gy = Math.max(0.2, getArchipelagoGroundY(wx, wz));
-        const scaleW = 14.0 + (seedIdx % 5) * 3.4;
-        const scaleH = 4.2 + (seedIdx % 3) * 1.1;
+        const scaleW = 16.5 + (seedIdx % 5) * 4.2;
+        const scaleH = 5.4 + (seedIdx % 3) * 1.45;
+        const layerOffset = i % 3 === 0 ? 2.6 : 0.45 + (seedIdx % 3) * 0.55;
         addSeed(
           wx,
-          gy + 0.35 + (seedIdx % 3) * 0.45,
+          gy + layerOffset,
           wz,
           scaleW,
           scaleH,
-          scaleW * 0.92,
+          scaleW * 0.94,
           seedIdx,
           disk.id,
         );
@@ -21411,12 +21594,23 @@ export class RpgWorldEngine {
       }
     }
 
+    const bridgeZoneMap: Record<string, ZoneId> = {
+      bridge_desa: 'desa_sapaan',
+      bridge_pasar: 'pasar_rasa',
+      bridge_satwa: 'hutan_satwa',
+      bridge_gerbang: 'gerbang_kota',
+      viaduct_gerbang: 'gerbang_kota',
+      highway_gerbang: 'gerbang_kota',
+      bridge_menara: 'menara_waktu',
+      bridge_portal: 'gua_portal',
+    };
     for (const br of BRIDGE_SPANS) {
+      const brZoneId = bridgeZoneMap[br.id];
       for (const u of [0.22, 0.52, 0.82]) {
         const wx = THREE.MathUtils.lerp(br.ax, br.bx, u);
         const wz = THREE.MathUtils.lerp(br.az, br.bz, u);
         const wy = THREE.MathUtils.lerp(br.ay, br.by, u) + 0.6;
-        addSeed(wx, wy, wz, 15.5, 4.4, 15.5, seedIdx);
+        addSeed(wx, wy, wz, 17.0, 5.2, 17.0, seedIdx, brZoneId);
         seedIdx++;
       }
     }
@@ -25468,20 +25662,32 @@ export class RpgWorldEngine {
     rr.timer = 0;
     this.applyCaveGardenTransformedState(true);
 
-    const { alive: remOutside } = this.getZoneIslandCounts(rr.zoneId);
+    const { alive: remOutside, landAlive, seaAlive } = this.getZoneIslandBreakdown(rr.zoneId);
     const activeDef = getActiveZoneNpcDef(rr.zoneId, this.getCurrentDayPhase() === 'malam');
     const story = ZONE_CAVE_STORIES[rr.zoneId];
     const gName = activeDef.name || story.guardianName;
     const pName = this.getPlayerDisplayName();
     const gAddr = formatGuardianAddress(activeDef, pName, this.localCharacterId);
+    const outsideDescEn =
+      landAlive > 0 && seaAlive > 0
+        ? `${remOutside} remaining monster(s) (${landAlive} on land and ${seaAlive} in coastal waters)`
+        : seaAlive > 0
+        ? `${remOutside} remaining coastal sea monster(s)`
+        : `${remOutside} remaining monster(s) outside`;
+    const outsideDescId =
+      landAlive > 0 && seaAlive > 0
+        ? `${remOutside} monster (${landAlive} di daratan dan ${seaAlive} monster laut di pesisir)`
+        : seaAlive > 0
+        ? `${remOutside} monster laut di pesisir pulau`
+        : `${remOutside} monster di luar gua`;
 
     const exitEn =
       remOutside > 0
-        ? `The Front Cave Door is now wide open! Step outside with me, ${gAddr}—I will lead you straight to the ${remOutside} remaining monster(s) outside so we defeat them all!`
+        ? `The Front Cave Door is now wide open! Step outside with me, ${gAddr}—I will lead you straight to the ${outsideDescEn} so we defeat them all!`
         : `The Front Cave Door is now wide open! Come step outside into the bright island, ${gAddr}!`;
     const exitId =
       remOutside > 0
-        ? `Pintu Depan Gua sudah terbuka lebar! Ayo kita keluar bersama, ${gAddr}—aku akan menuntunmu ke luar karena masih ada ${remOutside} monster di luar gua yang harus kita habisi!`
+        ? `Pintu Depan Gua sudah terbuka lebar! Ayo kita keluar bersama, ${gAddr}—aku akan menuntunmu ke luar karena masih ada ${outsideDescId} yang harus kita habisi!`
         : `Pintu Depan Gua sudah terbuka lebar! Ayo kita keluar ke pulau yang kini cerah dan asri, ${gAddr}!`;
 
     this.storyDialog = {
@@ -28309,15 +28515,24 @@ export class RpgWorldEngine {
           ring.rotation.z += dt * 2.5;
         }
 
+        const canEngageBrawler =
+          this.worldMode !== 'overworld' ||
+          chasingAmbushNpc ||
+          this.canOverworldMonsterEngageTarget(m, nearestBrawlerTgt.x, nearestBrawlerTgt.z);
         const aggroRange =
           this.worldMode === 'overworld' ? spec.aggroRange : calmMult < 0.7 ? 7.8 : 12.8;
-        if (this.phase === 'playing' && (distH < aggroRange || chasingAmbushNpc)) {
+        if (this.phase === 'playing' && canEngageBrawler && (distH < aggroRange || chasingAmbushNpc)) {
           if (!m.aggroActive) {
             soundEngine.playMonster();
           }
           m.aggroActive = true;
-        } else if (this.worldMode === 'overworld' && !m.isVillageAmbushTarget && distH > aggroRange + 7.0) {
+        } else if (
+          this.worldMode === 'overworld' &&
+          (!canEngageBrawler || (!m.isVillageAmbushTarget && distH > aggroRange + 7.0))
+        ) {
           m.aggroActive = false;
+          m.windupTimer = -1;
+          m.lungeTimer = 0;
         }
 
         let nextMx = m.x;
@@ -28665,7 +28880,10 @@ export class RpgWorldEngine {
             : 18.5
           : 16.5;
 
-      if (this.phase === 'playing' && distH < quizAggroRange) {
+      const canEngageQuiz =
+        this.worldMode !== 'overworld' ||
+        this.canOverworldMonsterEngageTarget(m, nearestBrawlerTgt.x, nearestBrawlerTgt.z);
+      if (this.phase === 'playing' && canEngageQuiz && distH < quizAggroRange) {
         if (!m.aggroActive) {
           soundEngine.playMonster();
           m.idleRestTimer = 0;
@@ -28674,8 +28892,7 @@ export class RpgWorldEngine {
         m.aggroActive = true;
       } else if (
         this.worldMode === 'overworld' &&
-        !isEnraged &&
-        distH > quizAggroRange + 14.0
+        (!canEngageQuiz || (!isEnraged && distH > quizAggroRange + 14.0))
       ) {
         m.aggroActive = false;
         m.windupTimer = -1;
@@ -29035,21 +29252,21 @@ export class RpgWorldEngine {
         mist.visible =
           this.storyDialog.step >= 2 ||
           (this.storyDialog.step === 1 && this.storyTimer >= 10.2);
-        mat.opacity = 0.2;
+        mat.opacity = 0.42;
         mist.scale.setScalar(1);
       } else if (fade <= 0.01) {
         mist.visible = false;
       } else if (!canVisCull) {
         mist.visible = true;
-        mat.opacity = 0.2 * fade;
+        mat.opacity = 0.42 * fade;
         mist.scale.setScalar(1 + (1 - fade) * 0.55);
       } else {
         const dxH = this.heroPos.x - mist.position.x;
         const dzH = this.heroPos.z - mist.position.z;
         const dxC = camX - mist.position.x;
         const dzC = camZ - mist.position.z;
-        mist.visible = Math.min(dxH * dxH + dzH * dzH, dxC * dxC + dzC * dzC) <= 145 * 145;
-        mat.opacity = 0.2 * fade;
+        mist.visible = Math.min(dxH * dxH + dzH * dzH, dxC * dxC + dzC * dzC) <= 220 * 220;
+        mat.opacity = 0.42 * fade;
         mist.scale.setScalar(1 + (1 - fade) * 0.55);
       }
     });
@@ -29184,10 +29401,13 @@ export class RpgWorldEngine {
       this.cloudsMesh.instanceMatrix.needsUpdate = true;
 
       if (this.worldMistMesh && this.worldMistMesh.visible) {
+        const hubCleared = this.liberatedZones.size >= 6 ? 0 : 1;
         for (let i = 0; i < this.worldMistSeeds.length; i++) {
           const s = this.worldMistSeeds[i];
           const fade =
-            s.zoneId && s.zoneId !== 'hub'
+            s.zoneId === 'hub'
+              ? hubCleared
+              : s.zoneId
               ? this.zoneMistFade[s.zoneId] ?? (this.liberatedZones.has(s.zoneId) ? 0 : 1)
               : 1;
           const mx = s.baseX + Math.sin(this.elapsed * 0.24 + s.phase) * s.driftX;
@@ -32132,6 +32352,7 @@ export class RpgWorldEngine {
     let bestMonsterDist = 5.0;
     for (const m of this.getActiveMonsters()) {
       if (!m.alive || m.angryTimer > 0 || m.isCaveMob || m.combatOnly || this.isBossSquadProtectedEnemy(m.id)) continue;
+      if (this.worldMode === 'overworld' && !this.canOverworldMonsterEngageTarget(m, this.heroPos.x, this.heroPos.z)) continue;
       if (this.worldMode === 'dungeon' && Math.abs((m.y ?? 0) - this.heroPos.y) > 3.5) continue;
       if (m.isSkyMonster && Math.abs((m.y ?? 12) - (this.heroPos.y + 1.4)) > 3.4) continue;
       const d = Math.hypot(this.heroPos.x - m.x, this.heroPos.z - m.z);
@@ -33053,23 +33274,28 @@ export class RpgWorldEngine {
         this.worldMode === 'overworld' && this.multiplayerActive
           ? this.getNearestPlayerTarget(s.x, s.z, 'overworld')
           : {
+              x: this.heroPos.x,
+              z: this.heroPos.z,
               dx: this.heroPos.x - s.x,
               dz: this.heroPos.z - s.z,
               dist: Math.hypot(this.heroPos.x - s.x, this.heroPos.z - s.z),
             };
-      const lookYaw = Math.atan2(nearestPlayer.dx, nearestPlayer.dz);
+      const canShooterEngage =
+        this.worldMode !== 'overworld' ||
+        this.canOverworldShooterEngageTarget(s.x, s.z, nearestPlayer.x, nearestPlayer.z);
+      const lookYaw = canShooterEngage ? Math.atan2(nearestPlayer.dx, nearestPlayer.dz) : s.mesh.rotation.y;
       s.mesh.rotation.y = lookYaw;
 
       s.cooldown -= dt;
       const distToHero = nearestPlayer.dist;
       const aimAlpha =
-        distToHero < 26 && s.cooldown < 0.75
+        canShooterEngage && distToHero < 26 && s.cooldown < 0.75
           ? THREE.MathUtils.clamp(1 - s.cooldown / 0.75, 0.25, 1)
-          : distToHero < 26
+          : canShooterEngage && distToHero < 26
           ? 0.22
           : 0.02;
 
-      if (s.cooldown <= 0 && distToHero < 26) {
+      if (canShooterEngage && s.cooldown <= 0 && distToHero < 26) {
         s.cooldown = diff.shooterCooldown;
         s.recoilTimer = 0.28;
         const muzzleX = s.x + Math.sin(lookYaw) * 1.15;
@@ -35401,18 +35627,24 @@ export class RpgWorldEngine {
       ? spec.aggroRange
       : Math.min(11.5, spec.aggroRange * 0.48);
 
-    if (this.phase === 'playing' && distH < effectiveAggro) {
+    const canEngageSea =
+      this.worldMode !== 'overworld' ||
+      this.canOverworldMonsterEngageTarget(m, nearestSeaTgt.x, nearestSeaTgt.z);
+    if (this.phase === 'playing' && canEngageSea && distH < effectiveAggro) {
       if (!m.aggroActive && this.isSwimming) {
         soundEngine.playMonster();
       }
       m.aggroActive = true;
-    } else if (distH > spec.aggroRange + 10) {
+    } else if (!canEngageSea || distH > spec.aggroRange + 10) {
       m.aggroActive = false;
+      m.windupTimer = -1;
+      m.lungeTimer = 0;
     }
 
     // Charybdis Maw & Abyssal Kraken whirlpool suction current when hero is swimming nearby!
     if (
       this.phase === 'playing' &&
+      canEngageSea &&
       this.isSwimming &&
       (m.type === 'charybdis_maw' || m.type === 'abyssal_kraken')
     ) {
@@ -35710,7 +35942,10 @@ export class RpgWorldEngine {
     const skyAggroRange = isQuizSky ? Math.max(22.0, spec.aggroRange * 1.32) : spec.aggroRange;
     const isQuizSkyEnraged = isQuizSky && (m.stanceHp ?? spec.stanceHp) < spec.stanceHp;
 
-    if (this.phase === 'playing' && distH < skyAggroRange) {
+    const canEngageSky =
+      this.worldMode !== 'overworld' ||
+      this.canOverworldMonsterEngageTarget(m, nearestSkyTgt.x, nearestSkyTgt.z);
+    if (this.phase === 'playing' && canEngageSky && distH < skyAggroRange) {
       if (!m.aggroActive) {
         soundEngine.playMonster();
         if (isQuizSky) {
@@ -35718,7 +35953,7 @@ export class RpgWorldEngine {
         }
       }
       m.aggroActive = true;
-    } else if (!isQuizSkyEnraged && distH > skyAggroRange + 14) {
+    } else if (!canEngageSky || (!isQuizSkyEnraged && distH > skyAggroRange + 14)) {
       m.aggroActive = false;
       m.windupTimer = -1;
       m.lungeTimer = 0;
@@ -37265,28 +37500,16 @@ export class RpgWorldEngine {
     );
     const defeatedAll = Math.max(0, totalAll - remainingAll);
 
-    const zoneSurfaceRemaining =
-      this.monsters.filter((m) => m.alive && m.zoneId === zoneId).length +
-      this.seaMonsters.filter((m) => m.alive && m.zoneId === zoneId).length +
-      this.skyMonsters.filter((m) => m.alive && m.zoneId === zoneId).length;
-    const zoneFallbackTotal =
-      this.monsters.filter((m) => m.zoneId === zoneId).length +
-      this.seaMonsters.filter((m) => m.zoneId === zoneId).length +
-      this.skyMonsters.filter((m) => m.zoneId === zoneId).length;
-    const zoneSurfaceTotal = Math.max(
-      this.nightZoneTotals[zoneId] || zoneFallbackTotal,
-      zoneSurfaceRemaining,
-    );
-    const zoneSurfaceDefeated = Math.max(0, zoneSurfaceTotal - zoneSurfaceRemaining);
     const zoneIsland = this.getZoneIslandCounts(zoneId);
+    const zoneSurfaceRemaining = zoneIsland.alive;
+    const zoneSurfaceTotal = zoneIsland.total;
+    const zoneSurfaceDefeated = zoneIsland.defeated;
     const surfaceCombatRemaining =
-      this.monsters.filter((m) => m.alive && m.combatOnly).length +
-      this.seaMonsters.filter((m) => m.alive && m.combatOnly).length +
-      this.skyMonsters.filter((m) => m.alive && m.combatOnly).length;
+      this.monsters.filter((m) => m.alive && m.combatOnly && this.isMonsterOnIsland(m, zoneId)).length +
+      this.seaMonsters.filter((m) => m.alive && m.combatOnly && this.isMonsterOnIsland(m, zoneId)).length;
     const surfaceQuizRemaining =
-      this.monsters.filter((m) => m.alive && !m.combatOnly).length +
-      this.seaMonsters.filter((m) => m.alive && !m.combatOnly).length +
-      this.skyMonsters.filter((m) => m.alive && !m.combatOnly).length;
+      this.monsters.filter((m) => m.alive && !m.combatOnly && this.isMonsterOnIsland(m, zoneId)).length +
+      this.seaMonsters.filter((m) => m.alive && !m.combatOnly && this.isMonsterOnIsland(m, zoneId)).length;
 
     const phase = this.getCurrentDayPhase();
     if (phase === 'malam') {

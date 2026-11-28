@@ -16,6 +16,7 @@ import { MaterialPalette, SurfaceMaterial } from './materials';
 import {
   getArchipelagoGroundY,
   getArchipelagoZoneForPosition,
+  ISLAND_DISKS,
 } from './archipelagoWorld';
 import { createMinecraftHouse } from './minecraftVillage';
 import { createEnemyBlasterMesh, createWeaponMesh } from './weaponModels';
@@ -3447,22 +3448,27 @@ export function createIslandRibbonPedestal(
   };
 }
 
-// 7. 6 Atmospheric Area Mists across Islands (lift dramatically when Zone Boss is beaten!)
+// 7. 6 Atmospheric Area Mists across Islands (lift dramatically when Zone Boss & island monsters are beaten!)
 export function createAreaMists(): Map<ZoneId, THREE.Mesh> {
   const mists = new Map<ZoneId, THREE.Mesh>();
   const zones = Object.keys(ZONE_INFO) as ZoneId[];
   for (const zId of zones) {
     const info = ZONE_INFO[zId];
-    const gy = getArchipelagoGroundY(info.x, info.z);
+    const disk = ISLAND_DISKS.find((d) => d.id === zId);
+    const cx = disk?.cx ?? info.x;
+    const cz = disk?.cz ?? info.z;
+    const gy = getArchipelagoGroundY(cx, cz);
+    const rTop = (disk?.radius ?? 56) * 0.86;
+    const rBot = (disk?.radius ?? 56) * 0.96;
     const mat = new THREE.MeshBasicMaterial({
-      color: new THREE.Color(info.badgeColor),
+      color: new THREE.Color(0x334155),
       transparent: true,
-      opacity: 0.2,
+      opacity: 0.42,
       depthWrite: false,
       side: THREE.DoubleSide,
     });
-    const ring = new THREE.Mesh(new THREE.CylinderGeometry(12.5, 14.5, 4.4, 24, 1, true), mat);
-    ring.position.set(info.x, gy + 2.2, info.z);
+    const ring = new THREE.Mesh(new THREE.CylinderGeometry(rTop, rBot, 14.5, 32, 1, true), mat);
+    ring.position.set(cx, gy + 5.8, cz);
     mists.set(zId, ring);
   }
   return mists;

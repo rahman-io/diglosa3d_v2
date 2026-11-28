@@ -384,7 +384,7 @@ function rectBlend(
   return padY + (rawY - padY) * k;
 }
 
-function islandContourRadius(isl: IslandDisk, wx: number, wz: number): number {
+export function islandContourRadius(isl: IslandDisk, wx: number, wz: number): number {
   const dx = wx - isl.cx;
   const dz = wz - isl.cz;
   const ang = Math.atan2(dz, dx);
@@ -1312,6 +1312,20 @@ export function getArchipelagoZoneForPosition(x: number, z: number): ZoneId {
     }
   }
   return best;
+}
+
+export function getIslandDiskAtPosition(
+  x: number,
+  z: number,
+  extraMargin = 4.5,
+): IslandDisk | null {
+  for (let i = 0; i < ISLAND_DISKS.length; i++) {
+    const isl = ISLAND_DISKS[i];
+    if (Math.hypot(x - isl.cx, z - isl.cz) <= islandContourRadius(isl, x, z) + extraMargin) {
+      return isl;
+    }
+  }
+  return null;
 }
 
 interface VoxelSpec {

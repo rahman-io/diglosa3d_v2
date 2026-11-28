@@ -3232,14 +3232,14 @@ export interface SeaMonsterSpawnTemplate {
 
 // 12 Predator Laut Ganas (semua 10 jenis monster laut dari lembar desain) tersebar di selat & lautan antar pulau!
 export const SEA_MONSTER_SPAWNS: SeaMonsterSpawnTemplate[] = [
-  // Selat Desa Sapaan <-> Pasar Rasa & Teluk Selatan
-  { zoneId: 'desa_sapaan', name: 'Goring Shark (Hiu Ganas)', type: 'goring_shark', x: -82, z: 100 },
-  { zoneId: 'desa_sapaan', name: 'Venomous Box Jelly (Ubur-Ubur Maut)', type: 'venomous_box_jelly', x: 36, z: 48 },
+  // Pesisir Pulau Desa Sapaan (mengelilingi pesisir barat daya, selatan, & timur pulau Desa Sapaan)
+  { zoneId: 'desa_sapaan', name: 'Goring Shark (Hiu Ganas)', type: 'goring_shark', x: -68, z: 140 },
+  { zoneId: 'desa_sapaan', name: 'Venomous Box Jelly (Ubur-Ubur Maut)', type: 'venomous_box_jelly', x: 18, z: 188 },
   { zoneId: 'desa_sapaan', name: 'Goring Shark (Hiu Ganas)', type: 'goring_shark', x: 68, z: 134 },
 
   // Selat Pasar Rasa <-> Hub & Laut Barat
   { zoneId: 'pasar_rasa', name: 'Giant Bone-Jaw (Ikan Purba)', type: 'giant_bone_jaw', x: -94, z: -4 },
-  { zoneId: 'pasar_rasa', name: 'Venomous Box Jelly (Ubur-Ubur Maut)', type: 'venomous_box_jelly', x: -78, z: 156 },
+  { zoneId: 'pasar_rasa', name: 'Venomous Box Jelly (Ubur-Ubur Maut)', type: 'venomous_box_jelly', x: -108, z: 112 },
   { zoneId: 'pasar_rasa', name: 'Shadow Angler (Monster Laut Dalam)', type: 'shadow_angler', x: -178, z: 18 },
 
   // Selat Hutan Satwa <-> Menara Waktu
