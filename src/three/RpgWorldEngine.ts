@@ -153,6 +153,20 @@ import {
   updateGreetingEmblemPool,
 } from './greetingEmblems';
 import {
+  animateFlashbackCutsceneRig,
+  animateInjuredLimping,
+  animateRestingHealing,
+  attachRefugeeBandage,
+  buildDesaRestingSurvivorsRig,
+  buildHutanSatwaFlashbackStage,
+  DESA_HEALING_SHELTER_SPOTS,
+  DesaRestingSurvivorsRig,
+  disposeDesaRestingSurvivorsRig,
+  disposeHutanSatwaFlashbackStage,
+  getNextHutanSatwaGuideCheckpoint,
+  HutanSatwaFlashbackStage,
+} from './hutanSatwaRefugeeStory';
+import {
   appendVehicleVillageColliders,
   ArchipelagoRig,
   BRIDGE_SPANS,
@@ -590,6 +604,9 @@ interface SavedStatePayload {
   discoveredBiota?: SeaBiotaId[];
   oceanOpenedChests?: string[];
   characterId?: CharacterPresetId;
+  hutanSatwaRefugeeStorySeen?: boolean;
+  hutanSatwaRefugeeResting?: boolean;
+  activeMissionGuideZone?: ZoneId | null;
 }
 
 export interface SavedGameSummary {
@@ -1688,6 +1705,39 @@ export class RpgWorldEngine {
     emergeSfxFired: boolean;
     cheerSfxFired: boolean;
   } | null = null;
+  private hutanSatwaRefugeeStorySeen = false;
+  private hutanSatwaRefugeeResting = false;
+  private activeMissionGuideZone: ZoneId | null = null;
+  private restingSurvivorsRig: DesaRestingSurvivorsRig | null = null;
+  private hutanSatwaRefugeeCutscene: {
+    beat:
+      | 'arrival'
+      | 'flashback_mist'
+      | 'flashback_siege'
+      | 'flashback_kiki'
+      | 'flashback_escape'
+      | 'plea_confirm'
+      | 'guide_desa_exit'
+      | 'guide_citadel_cross'
+      | 'guide_satwa_arrival'
+      | 'farewell_rest';
+    timer: number;
+    maya: VillagerActor;
+    raka: VillagerActor;
+    mayaStartX: number;
+    mayaStartZ: number;
+    rakaStartX: number;
+    rakaStartZ: number;
+    mayaGatherX: number;
+    mayaGatherZ: number;
+    rakaGatherX: number;
+    rakaGatherZ: number;
+    arrived: boolean;
+    flashbackStage: HutanSatwaFlashbackStage | null;
+    disposables: THREE.BufferGeometry[];
+    sfxFired: boolean;
+    continuedMission: boolean;
+  } | null = null;
 
   // RPG Progression State
   private phase: GamePhase = 'title';
@@ -2521,6 +2571,9 @@ export class RpgWorldEngine {
         discoveredBiota: Array.from(this.discoveredBiota),
         oceanOpenedChests: Array.from(this.openedOceanChests),
         characterId: this.localCharacterId,
+        hutanSatwaRefugeeStorySeen: this.hutanSatwaRefugeeStorySeen,
+        hutanSatwaRefugeeResting: this.hutanSatwaRefugeeResting,
+        activeMissionGuideZone: this.activeMissionGuideZone,
       };
       localStorage.setItem(SAVE_KEY, JSON.stringify(payload));
       this.hasSave = true;
@@ -2716,7 +2769,11 @@ export class RpgWorldEngine {
       this.restoredCollectibles = Array.isArray(data.savedCollectibles)
         ? data.savedCollectibles.map((c) => ({ ...c }))
         : null;
+      this.hutanSatwaRefugeeStorySeen = Boolean(data.hutanSatwaRefugeeStorySeen);
+      this.hutanSatwaRefugeeResting = Boolean(data.hutanSatwaRefugeeResting);
+      this.activeMissionGuideZone = data.activeMissionGuideZone ?? null;
       this.syncReunitedCaptivesAndGates();
+      this.syncRestingSurvivorsRig();
       return true;
     } catch {
       return false;
@@ -3130,6 +3187,9 @@ export class RpgWorldEngine {
     this.liberatedZones.add(zoneId);
     if (this.guidedOutsideZoneId === zoneId) {
       this.guidedOutsideZoneId = null;
+    }
+    if (this.activeMissionGuideZone === zoneId) {
+      this.activeMissionGuideZone = null;
     }
     const q = this.quests.find((item) => item.zoneId === zoneId);
     if (q) {
@@ -6494,7 +6554,12 @@ export class RpgWorldEngine {
     this.captiveRescuedZones.clear();
     this.guardianReunitedZones.clear();
     this.guidedOutsideZoneId = null;
+    this.hutanSatwaRefugeeStorySeen = false;
+    this.hutanSatwaRefugeeResting = false;
+    this.activeMissionGuideZone = null;
     this.clearIslandLiberationCutscene();
+    this.clearHutanSatwaRefugeeCutscene();
+    this.syncRestingSurvivorsRig();
     this.clearDungeonRibbonReunionCutscene();
     this.clearReunionCutscene();
     this.syncReunitedCaptivesAndGates();
@@ -8702,6 +8767,34 @@ export class RpgWorldEngine {
         return;
       }
     }
+
+    if (this.storyDialog.kind === 'hutan_satwa_refugee') {
+      const hs = this.hutanSatwaRefugeeCutscene;
+      if (!hs) {
+        this.finishHutanSatwaRefugeeCutscene();
+        return;
+      }
+      if (hs.beat === 'arrival') {
+        this.transitionHutanSatwaRefugeeBeat('flashback_mist');
+      } else if (hs.beat === 'flashback_mist') {
+        this.transitionHutanSatwaRefugeeBeat('flashback_siege');
+      } else if (hs.beat === 'flashback_siege') {
+        this.transitionHutanSatwaRefugeeBeat('flashback_kiki');
+      } else if (hs.beat === 'flashback_kiki') {
+        this.transitionHutanSatwaRefugeeBeat('flashback_escape');
+      } else if (hs.beat === 'flashback_escape') {
+        this.transitionHutanSatwaRefugeeBeat('plea_confirm');
+      } else if (hs.beat === 'guide_desa_exit') {
+        this.transitionHutanSatwaRefugeeBeat('guide_citadel_cross');
+      } else if (hs.beat === 'guide_citadel_cross') {
+        this.transitionHutanSatwaRefugeeBeat('guide_satwa_arrival');
+      } else if (hs.beat === 'guide_satwa_arrival') {
+        this.transitionHutanSatwaRefugeeBeat('farewell_rest');
+      } else if (hs.beat === 'farewell_rest') {
+        this.finishHutanSatwaRefugeeCutscene();
+      }
+      return;
+    }
   }
 
   public skipStory(): void {
@@ -8747,6 +8840,20 @@ export class RpgWorldEngine {
       }
     } else if (this.storyDialog.kind === 'island_liberation') {
       this.finishIslandLiberationCutscene();
+    } else if (this.storyDialog.kind === 'hutan_satwa_refugee') {
+      const hs = this.hutanSatwaRefugeeCutscene;
+      if (
+        hs &&
+        (hs.beat === 'arrival' ||
+          hs.beat === 'flashback_mist' ||
+          hs.beat === 'flashback_siege' ||
+          hs.beat === 'flashback_kiki' ||
+          hs.beat === 'flashback_escape')
+      ) {
+        this.transitionHutanSatwaRefugeeBeat('plea_confirm');
+      } else if (hs && hs.beat !== 'plea_confirm') {
+        this.finishHutanSatwaRefugeeCutscene();
+      }
     } else if (this.storyDialog.kind === 'area_cleared') {
       const guidedZone = this.guidedOutsideZoneId;
       this.storyDialog = null;
@@ -11907,6 +12014,7 @@ export class RpgWorldEngine {
     this.clearDungeonBossDefeatCutscene();
     this.clearDungeonPrisonPleaCutscene();
     this.clearIslandLiberationCutscene();
+    this.clearHutanSatwaRefugeeCutscene();
     this.clearBossGuardShields();
     this.bossSummonedWaveIds.clear();
     this.bossGuardWaitPositions.clear();
@@ -18324,6 +18432,37 @@ export class RpgWorldEngine {
       if (nearestCit) {
         soundEngine.playPick();
         this.showBanner(nearestCit.message, 5.2);
+        return;
+      }
+    }
+
+    if (this.worldMode === 'overworld' && this.restingSurvivorsRig) {
+      const distMaya = Math.hypot(
+        this.restingSurvivorsRig.maya.x - this.heroPos.x,
+        this.restingSurvivorsRig.maya.z - this.heroPos.z,
+      );
+      const distRaka = Math.hypot(
+        this.restingSurvivorsRig.raka.x - this.heroPos.x,
+        this.restingSurvivorsRig.raka.z - this.heroPos.z,
+      );
+      if (Math.min(distMaya, distRaka) <= 3.6) {
+        soundEngine.playPick();
+        if (this.liberatedZones.has('hutan_satwa')) {
+          this.showBanner(
+            '🩹 Maya & Raka (Warga Hutan Satwa): "Luka kami hampir pulih berkat Nenek Jamu dan dirimu, Pahlawan! Terima kasih sudah membebaskan Hutan Satwa & Kiki!"',
+            5.6,
+          );
+        } else if (this.activeMissionGuideZone === 'hutan_satwa') {
+          this.showBanner(
+            '🧭 Raka & Maya: "Ikuti tanda jalan: Utara Desa (Jembatan Gantung) → Alun-Alun Citadel ke Timur → Jembatan Hutan Satwa! Kami berobat di sini & mendoakanmu!"',
+            5.8,
+          );
+        } else {
+          this.showBanner(
+            '🩹 Maya & Raka: "Kami berobat di Desa Sapaan bersama Nenek Jamu. Jika sudah siap menolong Hutan Satwa, menyeberanglah lewat Jembatan Utara → Timur Citadel → Jembatan Hutan Satwa!"',
+            5.8,
+          );
+        }
         return;
       }
     }
@@ -26643,6 +26782,17 @@ export class RpgWorldEngine {
     }
     this.clearIslandLiberationCutscene();
     this.refreshAreaMists();
+    if (
+      zId === 'desa_sapaan' &&
+      !this.hutanSatwaRefugeeStorySeen &&
+      !this.liberatedZones.has('hutan_satwa') &&
+      !this.multiplayerActive
+    ) {
+      this.hutanSatwaRefugeeStorySeen = true;
+      this.saveProgress();
+      this.startHutanSatwaRefugeeCutscene();
+      return;
+    }
     this.storyDialog = null;
     this.phase = 'playing';
     this.applyCameraVisibilityAndControls();
@@ -26655,6 +26805,599 @@ export class RpgWorldEngine {
     }
     this.saveProgress();
     this.pushHud(true);
+  }
+
+  private clearHutanSatwaRefugeeCutscene(): void {
+    const hs = this.hutanSatwaRefugeeCutscene;
+    if (!hs) return;
+    if (hs.maya.root.parent) hs.maya.root.parent.remove(hs.maya.root);
+    if (hs.raka.root.parent) hs.raka.root.parent.remove(hs.raka.root);
+    hs.disposables.forEach((d) => d.dispose());
+    hs.maya.root.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && !obj.geometry.userData?.shared) {
+        obj.geometry.dispose();
+      }
+    });
+    hs.raka.root.traverse((obj) => {
+      if (obj instanceof THREE.Mesh && !obj.geometry.userData?.shared) {
+        obj.geometry.dispose();
+      }
+    });
+    if (hs.flashbackStage) {
+      disposeHutanSatwaFlashbackStage(hs.flashbackStage);
+    }
+    this.zoneMistFade.hutan_satwa = this.liberatedZones.has('hutan_satwa') ? 0 : 1;
+    this.refreshAreaMists();
+    this.hutanSatwaRefugeeCutscene = null;
+  }
+
+  private syncRestingSurvivorsRig(): void {
+    const shouldShow =
+      this.hutanSatwaRefugeeResting &&
+      !this.hutanSatwaRefugeeCutscene &&
+      !this.multiplayerActive;
+    if (shouldShow) {
+      if (!this.restingSurvivorsRig && this.overworldGroup) {
+        this.restingSurvivorsRig = buildDesaRestingSurvivorsRig(this.palette);
+        this.overworldGroup.add(this.restingSurvivorsRig.group);
+      }
+    } else if (this.restingSurvivorsRig) {
+      disposeDesaRestingSurvivorsRig(this.restingSurvivorsRig);
+      this.restingSurvivorsRig = null;
+    }
+  }
+
+  private updateRestingSurvivors(dt: number): void {
+    const rig = this.restingSurvivorsRig;
+    if (!rig || this.worldMode !== 'overworld') return;
+    const dx = this.heroPos.x - DESA_HEALING_SHELTER_SPOTS.camp.x;
+    const dz = this.heroPos.z - DESA_HEALING_SHELTER_SPOTS.camp.z;
+    const dist = Math.hypot(dx, dz);
+    if (dist > 78) {
+      rig.group.visible = false;
+      return;
+    }
+    rig.group.visible = true;
+    animateRestingHealing(rig.maya, this.elapsed, 0.3, dist, this.heroPos.x, this.heroPos.z);
+    animateRestingHealing(rig.raka, this.elapsed, 1.7, dist, this.heroPos.x, this.heroPos.z);
+    void dt;
+  }
+
+  private startHutanSatwaRefugeeCutscene(): void {
+    this.clearHutanSatwaRefugeeCutscene();
+    this.phase = 'story';
+    this.heldKeys.clear();
+    this.tapMoveTarget = null;
+    this.storyTimer = 0;
+    this.applyCameraVisibilityAndControls();
+
+    // Ensure Hero stands cleanly on walkable Desa Sapaan land
+    this.heroPos.y = getArchipelagoGroundY(this.heroPos.x, this.heroPos.z);
+    this.hero.root.position.copy(this.heroPos);
+
+    const maya = createVillagerMesh(this.palette, 'zoo_keeper', {
+      shirtHex: 0x15803d,
+      pantsHex: 0x78350f,
+      accentHex: 0xfbbf24,
+    });
+    const raka = createVillagerMesh(this.palette, 'ranger_guide', {
+      shirtHex: 0x0f766e,
+      pantsHex: 0x451a03,
+      accentHex: 0x22c55e,
+    });
+    const disposables = [
+      ...attachRefugeeBandage(maya, this.palette, true),
+      ...attachRefugeeBandage(raka, this.palette, false),
+    ];
+
+    const startPtA = _v3.set(
+      THREE.MathUtils.clamp(this.heroPos.x - 4.2, -32, 22),
+      0,
+      Math.max(66, this.heroPos.z - 14.0),
+    );
+    resolveObstacleBoxes(startPtA, 0.56, this.villageRig.obstacles, getArchipelagoGroundY(startPtA.x, startPtA.z), 2.0);
+    constrainToWalkableArchipelago(startPtA, 0.56);
+    const mayaStartX = startPtA.x;
+    const mayaStartZ = startPtA.z;
+
+    const startPtB = _v3.set(mayaStartX + 2.2, 0, mayaStartZ - 1.0);
+    resolveObstacleBoxes(startPtB, 0.56, this.villageRig.obstacles, getArchipelagoGroundY(startPtB.x, startPtB.z), 2.0);
+    constrainToWalkableArchipelago(startPtB, 0.56);
+    const rakaStartX = startPtB.x;
+    const rakaStartZ = startPtB.z;
+
+    const dirToStart = Math.atan2(mayaStartZ - this.heroPos.z, mayaStartX - this.heroPos.x);
+    const gatherPtA = _v3.set(
+      this.heroPos.x + Math.cos(dirToStart - 0.32) * 3.1,
+      0,
+      this.heroPos.z + Math.sin(dirToStart - 0.32) * 3.1,
+    );
+    resolveObstacleBoxes(gatherPtA, 0.56, this.villageRig.obstacles, getArchipelagoGroundY(gatherPtA.x, gatherPtA.z), 2.0);
+    constrainToWalkableArchipelago(gatherPtA, 0.56);
+    const mayaGatherX = gatherPtA.x;
+    const mayaGatherZ = gatherPtA.z;
+
+    const gatherPtB = _v3.set(
+      this.heroPos.x + Math.cos(dirToStart + 0.32) * 3.1,
+      0,
+      this.heroPos.z + Math.sin(dirToStart + 0.32) * 3.1,
+    );
+    resolveObstacleBoxes(gatherPtB, 0.56, this.villageRig.obstacles, getArchipelagoGroundY(gatherPtB.x, gatherPtB.z), 2.0);
+    constrainToWalkableArchipelago(gatherPtB, 0.56);
+    const rakaGatherX = gatherPtB.x;
+    const rakaGatherZ = gatherPtB.z;
+
+    maya.x = mayaStartX;
+    maya.z = mayaStartZ;
+    maya.root.position.set(mayaStartX, getArchipelagoGroundY(mayaStartX, mayaStartZ), mayaStartZ);
+    raka.x = rakaStartX;
+    raka.z = rakaStartZ;
+    raka.root.position.set(rakaStartX, getArchipelagoGroundY(rakaStartX, rakaStartZ), rakaStartZ);
+    this.overworldGroup.add(maya.root, raka.root);
+
+    const flashbackStage = buildHutanSatwaFlashbackStage(this.palette);
+    this.overworldGroup.add(flashbackStage.group);
+
+    this.hutanSatwaRefugeeCutscene = {
+      beat: 'arrival',
+      timer: 0,
+      maya,
+      raka,
+      mayaStartX,
+      mayaStartZ,
+      rakaStartX,
+      rakaStartZ,
+      mayaGatherX,
+      mayaGatherZ,
+      rakaGatherX,
+      rakaGatherZ,
+      arrived: false,
+      flashbackStage,
+      disposables,
+      sfxFired: false,
+      continuedMission: false,
+    };
+
+    const pName = this.getPlayerDisplayName();
+    this.storyDialog = {
+      kind: 'hutan_satwa_refugee',
+      step: 0,
+      maxStep: 5,
+      zoneId: 'hutan_satwa',
+      hutanSatwaRefugeeBeat: 'arrival',
+      storySceneBadge: 'Kedatangan Mendadak 2 Penyintas',
+      speakerName: 'Maya & Raka (Penyintas Hutan Satwa)',
+      speakerRole: 'Warga Terluka Meminta Bantuan Darurat',
+      speakerKind: 'villagers',
+      villagerArchetypes: ['zoo_keeper', 'ranger_guide'],
+      speakerSide: 'npc',
+      textEn: `Wait! Two injured survivors from Hutan Satwa Island suddenly limp into Desa Sapaan—Maya the Zookeeper and Raka the Guide—gasping for help: "Please, ${pName}... save Hutan Satwa before it's too late!"`,
+      textId: `Tiba-tiba langkah tertatih terdengar dari jalur jembatan utara! Dua warga dari Pulau Hutan Satwa—Maya (Perawat Satwa) dan Raka (Pemandu Rimba)—datang berbalut perban, napas tersengal, dan langsung bersimpuh di hadapanmu: "Tolong kami, ${pName}… Pulau Hutan Satwa hancur diserbu monster!"`,
+      accentColor: '#ef4444',
+    };
+
+    soundEngine.playSadPlea('adults');
+    this.pushHud(true);
+  }
+
+  private transitionHutanSatwaRefugeeBeat(
+    beat: NonNullable<typeof this.hutanSatwaRefugeeCutscene>['beat'],
+  ): void {
+    const hs = this.hutanSatwaRefugeeCutscene;
+    if (!hs) return;
+    hs.beat = beat;
+    hs.timer = 0;
+    hs.sfxFired = false;
+    const pName = this.getPlayerDisplayName();
+
+    if (beat === 'flashback_mist') {
+      hs.maya.root.visible = false;
+      hs.raka.root.visible = false;
+      this.zoneMistFade.hutan_satwa = 0.2;
+      this.refreshAreaMists();
+      soundEngine.playDarkCloudErupt();
+      this.storyDialog = {
+        kind: 'hutan_satwa_refugee',
+        step: 1,
+        maxStep: 5,
+        zoneId: 'hutan_satwa',
+        hutanSatwaRefugeeBeat: 'flashback_mist',
+        storySceneBadge: 'Reka Adegan · Kabut Hitam Menelan Rimba',
+        speakerName: 'Kesaksian Maya & Raka',
+        speakerRole: 'Pulau Hutan Satwa · Awal Bencana',
+        speakerKind: 'villagers',
+        villagerArchetypes: ['zoo_keeper', 'ranger_guide'],
+        speakerSide: 'npc',
+        textEn: 'Moments before the siege, thick storm clouds choked the bright canopy of Hutan Satwa. Every bird vanished from the sky and eerie silence fell over the zoo...',
+        textId: '“Semua berawal saat langit hijau Hutan Satwa mendadak gelap pekat…” Kicau burung dan suara satwa hilang seketika, digantikan kabut hitam dingin yang membuat anak-anak dan seluruh penjaga gemetar ketakutan.',
+        accentColor: '#7c3aed',
+      };
+    } else if (beat === 'flashback_siege') {
+      this.zoneMistFade.hutan_satwa = 1.0;
+      this.refreshAreaMists();
+      soundEngine.playVillainLaugh();
+      soundEngine.playMonster();
+      this.storyDialog = {
+        kind: 'hutan_satwa_refugee',
+        step: 2,
+        maxStep: 5,
+        zoneId: 'hutan_satwa',
+        hutanSatwaRefugeeBeat: 'flashback_siege',
+        storySceneBadge: 'Reka Adegan · Serbuan Ancient Treant',
+        speakerName: 'Serangan Monster Rimba',
+        speakerRole: 'Bos Ancient Treant & Kawanan Buas',
+        speakerKind: 'boss',
+        speakerMonsterType: 'ancient_treant',
+        bossExpression: 'laugh',
+        speakerSide: 'npc',
+        textEn: 'Thorny roots burst from the ground! Giant Ancient Treant Rimba, Dire Wolves, and Jungle Trolls hunted down villagers across the trails while Ranger Rimba tried desperately to hold them off.',
+        textId: 'Tiba-tiba akar berduri raksasa menyembul dari tanah! Bos Ancient Treant Rimba bersama Dire Wolf buas dan Jungle Troll memburu warga di jalan setapak, memaksa penduduk lari ketakutan menyelamatkan diri.',
+        accentColor: '#dc2626',
+      };
+    } else if (beat === 'flashback_kiki') {
+      soundEngine.playPrisonThreatSlam();
+      soundEngine.playSadPlea('children');
+      this.storyDialog = {
+        kind: 'hutan_satwa_refugee',
+        step: 3,
+        maxStep: 5,
+        zoneId: 'hutan_satwa',
+        hutanSatwaRefugeeBeat: 'flashback_kiki',
+        storySceneBadge: 'Reka Adegan · Kiki Kecil Diseret ke Gua',
+        speakerName: 'Tangisan Kiki & Ranger Rimba',
+        speakerRole: 'Detik Paling Memilukan di Hutan Satwa',
+        speakerKind: 'captive',
+        captiveKind: 'fox_kit',
+        captiveColor: 0xf97316,
+        captiveExpression: 'sad_injured',
+        speakerSide: 'npc',
+        textEn: 'Little Kiki stumbled behind and was dragged screaming into Tiger Head Cave by thorny monsters, while Ranger Rimba fell wounded reaching out for his younger sibling!',
+        textId: 'Yang paling menyayat hati… adik kecil Ranger Rimba bernama Kiki terjatuh dan diseret paksa ke dalam Gua Kepala Harimau yang gelap! Kak Rimba hanya bisa berteriak pilu tak berdaya saat akarnya diputus monster.',
+        accentColor: '#f97316',
+      };
+    } else if (beat === 'flashback_escape') {
+      soundEngine.playSadPlea('siblings');
+      this.storyDialog = {
+        kind: 'hutan_satwa_refugee',
+        step: 4,
+        maxStep: 5,
+        zoneId: 'hutan_satwa',
+        hutanSatwaRefugeeBeat: 'flashback_escape',
+        storySceneBadge: 'Reka Adegan · Pelarian Penuh Luka',
+        speakerName: 'Pelarian Maya & Raka',
+        speakerRole: 'Menerobos Kepungan Demi Meminta Tolong',
+        speakerKind: 'villagers',
+        villagerArchetypes: ['zoo_keeper', 'ranger_guide'],
+        speakerSide: 'npc',
+        textEn: 'Covered in wounds from thorns and snapping wolves, Maya and Raka risked everything crossing the suspension bridges to reach Desa Sapaan and beg the hero for aid.',
+        textId: '“Lari ke Desa Sapaan… cari pahlawan di sana!” Dengan lengan terluka disambar duri dan dikejar kawanan serigala hingga tepi jembatan gantung, kami berdua nekat menerobos bahaya demi mencarimu.',
+        accentColor: '#ef4444',
+      };
+    } else if (beat === 'plea_confirm') {
+      hs.maya.root.visible = true;
+      hs.raka.root.visible = true;
+      hs.maya.x = hs.mayaGatherX;
+      hs.maya.z = hs.mayaGatherZ;
+      hs.raka.x = hs.rakaGatherX;
+      hs.raka.z = hs.rakaGatherZ;
+      hs.maya.root.position.set(hs.mayaGatherX, getArchipelagoGroundY(hs.mayaGatherX, hs.mayaGatherZ), hs.mayaGatherZ);
+      hs.raka.root.position.set(hs.rakaGatherX, getArchipelagoGroundY(hs.rakaGatherX, hs.rakaGatherZ), hs.rakaGatherZ);
+      hs.arrived = true;
+      this.zoneMistFade.hutan_satwa = this.liberatedZones.has('hutan_satwa') ? 0 : 1;
+      this.refreshAreaMists();
+      soundEngine.playSadPlea('adults');
+      this.storyDialog = {
+        kind: 'hutan_satwa_refugee',
+        step: 5,
+        maxStep: 5,
+        zoneId: 'hutan_satwa',
+        hutanSatwaRefugeeBeat: 'plea_confirm',
+        awaitingChoice: true,
+        speakerName: 'Maya & Raka (Memohon Harap)',
+        speakerRole: 'Konfirmasi Misi Pulau Berikutnya',
+        speakerKind: 'villagers',
+        villagerArchetypes: ['zoo_keeper', 'ranger_guide'],
+        speakerSide: 'npc',
+        rewardSummary: '🎯 Target Berikutnya: Pulau Hutan Satwa (Selamatkan Kiki, Ranger Rimba & Satwa)',
+        textEn: `${pName}... the villagers are trapped indoors and little Kiki is freezing inside the dark cave. Will you set out to rescue Hutan Satwa Island now, or prepare a little longer first?`,
+        textId: `${pName}… Kiki kecil masih menangis di dalam Gua Kepala Harimau dan seluruh satwa serta warga di Hutan Satwa sedang menanti keajaiban. Maukah kamu melanjutkan misi menyelamatkan Pulau Hutan Satwa sekarang, atau nanti dulu?`,
+        accentColor: '#10b981',
+      };
+    } else if (beat === 'guide_desa_exit') {
+      hs.maya.root.visible = false;
+      hs.raka.root.visible = false;
+      soundEngine.playGuardianCall();
+      this.storyDialog = {
+        kind: 'hutan_satwa_refugee',
+        step: 6,
+        maxStep: 9,
+        zoneId: 'hutan_satwa',
+        hutanSatwaRefugeeBeat: 'guide_desa_exit',
+        storySceneBadge: 'Panduan Rute 1/3 · Jembatan Utara Desa',
+        speakerName: 'Panduan Raka & Maya',
+        speakerRole: 'Cara Pergi ke Hutan Satwa',
+        speakerKind: 'villagers',
+        villagerArchetypes: ['zoo_keeper', 'ranger_guide'],
+        speakerSide: 'npc',
+        textEn: 'First, follow the northern footpath out of Desa Sapaan straight onto the Suspension Bridge toward Central Citadel! You can run on foot or drive the Explorer SUV.',
+        textId: 'Langkah 1: Dari alun-alun Desa Sapaan, ikuti jalan setapak ke arah UTARA menuju Jembatan Gantung Desa (-18, 62)! Kamu bisa berjalan kaki, berlari, atau mengendarai mobil penjelajah menyeberangi jembatan ini.',
+        accentColor: '#10b981',
+      };
+    } else if (beat === 'guide_citadel_cross') {
+      soundEngine.playPick();
+      this.storyDialog = {
+        kind: 'hutan_satwa_refugee',
+        step: 7,
+        maxStep: 9,
+        zoneId: 'hutan_satwa',
+        hutanSatwaRefugeeBeat: 'guide_citadel_cross',
+        storySceneBadge: 'Panduan Rute 2/3 · Seberang Citadel Timur',
+        speakerName: 'Panduan Raka',
+        speakerRole: 'Lintasi Alun-Alun Citadel',
+        speakerKind: 'villagers',
+        villagerArchetypes: ['zoo_keeper', 'ranger_guide'],
+        speakerSide: 'npc',
+        textEn: 'Once you reach Central Citadel, follow the paved stone causeway east around the crater plaza straight toward the Eastern Suspension Bridge!',
+        textId: 'Langkah 2: Setelah tiba di Pulau Tengah (Citadel Reruntuhan), berjalanlah menyusuri jalan batu ke arah TIMUR melewati alun-alun utara kawah menuju ujung jembatan timur (32, 22)!',
+        accentColor: '#10b981',
+      };
+    } else if (beat === 'guide_satwa_arrival') {
+      soundEngine.playGuardianCall();
+      this.storyDialog = {
+        kind: 'hutan_satwa_refugee',
+        step: 8,
+        maxStep: 9,
+        zoneId: 'hutan_satwa',
+        hutanSatwaRefugeeBeat: 'guide_satwa_arrival',
+        storySceneBadge: 'Panduan Rute 3/3 · Masuk Hutan Satwa',
+        speakerName: 'Panduan Raka & Maya',
+        speakerRole: 'Tiba di Pulau Hutan Satwa',
+        speakerKind: 'villagers',
+        villagerArchetypes: ['zoo_keeper', 'ranger_guide'],
+        speakerSide: 'npc',
+        textEn: 'Cross the Eastern Suspension Bridge straight onto the yellow safari trail of Hutan Satwa! Follow the trail east to Ranger Rimba and Tiger Head Cave. Follow the green compass beacon anytime!',
+        textId: 'Langkah 3: Seberangi Jembatan Gantung Timur untuk langsung menginjak jalan pasir kuning Hutan Satwa! Ikuti jalan setapaknya ke Timur menemui Ranger Rimba di depan Gua Kepala Harimau. Penunjuk arah hijau akan terus memandumu!',
+        accentColor: '#10b981',
+      };
+    } else if (beat === 'farewell_rest') {
+      hs.maya.root.visible = true;
+      hs.raka.root.visible = true;
+      hs.maya.x = hs.mayaGatherX;
+      hs.maya.z = hs.mayaGatherZ;
+      hs.raka.x = hs.rakaGatherX;
+      hs.raka.z = hs.rakaGatherZ;
+      hs.maya.root.position.set(hs.mayaGatherX, getArchipelagoGroundY(hs.mayaGatherX, hs.mayaGatherZ), hs.mayaGatherZ);
+      hs.raka.root.position.set(hs.rakaGatherX, getArchipelagoGroundY(hs.rakaGatherX, hs.rakaGatherZ), hs.rakaGatherZ);
+      soundEngine.playPick();
+      const willContinue = hs.continuedMission;
+      this.storyDialog = {
+        kind: 'hutan_satwa_refugee',
+        step: willContinue ? 9 : 6,
+        maxStep: willContinue ? 9 : 6,
+        zoneId: 'hutan_satwa',
+        hutanSatwaRefugeeBeat: 'farewell_rest',
+        speakerName: 'Maya & Raka (Menuju Pos Perawatan Desa)',
+        speakerRole: 'Istirahat & Berobat Bersama Warga Desa Sapaan',
+        speakerKind: 'villagers',
+        villagerArchetypes: ['zoo_keeper', 'ranger_guide'],
+        speakerSide: 'npc',
+        textEn: willContinue
+          ? `Thank you, ${pName}! We will rest and get herbal treatment with Grandma Herbalist here in Desa Sapaan while praying for your safe journey!`
+          : `We understand, ${pName}. Take your time to prepare—we will rest and receive herbal care with the villagers of Desa Sapaan until you are ready!`,
+        textId: willContinue
+          ? `Terima kasih banyak, ${pName}! Sekarang kami berdua akan mencari perlindungan dan berobat di pos Nenek Jamu bersama warga Desa Sapaan. Hati-hati di jalan, Pahlawan!`
+          : `Kami mengerti, ${pName}. Bersiaplah dengan tenang—kami berdua akan beristirahat dan berobat di tempat warga Desa Sapaan bersama Nenek Jamu sampai kamu siap menolong Hutan Satwa!`,
+        accentColor: '#10b981',
+      };
+    }
+
+    this.pushHud(true);
+  }
+
+  public resolveHutanSatwaRefugeeChoice(continueMission: boolean): void {
+    const hs = this.hutanSatwaRefugeeCutscene;
+    if (!hs || this.storyDialog?.kind !== 'hutan_satwa_refugee') return;
+    hs.continuedMission = continueMission;
+    this.hutanSatwaRefugeeResting = true;
+    if (continueMission) {
+      this.activeMissionGuideZone = 'hutan_satwa';
+      soundEngine.playHeroDefiance();
+      this.saveProgress();
+      this.transitionHutanSatwaRefugeeBeat('guide_desa_exit');
+    } else {
+      this.activeMissionGuideZone = null;
+      this.saveProgress();
+      this.transitionHutanSatwaRefugeeBeat('farewell_rest');
+    }
+  }
+
+  private finishHutanSatwaRefugeeCutscene(): void {
+    const hs = this.hutanSatwaRefugeeCutscene;
+    const continued = Boolean(hs?.continuedMission || this.activeMissionGuideZone === 'hutan_satwa');
+    this.hutanSatwaRefugeeResting = true;
+    this.clearHutanSatwaRefugeeCutscene();
+    this.syncRestingSurvivorsRig();
+    this.storyDialog = null;
+    this.phase = 'playing';
+    this.applyCameraVisibilityAndControls();
+    this.snapCameraBehindHero();
+    if (continued) {
+      this.showBanner(
+        '🧭 Panduan Hutan Satwa aktif! Maya & Raka kini beristirahat & berobat aman di Desa Sapaan. Ikuti penunjuk rute ke Jembatan Utara!',
+        6.0,
+      );
+    } else {
+      this.showBanner(
+        '🩹 Maya & Raka beristirahat dan berobat bersama warga di pos Nenek Jamu Desa Sapaan. Kamu bisa menemui mereka kapan saja!',
+        5.8,
+      );
+    }
+    this.saveProgress();
+    this.pushHud(true);
+  }
+
+  private updateHutanSatwaRefugeeCutscene(dt: number): void {
+    const hs = this.hutanSatwaRefugeeCutscene;
+    if (!hs) return;
+    hs.timer += dt;
+    const t = hs.timer;
+
+    if (hs.beat === 'arrival') {
+      const walkP = THREE.MathUtils.clamp(t / 2.2, 0, 1);
+      const ease = 1 - Math.pow(1 - walkP, 2);
+      const mx = THREE.MathUtils.lerp(hs.mayaStartX, hs.mayaGatherX, ease);
+      const mz = THREE.MathUtils.lerp(hs.mayaStartZ, hs.mayaGatherZ, ease);
+      const rx = THREE.MathUtils.lerp(hs.rakaStartX, hs.rakaGatherX, ease);
+      const rz = THREE.MathUtils.lerp(hs.rakaStartZ, hs.rakaGatherZ, ease);
+      hs.maya.x = mx;
+      hs.maya.z = mz;
+      hs.raka.x = rx;
+      hs.raka.z = rz;
+      hs.maya.root.position.set(mx, getArchipelagoGroundY(mx, mz), mz);
+      hs.raka.root.position.set(rx, getArchipelagoGroundY(rx, rz), rz);
+      hs.maya.root.rotation.y = Math.atan2(this.heroPos.x - mx, this.heroPos.z - mz);
+      hs.raka.root.rotation.y = Math.atan2(this.heroPos.x - rx, this.heroPos.z - rz);
+
+      const spd = walkP < 0.96 ? 3.8 : 0;
+      animateInjuredLimping(hs.maya, this.elapsed, spd, 0.2);
+      animateInjuredLimping(hs.raka, this.elapsed, spd, 1.4);
+
+      const midX = (mx + rx) * 0.5;
+      const midZ = (mz + rz) * 0.5;
+      this.heroYaw = Math.atan2(midX - this.heroPos.x, midZ - this.heroPos.z);
+      this.hero.body.rotation.y = this.heroYaw;
+      this.animateHeroConversation(false, dt);
+
+      this.updateHarvestDialogueCamera(
+        this.heroPos.x,
+        this.heroPos.y,
+        this.heroPos.z,
+        midX,
+        getArchipelagoGroundY(midX, midZ),
+        midZ,
+        dt,
+      );
+      return;
+    }
+
+    if (
+      hs.beat === 'flashback_mist' ||
+      hs.beat === 'flashback_siege' ||
+      hs.beat === 'flashback_kiki' ||
+      hs.beat === 'flashback_escape' ||
+      hs.beat === 'guide_desa_exit' ||
+      hs.beat === 'guide_citadel_cross' ||
+      hs.beat === 'guide_satwa_arrival'
+    ) {
+      if (hs.flashbackStage) {
+        animateFlashbackCutsceneRig(hs.flashbackStage, hs.beat, t, this.elapsed, dt);
+      }
+
+      if (hs.beat === 'flashback_mist') {
+        const p = THREE.MathUtils.clamp(t / 4.2, 0, 1);
+        this.zoneMistFade.hutan_satwa = Math.min(1, 0.2 + p * 0.8);
+        this.refreshAreaMists();
+        _v1.set(THREE.MathUtils.lerp(94, 114, p), 14.5, THREE.MathUtils.lerp(62, 57, p));
+        _v2.set(106, 5.2, 49);
+        if (t >= 4.5) this.transitionHutanSatwaRefugeeBeat('flashback_siege');
+      } else if (hs.beat === 'flashback_siege') {
+        const p = THREE.MathUtils.clamp(t / 4.2, 0, 1);
+        _v1.set(THREE.MathUtils.lerp(95, 116, p), 11.2, THREE.MathUtils.lerp(61, 60, p));
+        _v2.set(THREE.MathUtils.lerp(103, 110, p), 4.8, 49.5);
+        if (t >= 4.5) this.transitionHutanSatwaRefugeeBeat('flashback_kiki');
+      } else if (hs.beat === 'flashback_kiki') {
+        const p = THREE.MathUtils.clamp(t / 4.5, 0, 1);
+        _v1.set(THREE.MathUtils.lerp(110, 128, p), 9.4, 59.5);
+        _v2.set(THREE.MathUtils.lerp(115, 132, p), 4.6, 45.8);
+        if (t >= 4.8) this.transitionHutanSatwaRefugeeBeat('flashback_escape');
+      } else if (hs.beat === 'flashback_escape') {
+        const p = THREE.MathUtils.clamp(t / 4.3, 0, 1);
+        _v1.set(THREE.MathUtils.lerp(88, 56, p), 10.6, THREE.MathUtils.lerp(61, 44, p));
+        _v2.set(THREE.MathUtils.lerp(90, 68, p), 4.5, THREE.MathUtils.lerp(47, 37, p));
+        if (t >= 4.6) this.transitionHutanSatwaRefugeeBeat('plea_confirm');
+      } else if (hs.beat === 'guide_desa_exit') {
+        const p = THREE.MathUtils.clamp(t / 4.0, 0, 1);
+        _v1.set(THREE.MathUtils.lerp(2, -10, p), 13.5, THREE.MathUtils.lerp(96, 75, p));
+        _v2.set(THREE.MathUtils.lerp(-6, -21, p), 4.2, THREE.MathUtils.lerp(84, 52, p));
+        if (t >= 4.3) this.transitionHutanSatwaRefugeeBeat('guide_citadel_cross');
+      } else if (hs.beat === 'guide_citadel_cross') {
+        const p = THREE.MathUtils.clamp(t / 4.0, 0, 1);
+        _v1.set(THREE.MathUtils.lerp(-22, 24, p), 16.5, THREE.MathUtils.lerp(42, 34, p));
+        _v2.set(THREE.MathUtils.lerp(-8, 36, p), 6.5, THREE.MathUtils.lerp(20, 20, p));
+        if (t >= 4.3) this.transitionHutanSatwaRefugeeBeat('guide_satwa_arrival');
+      } else {
+        const p = THREE.MathUtils.clamp(t / 4.0, 0, 1);
+        _v1.set(THREE.MathUtils.lerp(36, 68, p), 15.2, THREE.MathUtils.lerp(18, 56, p));
+        _v2.set(THREE.MathUtils.lerp(56, 114, p), 4.8, THREE.MathUtils.lerp(28, 44, p));
+        if (t >= 4.3) this.transitionHutanSatwaRefugeeBeat('farewell_rest');
+      }
+
+      const camLerp = 1 - Math.exp(-3.5 * dt);
+      this.camera.position.lerp(_v1, camLerp);
+      this.controls.target.lerp(_v2, camLerp);
+      return;
+    }
+
+    if (hs.beat === 'plea_confirm') {
+      animateInjuredLimping(hs.maya, this.elapsed, 0, 0.2);
+      animateInjuredLimping(hs.raka, this.elapsed, 0, 1.4);
+      hs.maya.root.rotation.y = Math.atan2(this.heroPos.x - hs.maya.x, this.heroPos.z - hs.maya.z);
+      hs.raka.root.rotation.y = Math.atan2(this.heroPos.x - hs.raka.x, this.heroPos.z - hs.raka.z);
+      const midX = (hs.maya.x + hs.raka.x) * 0.5;
+      const midZ = (hs.maya.z + hs.raka.z) * 0.5;
+      this.heroYaw = Math.atan2(midX - this.heroPos.x, midZ - this.heroPos.z);
+      this.hero.body.rotation.y = this.heroYaw;
+      this.animateHeroConversation(false, dt);
+      this.updateHarvestDialogueCamera(
+        this.heroPos.x,
+        this.heroPos.y,
+        this.heroPos.z,
+        midX,
+        getArchipelagoGroundY(midX, midZ),
+        midZ,
+        dt,
+      );
+      return;
+    }
+
+    if (hs.beat === 'farewell_rest') {
+      const walkP = THREE.MathUtils.clamp(t / 2.8, 0, 1);
+      const mx = THREE.MathUtils.lerp(hs.mayaGatherX, DESA_HEALING_SHELTER_SPOTS.maya.x, walkP);
+      const mz = THREE.MathUtils.lerp(hs.mayaGatherZ, DESA_HEALING_SHELTER_SPOTS.maya.z, walkP);
+      const rx = THREE.MathUtils.lerp(hs.rakaGatherX, DESA_HEALING_SHELTER_SPOTS.raka.x, walkP);
+      const rz = THREE.MathUtils.lerp(hs.rakaGatherZ, DESA_HEALING_SHELTER_SPOTS.raka.z, walkP);
+      hs.maya.x = mx;
+      hs.maya.z = mz;
+      hs.raka.x = rx;
+      hs.raka.z = rz;
+      hs.maya.root.position.set(mx, getArchipelagoGroundY(mx, mz), mz);
+      hs.raka.root.position.set(rx, getArchipelagoGroundY(rx, rz), rz);
+      hs.maya.root.rotation.y = Math.atan2(
+        DESA_HEALING_SHELTER_SPOTS.maya.x - hs.mayaGatherX,
+        DESA_HEALING_SHELTER_SPOTS.maya.z - hs.mayaGatherZ,
+      );
+      hs.raka.root.rotation.y = Math.atan2(
+        DESA_HEALING_SHELTER_SPOTS.raka.x - hs.rakaGatherX,
+        DESA_HEALING_SHELTER_SPOTS.raka.z - hs.rakaGatherZ,
+      );
+      animateInjuredLimping(hs.maya, this.elapsed, walkP < 0.94 ? 2.5 : 0, 0.2);
+      animateInjuredLimping(hs.raka, this.elapsed, walkP < 0.94 ? 2.5 : 0, 1.4);
+      this.animateHeroConversation(false, dt);
+      const midX = (mx + rx) * 0.5;
+      const midZ = (mz + rz) * 0.5;
+      this.updateHarvestDialogueCamera(
+        this.heroPos.x,
+        this.heroPos.y,
+        this.heroPos.z,
+        midX,
+        getArchipelagoGroundY(midX, midZ),
+        midZ,
+        dt,
+      );
+      if (t >= 3.2) {
+        this.finishHutanSatwaRefugeeCutscene();
+      }
+    }
   }
 
   private updateIslandLiberationCutscene(dt: number): void {
@@ -27223,6 +27966,11 @@ export class RpgWorldEngine {
 
     if (this.storyDialog?.kind === 'island_liberation' && this.islandLiberationCutscene) {
       this.updateIslandLiberationCutscene(dt);
+      return;
+    }
+
+    if (this.storyDialog?.kind === 'hutan_satwa_refugee' && this.hutanSatwaRefugeeCutscene) {
+      this.updateHutanSatwaRefugeeCutscene(dt);
       return;
     }
 
@@ -29625,6 +30373,7 @@ export class RpgWorldEngine {
     ) {
       soundEngine.playVillagerGreetChime();
     }
+    this.updateRestingSurvivors(dt);
     if (inPrologue) {
       for (const p of this.villageRig.pillagers) {
         p.root.visible = false;
@@ -35380,6 +36129,160 @@ export class RpgWorldEngine {
       return labels;
     }
 
+    if (
+      this.hutanSatwaRefugeeCutscene &&
+      this.storyDialog?.kind === 'hutan_satwa_refugee'
+    ) {
+      const hs = this.hutanSatwaRefugeeCutscene;
+      const st = hs.flashbackStage;
+      if (hs.beat === 'arrival' || hs.beat === 'plea_confirm') {
+        const mp = projectPoint(hs.maya.x, getArchipelagoGroundY(hs.maya.x, hs.maya.z) + 2.45, hs.maya.z);
+        if (mp) {
+          labels.push({
+            id: 'hs_maya_plea',
+            x: mp.x,
+            y: mp.y,
+            title: hs.beat === 'arrival' ? '🩹 Tolooong… Hutan Satwa diserbu!' : '🙏 Kumohon, tolong Hutan Satwa!',
+            kind: 'speech',
+          });
+        }
+        const rp = projectPoint(hs.raka.x, getArchipelagoGroundY(hs.raka.x, hs.raka.z) + 2.45, hs.raka.z);
+        if (rp) {
+          labels.push({
+            id: 'hs_raka_plea',
+            x: rp.x,
+            y: rp.y,
+            title: hs.beat === 'arrival' ? '😭 Adik Kiki disekap monster!' : '😢 Kiki menangis di dalam gua…',
+            kind: 'speech',
+          });
+        }
+      } else if (hs.beat === 'flashback_mist' && st) {
+        const kp = projectPoint(
+          st.kikiMesh.position.x,
+          st.kikiMesh.position.y + 2.1,
+          st.kikiMesh.position.z,
+        );
+        if (kp) {
+          labels.push({
+            id: 'hs_fb_kiki_mist',
+            x: kp.x,
+            y: kp.y,
+            title: '😨 Kak Rimba! Langitnya jadi gelap!',
+            kind: 'speech',
+          });
+        }
+      } else if (hs.beat === 'flashback_siege' && st) {
+        const bp = projectPoint(
+          st.bossMesh.position.x,
+          st.bossMesh.position.y + 4.4,
+          st.bossMesh.position.z,
+        );
+        if (bp) {
+          labels.push({
+            id: 'hs_fb_boss_siege',
+            x: bp.x,
+            y: bp.y,
+            title: '🌳 Ancient Treant: "Hutan ini akan membisu selamanya!"',
+            kind: 'speech',
+          });
+        }
+        const k1 = st.fleeingKids[0];
+        if (k1) {
+          const p1 = projectPoint(k1.root.position.x, k1.root.position.y + 2.2, k1.root.position.z);
+          if (p1) {
+            labels.push({
+              id: 'hs_fb_kid_flee',
+              x: p1.x,
+              y: p1.y,
+              title: '😱 Lariii!! Akar berdurinya mengejar!',
+              kind: 'speech',
+            });
+          }
+        }
+      } else if (hs.beat === 'flashback_kiki' && st) {
+        const kp = projectPoint(
+          st.kikiMesh.position.x,
+          st.kikiMesh.position.y + 2.15,
+          st.kikiMesh.position.z,
+        );
+        if (kp) {
+          labels.push({
+            id: 'hs_fb_kiki_cry',
+            x: kp.x,
+            y: kp.y,
+            title: '😭 Kak Rimbaaa!! Tolooong aku!!',
+            kind: 'speech',
+          });
+        }
+        const rgp = projectPoint(
+          st.rangerMesh.position.x,
+          st.rangerMesh.position.y + 2.55,
+          st.rangerMesh.position.z,
+        );
+        if (rgp) {
+          labels.push({
+            id: 'hs_fb_ranger_cry',
+            x: rgp.x,
+            y: rgp.y,
+            title: '💔 KIKIII!! Jangan bawa adikku!!',
+            kind: 'speech',
+          });
+        }
+      } else if (hs.beat === 'flashback_escape' && st) {
+        const mp = projectPoint(
+          st.mayaFlash.root.position.x,
+          st.mayaFlash.root.position.y + 2.45,
+          st.mayaFlash.root.position.z,
+        );
+        if (mp) {
+          labels.push({
+            id: 'hs_fb_maya_run',
+            x: mp.x,
+            y: mp.y,
+            title: '🩹 Cepat ke Desa Sapaan! Cari Pahlawan!',
+            kind: 'speech',
+          });
+        }
+      } else if (
+        (hs.beat === 'guide_desa_exit' ||
+          hs.beat === 'guide_citadel_cross' ||
+          hs.beat === 'guide_satwa_arrival') &&
+        st
+      ) {
+        const idx = hs.beat === 'guide_desa_exit' ? 0 : hs.beat === 'guide_citadel_cross' ? 1 : 2;
+        const gm = st.guideMarkers[idx];
+        if (gm) {
+          const gp = projectPoint(gm.position.x, gm.position.y + 5.2, gm.position.z);
+          if (gp) {
+            labels.push({
+              id: `hs_guide_m_${idx}`,
+              x: gp.x,
+              y: gp.y,
+              title:
+                idx === 0
+                  ? '1️⃣ Jembatan Gantung Utara Desa'
+                  : idx === 1
+                  ? '2️⃣ Belok ke Timur Alun-Alun Citadel'
+                  : '3️⃣ Jembatan Gantung → Pulau Hutan Satwa',
+              kind: 'npc_alert',
+            });
+          }
+        }
+      } else if (hs.beat === 'farewell_rest') {
+        const mp = projectPoint(hs.maya.x, getArchipelagoGroundY(hs.maya.x, hs.maya.z) + 2.45, hs.maya.z);
+        if (mp) {
+          labels.push({
+            id: 'hs_rest_walk',
+            x: mp.x,
+            y: mp.y,
+            title: '🌿 Menuju Pos Nenek Jamu untuk berobat…',
+            kind: 'speech',
+          });
+        }
+      }
+      return labels;
+    }
+
     if (this.villageAmbushState?.active) {
       const amb = this.villageAmbushState;
       const showAmbNpcLabels =
@@ -36137,6 +37040,63 @@ export class RpgWorldEngine {
             y: gp.y,
             title: `🧭 Penuntun: ${nearestGuided.name} (${distGuided}m)`,
             subtext: 'Habisi seluruh monster luar tersisa!',
+            kind: 'npc_alert',
+          });
+        }
+      }
+    }
+
+    if (
+      this.worldMode === 'overworld' &&
+      this.phase === 'playing' &&
+      this.activeMissionGuideZone === 'hutan_satwa' &&
+      !this.liberatedZones.has('hutan_satwa')
+    ) {
+      const cp = getNextHutanSatwaGuideCheckpoint(this.heroPos.x, this.heroPos.z);
+      if (cp) {
+        const cpDist = Math.round(Math.hypot(cp.x - this.heroPos.x, cp.z - this.heroPos.z));
+        const cpY = getArchipelagoGroundY(cp.x, cp.z);
+        const cpProj = projectPoint(cp.x, cpY + 4.4, cp.z);
+        if (cpProj) {
+          labels.push({
+            id: cp.id,
+            x: cpProj.x,
+            y: cpProj.y,
+            title: `${cp.title} (${cpDist}m)`,
+            subtext: cp.subtext,
+            kind: 'npc_alert',
+          });
+        }
+      }
+    }
+
+    if (
+      this.worldMode === 'overworld' &&
+      this.phase === 'playing' &&
+      this.restingSurvivorsRig
+    ) {
+      const distCamp = Math.hypot(
+        DESA_HEALING_SHELTER_SPOTS.camp.x - this.heroPos.x,
+        DESA_HEALING_SHELTER_SPOTS.camp.z - this.heroPos.z,
+      );
+      if (distCamp <= 10.5) {
+        const cy = getArchipelagoGroundY(
+          DESA_HEALING_SHELTER_SPOTS.camp.x,
+          DESA_HEALING_SHELTER_SPOTS.camp.z,
+        );
+        const rp = projectPoint(
+          DESA_HEALING_SHELTER_SPOTS.camp.x,
+          cy + 2.45,
+          DESA_HEALING_SHELTER_SPOTS.camp.z,
+        );
+        if (rp) {
+          labels.push({
+            id: 'resting_hutan_satwa_survivors',
+            x: rp.x,
+            y: rp.y,
+            title: this.liberatedZones.has('hutan_satwa')
+              ? '💚 Maya & Raka · Hampir Pulih (E / Bicara)'
+              : '🩹 Maya & Raka · Berobat di Desa (E / Bicara)',
             kind: 'npc_alert',
           });
         }
@@ -37127,6 +38087,23 @@ export class RpgWorldEngine {
           label: ZONE_INFO[zId].name,
         });
       }
+      if (
+        this.activeMissionGuideZone === 'hutan_satwa' &&
+        !this.liberatedZones.has('hutan_satwa')
+      ) {
+        const cp = getNextHutanSatwaGuideCheckpoint(this.heroPos.x, this.heroPos.z);
+        if (cp) {
+          blips.push({
+            id: 'mission_guide_hutan_satwa',
+            x: cp.x,
+            z: cp.z,
+            kind: 'spot_satwa',
+            color: '#10b981',
+            needsHelp: true,
+            label: cp.title,
+          });
+        }
+      }
       blips.push({
         id: 'portal',
         x: OVERWORLD_ANCHORS.portal.x,
@@ -37882,6 +38859,19 @@ export class RpgWorldEngine {
         this.worldMode === 'overworld' && this.guidedOutsideZoneId
           ? this.getZoneIslandCounts(this.guidedOutsideZoneId).alive
           : 0,
+      activeMissionGuideZone:
+        this.worldMode === 'overworld' &&
+        this.activeMissionGuideZone === 'hutan_satwa' &&
+        !this.liberatedZones.has('hutan_satwa')
+          ? 'hutan_satwa'
+          : null,
+      activeMissionGuideHint:
+        this.worldMode === 'overworld' &&
+        this.activeMissionGuideZone === 'hutan_satwa' &&
+        !this.liberatedZones.has('hutan_satwa')
+          ? getNextHutanSatwaGuideCheckpoint(this.heroPos.x, this.heroPos.z)?.hintShort ??
+            'Temui Ranger Rimba di Hutan Satwa'
+          : null,
       portalUnlocked:
         !IELTS_TEMPORARILY_LOCKED && (!this.settings.storyLocked || this.ribbons.size >= 6),
       dungeonState: this.dungeonState
@@ -38684,6 +39674,11 @@ export class RpgWorldEngine {
     this.heartInstanced.geometry.dispose();
     (this.heartInstanced.material as THREE.Material).dispose();
     disposeGreetingEmblemPool(this.greetingEmblemPool);
+    this.clearHutanSatwaRefugeeCutscene();
+    if (this.restingSurvivorsRig) {
+      disposeDesaRestingSurvivorsRig(this.restingSurvivorsRig);
+      this.restingSurvivorsRig = null;
+    }
     this.particleMesh.geometry.dispose();
     (this.particleMesh.material as THREE.Material).dispose();
     this.scene.traverse((obj) => {

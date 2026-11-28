@@ -1571,6 +1571,13 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                     ☀️ Kabut Pulau Hilang · Wilayah Cerah
                   </div>
                 )}
+                {hud.activeMissionGuideZone === 'hutan_satwa' &&
+                  !hud.liberatedZones.includes('hutan_satwa') &&
+                  hud.activeMissionGuideHint && (
+                    <div className="mt-0.5 truncate font-mono-nums text-[8.5px] font-black text-emerald-200 sm:text-[9px]">
+                      🧭 Rute Hutan Satwa: {hud.activeMissionGuideHint}
+                    </div>
+                  )}
               </div>
             );
           })()}

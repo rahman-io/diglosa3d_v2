@@ -202,6 +202,8 @@ const INITIAL_HUD: RpgHudSnapshot = {
   nearPortal: false,
   nearDungeonExit: false,
   portalUnlocked: true,
+  activeMissionGuideZone: null,
+  activeMissionGuideHint: null,
   dungeonState: null,
   areaMonsterStats: {
     context: 'overworld_day',
@@ -2995,6 +2997,9 @@ function DiglosaRpgApp() {
         onAdvance={() => engineRef.current?.advanceStory()}
         onSkip={() => engineRef.current?.skipStory()}
         onDefeatChoice={(returnToZone) => engineRef.current?.resolveDefeatExitChoice(returnToZone)}
+        onHutanSatwaChoice={(continueNow) =>
+          engineRef.current?.resolveHutanSatwaRefugeeChoice(continueNow)
+        }
       />
 
       <LearningModeModal

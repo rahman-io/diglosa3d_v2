@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Award, Bookmark, BookOpen, ChevronRight, Heart, Languages, RotateCcw, SkipForward, Volume2, VolumeX } from 'lucide-react';
+import { Award, Bookmark, BookOpen, ChevronRight, Compass, Heart, Languages, RotateCcw, SkipForward, Volume2, VolumeX } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { personalizePlayerText, ZONE_CAVE_STORIES } from '../data/diglosaCatalog';
 import { CharacterPresetId, ProjectedLabel, StoryDialogState } from '../types/game';
@@ -17,6 +17,7 @@ interface StoryOverlayModalProps {
   onAdvance: () => void;
   onSkip: () => void;
   onDefeatChoice: (returnToZone: boolean) => void;
+  onHutanSatwaChoice?: (continueMission: boolean) => void;
 }
 
 const StorybookPrologueBox: React.FC<{
@@ -269,6 +270,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
   onAdvance,
   onSkip,
   onDefeatChoice,
+  onHutanSatwaChoice,
 }) => {
   if (!story) return null;
 
@@ -413,6 +415,19 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
       story.islandLiberationBeat === 'villagers_emerge' ||
       story.islandLiberationBeat === 'return_to_life');
 
+  const isHutanSatwaCinema =
+    story.kind === 'hutan_satwa_refugee' &&
+    (story.hutanSatwaRefugeeBeat === 'flashback_mist' ||
+      story.hutanSatwaRefugeeBeat === 'flashback_siege' ||
+      story.hutanSatwaRefugeeBeat === 'flashback_kiki' ||
+      story.hutanSatwaRefugeeBeat === 'flashback_escape' ||
+      story.hutanSatwaRefugeeBeat === 'guide_desa_exit' ||
+      story.hutanSatwaRefugeeBeat === 'guide_citadel_cross' ||
+      story.hutanSatwaRefugeeBeat === 'guide_satwa_arrival');
+
+  const isHutanSatwaGuideCinema =
+    isHutanSatwaCinema && Boolean(story.hutanSatwaRefugeeBeat?.startsWith('guide_'));
+
   if (
     (story.kind === 'dungeon_intro' &&
       (story.dungeonIntroBeat === 'emerge' || story.dungeonIntroBeat === 'retreat')) ||
@@ -423,7 +438,8 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     (story.kind === 'dungeon_prison_plea' && story.dungeonPrisonPleaBeat === 'discover') ||
     isBossDefeatCinema ||
     isRibbonReunionCinema ||
-    isIslandLiberationCinema
+    isIslandLiberationCinema ||
+    isHutanSatwaCinema
   ) {
     const isPrisonPleaDiscover = story.kind === 'dungeon_prison_plea';
     const isPrisonerCelebrate =
@@ -445,7 +461,9 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     const isLibReturn =
       story.kind === 'island_liberation' && story.islandLiberationBeat === 'return_to_life';
     const cinemaBadge =
-      isLibMist
+      isHutanSatwaCinema
+        ? story.storySceneBadge || 'Reka Adegan Hutan Satwa'
+        : isLibMist
         ? 'Kabut Pulau Menghilang Cerah'
         : isLibEmerge
         ? 'Seluruh Warga Desa Keluar Bersorak'
@@ -477,7 +495,8 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
       isGardenTransform ||
       isWalkToGuardian ||
       isLibEmerge ||
-      isLibReturn;
+      isLibReturn ||
+      isHutanSatwaGuideCinema;
     const isGoldenCinema = isKeyEmerge || isLibMist;
     return (
       <>
@@ -548,12 +567,21 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
                 <span>Ambil Kunci Emas →</span>
               </button>
             )}
+            {isHutanSatwaCinema && (
+              <button
+                type="button"
+                onClick={onAdvance}
+                className="inline-flex items-center gap-1 rounded-lg border border-amber-300/80 bg-amber-500/90 px-3 py-1 text-[11px] font-black text-slate-950 shadow transition hover:bg-amber-400"
+              >
+                <span>Lanjut →</span>
+              </button>
+            )}
             <button
               type="button"
               onClick={onSkip}
               className="inline-flex items-center gap-1 rounded-lg border border-amber-300/60 bg-slate-950/85 px-3 py-1 text-[11px] font-extrabold text-amber-100 shadow transition hover:bg-slate-900"
             >
-              <span>Lewati Adegan</span>
+              <span>{isHutanSatwaGuideCinema ? 'Lewati Panduan' : 'Lewati Adegan'}</span>
               <SkipForward className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -587,7 +615,8 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
     story.kind === 'dungeon_rescue' ||
     story.kind === 'dungeon_ribbon_reunion' ||
     story.kind === 'dungeon_reunion_exit' ||
-    story.kind === 'island_liberation';
+    story.kind === 'island_liberation' ||
+    (story.kind === 'hutan_satwa_refugee' && !story.awaitingChoice);
 
   const caveStory = story.zoneId ? ZONE_CAVE_STORIES[story.zoneId] : null;
 
@@ -684,6 +713,17 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
           <span>Istirahat dulu</span>
         </RpgPillButton>
       </>
+    ) : story.kind === 'hutan_satwa_refugee' && story.awaitingChoice ? (
+      <>
+        <RpgPillButton variant="green" size="sm" onClick={() => onHutanSatwaChoice?.(true)}>
+          <Compass className="h-3.5 w-3.5 shrink-0" />
+          <span>Lanjut Misi ke Pulau Hutan Satwa</span>
+        </RpgPillButton>
+        <RpgPillButton variant="cream" size="sm" onClick={() => onHutanSatwaChoice?.(false)}>
+          <Heart className="h-3.5 w-3.5 shrink-0 text-rose-500" />
+          <span>Nanti Dulu</span>
+        </RpgPillButton>
+      </>
     ) : null;
 
   return (
@@ -696,7 +736,8 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
         story.kind === 'dungeon_boss_defeat' ||
         story.kind === 'dungeon_prison_plea' ||
         story.kind === 'dungeon_ribbon_reunion' ||
-        story.kind === 'island_liberation') &&
+        story.kind === 'island_liberation' ||
+        story.kind === 'hutan_satwa_refugee') &&
         projectedLabels &&
         projectedLabels.length > 0 && (
         <div className="pointer-events-none fixed inset-0 z-30 overflow-hidden">
@@ -747,7 +788,7 @@ export const StoryOverlayModal: React.FC<StoryOverlayModalProps> = ({
         textEn={story.textEn ? personalizePlayerText(story.textEn, resolvedPlayerName) : undefined}
         topAccessory={topAccessory}
         footerActions={footerActions}
-        canAdvance={story.kind !== 'defeat_exit'}
+        canAdvance={story.kind !== 'defeat_exit' && !story.awaitingChoice}
         onAdvance={onAdvance}
         onSkip={canSkip ? onSkip : undefined}
       />

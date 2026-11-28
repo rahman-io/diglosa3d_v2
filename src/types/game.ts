@@ -458,6 +458,18 @@ export interface CitizenGreetingLabel {
   progress: number;
 }
 
+export type HutanSatwaRefugeeBeat =
+  | 'arrival'
+  | 'flashback_mist'
+  | 'flashback_siege'
+  | 'flashback_kiki'
+  | 'flashback_escape'
+  | 'plea_confirm'
+  | 'guide_desa_exit'
+  | 'guide_citadel_cross'
+  | 'guide_satwa_arrival'
+  | 'farewell_rest';
+
 export interface StoryDialogState {
   kind:
     | 'prologue'
@@ -479,6 +491,7 @@ export interface StoryDialogState {
     | 'dungeon_ribbon_reunion'
     | 'dungeon_reunion_exit'
     | 'island_liberation'
+    | 'hutan_satwa_refugee'
     | 'cave_guardian';
   step: number;
   maxStep?: number;
@@ -534,6 +547,9 @@ export interface StoryDialogState {
     | 'gather_thanks'
     | 'hero_motivate'
     | 'return_to_life';
+  hutanSatwaRefugeeBeat?: HutanSatwaRefugeeBeat;
+  storySceneBadge?: string;
+  awaitingChoice?: boolean;
   bossExpression?: 'laugh' | 'taunt' | 'menace' | 'shock' | 'angry' | 'remorse';
   heroExpression?: 'neutral' | 'fierce';
   captiveExpression?: 'neutral' | 'sad_injured' | 'happy';
@@ -701,6 +717,8 @@ export interface RpgHudSnapshot {
   portalUnlocked: boolean;
   guidedOutsideZoneName?: string | null;
   guidedOutsideRemaining?: number;
+  activeMissionGuideZone?: ZoneId | null;
+  activeMissionGuideHint?: string | null;
   dungeonState: DungeonZoneState | null;
   areaMonsterStats: AreaMonsterStats;
   liberatedZones: ZoneId[];
