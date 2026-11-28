@@ -18,10 +18,14 @@ import {
   formatGuardianAddress,
   formatOwlAddress,
   getActiveZoneNpcDef,
+  getHotbarSlotForWeapon,
   getLevelInfo,
   getRankTitle,
+  getWeaponIdFromHotbarSlot,
   getZoneNpcById,
+  isWeaponHotbarSlot,
   MAX_AMMO,
+  MAX_HOTBAR_SLOT,
   NPC_CATALOG,
   personalizePlayerText,
   RELICS,
@@ -443,6 +447,7 @@ interface SavedZoneCaveDetail {
   placedShieldBlocks: Array<{ id: string; x: number; y: number; z: number; hp: number }>;
   placedTorches: Array<{ x: number; z: number }>;
   weaponChestCollected?: boolean;
+  seaWeaponChestCollected?: boolean;
   chestAmbushTriggered?: boolean;
   chestAmbushInfo?: { isCombatAmbush: boolean; wordIds?: string[] };
   prisonKeyCollected?: boolean;
@@ -1547,6 +1552,7 @@ export class RpgWorldEngine {
     kertas: 0,
     jarum: 0,
     kristal: 0,
+    harpun: 0,
   };
   private starterWeaponPicked = false;
   private swimSuitPicked = false;
@@ -2314,6 +2320,7 @@ export class RpgWorldEngine {
         kertas: data.weaponAmmo?.kertas || 0,
         jarum: data.weaponAmmo?.jarum || 0,
         kristal: data.weaponAmmo?.kristal || 0,
+        harpun: data.weaponAmmo?.harpun || 0,
       };
       this.caveTorchesLeft = data.caveTorchesLeft ?? 16;
       this.caveBlocksMined = data.caveBlocksMined ?? 0;
@@ -4116,7 +4123,7 @@ export class RpgWorldEngine {
     const canHoldWeapon =
       this.carMode === 'none' &&
       this.planeMode === 'none' &&
-      this.activeHotbarSlot <= 7 &&
+      isWeaponHotbarSlot(this.activeHotbarSlot) &&
       this.ownedWeapons.has(this.activeWeapon) &&
       (!this.isSwimming || this.worldMode === 'ocean' || this.isHeroUnderwater() || SEA_CAPABLE_WEAPONS.has(this.activeWeapon));
     setHeroWeaponVisual(this.hero, this.activeWeapon, canHoldWeapon);
@@ -4150,12 +4157,12 @@ export class RpgWorldEngine {
 
   public selectHotbarSlot(slotIndex: number): void {
     this.lastInputActivityMs = performance.now();
-    const idx = Math.max(0, Math.min(11, Math.floor(slotIndex)));
+    const idx = Math.max(0, Math.min(MAX_HOTBAR_SLOT, Math.floor(slotIndex)));
     this.activeHotbarSlot = idx;
     this.pendingTurnShot = null;
-    if (idx <= 7) {
-      const wId = WEAPON_ORDER[idx];
-      if (wId && this.ownedWeapons.has(wId)) {
+    const wId = getWeaponIdFromHotbarSlot(idx);
+    if (wId) {
+      if (this.ownedWeapons.has(wId)) {
         this.activeWeapon = wId;
       }
     } else {
@@ -4528,8 +4535,7 @@ export class RpgWorldEngine {
     this.owlRig.root.visible = false;
     this.owlState = 'hidden';
 
-    const eqIdx = WEAPON_ORDER.indexOf(this.activeWeapon);
-    this.activeHotbarSlot = eqIdx >= 0 ? eqIdx : 0;
+    this.activeHotbarSlot = getHotbarSlotForWeapon(this.activeWeapon);
 
     this.initDefaultQuests();
     this.spawnCollectibles();
@@ -5840,6 +5846,7 @@ export class RpgWorldEngine {
       kertas: 0,
       jarum: 0,
       kristal: 0,
+      harpun: 0,
     };
     this.caveTorchesLeft = 16;
     this.caveBlocksMined = 0;
@@ -8815,8 +8822,7 @@ export class RpgWorldEngine {
         (this.weaponAmmo[boss.rewardWeapon] || 0) + wDef.packSize,
       );
       this.activeWeapon = boss.rewardWeapon;
-      const eqIdx = WEAPON_ORDER.indexOf(boss.rewardWeapon);
-      if (eqIdx >= 0) this.activeHotbarSlot = eqIdx;
+      this.activeHotbarSlot = getHotbarSlotForWeapon(boss.rewardWeapon);
       this.hp = this.maxHp;
       this.diamonds += 5;
       this.gainXp(180);
@@ -9942,6 +9948,10 @@ export class RpgWorldEngine {
     if (detail.weaponChestCollected) {
       rig.weaponChest.collected = true;
       rig.weaponChest.group.visible = false;
+    }
+    if (detail.seaWeaponChestCollected) {
+      rig.seaWeaponChest.collected = true;
+      rig.seaWeaponChest.group.visible = false;
     }
     for (const sb of detail.placedShieldBlocks) {
       const sbMesh = new THREE.Mesh(rig.shieldBlockGeo, rig.shieldBlockMat);
@@ -11452,7 +11462,7 @@ export class RpgWorldEngine {
       this.showBanner('Mode Bidik Otomatis sedang aktif, jadi ubah ke Bidik Bebas di Menu Opsi untuk menggunakan Scope!', 2.5);
       return;
     }
-    if (this.activeHotbarSlot > 7 || !this.ownedWeapons.has(this.activeWeapon)) {
+    if (!isWeaponHotbarSlot(this.activeHotbarSlot) || !this.ownedWeapons.has(this.activeWeapon)) {
       this.showBanner('Pilih senjata terlebih dahulu untuk membidik (ADS)!', 2.0);
       return;
     }
@@ -14704,10 +14714,7 @@ export class RpgWorldEngine {
       const newlyUnlocked = !this.ownedWeapons.has(wid);
       this.ownedWeapons.add(wid);
       this.activeWeapon = wid;
-      const slotIdx = WEAPON_ORDER.indexOf(wid);
-      if (slotIdx >= 0) {
-        this.activeHotbarSlot = slotIdx;
-      }
+      this.activeHotbarSlot = getHotbarSlotForWeapon(wid);
       this.weaponAmmo[wid] = Math.min(MAX_AMMO, (this.weaponAmmo[wid] ?? 0) + wDef.packSize);
       this.refreshWeaponVisual();
       this.gainXp(newlyUnlocked ? 25 : 12);
@@ -14840,8 +14847,7 @@ export class RpgWorldEngine {
   public equipWeapon(id: WeaponId): void {
     if (!this.ownedWeapons.has(id)) return;
     this.activeWeapon = id;
-    const slotIdx = WEAPON_ORDER.indexOf(id);
-    if (slotIdx >= 0) this.activeHotbarSlot = slotIdx;
+    this.activeHotbarSlot = getHotbarSlotForWeapon(id);
     this.refreshWeaponVisual();
     soundEngine.playPick();
     this.saveProgress();
@@ -17367,8 +17373,7 @@ export class RpgWorldEngine {
       this.diamonds += 1;
     }
     this.activeWeapon = 'kerikil';
-    const slotIdx = WEAPON_ORDER.indexOf('kerikil');
-    if (slotIdx >= 0) this.activeHotbarSlot = slotIdx;
+    this.activeHotbarSlot = getHotbarSlotForWeapon('kerikil');
 
     this.refreshWeaponVisual();
     this.spawnBurst(rig.weaponChest.x, rig.weaponChest.y + 1.5, rig.weaponChest.z, 0x38bdf8, 28);
@@ -17381,6 +17386,41 @@ export class RpgWorldEngine {
     } else {
       soundEngine.playPick();
       this.showBanner('Peti Rahasia Gua! +10 Peluru Kerikil & +1 💎!', 3.4);
+    }
+    this.saveProgress();
+    this.pushHud(true);
+  }
+
+  private collectCaveSeaWeaponChest(): void {
+    const rig = this.dungeonRig;
+    if (!rig || rig.seaWeaponChest.collected) return;
+    rig.seaWeaponChest.collected = true;
+    rig.seaWeaponChest.group.visible = false;
+    if (this.dungeonState) {
+      this.getOrCreateZoneCaveDetail(this.dungeonState.zoneId).seaWeaponChestCollected = true;
+    }
+
+    const firstUnlock = !this.ownedWeapons.has('harpun');
+    this.ownedWeapons.add('harpun');
+    const gainAmmo = firstUnlock ? 14 : 10;
+    this.weaponAmmo.harpun = Math.min(MAX_AMMO, (this.weaponAmmo.harpun || 0) + gainAmmo);
+    if (!firstUnlock) {
+      this.diamonds += 1;
+    }
+    this.activeWeapon = 'harpun';
+    this.activeHotbarSlot = getHotbarSlotForWeapon('harpun');
+
+    this.refreshWeaponVisual();
+    this.spawnBurst(rig.seaWeaponChest.x, rig.seaWeaponChest.y + 1.5, rig.seaWeaponChest.z, 0x22d3ee, 30);
+    if (firstUnlock) {
+      soundEngine.playFanfare();
+      this.showBanner(
+        '🔱 Kuil Harpun Sungai! Dapat Harpun Kristal Laut (+14 Peluru · Menembus Air & Melacak Monster Laut)!',
+        5.0,
+      );
+    } else {
+      soundEngine.playPick();
+      this.showBanner('🔱 Kuil Harpun Sungai! +10 Peluru Harpun & +1 💎!', 3.4);
     }
     this.saveProgress();
     this.pushHud(true);
@@ -17462,6 +17502,7 @@ export class RpgWorldEngine {
     toX: number,
     toY: number,
     toZ: number,
+    ignoreRiverCrystals = false,
   ): boolean {
     const dx = toX - fromX;
     const dy = toY - fromY;
@@ -17478,6 +17519,7 @@ export class RpgWorldEngine {
     if (this.worldMode === 'dungeon' && this.dungeonRig) {
       for (const col of this.dungeonRig.caveColliders) {
         if (col.blockProjectiles === false) continue;
+        if (ignoreRiverCrystals && col.isRiverCrystal) continue;
         const hd = col.halfD ?? col.halfW;
         const tWall = this.rayIntersectObbDist(
           fromX,
@@ -17608,8 +17650,10 @@ export class RpgWorldEngine {
 
     // 3. Check Dungeon walls & blocks so aiming at cover stops right on the surface
     if (this.worldMode === 'dungeon' && this.dungeonRig) {
+      const ignoreRiverCrystals = this.activeWeapon === 'harpun';
       for (const col of this.dungeonRig.caveColliders) {
         if (col.blockProjectiles === false) continue;
+        if (ignoreRiverCrystals && col.isRiverCrystal) continue;
         const hd = col.halfD ?? col.halfW;
         const tWall = this.rayIntersectObbDist(
           ro.x,
@@ -17677,14 +17721,14 @@ export class RpgWorldEngine {
   public fireActiveWeapon(fromHold = false, skipTurnWait = false): void {
     if (this.phase !== 'playing' || this.carMode !== 'none' || this.planeMode !== 'none') return;
     if (this.isSwimming && this.worldMode !== 'ocean' && !this.isHeroUnderwater()) {
-      const slotWpn = this.activeHotbarSlot <= 7 ? WEAPON_ORDER[this.activeHotbarSlot] : undefined;
+      const slotWpn = getWeaponIdFromHotbarSlot(this.activeHotbarSlot);
       const canShootWater = Boolean(
         slotWpn && this.ownedWeapons.has(slotWpn) && SEA_CAPABLE_WEAPONS.has(slotWpn),
       );
       if (!canShootWater) {
         if (!fromHold) {
           this.showBanner(
-            '🏊 Senjata awal tidak bisa ditembakkan saat berenang! Pakai Senjata Wilayah (Emas/Cepat/Hijau/Langit/Berat/Kristal) atau naik ke pantai.',
+            '🏊 Senjata awal tidak bisa ditembakkan saat berenang! Pakai Harpun / Senjata Wilayah (Emas/Cepat/Hijau/Langit/Berat/Kristal) atau naik ke pantai.',
             2.6,
           );
           soundEngine.playNo();
@@ -17722,7 +17766,7 @@ export class RpgWorldEngine {
       return;
     }
 
-    const slotWeapon = WEAPON_ORDER[this.activeHotbarSlot];
+    const slotWeapon = getWeaponIdFromHotbarSlot(this.activeHotbarSlot);
     if (slotWeapon && !this.ownedWeapons.has(slotWeapon)) {
       if (!fromHold) {
         this.showBanner(
@@ -17817,6 +17861,7 @@ export class RpgWorldEngine {
       let targetZ = 0;
       let foundTarget = false;
 
+      const isHarpoon = this.activeWeapon === 'harpun';
       for (const s of this.shooters) {
         if (!s.alive || s.sunburnTimer !== undefined || this.isBossSquadProtectedEnemy(s.id)) continue;
         const d2d = Math.hypot(s.x - this.heroPos.x, s.z - this.heroPos.z);
@@ -17831,6 +17876,7 @@ export class RpgWorldEngine {
           s.x,
           tY,
           s.z,
+          isHarpoon,
         );
         const elevPenalty = Math.abs(dy) > 3.8 ? Math.abs(dy) * 1.8 : 0;
         const activeThreatBonus = d3d < 14 ? -0.65 : 0;
@@ -17848,7 +17894,7 @@ export class RpgWorldEngine {
       for (const m of this.getActiveMonsters()) {
         if (!m.alive || m.angryTimer > 0 || m.sunburnTimer !== undefined || this.isBossSquadProtectedEnemy(m.id)) continue;
         const d2d = Math.hypot(m.x - this.heroPos.x, m.z - this.heroPos.z);
-        const maxRange = m.isSkyMonster ? TUNE.autoAimRange + 12 : TUNE.autoAimRange;
+        const maxRange = m.isSkyMonster ? TUNE.autoAimRange + 12 : isHarpoon && m.isSeaMonster ? TUNE.autoAimRange + 6 : TUNE.autoAimRange;
         if (d2d > maxRange) continue;
         const spec = MONSTER_SPECS[m.type];
         const mBaseY = this.getMonsterBaseY(m, spec.hoverY);
@@ -17866,11 +17912,13 @@ export class RpgWorldEngine {
                 m.x,
                 tY,
                 m.z,
+                isHarpoon,
               );
-        const elevPenalty = !m.isSkyMonster && Math.abs(dy) > 3.8 ? Math.abs(dy) * 1.8 : 0;
+        const elevPenalty = !m.isSkyMonster && !(isHarpoon && m.isSeaMonster) && Math.abs(dy) > 3.8 ? Math.abs(dy) * 1.8 : 0;
         const isActiveAttacker = Boolean(m.combatOnly || m.isCaveMob || m.aggroActive);
         const activeThreatBonus = isActiveAttacker && d3d < 14 ? -0.5 : 0;
-        const score = d3d + elevPenalty + (clearLos ? 0 : wallBlockPenalty) + activeThreatBonus;
+        const harpoonSeaBonus = isHarpoon && m.isSeaMonster ? -6.5 : 0;
+        const score = d3d + elevPenalty + (clearLos ? 0 : wallBlockPenalty) + activeThreatBonus + harpoonSeaBonus;
         if (score < bestScore) {
           bestScore = score;
           targetX = m.x;
@@ -18003,6 +18051,7 @@ export class RpgWorldEngine {
       this.spawnProjectile({
         fromPlayer: true,
         weaponId: this.activeWeapon,
+        homingTargetId: this.activeWeapon === 'harpun' ? lockedTargetId ?? undefined : undefined,
         x: muzzleX,
         y: muzzleY,
         z: muzzleZ,
@@ -18318,6 +18367,10 @@ export class RpgWorldEngine {
         this.selectHotbarSlot(11);
         return;
       }
+      if (e.code === 'KeyU' && this.ownedWeapons.has('harpun')) {
+        this.selectHotbarSlot(getHotbarSlotForWeapon('harpun'));
+        return;
+      }
       if (e.code === 'KeyQ' || e.code === 'KeyV') {
         e.preventDefault();
         this.toggleAimMode();
@@ -18340,7 +18393,7 @@ export class RpgWorldEngine {
         e.preventDefault();
         if (this.isSwimming) {
           this.jumpHero();
-        } else if (this.activeHotbarSlot >= 8 || this.ownedWeapons.size > 0) {
+        } else if (!isWeaponHotbarSlot(this.activeHotbarSlot) || this.ownedWeapons.size > 0) {
           this.fireActiveWeapon(false);
         } else {
           this.triggerPrimaryAction();
@@ -18391,7 +18444,7 @@ export class RpgWorldEngine {
     if (e.button === 2) {
       if (
         this.settings.aimMode === 'manual' &&
-        this.activeHotbarSlot <= 7 &&
+        isWeaponHotbarSlot(this.activeHotbarSlot) &&
         this.ownedWeapons.has(this.activeWeapon)
       ) {
         this.rightAimHeld = true;
@@ -18523,7 +18576,7 @@ export class RpgWorldEngine {
     if (document.pointerLockElement === this.renderer.domElement) return;
 
     const hasArmedWeapon =
-      this.activeHotbarSlot <= 7 && this.ownedWeapons.has(this.activeWeapon);
+      isWeaponHotbarSlot(this.activeHotbarSlot) && this.ownedWeapons.has(this.activeWeapon);
 
     // When in ADS / First-Person mode with a weapon, Left-Click shoots directly at crosshair!
     if (hasArmedWeapon && (this.isAiming || this.cameraMode === 'first_person')) {
@@ -18561,6 +18614,7 @@ export class RpgWorldEngine {
         !obj.userData.biotaNodeId &&
         !obj.userData.caveBlockId &&
         !obj.userData.caveWeaponChest &&
+        !obj.userData.caveSeaWeaponChest &&
         !obj.userData.craftingTable &&
         !obj.userData.caveGuardian &&
         !obj.userData.prisonKey &&
@@ -18698,6 +18752,23 @@ export class RpgWorldEngine {
             this.collectCaveWeaponChest();
           } else {
             this.showBanner('Lompat ke atas tebing batu (⬆️ / J) untuk mengambil Peti Senjata!', 2.4);
+          }
+          return;
+        }
+        if (
+          obj.userData.caveSeaWeaponChest &&
+          this.worldMode === 'dungeon' &&
+          this.dungeonRig &&
+          !this.dungeonRig.seaWeaponChest.collected &&
+          Math.hypot(
+            this.dungeonRig.seaWeaponChest.x - this.heroPos.x,
+            this.dungeonRig.seaWeaponChest.z - this.heroPos.z,
+          ) < 7.5
+        ) {
+          if (Math.abs(this.heroPos.y - this.dungeonRig.seaWeaponChest.y) < 2.2) {
+            this.collectCaveSeaWeaponChest();
+          } else {
+            this.showBanner('Turun ke tepi sungai kristal untuk mengambil Kuil Harpun!', 2.4);
           }
           return;
         }
@@ -21558,7 +21629,7 @@ export class RpgWorldEngine {
     this.hero.rightEye.scale.y = hBlink;
     const isHeroSpeaking = sc.beat === 'hero_sharp_retort';
     setHeroFacialExpression(this.hero, 'fierce', this.elapsed, isHeroSpeaking);
-    const hasEquippedWeapon = this.activeHotbarSlot <= 7 && this.ownedWeapons.has(this.activeWeapon);
+    const hasEquippedWeapon = isWeaponHotbarSlot(this.activeHotbarSlot) && this.ownedWeapons.has(this.activeWeapon);
     applyHeroWeaponPose(this.hero, this.activeWeapon, hasEquippedWeapon, {
       speed: 0,
       walkCycle: this.walkCycle,
@@ -21896,7 +21967,7 @@ export class RpgWorldEngine {
     this.hero.rightEye.scale.y = hBlink;
     const isHeroSpeaking = pc.beat === 'hero_promise';
     setHeroFacialExpression(this.hero, isHeroSpeaking ? 'fierce' : 'neutral', this.elapsed, isHeroSpeaking);
-    const hasEquippedWeapon = this.activeHotbarSlot <= 7 && this.ownedWeapons.has(this.activeWeapon);
+    const hasEquippedWeapon = isWeaponHotbarSlot(this.activeHotbarSlot) && this.ownedWeapons.has(this.activeWeapon);
     applyHeroWeaponPose(this.hero, this.activeWeapon, hasEquippedWeapon, {
       speed: 0,
       walkCycle: this.walkCycle,
@@ -22618,7 +22689,7 @@ export class RpgWorldEngine {
     }
     if (this.phase !== 'playing' && this.phase !== 'dialogue' && !inStoryCutscene) {
       const hasEquippedWeapon =
-        this.activeHotbarSlot <= 7 && this.ownedWeapons.has(this.activeWeapon);
+        isWeaponHotbarSlot(this.activeHotbarSlot) && this.ownedWeapons.has(this.activeWeapon);
       applyHeroWeaponPose(this.hero, this.activeWeapon, hasEquippedWeapon, {
         speed: 0,
         walkCycle: this.walkCycle,
@@ -24898,7 +24969,7 @@ export class RpgWorldEngine {
 
     const isManualAim = this.settings.aimMode === 'manual';
     const hasEquippedWeapon =
-      this.activeHotbarSlot <= 7 && this.ownedWeapons.has(this.activeWeapon);
+      isWeaponHotbarSlot(this.activeHotbarSlot) && this.ownedWeapons.has(this.activeWeapon);
     if ((!hasEquippedWeapon || !isManualAim) && this.isAiming) {
       this.isAiming = false;
       this.aimToggled = false;
@@ -27128,6 +27199,17 @@ export class RpgWorldEngine {
       ) {
         this.collectCaveWeaponChest();
       }
+      if (
+        this.dungeonRig &&
+        !this.dungeonRig.seaWeaponChest.collected &&
+        Math.hypot(
+          this.heroPos.x - this.dungeonRig.seaWeaponChest.x,
+          this.heroPos.z - this.dungeonRig.seaWeaponChest.z,
+        ) < 2.35 &&
+        Math.abs(this.heroPos.y - this.dungeonRig.seaWeaponChest.y) < 1.9
+      ) {
+        this.collectCaveSeaWeaponChest();
+      }
 
       let bestDoor: number | null = null;
       let bestDoorDist = this.dungeonState.zoneId === 'desa_sapaan' ? 5.2 : 4.6;
@@ -28189,6 +28271,36 @@ export class RpgWorldEngine {
           p.vz = THREE.MathUtils.lerp(p.vz, (dz / d3) * curSpd, steerAlpha);
         }
       }
+      // Hydro-tracking for Harpun Kristal Laut so shots smoothly dive into water & hunt submerged sea monsters
+      if (p.fromPlayer && p.weaponId === 'harpun') {
+        let hydroTx: number | null = null;
+        let hydroTy = 0;
+        let hydroTz = 0;
+        let bestSeaDist = 16.5;
+        for (const sm of this.getActiveMonsters()) {
+          if (!sm.alive || !sm.isSeaMonster || sm.angryTimer > 0 || sm.sunburnTimer !== undefined) continue;
+          const d = Math.hypot(sm.x - p.x, sm.z - p.z);
+          if (d < bestSeaDist) {
+            bestSeaDist = d;
+            const sSpec = MONSTER_SPECS[sm.type];
+            const sBaseY = this.getMonsterBaseY(sm, sSpec.hoverY);
+            hydroTx = sm.x;
+            hydroTy = sBaseY + sSpec.hitCenterY;
+            hydroTz = sm.z;
+          }
+        }
+        if (hydroTx !== null) {
+          const curSpd = Math.max(24, Math.hypot(p.vx, p.vy, p.vz));
+          const hdx = hydroTx - p.x;
+          const hdy = hydroTy - (p.y ?? 1.35);
+          const hdz = hydroTz - p.z;
+          const hd3 = Math.max(0.4, Math.hypot(hdx, hdy, hdz));
+          const hSteer = 1 - Math.exp(-8.2 * dt);
+          p.vx = THREE.MathUtils.lerp(p.vx, (hdx / hd3) * curSpd, hSteer);
+          p.vy = THREE.MathUtils.lerp(p.vy, (hdy / hd3) * curSpd, hSteer);
+          p.vz = THREE.MathUtils.lerp(p.vz, (hdz / hd3) * curSpd, hSteer);
+        }
+      }
       const prevPx = p.x;
       const prevPy = p.y ?? 1.35;
       const prevPz = p.z;
@@ -28199,7 +28311,13 @@ export class RpgWorldEngine {
         this.worldMode === 'overworld'
           ? getArchipelagoGroundY(p.x, p.z)
           : this.worldMode === 'dungeon'
-          ? this.getDungeonSupportHeight(p.x, p.z, prevPy)
+          ? p.fromPlayer &&
+            p.weaponId === 'harpun' &&
+            this.dungeonState?.zoneId === 'desa_sapaan' &&
+            isInCrystalRiverChannel(p.x, p.z) &&
+            prevPy < 2.2
+            ? -2.1
+            : this.getDungeonSupportHeight(p.x, p.z, prevPy)
           : this.worldMode === 'ocean'
           ? getOceanFloorY(p.x, p.z)
           : 0;
@@ -28290,6 +28408,7 @@ export class RpgWorldEngine {
         let hitColor = 0x94a3b8;
         for (const col of this.dungeonRig.caveColliders) {
           if (col.blockProjectiles === false) continue;
+          if (p.fromPlayer && p.weaponId === 'harpun' && col.isRiverCrystal) continue;
           const hd = col.halfD ?? col.halfW;
           const minY = col.minY ?? 0;
           const maxY = col.maxY ?? 6.5;
@@ -28583,7 +28702,12 @@ export class RpgWorldEngine {
               }
             }
             if (m.isCaveMob || m.combatOnly) {
-              this.damageRealTimeMonster(m, p.damage, p.vx, p.vz);
+              const effectiveDmg =
+                p.weaponId === 'harpun' && m.isSeaMonster ? p.damage + 1 : p.damage;
+              if (p.weaponId === 'harpun' && m.isSeaMonster) {
+                this.spawnBurst(m.x, targetCenterY, m.z, 0x22d3ee, 14);
+              }
+              this.damageRealTimeMonster(m, effectiveDmg, p.vx, p.vz);
               break;
             }
 
@@ -29447,6 +29571,23 @@ export class RpgWorldEngine {
                 : door.modeLabel,
               kind: 'door',
             });
+          }
+        }
+        if (!this.dungeonRig.seaWeaponChest.collected) {
+          const sc = this.dungeonRig.seaWeaponChest;
+          const scDist = Math.hypot(sc.x - this.heroPos.x, sc.z - this.heroPos.z);
+          if (scDist < 24) {
+            const sp = projectPoint(sc.x, sc.y + 3.05, sc.z);
+            if (sp) {
+              labels.push({
+                id: 'cave_sea_weapon_chest',
+                x: sp.x,
+                y: sp.y,
+                title: '🔱 Kuil Harpun Sungai (Ambil!)',
+                subtext: 'Senjata Pemburu Monster Laut',
+                kind: 'pickup',
+              });
+            }
           }
         }
         if (
@@ -30981,6 +31122,16 @@ export class RpgWorldEngine {
             color: '#facc15',
           });
         }
+        if (!this.dungeonRig.seaWeaponChest.collected) {
+          blips.push({
+            id: 'sea_chest',
+            x: this.dungeonRig.seaWeaponChest.x,
+            z: this.dungeonRig.seaWeaponChest.z,
+            kind: 'chest',
+            color: '#22d3ee',
+            label: 'Kuil Harpun',
+          });
+        }
         if (
           this.dungeonState.prisonUnlocked &&
           this.dungeonRig.ribbonGroup.visible &&
@@ -32134,13 +32285,13 @@ export class RpgWorldEngine {
     }
 
     // Pastikan jika sedang memegang alat gua, pindah ke senjata aktif untuk menembak monster
-    if (mode !== 'aim_enemy' && this.activeHotbarSlot > 7 && this.ownedWeapons.size > 0) {
-      const slotIdx = WEAPON_ORDER.indexOf(this.activeWeapon);
-      if (slotIdx >= 0) this.selectHotbarSlot(slotIdx);
+    if (mode !== 'aim_enemy' && !isWeaponHotbarSlot(this.activeHotbarSlot) && this.ownedWeapons.size > 0) {
+      this.selectHotbarSlot(getHotbarSlotForWeapon(this.activeWeapon));
     }
 
     // Cari monster / penembak terdekat (termasuk dungeon, academy, laut & monster terbang)
     const heroEyeY = this.heroPos.y + 1.92;
+    const isHarpoon = this.activeWeapon === 'harpun';
     const wallBlockPenalty = this.worldMode === 'dungeon' ? 45 : 18;
     let bestTarget: { id: string; x: number; y: number; z: number; name: string; dist: number; score: number } | null = null;
     for (const m of this.getActiveMonsters()) {
@@ -32156,9 +32307,10 @@ export class RpgWorldEngine {
         const clearLos =
           m.isSkyMonster && this.worldMode === 'overworld'
             ? true
-            : this.hasClearCombatLineOfSight(this.heroPos.x, heroEyeY, this.heroPos.z, m.x, tY, m.z);
-        const elevPenalty = !m.isSkyMonster && Math.abs(dy) > 3.8 ? Math.abs(dy) * 1.8 : 0;
-        const score = d3d + elevPenalty + (clearLos ? 0 : wallBlockPenalty);
+            : this.hasClearCombatLineOfSight(this.heroPos.x, heroEyeY, this.heroPos.z, m.x, tY, m.z, isHarpoon);
+        const elevPenalty = !m.isSkyMonster && !(isHarpoon && m.isSeaMonster) && Math.abs(dy) > 3.8 ? Math.abs(dy) * 1.8 : 0;
+        const harpoonSeaBonus = isHarpoon && m.isSeaMonster ? -6.5 : 0;
+        const score = d3d + elevPenalty + (clearLos ? 0 : wallBlockPenalty) + harpoonSeaBonus;
         if (!bestTarget || score < bestTarget.score) {
           bestTarget = {
             id: m.id,

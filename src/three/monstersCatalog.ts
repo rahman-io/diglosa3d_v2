@@ -537,7 +537,7 @@ export const MONSTER_SPECS: Record<MonsterType, MonsterSheetSpec> = {
     hitCenterY: 0.75,
     hitHalfH: 1.65,
     isSeaMonster: true,
-    effectiveWeapons: ['emas', 'saus', 'biji', 'kertas', 'jarum', 'kristal'],
+    effectiveWeapons: ['emas', 'saus', 'biji', 'kertas', 'jarum', 'kristal', 'harpun'],
   },
   abyssal_kraken: {
     id: 'abyssal_kraken',
@@ -563,7 +563,7 @@ export const MONSTER_SPECS: Record<MonsterType, MonsterSheetSpec> = {
     hitCenterY: 1.9,
     hitHalfH: 2.8,
     isSeaMonster: true,
-    effectiveWeapons: ['biji', 'kertas', 'jarum', 'kristal'],
+    effectiveWeapons: ['biji', 'kertas', 'jarum', 'kristal', 'harpun'],
   },
   electric_eel_drakon: {
     id: 'electric_eel_drakon',
@@ -589,7 +589,7 @@ export const MONSTER_SPECS: Record<MonsterType, MonsterSheetSpec> = {
     hitCenterY: 0.95,
     hitHalfH: 1.75,
     isSeaMonster: true,
-    effectiveWeapons: ['saus', 'biji', 'kertas', 'jarum', 'kristal'],
+    effectiveWeapons: ['saus', 'biji', 'kertas', 'jarum', 'kristal', 'harpun'],
   },
   leviathan_serpent: {
     id: 'leviathan_serpent',
@@ -615,7 +615,7 @@ export const MONSTER_SPECS: Record<MonsterType, MonsterSheetSpec> = {
     hitCenterY: 2.0,
     hitHalfH: 2.85,
     isSeaMonster: true,
-    effectiveWeapons: ['biji', 'kertas', 'jarum', 'kristal'],
+    effectiveWeapons: ['biji', 'kertas', 'jarum', 'kristal', 'harpun'],
   },
   venomous_box_jelly: {
     id: 'venomous_box_jelly',
@@ -641,7 +641,7 @@ export const MONSTER_SPECS: Record<MonsterType, MonsterSheetSpec> = {
     hitCenterY: 1.15,
     hitHalfH: 1.95,
     isSeaMonster: true,
-    effectiveWeapons: ['emas', 'saus', 'biji', 'kertas', 'jarum', 'kristal'],
+    effectiveWeapons: ['emas', 'saus', 'biji', 'kertas', 'jarum', 'kristal', 'harpun'],
   },
   giant_bone_jaw: {
     id: 'giant_bone_jaw',
@@ -667,7 +667,7 @@ export const MONSTER_SPECS: Record<MonsterType, MonsterSheetSpec> = {
     hitCenterY: 0.72,
     hitHalfH: 1.6,
     isSeaMonster: true,
-    effectiveWeapons: ['emas', 'saus', 'biji', 'kertas', 'jarum', 'kristal'],
+    effectiveWeapons: ['emas', 'saus', 'biji', 'kertas', 'jarum', 'kristal', 'harpun'],
   },
   toxic_sea_viper: {
     id: 'toxic_sea_viper',
@@ -693,7 +693,7 @@ export const MONSTER_SPECS: Record<MonsterType, MonsterSheetSpec> = {
     hitCenterY: 1.05,
     hitHalfH: 1.8,
     isSeaMonster: true,
-    effectiveWeapons: ['saus', 'biji', 'kertas', 'jarum', 'kristal'],
+    effectiveWeapons: ['saus', 'biji', 'kertas', 'jarum', 'kristal', 'harpun'],
   },
   shadow_angler: {
     id: 'shadow_angler',
@@ -719,7 +719,7 @@ export const MONSTER_SPECS: Record<MonsterType, MonsterSheetSpec> = {
     hitCenterY: 0.95,
     hitHalfH: 1.75,
     isSeaMonster: true,
-    effectiveWeapons: ['saus', 'biji', 'kertas', 'jarum', 'kristal'],
+    effectiveWeapons: ['saus', 'biji', 'kertas', 'jarum', 'kristal', 'harpun'],
   },
   spiny_mega_stingray: {
     id: 'spiny_mega_stingray',
@@ -745,7 +745,7 @@ export const MONSTER_SPECS: Record<MonsterType, MonsterSheetSpec> = {
     hitCenterY: 0.55,
     hitHalfH: 1.4,
     isSeaMonster: true,
-    effectiveWeapons: ['emas', 'saus', 'biji', 'kertas', 'jarum', 'kristal'],
+    effectiveWeapons: ['emas', 'saus', 'biji', 'kertas', 'jarum', 'kristal', 'harpun'],
   },
   charybdis_maw: {
     id: 'charybdis_maw',
@@ -771,7 +771,7 @@ export const MONSTER_SPECS: Record<MonsterType, MonsterSheetSpec> = {
     hitCenterY: 0.95,
     hitHalfH: 2.0,
     isSeaMonster: true,
-    effectiveWeapons: ['biji', 'kertas', 'jarum', 'kristal'],
+    effectiveWeapons: ['biji', 'kertas', 'jarum', 'kristal', 'harpun'],
   },
   giga_wyvern: {
     id: 'giga_wyvern',
@@ -1045,6 +1045,7 @@ export const SEA_CAPABLE_WEAPONS = new Set<WeaponId>([
   'kertas',
   'jarum',
   'kristal',
+  'harpun',
 ]);
 export const RANGED_MONSTER_TYPES = new Set<MonsterType>(
   ALL_MONSTER_TYPES.filter((t) => MONSTER_SPECS[t].ranged),

@@ -177,6 +177,74 @@ export function createWeaponMesh(
     frontBead.position.set(0, 0.155, 0.68);
 
     gun.add(stock, receiver, shellAccent, barrel, magTube, pump, muzzleTip, frontBead);
+  } else if (weaponId === 'harpun') {
+    // 9. Crystal Sea Harpoon Launcher (Trident Spearhead + Hydro Chamber)
+    const aqua = palette.getMat(0x0891b2, 'metal');
+    const cyanGlow = palette.getMat(0x22d3ee, 'emissive');
+    const pearl = palette.getMat(0xe0f2fe, 'gloss');
+    addAngledGrip(gun, charcoal, aqua, gunmetal, -0.2, -0.15);
+
+    const stockGeo = beveledExtrude(
+      [
+        [0, 0.06],
+        [0, -0.06],
+        [-0.3, -0.12],
+        [-0.32, 0.04],
+      ],
+      0.1,
+      0.012,
+    );
+    const stock = new THREE.Mesh(stockGeo, darkPoly);
+    stock.position.set(0, 0.01, -0.25);
+
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.14, 0.56), aqua);
+    frame.position.set(0, 0.05, 0.04);
+
+    // Glowing pressurized hydro core cylinder underneath barrel
+    const hydroTank = new THREE.Mesh(new THREE.CylinderGeometry(0.058, 0.058, 0.34, 12), cyanGlow);
+    hydroTank.rotation.x = Math.PI / 2;
+    hydroTank.position.set(0, -0.02, 0.24);
+
+    // Twin parallel guide rails + central harpoon shaft
+    const railL = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.045, 0.58), gold);
+    railL.position.set(-0.065, 0.09, 0.38);
+    const railR = new THREE.Mesh(new THREE.BoxGeometry(0.032, 0.045, 0.58), gold);
+    railR.position.set(0.065, 0.09, 0.38);
+
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.024, 0.028, 0.72, 10), chrome);
+    shaft.rotation.x = Math.PI / 2;
+    shaft.position.set(0, 0.09, 0.44);
+
+    // 3-pronged glowing crystal trident tip extending along +Z
+    const spearCenter = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.24, 6), cyanGlow);
+    spearCenter.rotation.x = Math.PI / 2;
+    spearCenter.position.set(0, 0.09, 0.88);
+
+    const prongBar = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.032, 0.05), gold);
+    prongBar.position.set(0, 0.09, 0.72);
+    const prongL = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.16, 5), pearl);
+    prongL.rotation.x = Math.PI / 2;
+    prongL.position.set(-0.1, 0.09, 0.8);
+    const prongR = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.16, 5), pearl);
+    prongR.rotation.x = Math.PI / 2;
+    prongR.position.set(0.1, 0.09, 0.8);
+
+    const sightOrb = new THREE.Mesh(new THREE.OctahedronGeometry(0.048, 0), cyanGlow);
+    sightOrb.position.set(0, 0.165, 0.06);
+
+    gun.add(
+      stock,
+      frame,
+      hydroTank,
+      railL,
+      railR,
+      shaft,
+      spearCenter,
+      prongBar,
+      prongL,
+      prongR,
+      sightOrb,
+    );
   } else if (weaponId === 'emas') {
     // 3. Royal Golden Hand-Cannon Revolver
     const ivory = palette.getMat(0xfef3c7, 'gloss');

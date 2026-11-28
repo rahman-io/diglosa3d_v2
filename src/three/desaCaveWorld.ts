@@ -1020,6 +1020,7 @@ export function createDesaCaveEnvironment(
       halfD: 0.9 * sc,
       minY: -2.3,
       maxY: -1.2 + hMain,
+      isRiverCrystal: true,
     });
   });
 
@@ -1702,6 +1703,73 @@ export function createDesaCaveEnvironment(
     collected: false,
   };
 
+  // Crystal River Harpoon Shrine in the SE Crystal River Cove (searchable weapon to hunt submerged river monsters!)
+  const seaChestX = 33.5;
+  const seaChestY = 0.0;
+  const seaChestZ = 42.5;
+  const seaChestGroup = new THREE.Group();
+  seaChestGroup.position.set(seaChestX, seaChestY, seaChestZ);
+  seaChestGroup.userData.caveSeaWeaponChest = true;
+
+  const seaBase = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.92, 1.55), palette.getMat(0x0f172a, 'matte'));
+  seaBase.position.y = 0.46;
+  seaBase.castShadow = true;
+  const seaCyanBand = new THREE.Mesh(
+    new THREE.BoxGeometry(1.82, 0.24, 1.62),
+    palette.getMat(0x22d3ee, 'emissive'),
+  );
+  seaCyanBand.position.y = 0.86;
+  const seaRing = new THREE.Mesh(
+    new THREE.RingGeometry(1.35, 1.85, 24),
+    palette.getMat(0x22d3ee, 'emissive'),
+  );
+  seaRing.rotation.x = -Math.PI / 2;
+  seaRing.position.y = 0.05;
+  [
+    [-0.85, -0.75],
+    [0.85, -0.75],
+    [-0.85, 0.75],
+    [0.85, 0.75],
+  ].forEach(([cx, cz]) => {
+    const shard = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.95, 5), crystalCyanMat);
+    shard.position.set(cx, 0.48, cz);
+    seaChestGroup.add(shard);
+  });
+  const seaOrb = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.36, 0),
+    palette.getMat(0x67e8f9, 'emissive'),
+  );
+  seaOrb.position.set(0, 2.55, 0);
+  seaOrb.userData.animKind = 'bob';
+  seaOrb.userData.baseY = 2.55;
+  seaOrb.userData.phase = 1.25;
+  animatables.push(seaOrb);
+
+  const seaHarpoon = createWeaponMesh('harpun', palette, 1.35);
+  seaHarpoon.position.set(0, 1.66, 0);
+  seaHarpoon.rotation.set(0.18, 0.4, 0.1);
+  seaHarpoon.userData.animKind = 'spin';
+  animatables.push(seaHarpoon);
+
+  seaChestGroup.add(seaBase, seaCyanBand, seaRing, seaOrb, seaHarpoon);
+  group.add(seaChestGroup);
+  caveColliders.push({
+    x: seaChestX,
+    z: seaChestZ,
+    halfW: 0.95,
+    halfD: 0.9,
+    minY: seaChestY,
+    maxY: seaChestY + 1.6,
+  });
+  const seaWeaponChest: CaveWeaponChestRig = {
+    x: seaChestX,
+    y: seaChestY,
+    z: seaChestZ,
+    group: seaChestGroup,
+    orb: seaOrb,
+    collected: false,
+  };
+
   // NE Hanging Cliff Prison Cell (y = 9.5, X=37.5, Z=-31.5)
   const prisonPos = new THREE.Vector3(37.5, 9.5, -31.5);
   const prisonGroup = new THREE.Group();
@@ -1765,6 +1833,7 @@ export function createDesaCaveEnvironment(
     crackMaterials: sharedRigTools.crackMaterials,
     crackGeo: sharedRigTools.crackGeo,
     weaponChest,
+    seaWeaponChest,
     hasInsideGuardian: false,
     guardianPos,
     guardianMesh: sharedRigTools.guardianMesh,

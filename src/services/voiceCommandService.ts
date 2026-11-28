@@ -924,6 +924,16 @@ export const VOICE_COMMAND_CATALOG: VoiceCommandCatalogEntry[] = [
     priority: 30,
   },
   {
+    id: 'weapon_harpun',
+    category: 'Pertempuran & Senjata',
+    phrase: 'Pakai harpun',
+    aliases: ['pilih harpun', 'harpun kristal', 'senjata laut', 'senjata harpun'],
+    description: 'Memasang Harpun Kristal Laut untuk menumpas monster laut',
+    action: { type: 'equip_weapon', target: 'harpun' },
+    keywords: [['harpun'], ['senjata laut']],
+    priority: 32,
+  },
+  {
     id: 'ammo_buy',
     category: 'Pertempuran & Senjata',
     phrase: 'Beli peluru',

@@ -301,6 +301,20 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     spread: 3,
     desc: '3 peluru kipas (1× tembak langsung buka duel!) · Hadiah Gua Portal',
   },
+  harpun: {
+    id: 'harpun',
+    name: 'Harpun Kristal Laut',
+    originZone: 'desa_sapaan',
+    originLabel: 'Kuil Sungai Gua',
+    color: '#22d3ee',
+    colorHex: 0x22d3ee,
+    damage: 3,
+    shieldDamage: 2,
+    cooldown: 0.42,
+    speed: 44,
+    packSize: 10,
+    desc: 'Menembus air & kristal sungai! Melacak monster laut dalam (+1 Dmg air) · Temukan di Kuil Sungai Gua!',
+  },
 };
 
 export const WEAPON_ORDER: WeaponId[] = [
@@ -312,7 +326,26 @@ export const WEAPON_ORDER: WeaponId[] = [
   'jarum',
   'kristal',
   'kerikil',
+  'harpun',
 ];
+
+export const MAX_HOTBAR_SLOT = 12;
+
+export function getHotbarSlotForWeapon(id: WeaponId): number {
+  const idx = WEAPON_ORDER.indexOf(id);
+  if (idx < 0) return 0;
+  return idx < 8 ? idx : idx + 4;
+}
+
+export function getWeaponIdFromHotbarSlot(slot: number): WeaponId | undefined {
+  if (slot >= 0 && slot <= 7) return WEAPON_ORDER[slot];
+  if (slot >= 12) return WEAPON_ORDER[slot - 4];
+  return undefined;
+}
+
+export function isWeaponHotbarSlot(slot: number): boolean {
+  return getWeaponIdFromHotbarSlot(slot) !== undefined;
+}
 
 export const RELICS: Record<RelicId, RelicDef> = {
   pedang: {

@@ -221,14 +221,14 @@ export const GuideTabContent: React.FC<GuideTabContentProps> = ({ hud, playerNam
                 <span>⚡ Mencari Peluru &amp; Taktik Duel</span>
               </div>
               <ul className="mt-1.5 space-y-1 text-[11px] leading-relaxed text-slate-200">
-                <li>• <strong>Cari Peluru</strong> dengan mengalahkan <strong>Penembak Gelap</strong> bermata merah, buka <strong>Peti Rahasia Gua</strong>, atau buka <strong>Tas → Latihan Kuis Peluru / Beli dengan 💎</strong>.</li>
+                <li>• <strong>Cari Peluru</strong> dengan mengalahkan <strong>Penembak Gelap</strong> bermata merah, buka <strong>Peti Rahasia Gua</strong> &amp; <strong>Kuil Sungai Gua</strong> (Harpun), atau buka <strong>Tas → Latihan Kuis Peluru / Beli dengan 💎</strong>.</li>
                 <li>• <strong>Duel Rebutan</strong> dimulai begitu kuis muncul, tekan <strong>AMBIL GILIRAN!</strong> secepatnya agar monster tidak menyerang duluan, lalu pilih jawaban yang tepat!</li>
               </ul>
             </div>
           </div>
 
-          {/* Compact 8-Weapon Power Table */}
-          <div className="mt-2.5 grid grid-cols-2 gap-1.5 sm:grid-cols-4">
+          {/* Compact 9-Weapon Power Table */}
+          <div className="mt-2.5 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
             {WEAPON_ORDER.map((id, idx) => {
               const w = WEAPONS[id];
               const owned = hud.ownedWeapons.includes(id);

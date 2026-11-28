@@ -44,6 +44,7 @@ const WEAPON_SHOOT_CLIP: Record<WeaponId, 'shoot_1' | 'shoot_2'> = {
   kertas: 'shoot_2',
   jarum: 'shoot_1',
   kristal: 'shoot_1',
+  harpun: 'shoot_2',
 };
 
 const INTRO_AUDIO_PATH = './assets/aistudio/game_intro_1db79a4e.mp3';

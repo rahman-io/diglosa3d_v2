@@ -284,6 +284,7 @@ const OCEAN_WEAPON_LABELS: Record<WeaponId, string> = {
   kertas: 'Senjata Langit',
   jarum: 'Senjata Berat',
   kristal: 'Senjata Kristal',
+  harpun: 'Harpun Kristal Laut',
 };
 
 function createOceanPickupMesh(

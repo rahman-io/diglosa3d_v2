@@ -151,7 +151,8 @@ export type WeaponId =
   | 'biji'
   | 'kertas'
   | 'jarum'
-  | 'kristal';
+  | 'kristal'
+  | 'harpun';
 
 export type RelicId =
   | 'pedang'

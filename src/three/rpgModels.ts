@@ -217,6 +217,7 @@ export interface CaveStaticCollider {
   minY?: number;
   maxY?: number;
   blockProjectiles?: boolean;
+  isRiverCrystal?: boolean;
 }
 
 export interface CaveCliffPlatform {
@@ -279,6 +280,7 @@ export interface DungeonArenaRig {
   crackMaterials: THREE.MeshBasicMaterial[];
   crackGeo: THREE.BufferGeometry;
   weaponChest: CaveWeaponChestRig;
+  seaWeaponChest: CaveWeaponChestRig;
   hasInsideGuardian: boolean;
   guardianPos: THREE.Vector3;
   guardianMesh: THREE.Group;
@@ -5705,6 +5707,61 @@ export function createDungeonEnvironment(
     collected: false,
   };
 
+  // Sea Harpoon Shrine beside the sunken Crystal Pool (searchable weapon for killing submerged sea monsters!)
+  const seaChestX = -3.45;
+  const seaChestY = 0;
+  const seaChestZ = 7.2;
+  const seaChestGroup = new THREE.Group();
+  seaChestGroup.position.set(seaChestX, seaChestY, seaChestZ);
+  seaChestGroup.userData.caveSeaWeaponChest = true;
+
+  const seaPedestal = new THREE.Mesh(
+    new THREE.BoxGeometry(1.5, 0.9, 1.25),
+    palette.getMat(0x0f172a, 'matte'),
+  );
+  seaPedestal.position.y = 0.45;
+  seaPedestal.castShadow = true;
+  const seaCyanBand = new THREE.Mesh(
+    new THREE.BoxGeometry(1.56, 0.22, 1.32),
+    palette.getMat(0x22d3ee, 'emissive'),
+  );
+  seaCyanBand.position.y = 0.84;
+  const seaOrb = new THREE.Mesh(
+    new THREE.OctahedronGeometry(0.34, 0),
+    palette.getMat(0x67e8f9, 'emissive'),
+  );
+  seaOrb.position.set(0, 2.38, 0);
+  seaOrb.userData.animKind = 'bob';
+  seaOrb.userData.baseY = 2.38;
+  seaOrb.userData.phase = 1.1;
+  animatables.push(seaOrb);
+
+  const seaHarpoon = createWeaponMesh('harpun', palette, 1.28);
+  seaHarpoon.position.set(0, 1.56, 0);
+  seaHarpoon.rotation.set(0.18, 0.4, 0.1);
+  seaHarpoon.userData.animKind = 'spin';
+  animatables.push(seaHarpoon);
+
+  seaChestGroup.add(seaPedestal, seaCyanBand, seaOrb, seaHarpoon);
+  group.add(seaChestGroup);
+  caveColliders.push({
+    x: seaChestX,
+    z: seaChestZ,
+    halfW: 0.85,
+    halfD: 0.74,
+    minY: seaChestY,
+    maxY: seaChestY + 1.5,
+  });
+
+  const seaWeaponChest: CaveWeaponChestRig = {
+    x: seaChestX,
+    y: seaChestY,
+    z: seaChestZ,
+    group: seaChestGroup,
+    orb: seaOrb,
+    collected: false,
+  };
+
   // Cave Guardian NPC (ONLY spawned in caves where guardian wasn't already placed outside — omitted in Desa Sapaan!)
   const guardianPos = new THREE.Vector3(4.8, 0, 11.8);
   const guardianMesh = createZoneNpc(caveStory.guardianId, palette);
@@ -5904,6 +5961,7 @@ export function createDungeonEnvironment(
     crackMaterials,
     crackGeo,
     weaponChest,
+    seaWeaponChest,
     hasInsideGuardian,
     guardianPos,
     guardianMesh,

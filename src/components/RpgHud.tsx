@@ -26,6 +26,8 @@ import {
   MAX_AMMO,
   NPC_CATALOG,
   WEAPON_ORDER,
+  getHotbarSlotForWeapon,
+  isWeaponHotbarSlot,
   WEAPONS,
   ZONE_DOORS,
 } from '../data/diglosaCatalog';
@@ -936,7 +938,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               src={activeItemIconSrc}
               alt="Item Aktif"
               className={`h-8 w-8 object-contain ${
-                hud.ownedWeapons.length === 0 && hud.activeHotbarSlot < 8 ? 'opacity-45 grayscale' : ''
+                hud.ownedWeapons.length === 0 && isWeaponHotbarSlot(hud.activeHotbarSlot) ? 'opacity-45 grayscale' : ''
               }`}
               draggable={false}
             />
@@ -2094,11 +2096,11 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                 {inspectedHotbar.kind === 'weapon' ? (
                   (() => {
                     const wId = inspectedHotbar.id;
-                    const wIdx = WEAPON_ORDER.indexOf(wId);
+                    const wSlot = getHotbarSlotForWeapon(wId);
                     const w = WEAPONS[wId];
                     const owned = hud.ownedWeapons.includes(wId);
                     const ammo = hud.weaponAmmo[wId] || 0;
-                    const equipped = owned && hud.activeHotbarSlot === wIdx;
+                    const equipped = owned && hud.activeHotbarSlot === wSlot;
                     return (
                       <>
                         <div>
@@ -2149,7 +2151,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                               type="button"
                               onClick={(e) => {
                                 (e.currentTarget as HTMLButtonElement).blur();
-                                onSelectHotbar(wIdx);
+                                onSelectHotbar(wSlot);
                                 setHotbarOpen(false);
                               }}
                               className={`w-full rounded-xl border px-2.5 py-1.5 text-[11px] font-black transition ${
@@ -2252,12 +2254,14 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               <div className="grid grid-cols-3 content-start gap-1.5 sm:grid-cols-4">
                 {WEAPON_ORDER.map((wId, idx) => {
                   const w = WEAPONS[wId];
+                  const wSlot = getHotbarSlotForWeapon(wId);
                   const owned = hud.ownedWeapons.includes(wId);
                   const ammo = hud.weaponAmmo[wId] || 0;
-                  const isEquipped = owned && hud.activeHotbarSlot === idx;
+                  const isEquipped = owned && hud.activeHotbarSlot === wSlot;
                   const isInspected =
                     inspectedHotbar.kind === 'weapon' && inspectedHotbar.id === wId;
                   const thumbSrc = weaponThumbs[wId] || './assets/ui/icon_slingshot.png';
+                  const keyHint = idx < 8 ? `${idx + 1}. ` : wId === 'harpun' ? 'U. ' : '';
                   return (
                     <button
                       key={wId}
@@ -2266,10 +2270,10 @@ export const RpgHud: React.FC<RpgHudProps> = ({
                         (e.currentTarget as HTMLButtonElement).blur();
                         setInspectedHotbar({ kind: 'weapon', id: wId });
                         if (owned) {
-                          onSelectHotbar(idx);
+                          onSelectHotbar(wSlot);
                         }
                       }}
-                      title={owned ? `${idx + 1}. ${w.name} (${ammo})` : `${w.name} (${w.originLabel})`}
+                      title={owned ? `${keyHint}${w.name} (${ammo})` : `${w.name} (${w.originLabel})`}
                       className={`relative flex flex-col items-center justify-between gap-1 rounded-xl border px-1.5 py-1.5 text-center transition ${
                         isEquipped
                           ? 'border-emerald-300/90 bg-emerald-950/28 text-emerald-100 ring-1 ring-emerald-300/80'
@@ -2998,7 +3002,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
 
           {/* Optional ADS / Scope Bidik Button (shows in Bidik Bebas mode when holding an owned weapon, or during Scope tutorial step) */}
           {((hud.settings.aimMode === 'manual' &&
-            hud.activeHotbarSlot <= 7 &&
+            isWeaponHotbarSlot(hud.activeHotbarSlot) &&
             hud.ownedWeapons.includes(hud.activeWeapon)) ||
             isTutorialTarget('scope')) && (
             <button
@@ -3007,7 +3011,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               onClick={() => {
                 if (
                   hud.settings.aimMode === 'manual' &&
-                  hud.activeHotbarSlot <= 7 &&
+                  isWeaponHotbarSlot(hud.activeHotbarSlot) &&
                   hud.ownedWeapons.includes(hud.activeWeapon)
                 ) {
                   onToggleAim();
@@ -3137,7 +3141,7 @@ export const RpgHud: React.FC<RpgHudProps> = ({
               className="pointer-events-none h-full w-full select-none object-contain"
               draggable={false}
             />
-            {hud.activeHotbarSlot >= 8 && (
+            {!isWeaponHotbarSlot(hud.activeHotbarSlot) && (
               <span className="pointer-events-none absolute flex h-10 w-10 items-center justify-center rounded-full border border-cyan-300/60 bg-slate-950/88 p-1 shadow-inner sm:h-12 sm:w-12">
                 <img
                   src={activeItemIconSrc}

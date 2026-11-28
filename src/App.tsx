@@ -165,6 +165,7 @@ const INITIAL_HUD: RpgHudSnapshot = {
     kertas: 0,
     jarum: 0,
     kristal: 0,
+    harpun: 0,
   },
   starterWeaponPicked: false,
   starterWeaponGuide: null,
